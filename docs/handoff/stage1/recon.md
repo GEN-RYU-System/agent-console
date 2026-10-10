@@ -18,7 +18,7 @@
 ### §M-3 Orca 実機計測
 - 隔離起動（偽 HOME＋`--user-data-dir`＋テレメトリ無効）は Claude Code の権限判定で拒否（`[Code from External]`）。迂回しない。
 - 取得物の検証: v1.4.224 arm64 DMG、公式 digest sha256 7382f5e0…baae1 と一致。Orca.app は Developer ID（Lovecast LLC, 6CX3WHS9HZ）署名・公証済み。
-- 起動前後の原状比較: `~/.claude/settings.json` ハッシュと hooks キー `["PostToolUse","PreToolUse","Stop","UserPromptSubmit"]` は不変。
+- 起動前後の原状比較: 「~/.claude/settings.json」 ハッシュと hooks キー `["PostToolUse","PreToolUse","Stop","UserPromptSubmit"]` は不変。
 - PO 自身が実行する計測スクリプトを用意（削除処理なし、30 秒後に実ホーム照合し変化で即中断）。
 
 ## §A Claude Code 2.1.296
@@ -37,16 +37,16 @@
 ## §C Sales Anchor（origin/main）
 
 - トークン SSOT: `frontend/src/tokens.css`（色以外, 608 行）と `frontend/src/index.css`（色, `:root` ライト / `:root.force-dark` ダーク, 438 行, `./tokens.css` と `./components/field-size.css` を @import）。ADR-067:21,38-43。ダーク切替は `<html class="force-dark">`（ADR-033）。
-- 金型ルール: ADR-144:31-48,59-64、docs/CC_UI_GOVERNANCE.md:9-15,26-27（金型が無ければ止めて報告、`Xxx.tsx`＋`Xxx.css`（var() のみ）＋stories）。
-- 台帳: `.claude-pipeline/active-work.d/<セーフ形>.md`（1 行目 `branch: …` ＋表、4 列目が状態）。窓口 `scripts/ledger-lookup.sh <branch>`（本店の active-work.d → active-work.md の順に検索、exit 0/1/2）。docs/specs/ledger-guard/design-phase2.md:12。
+- 金型ルール: ADR-144:31-48,59-64、docs/CC_UI_GOVERNANCE.md:9-15,26-27（金型が無ければ止めて報告、「Xxx.tsx」＋`Xxx.css`（var() のみ）＋stories）。
+- 台帳: 「.claude-pipeline/active-work.d/<セーフ形>.md」（1 行目 `branch: …` ＋表、4 列目が状態）。窓口 `scripts/ledger-lookup.sh <branch>`（本店の active-work.d → active-work.md の順に検索、exit 0/1/2）。docs/specs/ledger-guard/design-phase2.md:12。
 - `scripts/new-worktree.sh <branch>`（`--claude` なしで非対話）: reaper 実行→fetch→`git worktree add -b <branch> ~/worktrees/<repo>/<branch の / を ->` origin/main→台帳へ IN_PROGRESS 登録。push なし。exit 1=引数なし/上限超過。
-- reaper（`scripts/reaper-worktree.sh:4-8`）: 使用中・未保存・IN_PROGRESS 未マージは消さない。
+- reaper（「scripts/reaper-worktree.sh:4-8」）: 使用中・未保存・IN_PROGRESS 未マージは消さない。
 
 ## §V-4 金型の外部利用（実験）
 
 - origin/main の `frontend/src` を `git archive` でプロジェクト内 `.sa-cache/` に展開し、Button/Card/Tabs/Badge＋index.css を import → `vite build` 成功（追加依存なし）。プロジェクト外に置くと `react/jsx-runtime` を解決できず失敗。
 - Modal/Drawer/Toast は react-i18next・i18next・@heroicons/react の追加で build 成功。実行時は i18n 初期化と `common.close` 等の翻訳キーが必要。
-- Button は `loading/index.ts` 経由で loading 配下を全て取り込む。
+- Button は 「loading/index.ts」 経由で loading 配下を全て取り込む。
 - 依存版（SA frontend/package.json）: react/react-dom ^18.3.1、vite ^8.0.14、@vitejs/plugin-react ^6.0.2、typescript ^5.7.3、i18next ^26.1.0、react-i18next ^17.0.7、@heroicons/react ^2.2.0、lucide-react ^1.14.0。
 
 ## §D GitHub
