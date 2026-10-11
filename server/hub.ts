@@ -118,16 +118,6 @@ export class Hub {
     return this.lastNames;
   }
 
-  /** このアプリのセッションの子孫プロセスの pid（過去セッション一覧で「実行中」を判定する）。 */
-  async livePids(): Promise<Set<number>> {
-    const table = await readProcessTable().catch(() => []);
-    const pids = new Set<number>();
-    for (const s of this.sessions.list()) {
-      if (!s.exited) for (const pid of descendantPids(s.term.pid, table)) pids.add(pid);
-    }
-    return pids;
-  }
-
   /** 同時に複数回呼ばれても実行は 1 本にまとめる。 */
   refreshLedger(): Promise<LedgerSnapshot> {
     if (this.ledgerInFlight) return this.ledgerInFlight;

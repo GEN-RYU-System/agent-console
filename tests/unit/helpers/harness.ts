@@ -51,7 +51,7 @@ export interface HarnessOptions {
   port?: number;
   ledgerScript?: string;
   maxSessions?: number;
-  /** claude 役のスタブ（`agents --json` / `--all --json` の出力を返す）。既定は存在しないパス */
+  /** claude 役のスタブ（`agents --json` の出力を返す）。既定は存在しないパス */
   claudeBin?: string;
   /** 区切りの通知の送信先（既定は送らない） */
   sendNotification?: (body: string) => void;

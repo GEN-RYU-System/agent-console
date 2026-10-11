@@ -9,7 +9,7 @@ import {
   checkQuickPromptSend,
   createSession,
   fetchLedger,
-  fetchPastSessions,
+  fetchResumeTargets,
   fetchQuickPrompts,
   fetchState,
   getSessionToken,
@@ -24,14 +24,14 @@ import {
 import { LedgerBoard } from "../components/LedgerBoard/LedgerBoard";
 import { MemoryPanel } from "../components/MemoryPanel/MemoryPanel";
 import { NewSessionForm, type NewSessionValues } from "../components/NewSessionForm/NewSessionForm";
-import { PastSessionsList } from "../components/PastSessions/PastSessionsList";
+import { ResumePicker } from "../components/ResumePicker/ResumePicker";
 import { QuickPromptBar } from "../components/QuickPrompts/QuickPromptBar";
 import { QuickPromptEditor } from "../components/QuickPrompts/QuickPromptEditor";
 import { RenameForm } from "../components/RenameForm/RenameForm";
 import { SessionList } from "../components/SessionList/SessionList";
 import { ThemeToggle } from "../components/ThemeToggle/ThemeToggle";
 import { TerminalPane, type TerminalHandle } from "../components/TerminalPane/TerminalPane";
-import type { ConsoleState, LedgerSnapshot, PastSession, QuickPrompt, SessionView } from "../types";
+import type { ConsoleState, LedgerSnapshot, QuickPrompt, ResumeTarget, SessionView } from "../types";
 import "./ConsolePage.css";
 
 const LEDGER_POLL_MS = 60000;
@@ -86,11 +86,10 @@ export function ConsolePage() {
   const [renameBusy, setRenameBusy] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renameNotice, setRenameNotice] = useState<string | null>(null);
-  const [pastOpen, setPastOpen] = useState(false);
-  const [pastItems, setPastItems] = useState<PastSession[] | null>(null);
-  const [pastAvailable, setPastAvailable] = useState(true);
-  const [pastBusyId, setPastBusyId] = useState<string | null>(null);
-  const [pastError, setPastError] = useState<string | null>(null);
+  const [resumeOpen, setResumeOpen] = useState(false);
+  const [resumeItems, setResumeItems] = useState<ResumeTarget[] | null>(null);
+  const [resumeBusyPath, setResumeBusyPath] = useState<string | null>(null);
+  const [resumeError, setResumeError] = useState<string | null>(null);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const terminalRef = useRef<TerminalHandle>(null);
   const selectedIdRef = useRef<string | null>(null);
@@ -181,33 +180,30 @@ export function ConsolePage() {
     }
   };
 
-  const openPastSessions = (): void => {
-    setPastOpen(true);
-    setPastItems(null);
-    setPastError(null);
-    fetchPastSessions().then(
-      (r) => {
-        setPastItems(r.items);
-        setPastAvailable(r.available);
-      },
+  const openResumePicker = (): void => {
+    setResumeOpen(true);
+    setResumeItems(null);
+    setResumeError(null);
+    fetchResumeTargets().then(
+      (r) => setResumeItems(r.items),
       (err: unknown) => {
-        setPastItems([]);
-        setPastError(err instanceof Error ? err.message : String(err));
+        setResumeItems([]);
+        setResumeError(err instanceof Error ? err.message : String(err));
       },
     );
   };
 
-  const handleResume = async (sessionId: string): Promise<void> => {
-    setPastBusyId(sessionId);
-    setPastError(null);
+  const handleResume = async (target: ResumeTarget): Promise<void> => {
+    setResumeBusyPath(target.path);
+    setResumeError(null);
     try {
-      const { id } = await resumeSession(sessionId);
+      const { id } = await resumeSession(target);
       setSelectedId(id);
-      setPastOpen(false);
+      setResumeOpen(false);
     } catch (err) {
-      setPastError(err instanceof Error ? err.message : String(err));
+      setResumeError(err instanceof Error ? err.message : String(err));
     } finally {
-      setPastBusyId(null);
+      setResumeBusyPath(null);
     }
   };
 
@@ -232,7 +228,6 @@ export function ConsolePage() {
   const activeId = state.sessions.some((s) => s.id === selectedId) ? selectedId : null;
   const activeSession = state.sessions.find((s) => s.id === activeId);
   const renameTarget = state.sessions.find((s) => s.id === renameTargetId);
-  const canResume = state.roles.some((r) => r.canResume);
 
   return (
     <div className="ac-page">
@@ -244,8 +239,8 @@ export function ConsolePage() {
           </Button>
         </div>
         <div className="ac-page__subbar">
-          <Button variant="outline" size="sm" onClick={openPastSessions}>
-            {t("ac.pastSessions")}
+          <Button variant="outline" size="sm" onClick={openResumePicker}>
+            {t("ac.resumeOpen")}
           </Button>
         </div>
         {removeError !== null && (
@@ -322,8 +317,8 @@ export function ConsolePage() {
       <Modal open={quickEditorOpen} onClose={() => setQuickEditorOpen(false)} title={t("ac.quick.editTitle")} size="md">
         <QuickPromptEditor prompts={quickPrompts} onChanged={loadQuickPrompts} />
       </Modal>
-      <Modal open={pastOpen} onClose={() => setPastOpen(false)} title={t("ac.past.title")} size="lg">
-        <PastSessionsList items={pastItems} available={pastAvailable} canResume={canResume} roles={state.roles} busyId={pastBusyId} error={pastError} onResume={(id) => void handleResume(id)} />
+      <Modal open={resumeOpen} onClose={() => setResumeOpen(false)} title={t("ac.resume.title")} size="lg">
+        <ResumePicker items={resumeItems} busyPath={resumeBusyPath} error={resumeError} onResume={(target) => void handleResume(target)} />
       </Modal>
       <Modal open={memoryOpen} onClose={() => setMemoryOpen(false)} title={t("ac.memory.title")} size="md">
         <MemoryPanel open={memoryOpen} />

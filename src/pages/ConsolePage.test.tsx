@@ -7,10 +7,10 @@ import type { ConsoleState } from "../types";
 const state: ConsoleState = {
   sessions: [{ id: "s1", name: "dead", roleId: "shell", branch: null, cwd: "/", state: "stopped", createdAt: 1, unread: 0, hasClaude: false, canInput: false }],
   agentsAvailable: true,
-  roles: [{ id: "shell", labelKey: "role.shell", needsWorktree: false, canResume: false }],
+  roles: [{ id: "shell", labelKey: "role.shell", needsWorktree: false }],
   saSource: "abcdef0123456789",
   claudeVersion: "1.0.0",
-  appVersion: "0.3.2",
+  appVersion: "0.3.3",
   commit: "abcdef0123456789abcdef0123456789abcdef01",
 };
 
@@ -22,6 +22,8 @@ const checkQuickPromptSend = vi.fn();
 const pasteAndEnter = vi.fn();
 const fetchQuickPrompts = vi.fn();
 const renameSession = vi.fn();
+const fetchResumeTargets = vi.fn();
+const resumeSession = vi.fn();
 
 vi.mock("../api", () => ({
   ApiError: class extends Error {
@@ -43,8 +45,8 @@ vi.mock("../api", () => ({
   checkQuickPromptSend: (id: string, promptId: string) => checkQuickPromptSend(id, promptId),
   fetchQuickPrompts: () => fetchQuickPrompts(),
   renameSession: (id: string, name: string) => renameSession(id, name),
-  fetchPastSessions: vi.fn(async () => ({ available: true, items: [] })),
-  resumeSession: vi.fn(),
+  fetchResumeTargets: () => fetchResumeTargets(),
+  resumeSession: (t: { kind: string; path: string }) => resumeSession(t),
   fetchMemory: vi.fn(async () => ({ sessions: [], serverRssMb: 1, system: null })),
   openSocket: () => new FakeWebSocket(),
 }));
@@ -92,6 +94,10 @@ beforeEach(() => {
   checkQuickPromptSend.mockResolvedValue({ text: "run tests" });
   pasteAndEnter.mockReset();
   renameSession.mockReset();
+  fetchResumeTargets.mockReset();
+  fetchResumeTargets.mockResolvedValue({ items: [{ kind: "worktree", path: "/wt/release-a", branch: "release/a", roleId: "sonnet-impl" }] });
+  resumeSession.mockReset();
+  resumeSession.mockResolvedValue({ id: "s1" });
   fetchQuickPrompts.mockReset();
   fetchQuickPrompts.mockResolvedValue({ items: [{ id: "p1", label: "テスト実行", text: "run tests" }] });
   logout.mockResolvedValue(undefined);
@@ -120,10 +126,20 @@ describe("ConsolePage removing a stopped session", () => {
   });
 });
 
+describe("ConsolePage resume picker (K1-K3 screen side)", () => {
+  it("opens the picker, lists the worktree row and sends only kind and path when 再開 is pressed", async () => {
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByRole("button", { name: "過去の会話を再開" }));
+    expect(await screen.findByText("Sonnet 実装役（release/a）")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "再開" }));
+    await waitFor(() => expect(resumeSession).toHaveBeenCalledWith({ kind: "worktree", path: "/wt/release-a", branch: "release/a", roleId: "sonnet-impl" }));
+  });
+});
+
 describe("ConsolePage footer and authorization", () => {
   it("shows the app version in the footer", async () => {
     render(<ConsolePage />);
-    expect((await screen.findByTestId("app-version")).textContent).toContain("0.3.2");
+    expect((await screen.findByTestId("app-version")).textContent).toContain("0.3.3");
   });
 
   it("shows a login-required callout on 401", async () => {

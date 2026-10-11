@@ -18,7 +18,6 @@ export interface RoleView {
   id: string;
   labelKey: string;
   needsWorktree: boolean;
-  canResume: boolean;
 }
 
 export interface ConsoleState {
@@ -58,16 +57,13 @@ export interface QuickPrompt {
   text: string;
 }
 
-export interface PastSession {
-  sessionId: string;
-  name: string;
-  cwd: string;
-  startedAt: number | null;
-  status: "busy" | "waiting" | "idle" | "unknown";
-  /** null のとき再開できる。running=今動いている / outside=本店でも本店のワークツリーでもない / missing=存在しない / noRole=その作業場所で再開できる役割が設定に無い */
-  blocked: "running" | "outside" | "missing" | "noRole" | null;
-  /** 再開に使う役割の id（RoleView.id）。再開できない行は null */
-  resumeRoleId: string | null;
+/** 再開先の1行（本店=Opus 設計役 / 本店の worktree=Sonnet 実装役）。会話の一覧は持たない。 */
+export interface ResumeTarget {
+  kind: "main" | "worktree";
+  path: string;
+  branch: string | null;
+  /** 再開に使う役割の id（RoleView.id） */
+  roleId: string;
 }
 
 export interface MemorySnapshot {

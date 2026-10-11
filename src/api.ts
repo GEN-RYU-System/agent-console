@@ -1,4 +1,4 @@
-import type { ConsoleState, LedgerSnapshot, MemorySnapshot, PastSession, QuickPrompt } from "./types";
+import type { ConsoleState, LedgerSnapshot, MemorySnapshot, QuickPrompt, ResumeTarget } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -65,9 +65,10 @@ export const deleteQuickPrompt = (id: string): Promise<{ removed: boolean }> =>
 /** サーバーが状態を取り直して、入れてよければ本文を返す（サーバーは端末へ書かない。画面が paste() で入れる）。 */
 export const checkQuickPromptSend = (sessionId: string, promptId: string): Promise<{ text: string }> =>
   request(`/api/sessions/${encodeURIComponent(sessionId)}/send-check`, { method: "POST", body: JSON.stringify({ promptId }) });
-export const fetchPastSessions = (): Promise<{ available: boolean; items: PastSession[] }> => request("/api/past-sessions");
-export const resumeSession = (sessionId: string): Promise<{ id: string }> =>
-  request("/api/sessions/resume", { method: "POST", body: JSON.stringify({ sessionId }) });
+export const fetchResumeTargets = (): Promise<{ items: ResumeTarget[] }> => request("/api/resume-targets");
+/** 再開用の端末を開く。会話の選択は端末内の Claude 公式の選択リストで人が行う（kind と path だけを送る）。 */
+export const resumeSession = (target: Pick<ResumeTarget, "kind" | "path">): Promise<{ id: string }> =>
+  request("/api/sessions/resume", { method: "POST", body: JSON.stringify({ kind: target.kind, path: target.path }) });
 export const fetchMemory = (): Promise<MemorySnapshot> => request("/api/memory");
 
 /** ペアリングコードを引換えてセッショントークンを得る（認証前の API）。 */

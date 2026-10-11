@@ -35,7 +35,6 @@ async function openPaired(page: Page): Promise<void> {
 
 const NAME_FILE = process.env.AC_E2E_NAME_FILE as string;
 const SLOW_FILE = process.env.AC_E2E_SLOW_FILE as string;
-const ALL_FILE = process.env.AC_E2E_ALL_FILE as string;
 const OSASCRIPT_LOG = process.env.AC_E2E_OSASCRIPT_LOG as string;
 const DATA_DIR = process.env.AC_E2E_DATA_DIR as string;
 const SHOT_DIR = process.env.AC_SHOT_DIR;
@@ -573,9 +572,8 @@ test("段階2 K3: 状態確認中に別のセッションへ切り替えると�
   await fetch(`${BASE}/api/quick-prompts/${promptId}`, { method: "DELETE", headers: BEARER });
 });
 
-test("段階2 K4: 過去のセッション一覧から Sonnet 実装役を選ぶと、同じ作業場所で --resume 相当の起動をする", async ({ page }) => {
-  const sessionId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
-  // 再開できるのは本店のワークツリーの行だけ。ワークツリーは役割 e2e-wt の起動で作る
+test("v0.3.3 K1-K4・K6: 過去の会話を再開は、本店の行と worktree の行を出し、押した場所で再開用の端末を開く", async ({ page }) => {
+  // worktree は役割 e2e-wt の起動で作る
   const wtRes = await fetch(`${BASE}/api/sessions`, {
     method: "POST",
     headers: { ...BEARER, "Content-Type": "application/json" },
@@ -585,37 +583,33 @@ test("段階2 K4: 過去のセッション一覧から Sonnet 実装役を選ぶ
   const state = (await (await fetch(`${BASE}/api/state`, { headers: BEARER })).json()) as { sessions: Array<{ id: string; cwd: string }> };
   const wtCwd = state.sessions.find((x) => x.cwd.endsWith("release-e2e-resume"))?.cwd as string;
   expect(wtCwd).toBeTruthy();
-  writeFileSync(
-    ALL_FILE,
-    JSON.stringify([
-      { pid: 1, cwd: wtCwd, kind: "interactive", startedAt: Date.now() - 3600000, sessionId, name: "past-work", status: "idle" },
-      { pid: 3, cwd: ROOT, kind: "interactive", startedAt: Date.now() - 5400000, sessionId: "cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "designer", status: "idle" },
-      { pid: 2, cwd: "/", kind: "interactive", startedAt: Date.now() - 7200000, sessionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "outside", status: "idle" },
-    ]),
-  );
   await openPaired(page);
-  await page.getByRole("button", { name: "過去のセッション", exact: true }).click();
-  const item = page.locator(`[data-testid="past-session"][data-session-id="${sessionId}"]`);
-  await expect(item).toContainText("past-work");
-  await expect(item.getByTestId("past-role")).toContainText("Sonnet 実装");
-  await shoot(page, "04-past-sessions");
-  await item.getByRole("button", { name: "再開", exact: true }).click();
-  await expect(page.getByTestId("terminal")).toContainText(`RESUMED=${sessionId}`);
+  await page.getByRole("button", { name: "過去の会話を再開", exact: true }).click();
+  await expect(page.getByTestId("resume-guide")).toContainText("Ctrl+W");
+  await expect(page.getByTestId("resume-guide")).toContainText("今動いている会話は選ばない");
+  const mainRow = page.locator('[data-testid="resume-target"][data-kind="main"]');
+  await expect(mainRow).toContainText("Opus 設計役（本店）");
+  const wtRow = page.locator(`[data-testid="resume-target"][data-path="${wtCwd}"]`);
+  await expect(wtRow).toContainText("Sonnet 実装役（release/e2e-resume）");
+  await page.getByLabel("worktree を名前で絞り込む").fill("no-such-name");
+  await expect(wtRow).toHaveCount(0);
+  await expect(mainRow).toHaveCount(1);
+  await page.getByLabel("worktree を名前で絞り込む").fill("e2e-resume");
+  await shoot(page, "04-resume-picker");
+  await wtRow.getByRole("button", { name: "再開", exact: true }).click();
+  await expect(page.getByTestId("terminal")).toContainText("RESUMED_WT id=[]");
   await expect(page.getByTestId("terminal")).toContainText(`READY ${wtCwd}`);
-  await expect(page.getByTestId("session-row").filter({ hasText: "past-work" })).toHaveCount(1);
 
-  // 本店そのもの（Opus 設計役）・本店のワークツリーでない行は「再開不可（理由）」で、ボタンは無効（サーバーも拒否する）
-  await page.getByRole("button", { name: "過去のセッション", exact: true }).click();
-  const designer = page.locator('[data-testid="past-session"][data-session-id="cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb"]');
-  await expect(designer.getByTestId("past-blocked")).toContainText("再開できる役割が設定にありません");
-  await expect(designer.getByRole("button", { name: "再開", exact: true })).toBeDisabled();
-  const outside = page.locator('[data-testid="past-session"][data-session-id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"]');
-  await expect(outside.getByTestId("past-blocked")).toContainText("ワークツリーではありません");
-  for (const blockedId of ["cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"]) {
-    const r = await fetch(`${BASE}/api/sessions/resume`, { method: "POST", headers: { ...BEARER, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: blockedId }) });
+  await page.getByRole("button", { name: "過去の会話を再開", exact: true }).click();
+  await page.locator('[data-testid="resume-target"][data-kind="main"]').getByRole("button", { name: "再開", exact: true }).click();
+  await expect(page.getByTestId("terminal")).toContainText("RESUMED_MAIN id=[]");
+  await expect(page.getByTestId("terminal")).toContainText(`READY ${ROOT}`);
+
+  // 範囲外（本店でも worktree 一覧にもない場所）はサーバーが拒否する
+  for (const body of [{ kind: "worktree", path: "/" }, { kind: "worktree", path: "relative/dir" }, { kind: "main", path: wtCwd }]) {
+    const r = await fetch(`${BASE}/api/sessions/resume`, { method: "POST", headers: { ...BEARER, "Content-Type": "application/json" }, body: JSON.stringify(body) });
     expect(r.status).toBe(400);
   }
-  writeFileSync(ALL_FILE, "[]");
 });
 
 test("段階2 K5: 台帳は既定で作業中・レビュー・WIP かつ直近 30 日だけを表示し、隠れた件数と日付不明を別に数え、絞り込みは再読込後も残る", async ({ page }) => {

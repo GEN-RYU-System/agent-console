@@ -16,7 +16,7 @@
       "command": ["/bin/zsh", "-ic", "ccopusgo"],
       "needsWorktree": false,
       "resumeScope": "main",
-      "resumeCommand": ["/bin/zsh", "-ic", "ccopusgo --resume \"$AC_RESUME_ID\""]
+      "resumeCommand": ["/bin/zsh", "-ic", "ccopusgo --resume"]
     },
     {
       "id": "sonnet-impl",
@@ -24,7 +24,7 @@
       "command": ["/bin/zsh", "-ic", "claude --model sonnet"],
       "needsWorktree": true,
       "resumeScope": "worktree",
-      "resumeCommand": ["/bin/zsh", "-ic", "claude --model sonnet --resume \"$AC_RESUME_ID\""]
+      "resumeCommand": ["/bin/zsh", "-ic", "claude --model sonnet --resume"]
     },
     { "id": "shell", "labelKey": "role.shell", "command": ["/bin/zsh", "-i"], "needsWorktree": false }
   ]

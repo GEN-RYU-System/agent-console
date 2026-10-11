@@ -6,8 +6,8 @@ import type { RoleView } from "../../types";
 import { NewSessionForm } from "./NewSessionForm";
 
 const roles: RoleView[] = [
-  { id: "shell", labelKey: "role.shell", needsWorktree: false, canResume: false },
-  { id: "sonnet-impl", labelKey: "role.sonnetImpl", needsWorktree: true, canResume: false },
+  { id: "shell", labelKey: "role.shell", needsWorktree: false },
+  { id: "sonnet-impl", labelKey: "role.sonnetImpl", needsWorktree: true },
 ];
 
 describe("NewSessionForm", () => {

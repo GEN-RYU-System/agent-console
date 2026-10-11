@@ -5,7 +5,7 @@ import "../../i18n";
 import type { RoleView, SessionView } from "../../types";
 import { SessionList } from "./SessionList";
 
-const roles: RoleView[] = [{ id: "shell", labelKey: "role.shell", needsWorktree: false, canResume: false }];
+const roles: RoleView[] = [{ id: "shell", labelKey: "role.shell", needsWorktree: false }];
 const sessions: SessionView[] = [
   { id: "a", name: "first", roleId: "shell", branch: null, cwd: "/", state: "working", createdAt: 1, unread: 0, hasClaude: true, canInput: false },
   { id: "b", name: "second", roleId: "shell", branch: null, cwd: "/", state: "stopped", createdAt: 2, unread: 2, hasClaude: false, canInput: false },

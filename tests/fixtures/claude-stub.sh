@@ -5,11 +5,6 @@
 case "${1:-}" in
   --version) echo "0.0.0-stub (Claude Code)"; exit 0 ;;
   agents)
-    # `agents --all --json`: 過去のセッション一覧。$STUB_ALL_FILE の JSON をそのまま返す（無ければ空）
-    if [ "${2:-}" = "--all" ]; then
-      cat "${STUB_ALL_FILE:-/dev/null}" 2>/dev/null || echo '[]'
-      exit 0
-    fi
     # $STUB_SLOW_FILE に秒数があるときだけ、その秒数待ってから答える（状態確認が遅い場面の再現用）
     SLOW="$(cat "${STUB_SLOW_FILE:-/dev/null}" 2>/dev/null | head -1)"
     [ -n "${SLOW}" ] && sleep "${SLOW}"
