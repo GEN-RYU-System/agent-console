@@ -457,28 +457,42 @@ test("段階2 K1: busy→idle で未読の印・窓タイトル・macOS 通知�
   await expect(page).toHaveTitle("Agent Console");
 });
 
-test("段階2 K2: 名前を変えると /rename が端末に送られ、Claude 側の名前が変われば表示も変わる。作業中は変えられない", async ({ page }) => {
+test("段階2 K2: 名前を変えると /rename が端末に送られ、Claude 側の名前が変われば表示も変わる。作業中は予約され、待機になってから送られる", async ({ page }) => {
   const id = await apiCreate("rename-target", "e2e-plain");
   await openPaired(page);
   const row = rowOf(page, id);
+  const pencil = row.getByRole("button", { name: "名前を変える", exact: true });
+  const form = page.getByTestId("rename-form");
+  // K1: 1 回のクリックは選択だけ。名前のダブルクリックで名前を変える画面が開く
+  await row.getByTestId("session-name").click();
+  await expect(form).toHaveCount(0);
+  await row.getByTestId("session-name").dblclick();
+  await expect(form).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(form).toHaveCount(0);
   writeFileSync(STATUS_FILE, "busy");
   await expect(row.getByTestId("status")).toHaveAttribute("data-state", "working", { timeout: STATE_DEADLINE_MS });
-  await expect(row.getByRole("button", { name: "名前を変える", exact: true })).toBeDisabled();
-  // サーバーも 409（作業中・許可待ちへは /rename を送らない）
-  const renameStatus = async (): Promise<number> =>
-    (await fetch(`${BASE}/api/sessions/${id}/rename`, { method: "POST", headers: { ...BEARER, "Content-Type": "application/json" }, body: JSON.stringify({ name: "blocked" }) })).status;
-  expect(await renameStatus()).toBe(409);
-  writeFileSync(STATUS_FILE, "waiting");
-  await expect(row.getByTestId("status")).toHaveAttribute("data-state", "waiting", { timeout: STATE_DEADLINE_MS });
-  await expect(row.getByRole("button", { name: "名前を変える", exact: true })).toBeDisabled();
-  expect(await renameStatus()).toBe(409);
-  const form = page.getByTestId("rename-form");
-
-  writeFileSync(STATUS_FILE, "idle");
-  await expect(row.getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: STATE_DEADLINE_MS });
+  // 作業中でも鉛筆は押せる
+  await expect(pencil).toBeEnabled();
   await row.click();
   await expect(page.getByTestId("terminal")).toContainText("READY");
-  await row.getByRole("button", { name: "名前を変える", exact: true }).click();
+  await pencil.click();
+  await form.getByLabel("新しい名前", { exact: false }).fill("queued-by-ui");
+  await form.getByRole("button", { name: "変更", exact: true }).click();
+  // 予約: 行に予約中の名前が出て、端末にはまだ /rename が無い
+  await expect(row.getByTestId("pending-name")).toContainText("queued-by-ui");
+  await expect(page.getByTestId("terminal")).not.toContainText("/rename");
+  writeFileSync(STATUS_FILE, "waiting");
+  await expect(row.getByTestId("status")).toHaveAttribute("data-state", "waiting", { timeout: STATE_DEADLINE_MS });
+  await expect(page.getByTestId("terminal")).not.toContainText("/rename");
+  await expect(pencil).toBeEnabled();
+  // 待機になったら、予約した名前が 1 回送られ、予約表示が消える
+  writeFileSync(STATUS_FILE, "idle");
+  await expect(page.getByTestId("terminal")).toContainText("/rename queued-by-ui", { timeout: STATE_DEADLINE_MS });
+  await expect(row.getByTestId("pending-name")).toHaveCount(0);
+
+  // 待機中は今までどおりすぐ送る
+  await pencil.click();
   await form.getByLabel("新しい名前", { exact: false }).fill("renamed-by-ui");
   await form.getByRole("button", { name: "変更", exact: true }).click();
   await expect(page.getByTestId("terminal")).toContainText("/rename renamed-by-ui");

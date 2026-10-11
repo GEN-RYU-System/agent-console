@@ -13,11 +13,12 @@ interface Props {
   onSubmit: (name: string) => void;
 }
 
-/** 名前の変更。Claude 起動中は Claude の /rename（サーバーが取り直した status が idle のときだけ。canInput が false の間は押せない）、Claude が動いていなければアプリ側の名前。 */
+/** 名前の変更。Claude 起動中は Claude の /rename（待機のときはすぐ、作業中・許可待ちはサーバーが予約して待機になったら送る）、Claude が動いていなければアプリ側の名前。 */
 export function RenameForm({ session, busy, error, onSubmit }: Props) {
   const { t } = useTranslation();
   const [name, setName] = useState(session.name);
-  const blocked = !session.canInput;
+  const blocked = session.state === "stopped";
+  const willQueue = !blocked && !session.canInput;
 
   const handleSubmit = (e: FormEvent): void => {
     e.preventDefault();
@@ -37,7 +38,7 @@ export function RenameForm({ session, busy, error, onSubmit }: Props) {
           disabled={blocked}
           fullWidth
         />
-        {blocked && <Callout variant="info" title={t("ac.rename.busyTitle")}>{t("ac.rename.busyBody")}</Callout>}
+        {willQueue && <Callout variant="info" title={t("ac.rename.queueTitle")}>{t("ac.rename.queueBody")}</Callout>}
         {error !== null && (
           <Callout variant="warning" title={t("ac.rename.error")}>
             {error}

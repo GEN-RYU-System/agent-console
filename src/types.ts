@@ -12,6 +12,8 @@ export interface SessionView {
   hasClaude: boolean;
   /** 今、名前の変更・よく使う指示を入れてよい状態か（Claude 起動中は idle のときだけ） */
   canInput: boolean;
+  /** 名前の変更を予約中のとき、その名前（待機になったら自動で変わる） */
+  pendingName?: string;
 }
 
 export interface RoleView {

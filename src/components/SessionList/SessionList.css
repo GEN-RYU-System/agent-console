@@ -48,3 +48,7 @@
   font-size: var(--font-xs);
   color: var(--text-secondary);
 }
+
+.ac-session__pending {
+  color: var(--text-primary);
+}
