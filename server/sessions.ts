@@ -70,6 +70,7 @@ export function buildChildEnv(source: Record<string, string | undefined>): Recor
 export class SessionManager {
   private readonly sessions = new Map<string, Session>();
   private changeListeners = new Set<() => void>();
+  private removedListeners = new Set<(id: string) => void>();
   private readonly maxSessions: number;
   /** worktree 作成中など、まだ sessions に入っていない作成途中の数（上限判定に含める）。 */
   private pending = 0;
@@ -84,6 +85,11 @@ export class SessionManager {
   onChange(listener: () => void): () => void {
     this.changeListeners.add(listener);
     return () => this.changeListeners.delete(listener);
+  }
+
+  onRemoved(listener: (id: string) => void): () => void {
+    this.removedListeners.add(listener);
+    return () => this.removedListeners.delete(listener);
   }
 
   private notify(): void {
@@ -127,13 +133,39 @@ export class SessionManager {
     }
   }
 
-  private spawnSession(name: string, role: RoleConfig, branch: string | null, cwd: string): Session {
-    const term = spawn(role.command[0], role.command.slice(1), {
+  /**
+   * 過去のセッションを再開する。起動コマンドは役割の resumeCommand、sessionId は環境変数 AC_RESUME_ID で渡す
+   * （コマンド文字列に連結しない）。cwd の検証は呼び出し側（past-sessions.ts）で済ませる。
+   */
+  resume(input: { roleId: unknown; name: unknown; sessionId: string; cwd: string }): Session {
+    const role = this.findRole(input.roleId);
+    if (!role.resumeCommand) throw new SessionInputError("role cannot resume sessions");
+    if (this.sessions.size + this.pending >= this.maxSessions) throw new SessionInputError("too many sessions");
+    return this.spawnSession(validateName(input.name), role, null, input.cwd, role.resumeCommand, { AC_RESUME_ID: input.sessionId });
+  }
+
+  /** アプリ側の名前を変える（Claude が動いていないセッション用。Claude 起動中は /rename を使う）。 */
+  rename(id: string, name: unknown): void {
+    const session = this.sessions.get(id);
+    if (!session) throw new SessionNotFoundError("session not found");
+    session.name = validateName(name);
+    this.notify();
+  }
+
+  private spawnSession(
+    name: string,
+    role: RoleConfig,
+    branch: string | null,
+    cwd: string,
+    command: string[] = role.command,
+    extraEnv: Record<string, string> = {},
+  ): Session {
+    const term = spawn(command[0], command.slice(1), {
       name: "xterm-256color",
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
       cwd,
-      env: buildChildEnv(process.env),
+      env: { ...buildChildEnv(process.env), ...extraEnv },
     });
     const session: Session = {
       id: randomUUID(),
@@ -169,6 +201,7 @@ export class SessionManager {
     if (!session.exited) throw new SessionConflictError("session is still running");
     for (const ws of session.clients) ws.close();
     this.sessions.delete(id);
+    for (const l of this.removedListeners) l(id);
     this.notify();
   }
 

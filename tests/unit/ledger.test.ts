@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyLookupFailure, groupByState, isSafeLedgerBranch, loadLedger, parseBranchLine, parseLedgerRow } from "../../server/ledger.ts";
+import { classifyLookupFailure, groupByState, isSafeLedgerBranch, loadLedger, parseBranchLine, parseLedgerRow, parseStartedAt } from "../../server/ledger.ts";
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -13,7 +13,7 @@ describe("ledger parsing", () => {
 
   it("takes the 4th column as the state", () => {
     const row = "| release/x | area | 2026-09-26 | IN_PROGRESS | | | note |";
-    expect(parseLedgerRow(row)).toEqual({ branch: "release/x", state: "IN_PROGRESS" });
+    expect(parseLedgerRow(row)).toEqual({ branch: "release/x", state: "IN_PROGRESS", startedAtText: "2026-09-26" });
   });
 
   it("returns null for rows with fewer than 4 columns", () => {
@@ -24,10 +24,10 @@ describe("ledger parsing", () => {
 describe("groupByState", () => {
   it("buckets known states and falls back to OTHER / UNREGISTERED", () => {
     const g = groupByState([
-      { branch: "a", result: { kind: "found", state: "IN_PROGRESS" } },
-      { branch: "b", result: { kind: "found", state: "REVIEW" } },
-      { branch: "c", result: { kind: "found", state: "DONE" } },
-      { branch: "d", result: { kind: "found", state: "ABANDONED" } },
+      { branch: "a", result: { kind: "found", state: "IN_PROGRESS", startedAt: null } },
+      { branch: "b", result: { kind: "found", state: "REVIEW", startedAt: null } },
+      { branch: "c", result: { kind: "found", state: "DONE", startedAt: null } },
+      { branch: "d", result: { kind: "found", state: "ABANDONED", startedAt: null } },
       { branch: "e", result: { kind: "unregistered" } },
       { branch: "f", result: { kind: "conflict" } },
       { branch: "g", result: { kind: "error", message: "x" } },
@@ -95,5 +95,16 @@ describe("loadLedger", () => {
     mkdirSync(path.join(root, "ledger", "dir.md"));
     const snap = await loadLedger(root, "ledger", "scripts/lookup.sh");
     expect(snap.errors.some((e) => e.branch === "dir.md")).toBe(true);
+  });
+});
+
+describe("parseStartedAt", () => {
+  it("reads YYYY-MM-DD HH:MM as local time", () => {
+    expect(parseStartedAt("2026-10-11 09:30")).toBe(new Date(2026, 9, 11, 9, 30).getTime());
+  });
+  it("returns null for other formats, wrong calendar dates and noise", () => {
+    for (const text of ["20260920_010000", "2026-10-11", "2026-13-01 00:00", "2026-02-30 10:00", "", "abc | def", "2026-10-11T09:30"]) {
+      expect(parseStartedAt(text)).toBeNull();
+    }
   });
 });

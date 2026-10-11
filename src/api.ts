@@ -1,4 +1,4 @@
-import type { ConsoleState, LedgerSnapshot } from "./types";
+import type { ConsoleState, LedgerSnapshot, MemorySnapshot, PastSession, QuickPrompt } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -51,6 +51,24 @@ export const removeSession = (id: string): Promise<{ removed: boolean }> =>
   request(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
 export const createSession = (input: { name: string; roleId: string; branch?: string }): Promise<{ id: string }> =>
   request("/api/sessions", { method: "POST", body: JSON.stringify(input) });
+
+export const markRead = (id: string): Promise<{ read: boolean }> => request(`/api/sessions/${encodeURIComponent(id)}/read`, { method: "POST" });
+export const renameSession = (id: string, name: string): Promise<{ mode: "claude" | "app" }> =>
+  request(`/api/sessions/${encodeURIComponent(id)}/rename`, { method: "POST", body: JSON.stringify({ name }) });
+export const fetchQuickPrompts = (): Promise<{ items: QuickPrompt[] }> => request("/api/quick-prompts");
+export const createQuickPrompt = (input: { label: string; text: string }): Promise<QuickPrompt> =>
+  request("/api/quick-prompts", { method: "POST", body: JSON.stringify(input) });
+export const updateQuickPrompt = (id: string, input: { label: string; text: string }): Promise<QuickPrompt> =>
+  request(`/api/quick-prompts/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(input) });
+export const deleteQuickPrompt = (id: string): Promise<{ removed: boolean }> =>
+  request(`/api/quick-prompts/${encodeURIComponent(id)}`, { method: "DELETE" });
+/** サーバーが状態を取り直して、入れてよければ本文を返す（サーバーは端末へ書かない。画面が paste() で入れる）。 */
+export const checkQuickPromptSend = (sessionId: string, promptId: string): Promise<{ text: string }> =>
+  request(`/api/sessions/${encodeURIComponent(sessionId)}/send-check`, { method: "POST", body: JSON.stringify({ promptId }) });
+export const fetchPastSessions = (): Promise<{ available: boolean; items: PastSession[] }> => request("/api/past-sessions");
+export const resumeSession = (sessionId: string): Promise<{ id: string }> =>
+  request("/api/sessions/resume", { method: "POST", body: JSON.stringify({ sessionId }) });
+export const fetchMemory = (): Promise<MemorySnapshot> => request("/api/memory");
 
 /** ペアリングコードを引換えてセッショントークンを得る（認証前の API）。 */
 export async function redeemCode(code: string): Promise<string> {

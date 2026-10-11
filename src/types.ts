@@ -8,12 +8,17 @@ export interface SessionView {
   cwd: string;
   state: SessionState;
   createdAt: number;
+  unread: number;
+  hasClaude: boolean;
+  /** 今、名前の変更・よく使う指示を入れてよい状態か（Claude 起動中は idle のときだけ） */
+  canInput: boolean;
 }
 
 export interface RoleView {
   id: string;
   labelKey: string;
   needsWorktree: boolean;
+  canResume: boolean;
 }
 
 export interface ConsoleState {
@@ -26,7 +31,7 @@ export interface ConsoleState {
   commit: string;
 }
 
-export type LookupResult = { kind: "found"; state: string } | { kind: "unregistered" } | { kind: "conflict" };
+export type LookupResult = { kind: "found"; state: string; startedAt: number | null } | { kind: "unregistered" } | { kind: "conflict" };
 
 export interface LedgerError {
   branch: string;
@@ -46,3 +51,25 @@ export interface LedgerCard {
 export const LEDGER_COLUMNS = ["IN_PROGRESS", "REVIEW", "DONE", "OTHER", "UNREGISTERED"] as const;
 export type LedgerColumn = (typeof LEDGER_COLUMNS)[number];
 export type LedgerGroups = Record<LedgerColumn, LedgerCard[]>;
+
+export interface QuickPrompt {
+  id: string;
+  label: string;
+  text: string;
+}
+
+export interface PastSession {
+  sessionId: string;
+  name: string;
+  cwd: string;
+  startedAt: number | null;
+  status: "busy" | "waiting" | "idle" | "unknown";
+  /** null のとき再開できる。running=今動いている / main=本店そのもの / outside=本店のワークツリーでない / missing=存在しない */
+  blocked: "running" | "main" | "outside" | "missing" | null;
+}
+
+export interface MemorySnapshot {
+  sessions: Array<{ id: string; name: string; rssMb: number }>;
+  serverRssMb: number;
+  system: { totalMb: number; freePercent: number; usedPercent: number } | null;
+}

@@ -29,10 +29,13 @@ describe("readKeychainSecret", () => {
     await readKeychainSecret(bin).catch((e: Error) => expect(e.message).not.toContain(SECRET));
   });
 
-  it("fails when the secret is empty or malformed", async () => {
-    await expect(readKeychainSecret(stub("echo").bin)).rejects.toThrow(/keychain/i);
-    await expect(readKeychainSecret(stub('echo "short"').bin)).rejects.toThrow(/keychain/i);
-    await expect(readKeychainSecret(stub('echo "bad chars here!!bad chars here!!bad chars here!!"').bin)).rejects.toThrow(/keychain/i);
+  // 1 件ごとに bash を起動する。負荷時に 1 つの it が 5 秒に近づかないよう、1 件ずつ別の it にする
+  it.each([
+    ["empty", "echo"],
+    ["too short", 'echo "short"'],
+    ["bad characters", 'echo "bad chars here!!bad chars here!!bad chars here!!"'],
+  ])("fails when the secret is %s", async (_label, body) => {
+    await expect(readKeychainSecret(stub(body).bin)).rejects.toThrow(/keychain/i);
   });
 
   it("fails when the binary does not exist", async () => {

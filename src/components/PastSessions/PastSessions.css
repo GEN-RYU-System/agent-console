@@ -1,0 +1,32 @@
+.ac-past__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.ac-past__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.ac-past__name {
+  font-size: var(--font-md);
+  font-weight: var(--font-weight-semi);
+  color: var(--text-primary);
+}
+
+.ac-past__muted {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.ac-past__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}

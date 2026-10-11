@@ -7,7 +7,18 @@ export interface RoleConfig {
   labelKey: string;
   command: string[];
   needsWorktree: boolean;
+  /** 過去のセッションを再開する起動コマンド。sessionId は環境変数 AC_RESUME_ID で渡す（コマンド文字列に連結しない）。 */
+  resumeCommand?: string[];
 }
+
+export interface NotifyConfig {
+  /** 区切りの macOS 通知（既定 true） */
+  macos: boolean;
+  osascriptBin: string;
+}
+
+export const DEFAULT_OSASCRIPT_BIN = "/usr/bin/osascript";
+export const DEFAULT_DATA_DIR = "~/Library/Application Support/agent-console";
 
 export interface Config {
   port: number;
@@ -20,6 +31,9 @@ export interface Config {
   ledgerPollMs: number;
   ringBufferBytes: number;
   roles: RoleConfig[];
+  /** よく使う指示などアプリが保存するデータの置き場 */
+  dataDir: string;
+  notify: NotifyConfig;
 }
 
 const STRING_KEYS = ["salesanchorRoot", "newWorktreeScript", "ledgerLookupScript", "ledgerDir", "claudeBin"] as const;
@@ -40,7 +54,29 @@ function parseRole(raw: unknown, index: number): RoleConfig {
     throw new Error(`config: roles[${index}].command must be a non-empty string array`);
   }
   if (typeof r.needsWorktree !== "boolean") throw new Error(`config: roles[${index}].needsWorktree must be boolean`);
-  return { id: r.id, labelKey: r.labelKey, command: r.command as string[], needsWorktree: r.needsWorktree };
+  const role: RoleConfig = { id: r.id, labelKey: r.labelKey, command: r.command as string[], needsWorktree: r.needsWorktree };
+  if (r.resumeCommand === undefined) return role;
+  if (!Array.isArray(r.resumeCommand) || r.resumeCommand.length === 0 || !r.resumeCommand.every((c) => typeof c === "string")) {
+    throw new Error(`config: roles[${index}].resumeCommand must be a non-empty string array`);
+  }
+  return { ...role, resumeCommand: r.resumeCommand as string[] };
+}
+
+function parseNotify(raw: unknown): NotifyConfig {
+  if (raw === undefined) return { macos: true, osascriptBin: DEFAULT_OSASCRIPT_BIN };
+  if (typeof raw !== "object" || raw === null) throw new Error("config: notify must be an object");
+  const n = raw as Record<string, unknown>;
+  if (n.macos !== undefined && typeof n.macos !== "boolean") throw new Error("config: notify.macos must be boolean");
+  if (n.osascriptBin !== undefined && (typeof n.osascriptBin !== "string" || n.osascriptBin === "")) {
+    throw new Error("config: notify.osascriptBin must be a non-empty string");
+  }
+  return { macos: (n.macos as boolean | undefined) ?? true, osascriptBin: (n.osascriptBin as string | undefined) ?? DEFAULT_OSASCRIPT_BIN };
+}
+
+function parseDataDir(raw: unknown): string {
+  if (raw === undefined) return expandHome(DEFAULT_DATA_DIR);
+  if (typeof raw !== "string" || raw === "") throw new Error("config: dataDir must be a non-empty string");
+  return expandHome(raw);
 }
 
 /** 設定の検証。必須キー欠落・型違いは起動中止（例外）にする。 */
@@ -72,6 +108,8 @@ export function parseConfig(raw: unknown): Config {
     ledgerPollMs: o.ledgerPollMs as number,
     ringBufferBytes: o.ringBufferBytes as number,
     roles,
+    dataDir: parseDataDir(o.dataDir),
+    notify: parseNotify(o.notify),
   };
 }
 
