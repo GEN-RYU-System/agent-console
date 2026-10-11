@@ -173,6 +173,12 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
     return true;
   }
   const promptMatch = /^\/api\/quick-prompts\/([^/]+)$/.exec(url.pathname);
+  const moveMatch = /^\/api\/quick-prompts\/([^/]+)\/move$/.exec(url.pathname);
+  if (moveMatch && method === "POST") {
+    await quickPrompts.move(moveMatch[1], jsonBody(await readJsonBody(req)).direction);
+    sendJson(res, 200, { moved: true });
+    return true;
+  }
   if (promptMatch && method === "PUT") {
     const body = jsonBody(await readJsonBody(req));
     sendJson(res, 200, await quickPrompts.update(promptMatch[1], { label: body.label, text: body.text }));

@@ -7,10 +7,12 @@ import { QuickPromptEditor } from "./QuickPromptEditor";
 const createQuickPrompt = vi.fn();
 const updateQuickPrompt = vi.fn();
 const deleteQuickPrompt = vi.fn();
+const moveQuickPrompt = vi.fn();
 vi.mock("../../api", () => ({
   createQuickPrompt: (i: unknown) => createQuickPrompt(i),
   updateQuickPrompt: (id: string, i: unknown) => updateQuickPrompt(id, i),
   deleteQuickPrompt: (id: string) => deleteQuickPrompt(id),
+  moveQuickPrompt: (id: string, d: string) => moveQuickPrompt(id, d),
 }));
 
 const prompts = [{ id: "p1", label: "テスト", text: "run tests" }];
@@ -19,6 +21,7 @@ beforeEach(() => {
   createQuickPrompt.mockReset().mockResolvedValue({});
   updateQuickPrompt.mockReset().mockResolvedValue({});
   deleteQuickPrompt.mockReset().mockResolvedValue({ removed: true });
+  moveQuickPrompt.mockReset().mockResolvedValue({ moved: true });
 });
 
 describe("QuickPromptEditor", () => {
@@ -56,5 +59,33 @@ describe("QuickPromptEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "追加" }));
     expect((await screen.findByRole("alert")).textContent).toContain("8KB");
     expect((screen.getByLabelText(/送る文章/) as HTMLTextAreaElement).value).toBe("y");
+  });
+  it("K2 disables up on the first row and down on the last row; K1 calls move for the others", async () => {
+    const onChanged = vi.fn();
+    const three = [
+      { id: "p1", label: "一", text: "1" },
+      { id: "p2", label: "二", text: "2" },
+      { id: "p3", label: "三", text: "3" },
+    ];
+    render(<QuickPromptEditor prompts={three} onChanged={onChanged} />);
+    const ups = screen.getAllByRole("button", { name: "上へ" }) as HTMLButtonElement[];
+    const downs = screen.getAllByRole("button", { name: "下へ" }) as HTMLButtonElement[];
+    expect(ups.map((b) => b.disabled)).toEqual([true, false, false]);
+    expect(downs.map((b) => b.disabled)).toEqual([false, false, true]);
+    fireEvent.click(ups[1]);
+    await waitFor(() => expect(moveQuickPrompt).toHaveBeenCalledWith("p2", "up"));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    fireEvent.click(downs[0]);
+    await waitFor(() => expect(moveQuickPrompt).toHaveBeenCalledWith("p1", "down"));
+  });
+
+  it("K4 renders rows in the order given by the props", () => {
+    const { rerender } = render(
+      <QuickPromptEditor prompts={[{ id: "p1", label: "一", text: "1" }, { id: "p2", label: "二", text: "2" }]} onChanged={() => {}} />,
+    );
+    const order = (): string[] => screen.getAllByTestId("quick-prompt-item").map((n) => n.querySelector(".ac-quick-editor__label")?.textContent ?? "");
+    expect(order()).toEqual(["一", "二"]);
+    rerender(<QuickPromptEditor prompts={[{ id: "p2", label: "二", text: "2" }, { id: "p1", label: "一", text: "1" }]} onChanged={() => {}} />);
+    expect(order()).toEqual(["二", "一"]);
   });
 });

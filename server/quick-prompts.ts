@@ -11,6 +11,8 @@ const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
 const FORMAT_VERSION = 1;
 
+export type MoveDirection = "up" | "down";
+
 export interface QuickPrompt {
   id: string;
   label: string;
@@ -123,6 +125,19 @@ export class QuickPromptStore {
       const items = await this.load();
       if (!items.some((p) => p.id === id)) throw new SessionNotFoundError("quick prompt not found");
       await this.save(items.filter((p) => p.id !== id));
+    });
+  }
+
+  /** 1 つ上／下の項目と入れ替える。並び順の正本は items の順番だけ（元の配列は変えず新しく作る）。 */
+  move(id: string, direction: unknown): Promise<void> {
+    return this.serial(async () => {
+      if (direction !== "up" && direction !== "down") throw new SessionInputError("direction must be up or down");
+      const items = await this.load();
+      const from = items.findIndex((p) => p.id === id);
+      if (from < 0) throw new SessionNotFoundError("quick prompt not found");
+      const to = direction === "up" ? from - 1 : from + 1;
+      if (to < 0 || to >= items.length) throw new SessionInputError("cannot move beyond the list");
+      await this.save(items.map((p, i) => (i === from ? items[to] : i === to ? items[from] : p)));
     });
   }
 }

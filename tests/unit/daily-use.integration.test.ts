@@ -227,6 +227,23 @@ describe("quick prompts (K3)", () => {
     expect(((await api("GET", "/api/quick-prompts")).json.items as unknown[]).length).toBe(0);
   });
 
+  it("K1-K3 moves prompts through the API: order changes, out-of-range and bad direction are 400, unknown id is 404", async () => {
+    const a = (await api("POST", "/api/quick-prompts", { label: "mv-a", text: "1" })).json.id as string;
+    const b = (await api("POST", "/api/quick-prompts", { label: "mv-b", text: "2" })).json.id as string;
+    const labels = async (): Promise<string[]> => ((await api("GET", "/api/quick-prompts")).json.items as Array<{ label: string }>).map((i) => i.label);
+    expect((await api("POST", `/api/quick-prompts/${b}/move`, { direction: "up" })).status).toBe(200);
+    expect(await labels()).toEqual(["mv-b", "mv-a"]);
+    expect((await api("POST", `/api/quick-prompts/${b}/move`, { direction: "up" })).status).toBe(400);
+    expect((await api("POST", `/api/quick-prompts/${a}/move`, { direction: "down" })).status).toBe(400);
+    expect(await labels()).toEqual(["mv-b", "mv-a"]);
+    expect((await api("POST", `/api/quick-prompts/${a}/move`, { direction: "sideways" })).status).toBe(400);
+    expect((await api("POST", `/api/quick-prompts/${a}/move`, {})).status).toBe(400);
+    expect((await api("POST", "/api/quick-prompts/missing/move", { direction: "up" })).status).toBe(404);
+    expect((await fetch(`${h.base}/api/quick-prompts/${a}/move`, { method: "POST" })).status).toBe(401);
+    await api("DELETE", `/api/quick-prompts/${a}`);
+    await api("DELETE", `/api/quick-prompts/${b}`);
+  });
+
   it("answers 409 for busy and waiting Claude sessions", async () => {
     const created = await api("POST", "/api/quick-prompts", { label: "x", text: "y" });
     const id = await newSession("echo", "busy-target");

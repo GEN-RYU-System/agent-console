@@ -6,7 +6,7 @@ import { Card } from "@sa/components/Card";
 import { Stack } from "@sa/components/Stack";
 import { Textarea } from "@sa/components/Textarea";
 import { TextField } from "@sa/components/TextField";
-import { createQuickPrompt, deleteQuickPrompt, updateQuickPrompt } from "../../api";
+import { createQuickPrompt, deleteQuickPrompt, moveQuickPrompt, updateQuickPrompt } from "../../api";
 import type { QuickPrompt } from "../../types";
 import "./QuickPrompts.css";
 
@@ -34,13 +34,13 @@ export function QuickPromptEditor({ prompts, onChanged }: Props) {
     setText("");
   };
 
-  const run = async (task: () => Promise<unknown>): Promise<void> => {
+  const run = async (task: () => Promise<unknown>, keepForm = false): Promise<void> => {
     setBusy(true);
     setError(null);
     try {
       await task();
       onChanged();
-      reset();
+      if (!keepForm) reset();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -64,7 +64,7 @@ export function QuickPromptEditor({ prompts, onChanged }: Props) {
     <Stack gap="4">
       <Stack gap="2">
         {prompts.length === 0 && <span className="ac-quick__empty">{t("ac.quick.empty")}</span>}
-        {prompts.map((p) => (
+        {prompts.map((p, index) => (
           <Card key={p.id} density="compact" data-testid="quick-prompt-item">
             <div className="ac-quick-editor__item">
               <div className="ac-quick-editor__text">
@@ -72,6 +72,26 @@ export function QuickPromptEditor({ prompts, onChanged }: Props) {
                 <span className="ac-quick-editor__preview">{p.text}</span>
               </div>
               <div className="ac-quick-editor__actions">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busy || index === 0}
+                  aria-label={t("ac.quick.moveUp")}
+                  title={t("ac.quick.moveUpTitle")}
+                  onClick={() => void run(() => moveQuickPrompt(p.id, "up"), true)}
+                >
+                  ↑
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busy || index === prompts.length - 1}
+                  aria-label={t("ac.quick.moveDown")}
+                  title={t("ac.quick.moveDownTitle")}
+                  onClick={() => void run(() => moveQuickPrompt(p.id, "down"), true)}
+                >
+                  ↓
+                </Button>
                 <Button variant="outline" size="sm" onClick={() => startEdit(p)}>
                   {t("ac.quick.editItem")}
                 </Button>
