@@ -155,32 +155,48 @@ describe("check-design-governance", () => {
   });
 
   describe("font-family and the app token file", () => {
-    it("reports font-family literals outside src/tokens.app.css (CSS and TS)", () => {
-      expect(run(makeProject({ "src/a.css": ".a { font-family: Menlo, monospace; }\n" })).status).toBe(1);
-      expect(run(makeProject({ "src/components/t.ts": 'export const o = { fontFamily: "monospace" };\n' })).status).toBe(1);
+    describe("reports font-family literals outside src/tokens.app.css (CSS and TS)", () => {
+      it("case 1", () => {
+        expect(run(makeProject({ "src/a.css": ".a { font-family: Menlo, monospace; }\n" })).status).toBe(1);
+      });
+      it("case 2", () => {
+        expect(run(makeProject({ "src/components/t.ts": 'export const o = { fontFamily: "monospace" };\n' })).status).toBe(1);
+      });
     });
 
-    it("allows var(), inherit and the like for font-family", () => {
-      expect(run(makeProject({ "src/a.css": ".a { font-family: var(--ac-font-mono); }\n.b { font-family: inherit; }\n" })).status).toBe(0);
-      expect(run(makeProject({ "src/components/t.ts": "export const o = { fontFamily: mono };\n" })).status).toBe(0);
+    describe("allows var(), inherit and the like for font-family", () => {
+      it("case 1", () => {
+        expect(run(makeProject({ "src/a.css": ".a { font-family: var(--ac-font-mono); }\n.b { font-family: inherit; }\n" })).status).toBe(0);
+      });
+      it("case 2", () => {
+        expect(run(makeProject({ "src/components/t.ts": "export const o = { fontFamily: mono };\n" })).status).toBe(0);
+      });
     });
 
     it("allows font names only as --ac- custom properties in src/tokens.app.css", () => {
       expect(run(makeProject({ "src/tokens.app.css": ':root { --ac-font-mono: Menlo, "Courier New", monospace; }\n' })).status).toBe(0);
     });
 
-    it("reports anything else in src/tokens.app.css", () => {
-      expect(run(makeProject({ "src/tokens.app.css": ":root { --other: 1; }\n" })).status).toBe(1);
-      expect(run(makeProject({ "src/tokens.app.css": ":root { color: var(--x); }\n" })).status).toBe(1);
+    describe("reports anything else in src/tokens.app.css", () => {
+      it("case 1", () => {
+        expect(run(makeProject({ "src/tokens.app.css": ":root { --other: 1; }\n" })).status).toBe(1);
+      });
+      it("case 2", () => {
+        expect(run(makeProject({ "src/tokens.app.css": ":root { color: var(--x); }\n" })).status).toBe(1);
+      });
     });
   });
 
   describe("values in src/tokens.app.css", () => {
     const tok = (body: string) => makeProject({ "src/tokens.app.css": `:root { ${body} }\n` });
 
-    it("accepts font stacks (quoted or bare names, ending with a generic family)", () => {
-      expect(run(tok('--ac-font-mono: Menlo, Monaco, "Courier New", monospace;')).status).toBe(0);
-      expect(run(tok("--ac-font-mono: 'SF Mono', ui-monospace, monospace;")).status).toBe(0);
+    describe("accepts font stacks (quoted or bare names, ending with a generic family)", () => {
+      it("case 1", () => {
+        expect(run(tok('--ac-font-mono: Menlo, Monaco, "Courier New", monospace;')).status).toBe(0);
+      });
+      it("case 2", () => {
+        expect(run(tok("--ac-font-mono: 'SF Mono', ui-monospace, monospace;")).status).toBe(0);
+      });
     });
 
     describe("rejects color names, lengths and other values", () => {
