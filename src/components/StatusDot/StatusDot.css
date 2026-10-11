@@ -1,0 +1,19 @@
+.ac-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-xs);
+  color: var(--text-secondary);
+}
+
+.ac-status__dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--text-muted);
+}
+
+.ac-status__dot--working { background: var(--color-success); }
+.ac-status__dot--waiting { background: var(--color-warning); }
+.ac-status__dot--idle { background: var(--text-secondary); }
+.ac-status__dot--stopped { background: var(--color-error); }

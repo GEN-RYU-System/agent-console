@@ -1,0 +1,38 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      # Sales Anchor（public）を salesanchorRoot として取得し、金型・トークンを .sa-cache へ展開する
+      - name: Clone Sales Anchor
+        run: git clone --depth 1 https://github.com/shingo-ops/salesanchor.git "$RUNNER_TEMP/salesanchor"
+      - name: Point config at the clone
+        run: node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync("agent-console.config.json","utf8"));c.salesanchorRoot=process.env.RUNNER_TEMP+"/salesanchor";fs.writeFileSync(process.env.RUNNER_TEMP+"/ci-config.json",JSON.stringify(c))'
+      - name: sa-sync
+        run: node scripts/sa-sync.mjs
+        env:
+          AGENT_CONSOLE_CONFIG: ${{ runner.temp }}/ci-config.json
+
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e

@@ -1,0 +1,16 @@
+{
+  "port": 4319,
+  "salesanchorRoot": "~/salesanchor",
+  "newWorktreeScript": "scripts/new-worktree.sh",
+  "ledgerLookupScript": "scripts/ledger-lookup.sh",
+  "ledgerDir": ".claude-pipeline/active-work.d",
+  "claudeBin": "claude",
+  "agentsPollMs": 3000,
+  "ledgerPollMs": 60000,
+  "ringBufferBytes": 1048576,
+  "roles": [
+    { "id": "opus-designer", "labelKey": "role.opusDesigner", "command": ["/bin/zsh", "-ic", "ccopusgo"], "needsWorktree": false },
+    { "id": "sonnet-impl", "labelKey": "role.sonnetImpl", "command": ["/bin/zsh", "-ic", "claude --model sonnet"], "needsWorktree": true },
+    { "id": "shell", "labelKey": "role.shell", "command": ["/bin/zsh", "-i"], "needsWorktree": false }
+  ]
+}

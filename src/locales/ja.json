@@ -1,0 +1,47 @@
+{
+  "ac": {
+    "title": "Agent Console",
+    "sessions": "セッション",
+    "newSession": "新しいセッション",
+    "noSessions": "セッションがありません",
+    "noSessionsHint": "「新しいセッション」から起動してください",
+    "selectSession": "左の一覧からセッションを選んでください",
+    "ledger": "台帳ボード",
+    "ledgerRefresh": "更新",
+    "ledgerEmpty": "なし",
+    "form": {
+      "name": "名前",
+      "role": "役割",
+      "branch": "ブランチ名",
+      "branchHint": "release/ から始まる小文字英数字とハイフン",
+      "submit": "起動",
+      "creating": "作成中",
+      "error": "作成に失敗しました"
+    },
+    "state": {
+      "working": "作業中",
+      "waiting": "待ち",
+      "idle": "待機",
+      "noClaude": "Claude 未起動",
+      "stopped": "停止",
+      "unknown": "不明"
+    },
+    "column": {
+      "IN_PROGRESS": "作業中",
+      "REVIEW": "レビュー",
+      "DONE": "完了",
+      "OTHER": "その他",
+      "UNREGISTERED": "未登録/衝突"
+    },
+    "footer": {
+      "saSource": "Sales Anchor 展開元",
+      "claudeVersion": "Claude Code"
+    },
+    "loadError": "状態を取得できません"
+  },
+  "role": {
+    "opusDesigner": "Opus 設計",
+    "sonnetImpl": "Sonnet 実装",
+    "shell": "シェル"
+  }
+}
