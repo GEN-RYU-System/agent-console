@@ -245,6 +245,25 @@ describe("child process environment", () => {
   });
 });
 
+describe("terminal locale", () => {
+  it("K1/K3: the pty child gets LANG from terminalEnv even when the server has no LANG", async () => {
+    const saved = { LANG: process.env.LANG, LC_ALL: process.env.LC_ALL, LC_CTYPE: process.env.LC_CTYPE };
+    delete process.env.LANG;
+    delete process.env.LC_ALL;
+    delete process.env.LC_CTYPE;
+    try {
+      const id = await createSession("langcheck");
+      const ws = await openWs(`/ws/term?session=${id}`, goodWsHeaders());
+      if (!("ws" in ws)) throw new Error("upgrade failed");
+      await waitFor(() => ws.text().includes("LANG_IS="));
+      expect(ws.text()).toContain("LANG_IS=[ja_JP.UTF-8]");
+      ws.ws.close();
+    } finally {
+      for (const [k, v] of Object.entries(saved)) if (v !== undefined) process.env[k] = v;
+    }
+  });
+});
+
 describe("session cap reservation", () => {
   it("counts a session being created (worktree in progress) against the cap", async () => {
     const small = await startHarness({ maxSessions: 1 });

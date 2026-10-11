@@ -59,6 +59,8 @@ export interface HarnessOptions {
   resumeCommand?: string[];
   /** 本店そのもの（Opus 設計役）を再開する起動コマンド（指定すると role "resumable-main" が増える） */
   mainResumeCommand?: string[];
+  /** 端末の子へ重ねる環境（既定は LANG のみ） */
+  terminalEnv?: Record<string, string>;
 }
 
 /** 実 HTTP/WS/PTY（ダミー役割 sh）を 127.0.0.1 の空きポートで起動する。 */
@@ -92,10 +94,12 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     ringBufferBytes: 1024 * 1024,
     dataDir: path.join(dir, "data"),
     notify: { macos: false, osascriptBin: "/nonexistent/osascript" },
+    terminalEnv: options.terminalEnv ?? { LANG: "ja_JP.UTF-8" },
     roles: [
       { id: "echo", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo READY; cat"], needsWorktree: false },
       { id: "short", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo bye"], needsWorktree: false },
       { id: "envcheck", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo TOKEN_IS=[$AGENT_CONSOLE_TOKEN]; cat"], needsWorktree: false },
+      { id: "langcheck", labelKey: "role.shell", command: ["/bin/sh", "-c", "printf 'LANG_IS=[%s]\\n' \"$LANG\"; cat"], needsWorktree: false },
       { id: "wt", labelKey: "role.sonnetImpl", command: ["/bin/sh", "-c", "cat"], needsWorktree: true },
       ...(options.resumeCommand
         ? [{ id: "resumable", labelKey: "role.sonnetImpl", command: ["/bin/sh", "-c", "cat"], needsWorktree: false, resumeCommand: options.resumeCommand, resumeScope: "worktree" as const }]

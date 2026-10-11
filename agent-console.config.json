@@ -9,6 +9,7 @@
   "ledgerPollMs": 60000,
   "ringBufferBytes": 1048576,
   "notify": { "macos": true },
+  "terminalEnv": { "LANG": "ja_JP.UTF-8" },
   "roles": [
     {
       "id": "opus-designer",
