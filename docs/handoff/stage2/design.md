@@ -34,14 +34,17 @@ Orca と比べて毎日の使い勝手の差が大きい 5 点を埋める。外
 
 ### 4-2. 名前（②）
 - 表示名の正本: Claude 起動中は `claude agents --json` の `name`。Claude が無い（シェル等）ときはアプリが起動時に付けた名前。
-- 変更: Claude 起動中かつ status が waiting/idle のときだけ、端末へ `/rename <新しい名前>` と改行を送る（人がボタンを押したときのみ）。busy 中はボタンを無効化。シェルのみのセッションはアプリの名前を書き換える。
+- 変更: Claude 起動中は、要求を受けた時点で `claude agents --json` を取り直し（3 秒前の値を使わない）、status が idle かつ waitingFor が無いときだけ、端末へ `/rename <新しい名前>` と改行（\r）を送る（人がボタンを押したときのみ）。それ以外（busy・waiting・状態を取得できない）は 409 と理由を返す。画面のボタンも同じ条件（サーバーが一覧に載せる canInput）で無効化。Claude が動いていないシェルのみのセッションはアプリの名前を書き換える（従来どおり）。
+  - 修正ラウンド1（review-stage2 M1/L1）: waiting は許可プロンプトの応答待ちを含む可能性があり（未確認）、そこへ Enter を送ると既定の選択肢を押す恐れがあるため、idle のときだけに絞った。
 
 ### 4-3. よく使う指示（②）
 - 保存先: `~/Library/Application Support/agent-console/quick-prompts.json`（開発時は設定の `dataDir`）。1 ファイルだけ。形式 `{ "version": 1, "items": [{ "id", "label", "text" }] }`。書込は一時ファイル→rename（途中で壊れない）。
-- 送信: 人がボタンを押したら、選択中の端末へ text と改行を送る。上限 8KB。
+- 送信（修正ラウンド1 で設計変更・review-stage2 M1/L1/L6）: サーバーは端末へ文章を書かない。人がボタンを押すと、画面が `POST /api/sessions/:id/send-check {promptId}` を呼ぶ。サーバーは要求を受けた時点で `claude agents --json` を取り直し、§4-2 と同じ条件（Claude 起動中は idle かつ waitingFor 無し、Claude が動いていないシェルは停止中でなければ可）を満たすときだけ 200 と本文を返す。満たさなければ 409 と理由。画面は返った本文を、画面側の xterm の `paste()`（端末が括弧付き貼付モードを有効にしていればそれで包んで送る xterm.js の正規の方法）で端末に入れ、その後 Enter（\r）を同じ入力経路（WebSocket の人の入力）で送る。上限 8KB。
+  - 理由: 生の文字列＋\r を直接書くと、複数行の指示が行ごとに確定・実行され得る（括弧付き貼付でない）ため。許可トークンは発行しない（本文の入力は、認証済みの人の入力経路と同じ道を通るので、サーバーが別に書く経路が無くなる）。
 
 ### 4-4. 過去のセッション（③）
 - 一覧の正本: `claude agents --all --json`（sessionId, name, cwd, startedAt, status）。保存しない。
+- 再開できない行は一覧に「再開不可（理由）」を出す: ①その sessionId が現在動いている一覧 `claude agents --json` にある（このアプリの中でも別のターミナルでも。二重に同じセッションへ書かない。サーバーは 409）②cwd が本店（salesanchorRoot）そのもの（Opus 設計役のセッションは本店で動くため。Opus 設計役の再開は §12 の PO 判断なので対象外）③cwd が本店のワークツリーでない ④cwd が存在しない。再開できるのは cwd が本店のワークツリーの行だけ（Sonnet 実装役の起動コマンドで再開）。
 - 再開: 役割に `resumeCommand`（設定）がある場合のみ。Sonnet 実装役は `["/bin/zsh","-ic","claude --model sonnet --resume \"$AC_RESUME_ID\""]` のように、sessionId は環境変数で渡し、シェル文字列に連結しない。sessionId は `^[0-9a-f-]{36}$` のみ受け付け。作業場所は一覧の cwd（存在確認、ワークツリー一覧に含まれるか本店であること）。
 
 ### 4-5. 台帳ボードの絞り込み（④）
@@ -49,7 +52,8 @@ Orca と比べて毎日の使い勝手の差が大きい 5 点を埋める。外
 - 既定: 状態 IN_PROGRESS・REVIEW・WIP、開始日が直近 30 日。画面で期間（7/30/90 日・すべて）、状態、文字検索。絞り込みの選択は閲覧者ごとの表示設定として localStorage（失敗しても既定で表示）。
 
 ### 4-6. メモリ画面（⑤）
-- サーバーが 10 秒ごと（画面を開いているときだけ）`ps -axo pid=,ppid=,rss=`、`sysctl -n hw.memsize`、`memory_pressure` の最終行を実行し、セッションごとに pty の pid の子孫 RSS を合計。単位 KB→MB。
+- 画面が 10 秒ごと（画面を開いているときだけ）サーバーに問い合わせ、サーバーが `ps -axo pid=,ppid=,rss=`、`sysctl -n hw.memsize`、`memory_pressure` の最終行を実行し、セッションごとに pty の pid の子孫 RSS を合計。単位 KB→MB。
+- 修正ラウンド1（review-stage2 L2）: サーバーは OS の実行結果を 5 秒キャッシュし、同時の要求は 1 回の実行にまとめる（複数タブ・連打で ps 等が増えない）。セッション名は一覧と同じ表示名（Claude の name 優先）。画面の % は棒グラフと文字で同じ値・同じ丸め（整数）。
 - 表示は SA 金型（ProgressBar, Badge, DataTable 等）。直値なし。
 
 ## 5. データの正本（SSOT）
@@ -65,7 +69,7 @@ Orca と比べて毎日の使い勝手の差が大きい 5 点を埋める。外
 
 ## 6. 安全
 - 新しい API はすべて既存の認証（セッショントークン・Origin・Host）の内側。外部への入口は増えない。
-- 端末へ送る文字（/rename、よく使う指示）は人のボタン操作のときだけ。タイマーでは送らない（規約: Consumer Terms 第3条7項）。
+- 端末へ送る文字（/rename、よく使う指示）は人のボタン操作のときだけ。タイマーでは送らない（規約: Consumer Terms 第3条7項）。区切りの検知・通知・未読の処理は端末に 1 バイトも書かない（テストで固定）。Claude が動いているセッションへは、送る直前に取り直した状態が idle（waitingFor 無し）のときだけ送る。
 - osascript には文字列をエスケープして渡す。sessionId・名前は検証してから使い、シェル文字列に連結しない。
 - quick-prompts.json は権限 600。
 
