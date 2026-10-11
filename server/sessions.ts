@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { spawn, type IPty } from "node-pty";
 import type { WebSocket } from "ws";
-import type { Config, RoleConfig } from "./config.ts";
+import { CHILD_ENV_BLOCKLIST, TERMINAL_ENV_FORBIDDEN, type Config, type RoleConfig } from "./config.ts";
 import { RingBuffer } from "./ring-buffer.ts";
 import { createWorktree, isValidBranch, WorktreeError } from "./worktree.ts";
 
@@ -54,14 +54,17 @@ function clampDimension(value: unknown, fallback: number): number {
   return Math.max(1, Math.min(MAX_DIMENSION, Math.floor(value)));
 }
 
-/** 端末内のプロセスから見えてはいけない変数（サーバー秘密・認証方式・キーチェーン読込の差し替え口）。 */
-const CHILD_ENV_BLOCKLIST: ReadonlySet<string> = new Set(["AGENT_CONSOLE_TOKEN", "AGENT_CONSOLE_AUTH", "AC_SECURITY", "AC_STUB_LOG"]);
-
-/** pty の子プロセスへ渡す環境。サーバーの固定トークン（AGENT_CONSOLE_TOKEN）は端末内から見えないよう除く。 */
-export function buildChildEnv(source: Record<string, string | undefined>): Record<string, string> {
+/**
+ * pty の子プロセスへ渡す環境。サーバーの固定トークン（AGENT_CONSOLE_TOKEN）は端末内から見えないよう除く。
+ * terminalEnv（config）は親の環境の上に重ね、LaunchAgent 起動で LANG が無くても端末のロケールを固定する。TERM・秘密系のキーは無視する。
+ */
+export function buildChildEnv(source: Record<string, string | undefined>, terminalEnv: Readonly<Record<string, string>> = {}): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(source)) {
     if (typeof v === "string" && !CHILD_ENV_BLOCKLIST.has(k)) env[k] = v;
+  }
+  for (const [k, v] of Object.entries(terminalEnv)) {
+    if (!TERMINAL_ENV_FORBIDDEN.has(k)) env[k] = v;
   }
   env.TERM = "xterm-256color";
   return env;
@@ -165,7 +168,7 @@ export class SessionManager {
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
       cwd,
-      env: { ...buildChildEnv(process.env), ...extraEnv },
+      env: { ...buildChildEnv(process.env, this.config.terminalEnv), ...extraEnv },
     });
     const session: Session = {
       id: randomUUID(),

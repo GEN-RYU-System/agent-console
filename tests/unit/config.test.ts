@@ -57,4 +57,30 @@ describe("parseConfig", () => {
   it("rejects non-object input", () => {
     expect(() => parseConfig(null)).toThrow();
   });
+
+  it("K2: terminalEnv defaults to empty and accepts valid variables", () => {
+    expect(parseConfig(valid).terminalEnv).toEqual({});
+    expect(parseConfig({ ...valid, terminalEnv: { LANG: "en_US.UTF-8", LC_ALL: "ja_JP.UTF-8" } }).terminalEnv).toEqual({ LANG: "en_US.UTF-8", LC_ALL: "ja_JP.UTF-8" });
+  });
+
+  it("K2: the shipped config sets LANG to ja_JP.UTF-8", () => {
+    const shipped = parseConfig(JSON.parse(readFileSync("agent-console.config.json", "utf8")));
+    expect(shipped.terminalEnv).toEqual({ LANG: "ja_JP.UTF-8" });
+  });
+
+  it("K2: rejects empty, newline, non-string values and invalid keys in terminalEnv", () => {
+    expect(() => parseConfig({ ...valid, terminalEnv: { LANG: "" } })).toThrow(/terminalEnv\.LANG/);
+    expect(() => parseConfig({ ...valid, terminalEnv: { LANG: "ja_JP.UTF-8\n" } })).toThrow(/terminalEnv\.LANG/);
+    expect(() => parseConfig({ ...valid, terminalEnv: { LANG: 1 } })).toThrow(/terminalEnv\.LANG/);
+    expect(() => parseConfig({ ...valid, terminalEnv: { lang: "x" } })).toThrow(/terminalEnv key/);
+    expect(() => parseConfig({ ...valid, terminalEnv: { "A=B": "x" } })).toThrow(/terminalEnv key/);
+    expect(() => parseConfig({ ...valid, terminalEnv: ["LANG"] })).toThrow(/terminalEnv/);
+    expect(() => parseConfig({ ...valid, terminalEnv: "LANG" })).toThrow(/terminalEnv/);
+  });
+
+  it("K2: rejects TERM and blocklisted keys in terminalEnv", () => {
+    for (const key of ["TERM", "AGENT_CONSOLE_TOKEN", "AGENT_CONSOLE_AUTH", "AC_SECURITY", "AC_STUB_LOG"]) {
+      expect(() => parseConfig({ ...valid, terminalEnv: { [key]: "x" } })).toThrow(/cannot be set/);
+    }
+  });
 });

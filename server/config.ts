@@ -39,6 +39,8 @@ export interface Config {
   /** よく使う指示などアプリが保存するデータの置き場 */
   dataDir: string;
   notify: NotifyConfig;
+  /** 端末の子プロセスの環境へ重ねる変数（例 LANG）。TERM と BLOCKLIST のキーは指定できない。 */
+  terminalEnv: Record<string, string>;
 }
 
 const STRING_KEYS = ["salesanchorRoot", "newWorktreeScript", "ledgerLookupScript", "ledgerDir", "claudeBin"] as const;
@@ -91,6 +93,29 @@ function parseDataDir(raw: unknown): string {
   return expandHome(raw);
 }
 
+const ENV_KEY = /^[A-Z_][A-Z0-9_]*$/;
+// eslint-disable-next-line no-control-regex
+const ENV_CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+/** 端末内のプロセスから見えてはいけない変数（サーバー秘密・認証方式・キーチェーン読込の差し替え口）。 */
+export const CHILD_ENV_BLOCKLIST: ReadonlySet<string> = new Set(["AGENT_CONSOLE_TOKEN", "AGENT_CONSOLE_AUTH", "AC_SECURITY", "AC_STUB_LOG"]);
+/** terminalEnv で指定できない変数（TERM は固定値 + BLOCKLIST）。 */
+export const TERMINAL_ENV_FORBIDDEN: ReadonlySet<string> = new Set(["TERM", ...CHILD_ENV_BLOCKLIST]);
+
+function parseTerminalEnv(raw: unknown): Record<string, string> {
+  if (raw === undefined) return {};
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new Error("config: terminalEnv must be an object");
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (!ENV_KEY.test(k)) throw new Error(`config: terminalEnv key ${JSON.stringify(k)} is invalid (A-Z, 0-9, _)`);
+    if (TERMINAL_ENV_FORBIDDEN.has(k)) throw new Error(`config: terminalEnv.${k} cannot be set`);
+    if (typeof v !== "string" || v === "" || ENV_CONTROL_CHARS.test(v)) {
+      throw new Error(`config: terminalEnv.${k} must be a non-empty string without control characters`);
+    }
+    out[k] = v;
+  }
+  return out;
+}
+
 /** 設定の検証。必須キー欠落・型違いは起動中止（例外）にする。 */
 export function parseConfig(raw: unknown): Config {
   if (typeof raw !== "object" || raw === null) throw new Error("config: must be a JSON object");
@@ -126,6 +151,7 @@ export function parseConfig(raw: unknown): Config {
     roles,
     dataDir: parseDataDir(o.dataDir),
     notify: parseNotify(o.notify),
+    terminalEnv: parseTerminalEnv(o.terminalEnv),
   };
 }
 
