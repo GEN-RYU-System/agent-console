@@ -392,6 +392,28 @@ async function shoot(page: Page, name: string): Promise<void> {
 
 const rowOf = (page: Page, id: string) => page.locator(`[data-testid="session-row"][data-session-id="${id}"]`);
 
+// v0.3.6 左のセッション一覧のコンパクト化（設計 §1 K1・K2・K4）。セッション数に上限（16）があるので、新しいセッションは作らず既存の行を測る。
+const COMPACT_ROW_MAX_PX = 64;
+
+/** K1: すべての行の高さが 64px 以下（ライト・ダーク）。K2: 名前は1行で省略記号。 */
+async function expectCompactRows(page: Page): Promise<void> {
+  const rows = await page.getByTestId("session-row").all();
+  const heights: string[] = [];
+  for (const theme of ["light", "dark"] as const) {
+    await page.evaluate((t) => document.documentElement.classList.toggle("force-dark", t === "dark"), theme);
+    for (const row of rows) {
+      const box = await row.boundingBox();
+      const unread = (await row.getAttribute("data-unread")) !== "0" ? "unread" : "read";
+      heights.push(`${theme}/${unread}=${box?.height}`);
+      expect(box?.height as number).toBeLessThanOrEqual(COMPACT_ROW_MAX_PX);
+    }
+  }
+  await page.evaluate(() => document.documentElement.classList.remove("force-dark"));
+  console.log(`K1 heights(px): ${heights.join(" ")}`);
+  const cut = await rows[0].getByTestId("session-name").evaluate((el) => ({ overflow: getComputedStyle(el).textOverflow, ws: getComputedStyle(el).whiteSpace, hidden: getComputedStyle(el).overflow }));
+  expect(cut).toEqual({ overflow: "ellipsis", ws: "nowrap", hidden: "hidden" });
+}
+
 test("段階2 K1: busy→idle で未読の印・窓タイトル・macOS 通知が出て、行を選ぶと未読が消える", async ({ page }) => {
   const id = await apiCreate("notify-target", "e2e-plain");
   await openPaired(page);
@@ -414,8 +436,20 @@ test("段階2 K1: busy→idle で未読の印・窓タイトル・macOS 通知�
   expect(line).toContain('display notification "notify-target: 待機" with title "Agent Console"');
   await expect(page.getByTestId("notify-help")).toContainText("Claude 公式");
   await shoot(page, "01-session-list-unread");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.getByTestId("unread-badge")).not.toHaveCount(0);
+  await expectCompactRows(page);
 
   await row.click();
+  // K4: 選択中の行は背景色と枠色が他の行と違う
+  const paint = (r: typeof row) => r.evaluate((el) => ({ bg: getComputedStyle(el).backgroundColor, border: getComputedStyle(el).borderTopColor }));
+  const others = page.locator('[data-testid="session-row"]:not([data-session-id="' + id + '"])');
+  if ((await others.count()) > 0) {
+    const selectedPaint = await paint(row);
+    const otherPaint = await paint(others.first());
+    expect(selectedPaint.bg).not.toBe(otherPaint.bg);
+    expect(selectedPaint.border).not.toBe(otherPaint.border);
+  }
   await expect(row.getByTestId("unread-badge")).toHaveCount(0);
   // 他のセッションの未読も読んで、後続の試験に残さない
   for (const other of await page.getByTestId("session-row").all()) await other.click();

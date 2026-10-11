@@ -30,7 +30,7 @@ Local console for running parallel Claude Code sessions (Orca-inspired, lightwei
 | やること | 1 行コマンド | 何が起きるか |
 |---|---|---|
 | 初回導入 | `! bash scripts/ac-install.sh v0.2.0` | サーバー秘密をキーチェーンに保存 → 版を取得（**タグのコミットが origin/main に含まれることを確認**、`npm ci --ignore-scripts`、**コミット SHA を表示**）・ビルド → **別ポートで自己診断（/healthz の版・コミットが一致）** → ログイン時自動起動を登録 → Dock 用の `~/Applications/Agent Console.app` を生成（アイコン入り。更新・切戻しでも切替先の版の絵で作り直す。icns の無い版は標準の絵） → `/healthz` を確認して結果を表示 |
-| 更新 | `! bash scripts/ac-update.sh v0.3.5` | 新しい版を導入（上と同じ検証）→ 自己診断に通ったときだけ切替 → 再起動 → `/healthz` の版・コミットの一致を確認。失敗したら元の版に戻る |
+| 更新 | `! bash scripts/ac-update.sh v0.3.6` | 新しい版を導入（上と同じ検証）→ 自己診断に通ったときだけ切替 → 再起動 → `/healthz` の版・コミットの一致を確認。失敗したら元の版に戻る |
 | 切戻し | `! bash scripts/ac-rollback.sh` | 1 つ前の版（semver 順）に切替 → 再起動 → `/healthz` の版・コミットの一致を確認 |
 | 撤去 | `! bash scripts/ac-uninstall.sh` | 自動起動と起動アプリを外して **Trash へ移す**（削除しない）。導入済みの版とキーチェーンの秘密は残す |
 | 完全撤去 | `! bash scripts/ac-uninstall.sh --purge` | 上に加えて、導入済みの版・current・logs を Trash へ移し、キーチェーンの秘密を削除（秘密の削除だけは元に戻せない） |
