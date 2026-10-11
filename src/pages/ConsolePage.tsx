@@ -8,6 +8,7 @@ import { ApiError, createSession, fetchLedger, fetchState, getSessionToken, logo
 import { LedgerBoard } from "../components/LedgerBoard/LedgerBoard";
 import { NewSessionForm, type NewSessionValues } from "../components/NewSessionForm/NewSessionForm";
 import { SessionList } from "../components/SessionList/SessionList";
+import { ThemeToggle } from "../components/ThemeToggle/ThemeToggle";
 import { TerminalPane } from "../components/TerminalPane/TerminalPane";
 import type { ConsoleState, LedgerSnapshot, SessionView } from "../types";
 import "./ConsolePage.css";
@@ -142,6 +143,7 @@ export function ConsolePage() {
         <span data-testid="claude-version">
           {t("ac.footer.claudeVersion")}: {state.claudeVersion}
         </span>
+        <ThemeToggle />
         <Button variant="ghost" size="sm" onClick={handleLogout}>
           {t("ac.logout")}
         </Button>

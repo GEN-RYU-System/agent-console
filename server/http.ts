@@ -217,7 +217,7 @@ async function handlePairing(deps: AppDeps, req: IncomingMessage, res: ServerRes
  * どちらも無しだと CSP 違反が出ることを e2e で実測した（impl-notes）。
  */
 export function contentSecurityPolicy(port: number): string {
-  return `default-src 'self'; connect-src 'self' ws://127.0.0.1:${port}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'`;
+  return `default-src 'self'; connect-src 'self' ws://127.0.0.1:${port}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`;
 }
 
 export function createRequestHandler(deps: AppDeps) {

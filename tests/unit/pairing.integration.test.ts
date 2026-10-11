@@ -364,7 +364,7 @@ describe("security headers", () => {
   const CSP = contentSecurityPolicy(0);
 
   it("builds the CSP for the app's own origin only", () => {
-    expect(contentSecurityPolicy(4319)).toBe("default-src 'self'; connect-src 'self' ws://127.0.0.1:4319; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'");
+    expect(contentSecurityPolicy(4319)).toBe("default-src 'self'; connect-src 'self' ws://127.0.0.1:4319; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
     expect(CSP).not.toContain("*");
     expect(CSP).not.toContain("unsafe-eval");
     expect(CSP).not.toMatch(/script-src[^;]*unsafe-inline/);
