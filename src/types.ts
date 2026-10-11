@@ -23,6 +23,7 @@ export interface ConsoleState {
   saSource: string;
   claudeVersion: string;
   appVersion: string;
+  commit: string;
 }
 
 export type LookupResult = { kind: "found"; state: string } | { kind: "unregistered" } | { kind: "conflict" };

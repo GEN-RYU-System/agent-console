@@ -37,7 +37,8 @@
     "footer": {
       "saSource": "Sales Anchor 展開元",
       "claudeVersion": "Claude Code",
-      "version": "版"
+      "version": "版",
+      "commit": "コミット"
     },
     "loadError": "状態を取得できません",
     "removeSession": "一覧から外す",
@@ -49,7 +50,8 @@
       "failedBody": "コードが無効・使用済み・期限切れです。Dock の Agent Console アプリからもう一度開いてください。"
     },
     "unauthorizedTitle": "ログインが必要です",
-    "unauthorizedBody": "Dock の Agent Console アプリから開き直してください。"
+    "unauthorizedBody": "Dock の Agent Console アプリから開き直してください。",
+    "logout": "ログアウト"
   },
   "role": {
     "opusDesigner": "Opus 設計",

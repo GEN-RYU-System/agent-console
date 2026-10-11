@@ -9,6 +9,11 @@ import type { Session, SessionManager } from "./sessions.ts";
 /** 端末入力は小さなメッセージのみ。超過した接続だけを ws が 1009 で閉じる。 */
 export const MAX_WS_PAYLOAD_BYTES = 256 * 1024;
 
+function parseProtocols(header: string | string[] | undefined): string[] {
+  const raw = Array.isArray(header) ? header.join(",") : (header ?? "");
+  return raw.split(",").map((p) => p.trim()).filter((p) => p !== "");
+}
+
 function reject(socket: Duplex, status: number, text: string): void {
   socket.write(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\n\r\n`);
   socket.destroy();
@@ -35,12 +40,18 @@ function attachTerminal(sessions: SessionManager, session: Session, ws: WebSocke
 }
 
 export function attachWebSockets(server: Server, deps: { config: Config; auth: Auth; sessions: SessionManager; hub: Hub }): void {
-  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
+  const wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: MAX_WS_PAYLOAD_BYTES,
+    // ブラウザは Sec-WebSocket-Protocol: ac.<セッショントークン> で認証する。受理した値をそのまま応答に返す
+    handleProtocols: (protocols) => deps.auth.sessionFromProtocols([...protocols]) ?? false,
+  });
   server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     socket.on("error", () => socket.destroy());
     if (!deps.auth.isHostAllowed(req.headers.host)) return reject(socket, 421, "Misdirected Request");
     const url = new URL(req.url ?? "/", `http://127.0.0.1:${deps.config.port}`);
-    if (deps.auth.authenticate({ authorization: req.headers.authorization, cookie: req.headers.cookie }) === null) {
+    const protocols = parseProtocols(req.headers["sec-websocket-protocol"]);
+    if (deps.auth.authenticate({ authorization: req.headers.authorization, protocols }) === null) {
       return reject(socket, 401, "Unauthorized");
     }
     if (!deps.auth.isOriginAllowed(req.headers.origin)) return reject(socket, 403, "Forbidden");

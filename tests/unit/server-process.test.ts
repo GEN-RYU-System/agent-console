@@ -64,7 +64,7 @@ async function startServer(env: Record<string, string>, extraRoles: unknown[] = 
   writeFileSync(configFile, JSON.stringify(config));
   const child = spawn(process.execPath, ["--import", "tsx", "server/index.ts"], {
     cwd: REPO,
-    env: { ...process.env, AGENT_CONSOLE_CONFIG: configFile, AGENT_CONSOLE_AUTH: "", AGENT_CONSOLE_TOKEN: "", AGENT_CONSOLE_PORT: "", AC_SECURITY: "", ...env },
+    env: { ...process.env, AGENT_CONSOLE_CONFIG: configFile, AGENT_CONSOLE_AUTH: "", AGENT_CONSOLE_TOKEN: "", AGENT_CONSOLE_PORT: "", AC_SECURITY: "", AC_STUB_LOG: "", ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   running.push(child);
@@ -98,19 +98,21 @@ describe("server process: no secrets in logs, argv or child env", () => {
     const logged = /http:\/\/127\.0\.0\.1:\d+\/pair\?code=([0-9a-f]{64})/.exec(p.output());
     expect(logged).not.toBeNull();
 
-    // ログのコードで入れる（1 回限り）→ セッション Cookie
-    const paired = await fetch(`http://127.0.0.1:${p.port}/pair?code=${logged?.[1]}`, { redirect: "manual" });
-    expect(paired.status).toBe(303);
-    const cookie = (paired.headers.get("set-cookie") ?? "").split(";")[0];
-    const sessionValue = cookie.split("=")[1];
-    const again = await fetch(`http://127.0.0.1:${p.port}/pair?code=${logged?.[1]}`, { redirect: "manual" });
-    expect(again.status).toBe(401);
+    // ログのコードを画面と同じ手順で引換える（1 回限り）→ セッショントークン。dist（ビルド済みの画面）が無くても通る API だけを使う
+    const origin = `http://127.0.0.1:${p.port}`;
+    const redeem = (code: string) =>
+      fetch(`${origin}/api/pair/redeem`, { method: "POST", headers: { "Content-Type": "application/json", Origin: origin }, body: JSON.stringify({ code }) });
+    const paired = await redeem(logged?.[1] as string);
+    expect(paired.status).toBe(200);
+    expect(paired.headers.get("set-cookie")).toBeNull();
+    const sessionValue = ((await paired.json()) as { token: string }).token;
+    expect((await redeem(logged?.[1] as string)).status).toBe(401);
 
     // 認証あり/なし/不正の各種リクエスト（ログに値が出ないこと）
-    await fetch(`http://127.0.0.1:${p.port}/api/state`, { headers: { Cookie: cookie } });
-    await fetch(`http://127.0.0.1:${p.port}/api/state`, { headers: bearer(SECRET) });
-    await fetch(`http://127.0.0.1:${p.port}/api/state?t=${SECRET}`);
-    await fetch(`http://127.0.0.1:${p.port}/api/sessions`, { method: "POST", headers: bearer(SECRET), body: "{bad" });
+    await fetch(`${origin}/api/state`, { headers: { Authorization: `Bearer ${sessionValue}` } });
+    await fetch(`${origin}/api/state`, { headers: bearer(SECRET) });
+    await fetch(`${origin}/api/state?t=${SECRET}`);
+    await fetch(`${origin}/api/sessions`, { method: "POST", headers: bearer(SECRET), body: "{bad" });
 
     const log = p.output();
     expect(log).not.toContain(SECRET);
@@ -127,7 +129,7 @@ describe("server process: no secrets in logs, argv or child env", () => {
     const security = writeStub(dir, "security", `printf '%s\\n' "$*" >> '${argvLog}'\necho "${SECRET}"`);
     const childEnvFile = path.join(dir, "child-env.txt");
     const envRole = { id: "envdump", labelKey: "role.shell", command: ["/bin/sh", "-c", `env > '${childEnvFile}'; cat`], needsWorktree: false };
-    const p = await startServer({ AGENT_CONSOLE_AUTH: "keychain", AC_SECURITY: security }, [envRole]);
+    const p = await startServer({ AGENT_CONSOLE_AUTH: "keychain", AC_SECURITY: security, AC_STUB_LOG: path.join(dir, "stub.log") }, [envRole]);
     await waitHealthy(p);
 
     expect(readFileSync(argvLog, "utf8").trim()).toBe("find-generic-password -s agent-console -a server -w");
@@ -139,6 +141,10 @@ describe("server process: no secrets in logs, argv or child env", () => {
     const base = `http://127.0.0.1:${p.port}`;
     expect((await fetch(`${base}/api/state`, { headers: bearer(SECRET) })).status).toBe(200);
     expect((await fetch(`${base}/api/state`)).status).toBe(401);
+    const health = (await (await fetch(`${base}/healthz`)).json()) as { ok: boolean; version: string; commit: string };
+    expect(health.ok).toBe(true);
+    expect(health.version).toBe(JSON.parse(readFileSync(path.join(REPO, "package.json"), "utf8")).version);
+    expect(health.commit).toMatch(/^[0-9a-f]{40}$/);
 
     const created = await fetch(`${base}/api/sessions`, { method: "POST", headers: bearer(SECRET), body: JSON.stringify({ name: "e", roleId: "envdump" }) });
     expect(created.status).toBe(201);
@@ -147,6 +153,7 @@ describe("server process: no secrets in logs, argv or child env", () => {
     expect(childEnv).not.toContain(SECRET);
     expect(childEnv).not.toMatch(/^AGENT_CONSOLE_(TOKEN|AUTH)=/m);
     expect(childEnv).not.toMatch(/^AC_SECURITY=/m);
+    expect(childEnv).not.toMatch(/^AC_STUB_LOG=/m);
 
     expect(p.output()).not.toContain(SECRET);
     const ps = execFileSync("ps", ["-axww", "-o", "command="], { encoding: "utf8" });
@@ -156,7 +163,7 @@ describe("server process: no secrets in logs, argv or child env", () => {
   it("keychain mode: aborts startup when the secret cannot be read", async () => {
     const dir = makeDir();
     const security = writeStub(dir, "security", `echo "partial-${SECRET}"; echo "denied" >&2; exit 44`);
-    const p = await startServer({ AGENT_CONSOLE_AUTH: "keychain", AC_SECURITY: security });
+    const p = await startServer({ AGENT_CONSOLE_AUTH: "keychain", AC_SECURITY: security, AC_STUB_LOG: path.join(dir, "stub.log") });
     const code = await p.exited;
     expect(code).not.toBe(0);
     expect(p.output()).toMatch(/keychain/i);

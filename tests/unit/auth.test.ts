@@ -1,49 +1,76 @@
 import { describe, expect, it } from "vitest";
 import {
+  CHALLENGE_TTL_MS,
   createAuth,
   DEV_PAIRING_TTL_MS,
   PAIRING_TTL_MS,
   resolveToken,
   SESSION_MAX_MS,
-  SESSION_COOKIE_NAME,
 } from "../../server/auth.ts";
+import { clientProof, serverProof } from "../../server/pair-proof.ts";
+
+const SECRET = "secret-token";
+const CNONCE = "ab".repeat(16);
 
 function makeAuth() {
   const clock = { t: 1_000_000 };
-  const auth = createAuth("secret-token", 4319, { now: () => clock.t });
+  const auth = createAuth(SECRET, 4319, { now: () => clock.t });
   return { auth, clock };
 }
 
-describe("authenticate (Bearer / Cookie)", () => {
-  it("accepts the secret as a Bearer header", () => {
+function newSession(auth: ReturnType<typeof makeAuth>["auth"]): string {
+  const token = auth.consumePairingCode(auth.issuePairingCode(PAIRING_TTL_MS));
+  if (token === null) throw new Error("pairing failed");
+  return token;
+}
+
+describe("authenticate (secret Bearer / session token)", () => {
+  it("accepts the secret as a Bearer header (CLI, dev, tests)", () => {
     const { auth } = makeAuth();
-    expect(auth.authenticate({ authorization: "Bearer secret-token" })).toBe("bearer");
+    expect(auth.authenticate({ authorization: `Bearer ${SECRET}` })).toBe("bearer");
   });
 
   it("rejects wrong, missing and different-length secrets without throwing", () => {
     const { auth } = makeAuth();
     expect(auth.authenticate({ authorization: "Bearer nope" })).toBeNull();
     expect(auth.authenticate({ authorization: "Bearer s" })).toBeNull();
-    expect(auth.authenticate({ authorization: "Basic secret-token" })).toBeNull();
+    expect(auth.authenticate({ authorization: `Basic ${SECRET}` })).toBeNull();
     expect(auth.authenticate({})).toBeNull();
   });
 
-  it("accepts a session cookie created by pairing, among other cookies", () => {
+  it("accepts a session token as Bearer and as an ac.<token> WebSocket subprotocol", () => {
     const { auth } = makeAuth();
-    const sessionId = auth.consumePairingCode(auth.issuePairingCode(PAIRING_TTL_MS));
-    expect(sessionId).not.toBeNull();
-    expect(auth.authenticate({ cookie: `a=1; ${SESSION_COOKIE_NAME}=${sessionId}; b=2` })).toBe("cookie");
-    expect(auth.authenticate({ cookie: `${SESSION_COOKIE_NAME}=wrong` })).toBeNull();
-    expect(auth.authenticate({ cookie: `other=${sessionId}` })).toBeNull();
+    const token = newSession(auth);
+    expect(auth.authenticate({ authorization: `Bearer ${token}` })).toBe("session");
+    expect(auth.authenticate({ protocols: [`ac.${token}`] })).toBe("session");
+    expect(auth.authenticate({ protocols: ["other", `ac.${token}`] })).toBe("session");
+    expect(auth.authenticate({ protocols: [`ac.wrong`] })).toBeNull();
+    expect(auth.authenticate({ protocols: [token] })).toBeNull();
+    expect(auth.sessionFromProtocols([`ac.${token}`])).toBe(`ac.${token}`);
+    expect(auth.sessionFromProtocols(["x"])).toBeNull();
   });
 
-  it("expires a session after 24 hours", () => {
+  it("expires a session after 12 hours", () => {
     const { auth, clock } = makeAuth();
-    const sessionId = auth.consumePairingCode(auth.issuePairingCode(PAIRING_TTL_MS)) as string;
+    expect(SESSION_MAX_MS).toBe(12 * 60 * 60 * 1000);
+    const token = newSession(auth);
     clock.t += SESSION_MAX_MS - 1;
-    expect(auth.authenticate({ cookie: `${SESSION_COOKIE_NAME}=${sessionId}` })).toBe("cookie");
+    expect(auth.authenticate({ authorization: `Bearer ${token}` })).toBe("session");
     clock.t += 2;
-    expect(auth.authenticate({ cookie: `${SESSION_COOKIE_NAME}=${sessionId}` })).toBeNull();
+    expect(auth.authenticate({ authorization: `Bearer ${token}` })).toBeNull();
+  });
+
+  it("revokes a session on logout", () => {
+    const { auth } = makeAuth();
+    const token = newSession(auth);
+    expect(auth.revokeSession(token)).toBe(true);
+    expect(auth.authenticate({ authorization: `Bearer ${token}` })).toBeNull();
+    expect(auth.revokeSession(token)).toBe(false);
+  });
+
+  it("has no cookie API any more", () => {
+    const { auth } = makeAuth();
+    expect((auth as unknown as Record<string, unknown>).sessionCookie).toBeUndefined();
   });
 });
 
@@ -92,14 +119,67 @@ describe("pairing codes", () => {
     const code = auth.issuePairingCode(PAIRING_TTL_MS);
     expect(auth.authenticate({ authorization: `Bearer ${code}` })).toBeNull();
   });
+
+  it("become invalid immediately after use", () => {
+    const { auth } = makeAuth();
+    const code = auth.issuePairingCode(PAIRING_TTL_MS);
+    auth.consumePairingCode(code);
+    expect(auth.consumePairingCode(code)).toBeNull();
+  });
 });
 
-describe("session cookie", () => {
-  it("is HttpOnly, SameSite=Strict, Path=/, 24h, and not Secure (plain http on 127.0.0.1)", () => {
+describe("mutual authentication (challenge / proof)", () => {
+  it("returns the server proof HMAC(secret, server|cnonce|snonce) so the client can verify the server", () => {
     const { auth } = makeAuth();
-    const cookie = auth.sessionCookie("abc");
-    expect(cookie).toBe(`${SESSION_COOKIE_NAME}=abc; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400`);
-    expect(cookie).not.toMatch(/Secure/i);
+    const c = auth.issueChallenge(CNONCE);
+    expect(c).not.toBeNull();
+    expect(c?.snonce).toMatch(/^[0-9a-f]{64}$/);
+    expect(c?.proof).toBe(serverProof(SECRET, CNONCE, c?.snonce as string));
+  });
+
+  it("accepts the client proof once, then issues a pairing code that redeems once", () => {
+    const { auth } = makeAuth();
+    const c = auth.issueChallenge(CNONCE) as { snonce: string };
+    const code = auth.redeemChallenge({ cnonce: CNONCE, snonce: c.snonce, proof: clientProof(SECRET, CNONCE, c.snonce) });
+    expect(code).toMatch(/^[0-9a-f]{64}$/);
+    expect(auth.consumePairingCode(code as string)).not.toBeNull();
+  });
+
+  it("consumes the snonce even when the proof is wrong (no retries)", () => {
+    const { auth } = makeAuth();
+    const c = auth.issueChallenge(CNONCE) as { snonce: string };
+    expect(auth.redeemChallenge({ cnonce: CNONCE, snonce: c.snonce, proof: "00".repeat(32) })).toBeNull();
+    expect(auth.redeemChallenge({ cnonce: CNONCE, snonce: c.snonce, proof: clientProof(SECRET, CNONCE, c.snonce) })).toBeNull();
+  });
+
+  it("rejects the server proof used as the client proof, and a different cnonce", () => {
+    const { auth } = makeAuth();
+    const c = auth.issueChallenge(CNONCE) as { snonce: string; proof: string };
+    expect(auth.redeemChallenge({ cnonce: CNONCE, snonce: c.snonce, proof: c.proof })).toBeNull();
+    const d = auth.issueChallenge(CNONCE) as { snonce: string };
+    expect(auth.redeemChallenge({ cnonce: "cd".repeat(16), snonce: d.snonce, proof: clientProof(SECRET, "cd".repeat(16), d.snonce) })).toBeNull();
+  });
+
+  it("expires the snonce after 30 seconds", () => {
+    const { auth, clock } = makeAuth();
+    expect(CHALLENGE_TTL_MS).toBe(30_000);
+    const c = auth.issueChallenge(CNONCE) as { snonce: string };
+    clock.t += CHALLENGE_TTL_MS + 1;
+    expect(auth.redeemChallenge({ cnonce: CNONCE, snonce: c.snonce, proof: clientProof(SECRET, CNONCE, c.snonce) })).toBeNull();
+  });
+
+  it("rejects malformed cnonce / snonce / proof input", () => {
+    const { auth } = makeAuth();
+    for (const bad of ["", "xyz", "g".repeat(32), "a".repeat(8), "a".repeat(500)]) expect(auth.issueChallenge(bad)).toBeNull();
+    expect(auth.redeemChallenge({ cnonce: CNONCE, snonce: "nope", proof: "x" })).toBeNull();
+  });
+
+  it("a wrong secret yields a different server proof", () => {
+    expect(serverProof("a", CNONCE, "b".repeat(64))).not.toBe(serverProof("c", CNONCE, "b".repeat(64)));
+  });
+
+  it("keeps the proof formats domain-separated (server| vs client|)", () => {
+    expect(serverProof(SECRET, CNONCE, "ef".repeat(32))).not.toBe(clientProof(SECRET, CNONCE, "ef".repeat(32)));
   });
 });
 

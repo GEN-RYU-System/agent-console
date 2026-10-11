@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { readKeychainSecret } from "../../server/keychain.ts";
-import { resolveSecret } from "../../server/secret.ts";
+import { resolveSecret, securityBinFor } from "../../server/secret.ts";
 
 const SECRET = "ab".repeat(32);
 
@@ -43,19 +43,19 @@ describe("readKeychainSecret", () => {
 describe("resolveSecret", () => {
   it("uses the keychain when AGENT_CONSOLE_AUTH=keychain", async () => {
     const { bin } = stub(`echo "${SECRET}"`);
-    const r = await resolveSecret({ AGENT_CONSOLE_AUTH: "keychain", AC_SECURITY: bin });
+    const r = await resolveSecret({ AGENT_CONSOLE_AUTH: "keychain", AC_SECURITY: bin, AC_STUB_LOG: "1" });
     expect(r).toEqual({ token: SECRET, mode: "keychain" });
   });
 
   it("refuses to start when keychain mode cannot read the secret", async () => {
     const { bin } = stub("exit 44");
-    await expect(resolveSecret({ AGENT_CONSOLE_AUTH: "keychain", AC_SECURITY: bin })).rejects.toThrow(/keychain/i);
+    await expect(resolveSecret({ AGENT_CONSOLE_AUTH: "keychain", AC_SECURITY: bin, AC_STUB_LOG: "1" })).rejects.toThrow(/keychain/i);
   });
 
   it("refuses an ambiguous setup (keychain mode plus a fixed token)", async () => {
     const { bin } = stub(`echo "${SECRET}"`);
     await expect(
-      resolveSecret({ AGENT_CONSOLE_AUTH: "keychain", AC_SECURITY: bin, AGENT_CONSOLE_TOKEN: "a".repeat(40) }),
+      resolveSecret({ AGENT_CONSOLE_AUTH: "keychain", AC_SECURITY: bin, AC_STUB_LOG: "1", AGENT_CONSOLE_TOKEN: "a".repeat(40) }),
     ).rejects.toThrow(/AGENT_CONSOLE/);
   });
 
@@ -69,5 +69,17 @@ describe("resolveSecret", () => {
     expect(dev.token).toMatch(/^[0-9a-f]{64}$/);
     const fixed = await resolveSecret({ AGENT_CONSOLE_TOKEN: "Fixed_token-0123456789012345678901234567" });
     expect(fixed.mode).toBe("fixed");
+  });
+});
+
+describe("securityBinFor (no override in production)", () => {
+  it("ignores AC_SECURITY unless the test marker AC_STUB_LOG is set", () => {
+    expect(securityBinFor({ AC_SECURITY: "/tmp/evil" })).toBe("/usr/bin/security");
+    expect(securityBinFor({ AC_SECURITY: "/tmp/evil", AC_STUB_LOG: "" })).toBe("/usr/bin/security");
+    expect(securityBinFor({})).toBe("/usr/bin/security");
+  });
+
+  it("uses AC_SECURITY in test mode", () => {
+    expect(securityBinFor({ AC_SECURITY: "/tmp/stub", AC_STUB_LOG: "/tmp/log" })).toBe("/tmp/stub");
   });
 });

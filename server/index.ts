@@ -1,3 +1,5 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import path from "node:path";
@@ -12,6 +14,7 @@ import { readSaSource } from "./tokens.ts";
 import { attachWebSockets } from "./ws.ts";
 
 const LISTEN_HOST = "127.0.0.1";
+const execFileAsync = promisify(execFile);
 
 function assertSpawnHelperExecutable(): void {
   const helper = path.join(process.cwd(), "node_modules", "node-pty", "prebuilds", `${process.platform}-${process.arch}`, "spawn-helper");
@@ -32,6 +35,16 @@ function readVersion(): string {
   }
 }
 
+async function readCommit(): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: process.cwd(), timeout: 5000 });
+    const sha = stdout.trim();
+    return /^[0-9a-f]{40}$/.test(sha) ? sha : "";
+  } catch {
+    return "";
+  }
+}
+
 async function main(): Promise<void> {
   assertSpawnHelperExecutable();
   const config = loadConfig();
@@ -39,7 +52,7 @@ async function main(): Promise<void> {
   const auth = createAuth(token, config.port);
   const sessions = new SessionManager(config);
   const hub = new Hub(config, sessions);
-  const meta = { saSource: await readSaSource(), claudeVersion: await fetchClaudeVersion(config.claudeBin), version: readVersion() };
+  const meta = { saSource: await readSaSource(), claudeVersion: await fetchClaudeVersion(config.claudeBin), version: readVersion(), commit: await readCommit() };
 
   const server = createServer(createRequestHandler({ config, auth, sessions, hub, staticDir: path.join(process.cwd(), "dist"), meta }));
   attachWebSockets(server, { config, auth, sessions, hub });

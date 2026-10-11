@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
-import { PAIRING_TTL_MS, type Auth } from "./auth.ts";
+import { PAIRING_TTL_MS, SESSION_MAX_MS, type Auth } from "./auth.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
 import { SessionConflictError, SessionInputError, SessionNotFoundError, type SessionManager } from "./sessions.ts";
@@ -26,7 +26,7 @@ export interface AppDeps {
   sessions: SessionManager;
   hub: Hub;
   staticDir: string;
-  meta: { saSource: string; claudeVersion: string; version: string };
+  meta: { saSource: string; claudeVersion: string; version: string; commit: string };
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -101,16 +101,18 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
       saSource: meta.saSource,
       claudeVersion: meta.claudeVersion,
       appVersion: meta.version,
+      commit: meta.commit,
     });
     return;
   }
-  if (req.method === "POST" && url.pathname === "/api/pair") {
-    // コードの発行はサーバー秘密（Bearer）を持つ呼び出しだけ。Cookie では発行できない。
-    if (deps.auth.authenticate({ authorization: req.headers.authorization }) !== "bearer") {
-      sendJson(res, 401, { error: "unauthorized" });
+  if (req.method === "POST" && url.pathname === "/api/logout") {
+    // セッショントークンを失効させる（サーバー秘密の Bearer では行えない）
+    const presented = (req.headers.authorization ?? "").replace(/^Bearer /, "");
+    if (!deps.auth.revokeSession(presented)) {
+      sendJson(res, 400, { error: "no session to log out" });
       return;
     }
-    sendJson(res, 200, { code: deps.auth.issuePairingCode(PAIRING_TTL_MS), expiresInSec: PAIRING_TTL_MS / 1000 });
+    sendJson(res, 200, { loggedOut: true });
     return;
   }
   if (req.method === "GET" && url.pathname === "/api/ledger") {
@@ -136,24 +138,56 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   sendJson(res, 404, { error: "not found" });
 }
 
-async function handlePair(deps: AppDeps, url: URL, res: ServerResponse): Promise<void> {
-  const code = url.searchParams.get("code") ?? "";
-  const sessionId = deps.auth.consumePairingCode(code);
-  if (sessionId === null) {
-    // 画面側（SPA の /pair）が Callout で案内する
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Referrer-Policy", "no-referrer");
-    await serveStatic(deps.staticDir, "/", res, 401);
-    return;
+const NO_STORE = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
+
+function jsonBody(body: unknown): Record<string, unknown> {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) throw new BadRequestError("JSON object required");
+  return body as Record<string, unknown>;
+}
+
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
+
+/**
+ * 認証前に呼ばれるペアリング用のエンドポイント（相互認証）。
+ * - POST /api/pair/challenge {cnonce}            → {snonce, proof}（launcher がサーバーの証明を検証する）
+ * - POST /api/pair {cnonce, snonce, proof}       → {code, expiresInSec}（クライアントの証明を検証）
+ * - POST /api/pair/redeem {code}                 → {token, expiresInSec}（画面がコードを引換える。Origin 必須）
+ * 長期秘密そのものは受け取らない・返さない。
+ */
+async function handlePairing(deps: AppDeps, req: IncomingMessage, res: ServerResponse, pathname: string): Promise<boolean> {
+  const { auth } = deps;
+  if (req.method !== "POST") return false;
+  if (pathname === "/api/pair/challenge") {
+    const challenge = auth.issueChallenge(str(jsonBody(await readJsonBody(req)).cnonce));
+    if (!challenge) throw new BadRequestError("invalid cnonce");
+    sendJson(res, 200, challenge);
+    return true;
   }
-  res
-    .writeHead(303, {
-      Location: "/",
-      "Set-Cookie": deps.auth.sessionCookie(sessionId),
-      "Cache-Control": "no-store",
-      "Referrer-Policy": "no-referrer",
-    })
-    .end();
+  if (pathname === "/api/pair") {
+    const body = jsonBody(await readJsonBody(req));
+    const code = auth.redeemChallenge({ cnonce: str(body.cnonce), snonce: str(body.snonce), proof: str(body.proof) });
+    if (code === null) {
+      sendJson(res, 401, { error: "unauthorized" });
+      return true;
+    }
+    sendJson(res, 200, { code, expiresInSec: PAIRING_TTL_MS / 1000 });
+    return true;
+  }
+  if (pathname === "/api/pair/redeem") {
+    if (!auth.isOriginAllowed(req.headers.origin)) {
+      sendJson(res, 403, { error: "forbidden origin" });
+      return true;
+    }
+    const token = auth.consumePairingCode(str(jsonBody(await readJsonBody(req)).code));
+    if (token === null) {
+      res.setHeader("Cache-Control", NO_STORE["Cache-Control"]);
+      sendJson(res, 401, { error: "invalid or expired code" });
+      return true;
+    }
+    sendJson(res, 200, { token, expiresInSec: SESSION_MAX_MS / 1000 });
+    return true;
+  }
+  return false;
 }
 
 export function createRequestHandler(deps: AppDeps) {
@@ -165,21 +199,19 @@ export function createRequestHandler(deps: AppDeps) {
       }
       const url = new URL(req.url ?? "/", `http://127.0.0.1:${deps.config.port}`);
       if (url.pathname === "/healthz") {
-        res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }).end("ok");
+        // 本文の version / commit が、更新・切戻し・自己診断の成功判定に使われる
+        sendJson(res, 200, { ok: true, version: deps.meta.version, commit: deps.meta.commit });
         return;
       }
-      if (url.pathname === "/pair" && req.method === "GET") {
-        await handlePair(deps, url, res);
-        return;
-      }
+      if (url.pathname.startsWith("/api/pair") && (await handlePairing(deps, req, res, url.pathname))) return;
       if (url.pathname.startsWith("/api/")) {
-        const method = deps.auth.authenticate({ authorization: req.headers.authorization, cookie: req.headers.cookie });
+        const method = deps.auth.authenticate({ authorization: req.headers.authorization });
         if (method === null) {
           sendJson(res, 401, { error: "unauthorized" });
           return;
         }
-        // Cookie 認証の状態変更は Origin 必須（自分以外・欠落は 403）。Bearer は Cookie を使わないため対象外。
-        if (method === "cookie" && req.method !== "GET" && req.method !== "HEAD" && !deps.auth.isOriginAllowed(req.headers.origin)) {
+        // セッション認証の状態変更は Origin 必須（自分以外・欠落は 403）。サーバー秘密の Bearer（CLI）は対象外。
+        if (method === "session" && req.method !== "GET" && req.method !== "HEAD" && !deps.auth.isOriginAllowed(req.headers.origin)) {
           sendJson(res, 403, { error: "forbidden origin" });
           return;
         }

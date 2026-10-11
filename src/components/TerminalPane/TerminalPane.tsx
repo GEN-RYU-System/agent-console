@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { wsUrl } from "../../api";
+import { openSocket } from "../../api";
 import { splitByCodePoints } from "./chunkInput";
 import { readTerminalAppearance } from "./terminalTokens";
 import "./TerminalPane.css";
@@ -26,7 +26,7 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
     term.loadAddon(fit);
     term.open(host);
 
-    const ws = new WebSocket(wsUrl("/ws/term", { session: sessionId }));
+    const ws = openSocket("/ws/term", { session: sessionId });
     const send = (msg: object): void => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
     };

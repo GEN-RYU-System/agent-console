@@ -1,4 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { clientProof, serverProof } from "./pair-proof.ts";
 
 const TOKEN_BYTES = 32;
 const MIN_FIXED_TOKEN_LENGTH = 32;
@@ -6,12 +7,17 @@ const FIXED_TOKEN_PATTERN = /^[A-Za-z0-9_-]+$/;
 const MAX_SESSIONS = 64;
 const MAX_PENDING_CODES = 64;
 
-export const SESSION_COOKIE_NAME = "ac_session";
 /** 起動アプリが発行するペアリングコードの有効期間。 */
 export const PAIRING_TTL_MS = 30_000;
 /** 開発時に起動ログへ出すペアリングコードの有効期間。 */
 export const DEV_PAIRING_TTL_MS = 5 * 60_000;
-export const SESSION_MAX_MS = 24 * 60 * 60 * 1000;
+/** 相互認証のチャレンジ（snonce）の有効期間。 */
+export const CHALLENGE_TTL_MS = 30_000;
+export const SESSION_MAX_MS = 12 * 60 * 60 * 1000;
+export const SESSION_SUBPROTOCOL_PREFIX = "ac.";
+
+const NONCE_PATTERN = /^[0-9a-f]{32,128}$/;
+const PROOF_PATTERN = /^[0-9a-f]{64}$/;
 
 export interface ResolvedToken {
   token: string;
@@ -34,22 +40,34 @@ export function isValidSecret(value: string): boolean {
   return value.length >= MIN_FIXED_TOKEN_LENGTH && FIXED_TOKEN_PATTERN.test(value);
 }
 
-export type AuthMethod = "bearer" | "cookie";
+export type AuthMethod = "bearer" | "session";
 
 export interface RequestCredentials {
   authorization?: string;
-  cookie?: string;
+  /** Sec-WebSocket-Protocol に載った値（ac.<セッショントークン>）。 */
+  protocols?: readonly string[];
+}
+
+export interface Challenge {
+  snonce: string;
+  proof: string;
 }
 
 export interface Auth {
-  /** Bearer（サーバー秘密）または有効なセッション Cookie。どちらでもなければ null。 */
+  /** サーバー秘密（Bearer）またはセッショントークン（Bearer / ac.<token> サブプロトコル）。どちらでもなければ null。 */
   authenticate(credentials: RequestCredentials): AuthMethod | null;
   isOriginAllowed(origin: string | undefined): boolean;
   isHostAllowed(host: string | undefined): boolean;
+  /** 相互認証 1/2: cnonce に対し snonce とサーバーの証明を返す。cnonce が不正なら null。 */
+  issueChallenge(cnonce: string): Challenge | null;
+  /** 相互認証 2/2: クライアントの証明が正しければペアリングコードを返す。snonce は成否にかかわらず消費される。 */
+  redeemChallenge(input: { cnonce: string; snonce: string; proof: string }): string | null;
   issuePairingCode(ttlMs: number): string;
-  /** コードを消費してセッション ID を返す。無効・失効・再使用は null。 */
+  /** コードを消費してセッショントークンを返す。無効・失効・再使用は null。 */
   consumePairingCode(code: string): string | null;
-  sessionCookie(sessionId: string): string;
+  revokeSession(token: string): boolean;
+  /** WebSocket の要求サブプロトコルから、有効なセッションの `ac.<token>` をそのまま返す（応答に同じ値を返すため）。 */
+  sessionFromProtocols(protocols: readonly string[]): string | null;
 }
 
 export interface AuthOptions {
@@ -64,28 +82,21 @@ function safeEqualDigest(a: Buffer, b: Buffer): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-function readCookie(header: string | undefined, name: string): string | null {
-  if (!header) return null;
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq > 0 && part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
-  }
-  return null;
-}
-
 export function createAuth(secret: string, port: number, options: AuthOptions = {}): Auth {
   const now = options.now ?? Date.now;
   const ownOrigin = `http://127.0.0.1:${port}`;
   const ownHost = `127.0.0.1:${port}`;
   const secretDigest = sha256(secret);
-  // コードもセッション ID もハッシュで保持し、全件を定数時間で比較する（入力値の一致位置が漏れない）
+  // コードもセッションもハッシュで保持し、全件を定数時間で比較する（入力値の一致位置が漏れない）
   const codes = new Map<string, { digest: Buffer; expiresAt: number }>();
   const sessions = new Map<string, { digest: Buffer; expiresAt: number }>();
+  const challenges = new Map<string, { cnonce: string; expiresAt: number }>();
 
   const purge = (): void => {
     const t = now();
     for (const [key, v] of codes) if (v.expiresAt <= t) codes.delete(key);
     for (const [key, v] of sessions) if (v.expiresAt <= t) sessions.delete(key);
+    for (const [key, v] of challenges) if (v.expiresAt <= t) challenges.delete(key);
   };
 
   const findByDigest = (store: Map<string, { digest: Buffer; expiresAt: number }>, value: string): string | null => {
@@ -97,15 +108,36 @@ export function createAuth(secret: string, port: number, options: AuthOptions = 
     return found;
   };
 
+  const dropOldest = (store: Map<string, unknown>, max: number): void => {
+    if (store.size < max) return;
+    const oldest = store.keys().next().value;
+    if (oldest !== undefined) store.delete(oldest);
+  };
+
+  const sessionKey = (token: string): string | null => {
+    purge();
+    return findByDigest(sessions, token);
+  };
+
   return {
-    authenticate({ authorization, cookie }) {
-      if (authorization?.startsWith("Bearer ") && safeEqualDigest(sha256(authorization.slice("Bearer ".length)), secretDigest)) {
-        return "bearer";
+    authenticate({ authorization, protocols }) {
+      if (authorization?.startsWith("Bearer ")) {
+        const presented = authorization.slice("Bearer ".length);
+        if (safeEqualDigest(sha256(presented), secretDigest)) return "bearer";
+        if (sessionKey(presented) !== null) return "session";
       }
-      const sessionId = readCookie(cookie, SESSION_COOKIE_NAME);
-      if (sessionId) {
-        purge();
-        if (findByDigest(sessions, sessionId) !== null) return "cookie";
+      for (const protocol of protocols ?? []) {
+        if (protocol.startsWith(SESSION_SUBPROTOCOL_PREFIX) && sessionKey(protocol.slice(SESSION_SUBPROTOCOL_PREFIX.length)) !== null) {
+          return "session";
+        }
+      }
+      return null;
+    },
+    sessionFromProtocols(protocols) {
+      for (const protocol of protocols) {
+        if (protocol.startsWith(SESSION_SUBPROTOCOL_PREFIX) && sessionKey(protocol.slice(SESSION_SUBPROTOCOL_PREFIX.length)) !== null) {
+          return protocol;
+        }
       }
       return null;
     },
@@ -116,13 +148,28 @@ export function createAuth(secret: string, port: number, options: AuthOptions = 
     isHostAllowed(host) {
       return host === ownHost;
     },
+    issueChallenge(cnonce) {
+      if (!NONCE_PATTERN.test(cnonce)) return null;
+      purge();
+      dropOldest(challenges, MAX_PENDING_CODES);
+      const snonce = randomBytes(TOKEN_BYTES).toString("hex");
+      challenges.set(snonce, { cnonce, expiresAt: now() + CHALLENGE_TTL_MS });
+      return { snonce, proof: serverProof(secret, cnonce, snonce) };
+    },
+    redeemChallenge({ cnonce, snonce, proof }) {
+      purge();
+      const pending = challenges.get(snonce);
+      // 成否にかかわらず 1 回で消費する（証明の総当たりをさせない）
+      challenges.delete(snonce);
+      if (!pending || pending.cnonce !== cnonce || !PROOF_PATTERN.test(proof)) return null;
+      const expected = Buffer.from(clientProof(secret, cnonce, snonce), "hex");
+      const given = Buffer.from(proof, "hex");
+      if (!safeEqualDigest(expected, given)) return null;
+      return this.issuePairingCode(PAIRING_TTL_MS);
+    },
     issuePairingCode(ttlMs) {
       purge();
-      if (codes.size >= MAX_PENDING_CODES) {
-        // 古いものから捨てる（発行は認証済みの呼び出しだけだが、溜まり続けない）
-        const oldest = codes.keys().next().value;
-        if (oldest !== undefined) codes.delete(oldest);
-      }
+      dropOldest(codes, MAX_PENDING_CODES);
       const code = randomBytes(TOKEN_BYTES).toString("hex");
       codes.set(code, { digest: sha256(code), expiresAt: now() + ttlMs });
       return code;
@@ -132,16 +179,16 @@ export function createAuth(secret: string, port: number, options: AuthOptions = 
       const key = findByDigest(codes, code);
       if (key === null) return null;
       codes.delete(key);
-      if (sessions.size >= MAX_SESSIONS) {
-        const oldest = sessions.keys().next().value;
-        if (oldest !== undefined) sessions.delete(oldest);
-      }
-      const sessionId = randomBytes(TOKEN_BYTES).toString("hex");
-      sessions.set(sessionId, { digest: sha256(sessionId), expiresAt: now() + SESSION_MAX_MS });
-      return sessionId;
+      dropOldest(sessions, MAX_SESSIONS);
+      const token = randomBytes(TOKEN_BYTES).toString("hex");
+      sessions.set(token, { digest: sha256(token), expiresAt: now() + SESSION_MAX_MS });
+      return token;
     },
-    sessionCookie(sessionId) {
-      return `${SESSION_COOKIE_NAME}=${sessionId}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MAX_MS / 1000}`;
+    revokeSession(token) {
+      const key = sessionKey(token);
+      if (key === null) return false;
+      sessions.delete(key);
+      return true;
     },
   };
 }

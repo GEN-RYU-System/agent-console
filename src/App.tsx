@@ -1,7 +1,7 @@
 import { ConsolePage } from "./pages/ConsolePage";
-import { PairingFailedPage } from "./pages/PairingFailedPage";
+import { PairingPage } from "./pages/PairingPage";
 
-/** サーバーは無効なペアリングコードに対して /pair を 401 で返す。その場合は案内画面を出す。 */
+/** /pair はペアリングコードの引換え画面（失敗時は案内の Callout）。それ以外はコンソール。 */
 export function App() {
-  return window.location.pathname === "/pair" ? <PairingFailedPage /> : <ConsolePage />;
+  return window.location.pathname === "/pair" ? <PairingPage /> : <ConsolePage />;
 }

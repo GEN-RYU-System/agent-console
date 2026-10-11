@@ -12,6 +12,7 @@ import { SessionManager } from "../../../server/sessions.ts";
 import { attachWebSockets } from "../../../server/ws.ts";
 
 export const TOKEN = "t".repeat(40);
+export const COMMIT = "0123456789abcdef0123456789abcdef01234567";
 
 export interface Clock {
   t: number;
@@ -87,7 +88,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const clock: Clock = { t: Date.now(), advance(ms) { this.t += ms; } };
   const auth = createAuth(TOKEN, port, { now: () => clock.t });
   const server = createServer(
-    createRequestHandler({ config, auth, sessions, hub, staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9" } }),
+    createRequestHandler({ config, auth, sessions, hub, staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT } }),
   );
   attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));

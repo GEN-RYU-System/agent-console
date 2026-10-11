@@ -10,6 +10,12 @@ export interface ResolvedSecret {
 
 const DEFAULT_SECURITY_BIN = "/usr/bin/security";
 
+/** 本番では差し替えを受け付けない。テストモード（AC_STUB_LOG）のときだけ AC_SECURITY を使う。 */
+export function securityBinFor(env: Record<string, string | undefined>): string {
+  const testMode = env.AC_STUB_LOG !== undefined && env.AC_STUB_LOG !== "";
+  return testMode && env.AC_SECURITY && env.AC_SECURITY !== "" ? env.AC_SECURITY : DEFAULT_SECURITY_BIN;
+}
+
 /**
  * サーバー秘密の決定。
  * - AGENT_CONSOLE_AUTH=keychain: キーチェーンから読む（読めなければ例外=起動中止）。固定トークンとの併用は不可。
@@ -25,6 +31,5 @@ export async function resolveSecret(env: Record<string, string | undefined>): Pr
   if (env.AGENT_CONSOLE_TOKEN !== undefined && env.AGENT_CONSOLE_TOKEN !== "") {
     throw new Error("AGENT_CONSOLE_AUTH=keychain と AGENT_CONSOLE_TOKEN は同時に指定できません");
   }
-  const securityBin = env.AC_SECURITY && env.AC_SECURITY !== "" ? env.AC_SECURITY : DEFAULT_SECURITY_BIN;
-  return { token: await readKeychainSecret(securityBin), mode: "keychain" };
+  return { token: await readKeychainSecret(securityBinFor(env)), mode: "keychain" };
 }
