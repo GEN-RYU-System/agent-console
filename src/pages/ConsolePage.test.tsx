@@ -10,7 +10,7 @@ const state: ConsoleState = {
   roles: [{ id: "shell", labelKey: "role.shell", needsWorktree: false }],
   saSource: "abcdef0123456789",
   claudeVersion: "1.0.0",
-  appVersion: "0.3.5",
+  appVersion: "0.3.6",
   commit: "abcdef0123456789abcdef0123456789abcdef01",
 };
 
@@ -109,7 +109,7 @@ describe("ConsolePage removing a stopped session", () => {
   it("shows an error callout when removal fails (409 / 404 / network)", async () => {
     removeSession.mockRejectedValue(new Error("session is still running"));
     render(<ConsolePage />);
-    fireEvent.click(await screen.findByText("一覧から外す"));
+    fireEvent.click(await screen.findByRole("button", { name: "一覧から外す" }));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("一覧から外せませんでした");
     expect(alert.textContent).toContain("session is still running");
@@ -118,10 +118,10 @@ describe("ConsolePage removing a stopped session", () => {
   it("clears the error after a later successful removal", async () => {
     removeSession.mockRejectedValueOnce(new Error("boom")).mockResolvedValueOnce({ removed: true });
     render(<ConsolePage />);
-    const button = await screen.findByText("一覧から外す");
+    const button = await screen.findByRole("button", { name: "一覧から外す" });
     fireEvent.click(button);
     await screen.findByRole("alert");
-    fireEvent.click(screen.getByText("一覧から外す"));
+    fireEvent.click(screen.getByRole("button", { name: "一覧から外す" }));
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 });
@@ -139,7 +139,7 @@ describe("ConsolePage resume picker (K1-K3 screen side)", () => {
 describe("ConsolePage footer and authorization", () => {
   it("shows the app version in the footer", async () => {
     render(<ConsolePage />);
-    expect((await screen.findByTestId("app-version")).textContent).toContain("0.3.5");
+    expect((await screen.findByTestId("app-version")).textContent).toContain("0.3.6");
   });
 
   it("shows a login-required callout on 401", async () => {

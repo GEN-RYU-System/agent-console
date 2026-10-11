@@ -1,7 +1,11 @@
 .ac-session {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
 }
 
 .ac-session--selected {
@@ -10,32 +14,37 @@
 }
 
 .ac-session__select {
-  display: flex;
+  flex: 1;
+  min-width: 0;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
+  justify-content: center;
   gap: var(--space-1);
-  height: auto;
   text-align: left;
 }
 
+.ac-session__line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
 .ac-session__name {
-  font-size: var(--font-md);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-base);
   font-weight: var(--font-weight-semi);
   color: var(--text-primary);
 }
 
 .ac-session__role {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--font-xs);
-  color: var(--text-muted);
-}
-
-.ac-session__status {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.ac-session__actions {
-  display: flex;
-  gap: var(--space-2);
+  color: var(--text-secondary);
 }

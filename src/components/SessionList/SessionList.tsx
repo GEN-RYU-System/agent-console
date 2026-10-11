@@ -1,7 +1,7 @@
+import { Pencil, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@sa/components/Badge";
 import { Button } from "@sa/components/Button";
-import { Card } from "@sa/components/Card";
 import { EmptyState } from "@sa/components/EmptyState";
 import { Stack } from "@sa/components/Stack";
 import type { RoleView, SessionView } from "../../types";
@@ -27,11 +27,10 @@ export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, o
     return role ? t(role.labelKey) : id;
   };
   return (
-    <Stack gap="2">
+    <Stack gap="1">
       {sessions.map((s) => (
-        <Card
+        <div
           key={s.id}
-          density="compact"
           data-testid="session-row"
           data-session-id={s.id}
           data-state={s.state}
@@ -40,15 +39,14 @@ export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, o
         >
           <Button
             variant="ghost"
-            fullWidth
+            size="sm"
             layoutClassName="ac-session__select"
             aria-current={s.id === selectedId ? "true" : undefined}
             onClick={() => onSelect(s.id)}
           >
-            <span className="ac-session__name">{s.name}</span>
-            <span className="ac-session__role">{roleLabel(s.roleId)}</span>
-            <span className="ac-session__status">
+            <span className="ac-session__line" data-testid="session-line-1">
               <StatusDot state={s.state} />
+              <span className="ac-session__name" data-testid="session-name">{s.name}</span>
               {s.unread > 0 && (
                 <span data-testid="unread-badge">
                   <Badge variant="info" appearance="solid" size="sm">
@@ -57,20 +55,34 @@ export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, o
                 </span>
               )}
             </span>
+            <span className="ac-session__role" data-testid="session-line-2">{roleLabel(s.roleId)}</span>
           </Button>
-          <div className="ac-session__actions">
-            {s.state !== "stopped" && (
-              <Button variant="ghost" size="sm" disabled={!s.canInput} onClick={() => onRename(s.id)}>
-                {t("ac.rename.open")}
-              </Button>
-            )}
-            {s.state === "stopped" && (
-              <Button variant="outline" size="sm" onClick={() => onRemove(s.id)}>
-                {t("ac.removeSession")}
-              </Button>
-            )}
-          </div>
-        </Card>
+          {s.state !== "stopped" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              aria-label={t("ac.rename.open")}
+              title={t("ac.rename.open")}
+              disabled={!s.canInput}
+              onClick={() => onRename(s.id)}
+            >
+              <Pencil size={14} aria-hidden="true" />
+            </Button>
+          )}
+          {s.state === "stopped" && (
+            <Button
+              variant="outline"
+              size="sm"
+              iconOnly
+              aria-label={t("ac.removeSession")}
+              title={t("ac.removeSession")}
+              onClick={() => onRemove(s.id)}
+            >
+              <X size={14} aria-hidden="true" />
+            </Button>
+          )}
+        </div>
       ))}
     </Stack>
   );
