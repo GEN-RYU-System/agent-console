@@ -73,6 +73,7 @@ export function prepareE2eEnv(): void {
   const dataDir = path.join(base, "data");
 
   const roleScript = path.join(here, "role.mjs");
+  const bracketedScript = path.join(here, "bracketed-role.mjs");
   const marker = "agent-console-e2e-role";
   const config = {
     port: E2E_PORT,
@@ -96,6 +97,7 @@ export function prepareE2eEnv(): void {
         needsWorktree: false,
         resumeCommand: ["/bin/sh", "-c", `echo RESUMED=$AC_RESUME_ID; exec "${process.execPath}" "${roleScript}" ${marker}`],
       },
+      { id: "e2e-bracketed", labelKey: "role.shell", command: [process.execPath, bracketedScript, marker], needsWorktree: false },
       { id: "e2e-short", labelKey: "role.shell", command: [process.execPath, "-e", "console.log('bye')", marker], needsWorktree: false },
     ],
   };

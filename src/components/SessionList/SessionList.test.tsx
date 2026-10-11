@@ -7,8 +7,8 @@ import { SessionList } from "./SessionList";
 
 const roles: RoleView[] = [{ id: "shell", labelKey: "role.shell", needsWorktree: false, canResume: false }];
 const sessions: SessionView[] = [
-  { id: "a", name: "first", roleId: "shell", branch: null, cwd: "/", state: "working", createdAt: 1, unread: 0, hasClaude: true },
-  { id: "b", name: "second", roleId: "shell", branch: null, cwd: "/", state: "stopped", createdAt: 2, unread: 2, hasClaude: false },
+  { id: "a", name: "first", roleId: "shell", branch: null, cwd: "/", state: "working", createdAt: 1, unread: 0, hasClaude: true, canInput: false },
+  { id: "b", name: "second", roleId: "shell", branch: null, cwd: "/", state: "stopped", createdAt: 2, unread: 2, hasClaude: false, canInput: false },
 ];
 
 describe("SessionList", () => {
@@ -50,12 +50,17 @@ describe("SessionList", () => {
     expect(screen.getAllByTestId("session-row")[1].getAttribute("data-unread")).toBe("2");
   });
 
+  it("disables rename while input is not allowed (Claude working / waiting)", () => {
+    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} />);
+    expect((screen.getByText("名前を変える").closest("button") as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("offers rename for sessions that are not stopped", () => {
     const onRename = vi.fn();
-    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={onRename} />);
+    render(<SessionList sessions={[{ ...sessions[0], state: "idle", canInput: true }, sessions[1]]} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={onRename} />);
     const buttons = screen.getAllByText("名前を変える");
     expect(buttons).toHaveLength(1);
-    fireEvent.click(buttons[0]);
+    fireEvent.click(buttons[buttons.length - 1]);
     expect(onRename).toHaveBeenCalledWith("a");
   });
 });

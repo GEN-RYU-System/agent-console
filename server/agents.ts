@@ -9,6 +9,8 @@ export interface AgentRow {
   status: AgentStatus;
   name?: string;
   sessionId?: string;
+  /** status が waiting のときだけ付く（許可プロンプト・質問などの待ち理由） */
+  waitingFor?: string;
   cwd?: string;
   /** エポックミリ秒（`claude agents --json` の startedAt） */
   startedAt?: number;
@@ -42,6 +44,7 @@ export function parseAgentsOutput(raw: string): AgentRow[] | null {
       status,
       name: typeof r.name === "string" ? r.name : undefined,
       sessionId: typeof r.sessionId === "string" ? r.sessionId : undefined,
+      waitingFor: typeof r.waitingFor === "string" && r.waitingFor !== "" ? r.waitingFor : undefined,
       cwd: typeof r.cwd === "string" ? r.cwd : undefined,
       startedAt: typeof r.startedAt === "number" && Number.isFinite(r.startedAt) ? r.startedAt : undefined,
     });
@@ -58,6 +61,30 @@ export interface SessionProcessInfo {
 export function agentForSession(session: SessionProcessInfo, rows: AgentRow[] | null): AgentRow | undefined {
   if (session.exited || rows === null) return undefined;
   return rows.find((r) => session.pids.has(r.pid));
+}
+
+export interface InputVerdict {
+  ok: boolean;
+  /** ok でないときの理由（409 の本文・画面の案内に使う） */
+  reason?: string;
+  /** そのセッションで Claude が動いている */
+  hasClaude: boolean;
+}
+
+/**
+ * 端末へ人の指示（/rename・よく使う指示）を入れてよいか。
+ * Claude が動いているときは status が idle で waitingFor が無いときだけ（waiting は許可プロンプトの応答待ちを含み得て、
+ * そこへ Enter を送ると既定の選択肢を押す恐れがある）。Claude が動いていないシェルは停止中でなければ可。
+ * rows が null（取得失敗）のときは Claude の有無を判定できないので不可。
+ */
+export function inputVerdict(session: SessionProcessInfo, rows: AgentRow[] | null): InputVerdict {
+  if (session.exited) return { ok: false, reason: "session is stopped", hasClaude: false };
+  if (rows === null) return { ok: false, reason: "claude state is unknown", hasClaude: false };
+  const agent = agentForSession(session, rows);
+  if (!agent) return { ok: true, hasClaude: false };
+  if (agent.status !== "idle") return { ok: false, reason: `claude is ${agent.status}`, hasClaude: true };
+  if (agent.waitingFor !== undefined) return { ok: false, reason: "claude is waiting for input", hasClaude: true };
+  return { ok: true, hasClaude: true };
 }
 
 export function stateForSession(session: SessionProcessInfo, rows: AgentRow[] | null): SessionState {

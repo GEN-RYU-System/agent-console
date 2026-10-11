@@ -67,46 +67,86 @@ describe("check-design-governance", () => {
   describe("stricter rules", () => {
     const css = (body: string) => makeProject({ "src/a.css": body });
 
-    it("reports CSS named colors in values but not in var names or keywords", () => {
-      expect(run(css(".a { color: red; }\n")).status).toBe(1);
-      expect(run(css(".a { border: 1px solid rebeccapurple; }\n")).status).toBe(1);
-      expect(run(css(".a { color: var(--color-red-50); background: transparent; outline-color: currentColor; }\n")).status).toBe(0);
-      expect(run(css(".red { margin: 0; }\n")).status).toBe(0);
+    describe("reports CSS named colors in values but not in var names or keywords", () => {
+      it("case 1", () => {
+        expect(run(css(".a { color: red; }\n")).status).toBe(1);
+      });
+      it("case 2", () => {
+        expect(run(css(".a { border: 1px solid rebeccapurple; }\n")).status).toBe(1);
+      });
+      it("case 3", () => {
+        expect(run(css(".a { color: var(--color-red-50); background: transparent; outline-color: currentColor; }\n")).status).toBe(0);
+      });
+      it("case 4", () => {
+        expect(run(css(".red { margin: 0; }\n")).status).toBe(0);
+      });
     });
 
-    it("reports modern color functions", () => {
-      for (const v of ["oklch(0.5 0.1 20)", "oklab(0.5 0 0)", "lab(50 0 0)", "lch(50 0 0)", "hwb(10 10% 10%)", "color(display-p3 1 0 0)"]) {
-        const r = run(css(`.a { color: ${v}; }\n`));
-        expect(r.status, v).toBe(1);
-      }
+    // 1 回の検査は node の起動を伴う。負荷時に 1 つの it が 5 秒に近づかないよう、1 件ずつ別の it にする
+    it.each(["oklch(0.5 0.1 20)", "oklab(0.5 0 0)", "lab(50 0 0)", "lch(50 0 0)", "hwb(10 10% 10%)", "color(display-p3 1 0 0)"])("reports modern color function %s", (v) => {
+      expect(run(css(`.a { color: ${v}; }\n`)).status, v).toBe(1);
     });
 
-    it("reports px/rem/em literals but allows 0, percentages, viewport units, @media and 1px borders", () => {
-      expect(run(css(".a { width: 18rem; }\n")).status).toBe(1);
-      expect(run(css(".a { padding: 4px; }\n")).status).toBe(1);
-      expect(run(css(".a { margin: 0.5em; }\n")).status).toBe(1);
-      expect(run(css(".a { width: calc(100% - 12px); }\n")).status).toBe(1);
-      expect(run(css(".a { margin: 0; width: 100%; height: 100vh; }\n")).status).toBe(0);
-      expect(run(css("@media (min-width: 800px) {\n  .a { margin: 0; }\n}\n")).status).toBe(0);
-      expect(run(css(".a { border: 1px solid var(--border); border-left: 0; }\n")).status).toBe(0);
-      expect(run(css(".a { margin: 1px; }\n")).status).toBe(1);
-      expect(run(css(".a { border: 2px solid var(--border); }\n")).status).toBe(1);
+    describe("reports px/rem/em literals but allows 0, percentages, viewport units, @media and 1px borders", () => {
+      it("case 1", () => {
+        expect(run(css(".a { width: 18rem; }\n")).status).toBe(1);
+      });
+      it("case 2", () => {
+        expect(run(css(".a { padding: 4px; }\n")).status).toBe(1);
+      });
+      it("case 3", () => {
+        expect(run(css(".a { margin: 0.5em; }\n")).status).toBe(1);
+      });
+      it("case 4", () => {
+        expect(run(css(".a { width: calc(100% - 12px); }\n")).status).toBe(1);
+      });
+      it("case 5", () => {
+        expect(run(css(".a { margin: 0; width: 100%; height: 100vh; }\n")).status).toBe(0);
+      });
+      it("case 6", () => {
+        expect(run(css("@media (min-width: 800px) {\n  .a { margin: 0; }\n}\n")).status).toBe(0);
+      });
+      it("case 7", () => {
+        expect(run(css(".a { border: 1px solid var(--border); border-left: 0; }\n")).status).toBe(0);
+      });
+      it("case 8", () => {
+        expect(run(css(".a { margin: 1px; }\n")).status).toBe(1);
+      });
+      it("case 9", () => {
+        expect(run(css(".a { border: 2px solid var(--border); }\n")).status).toBe(1);
+      });
     });
 
-    it("reports numeric values in inline style objects", () => {
+    describe("reports numeric values in inline style objects", () => {
       const tsx = (body: string) => makeProject({ "src/components/C.tsx": `export const C = () => ${body};\n` });
-      expect(run(tsx("<div style={{ width: 12 }} />")).status).toBe(1);
-      expect(run(tsx('<div style={{ width: "10px" }} />')).status).toBe(1);
-      expect(run(tsx("<div style={{\n  height: 3,\n}} />")).status).toBe(1);
-      expect(run(tsx('<div style={{ width: "100%", minWidth: 0, opacity: 1 }} />')).status).toBe(0);
-      expect(run(tsx('<div style={{ width: "var(--space-4)" }} />')).status).toBe(0);
+      it("case 1", () => {
+        expect(run(tsx("<div style={{ width: 12 }} />")).status).toBe(1);
+      });
+      it("case 2", () => {
+        expect(run(tsx('<div style={{ width: "10px" }} />')).status).toBe(1);
+      });
+      it("case 3", () => {
+        expect(run(tsx("<div style={{\n  height: 3,\n}} />")).status).toBe(1);
+      });
+      it("case 4", () => {
+        expect(run(tsx('<div style={{ width: "100%", minWidth: 0, opacity: 1 }} />')).status).toBe(0);
+      });
+      it("case 5", () => {
+        expect(run(tsx('<div style={{ width: "var(--space-4)" }} />')).status).toBe(0);
+      });
     });
 
-    it("reports numeric fontSize / lineHeight / letterSpacing literals in TS/TSX", () => {
+    describe("reports numeric fontSize / lineHeight / letterSpacing literals in TS/TSX", () => {
       const ts = (body: string) => makeProject({ "src/components/t.ts": body });
-      expect(run(ts("export const o = { fontSize: 13 };\n")).status).toBe(1);
-      expect(run(ts("export const o = { lineHeight: 1.2 };\n")).status).toBe(1);
-      expect(run(ts("export const o = { fontSize: px };\n")).status).toBe(0);
+      it("case 1", () => {
+        expect(run(ts("export const o = { fontSize: 13 };\n")).status).toBe(1);
+      });
+      it("case 2", () => {
+        expect(run(ts("export const o = { lineHeight: 1.2 };\n")).status).toBe(1);
+      });
+      it("case 3", () => {
+        expect(run(ts("export const o = { fontSize: px };\n")).status).toBe(0);
+      });
     });
 
     it("reports <a in pages", () => {
@@ -143,14 +183,28 @@ describe("check-design-governance", () => {
       expect(run(tok("--ac-font-mono: 'SF Mono', ui-monospace, monospace;")).status).toBe(0);
     });
 
-    it("rejects color names, lengths and other values", () => {
-      expect(run(tok("--ac-bg: red;")).status).toBe(1);
-      expect(run(tok("--ac-gap: 17px;")).status).toBe(1);
-      expect(run(tok("--ac-gap: 0;")).status).toBe(1);
-      expect(run(tok("--ac-font-mono: red, monospace;")).status).toBe(1);
-      expect(run(tok("--ac-font-mono: Menlo, Monaco;")).status).toBe(1);
-      expect(run(tok("--ac-font-mono: 12px, monospace;")).status).toBe(1);
-      expect(run(tok("--ac-font-mono: var(--x);")).status).toBe(1);
+    describe("rejects color names, lengths and other values", () => {
+      it("case 1", () => {
+        expect(run(tok("--ac-bg: red;")).status).toBe(1);
+      });
+      it("case 2", () => {
+        expect(run(tok("--ac-gap: 17px;")).status).toBe(1);
+      });
+      it("case 3", () => {
+        expect(run(tok("--ac-gap: 0;")).status).toBe(1);
+      });
+      it("case 4", () => {
+        expect(run(tok("--ac-font-mono: red, monospace;")).status).toBe(1);
+      });
+      it("case 5", () => {
+        expect(run(tok("--ac-font-mono: Menlo, Monaco;")).status).toBe(1);
+      });
+      it("case 6", () => {
+        expect(run(tok("--ac-font-mono: 12px, monospace;")).status).toBe(1);
+      });
+      it("case 7", () => {
+        expect(run(tok("--ac-font-mono: var(--x);")).status).toBe(1);
+      });
     });
   });
 });

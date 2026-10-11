@@ -6,8 +6,8 @@ import { CHALLENGE_TTL_MS, PAIRING_TTL_MS, SESSION_MAX_MS, type Auth } from "./a
 import { fetchAgents } from "./agents.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
-import { collectMemory } from "./memory.ts";
-import { assertResumableCwd, SESSION_ID_PATTERN, toPastSessions } from "./past-sessions.ts";
+import type { MemoryCollector } from "./memory.ts";
+import { classifyCwd, listWorktreePaths, SESSION_ID_PATTERN, toPastSessions, withResumability } from "./past-sessions.ts";
 import type { QuickPromptStore } from "./quick-prompts.ts";
 import { SessionConflictError, SessionInputError, SessionNotFoundError, validateName, type SessionManager } from "./sessions.ts";
 import { WorktreeError } from "./worktree.ts";
@@ -30,6 +30,7 @@ export interface AppDeps {
   sessions: SessionManager;
   hub: Hub;
   quickPrompts: QuickPromptStore;
+  memory: MemoryCollector;
   staticDir: string;
   meta: { saSource: string; claudeVersion: string; version: string; commit: string };
 }
@@ -148,6 +149,9 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   sendJson(res, 404, { error: "not found" });
 }
 
+const runningIdsOf = (rows: Array<{ sessionId?: string }> | null): Set<string> =>
+  new Set((rows ?? []).flatMap((r) => (r.sessionId === undefined ? [] : [r.sessionId])));
+
 /** `claude agents --json` の name を、セッション名として使える形（制御文字なし・40 字以内）にする。 */
 function sessionNameFrom(name: string | undefined, sessionId: string): string {
   // eslint-disable-next-line no-control-regex
@@ -160,7 +164,9 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
   const { sessions, hub, config, quickPrompts } = deps;
   const method = req.method ?? "GET";
   if (method === "GET" && url.pathname === "/api/memory") {
-    sendJson(res, 200, await collectMemory(sessions.list()));
+    // 名前は一覧と同じ表示名（Claude の name 優先）にそろえる
+    const views = new Map((await hub.snapshot()).sessions.map((v) => [v.id, v.name]));
+    sendJson(res, 200, await deps.memory.collect(sessions.list().map((s) => ({ id: s.id, name: views.get(s.id) ?? s.name, exited: s.exited, term: s.term }))));
     return true;
   }
   if (method === "GET" && url.pathname === "/api/quick-prompts") {
@@ -184,8 +190,8 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
     return true;
   }
   if (method === "GET" && url.pathname === "/api/past-sessions") {
-    const rows = await fetchAgents(config.claudeBin, true);
-    const items = rows === null ? [] : toPastSessions(rows, await hub.livePids());
+    const [rows, running] = await Promise.all([fetchAgents(config.claudeBin, true), fetchAgents(config.claudeBin)]);
+    const items = rows === null ? [] : await withResumability(toPastSessions(rows, await hub.livePids(), runningIdsOf(running)), config.salesanchorRoot);
     sendJson(res, 200, { available: rows !== null, items });
     return true;
   }
@@ -195,16 +201,19 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
     const role = config.roles.find((r) => r.resumeCommand !== undefined);
     if (!role) throw new SessionInputError("no role can resume sessions");
     // 作業場所は画面から受け取らず、Claude の一覧（正本）から引く
-    const rows = await fetchAgents(config.claudeBin, true);
-    const target = rows === null ? undefined : toPastSessions(rows, await hub.livePids()).find((p) => p.sessionId === sessionId);
+    const [rows, running] = await Promise.all([fetchAgents(config.claudeBin, true), fetchAgents(config.claudeBin)]);
+    // 今動いている一覧を取得できなければ、二重起動でないことを確認できないので再開しない
+    if (running === null) throw new SessionConflictError("cannot confirm the session is not running");
+    const target = rows === null ? undefined : toPastSessions(rows, await hub.livePids(), runningIdsOf(running)).find((p) => p.sessionId === sessionId);
     if (!target) throw new SessionNotFoundError("session not found in claude agents --all");
-    if (target.live) throw new SessionConflictError("session is already running in this app");
-    const cwd = await assertResumableCwd(target.cwd, config.salesanchorRoot);
-    const session = sessions.resume({ roleId: role.id, name: sessionNameFrom(target.name, sessionId), sessionId, cwd });
+    if (target.blocked === "running") throw new SessionConflictError("session is already running");
+    const verdict = await classifyCwd(target.cwd, config.salesanchorRoot, await listWorktreePaths(config.salesanchorRoot).catch(() => []));
+    if (verdict.block !== null || verdict.real === null) throw new SessionInputError(`cannot resume: working directory is ${verdict.block ?? "missing"}`);
+    const session = sessions.resume({ roleId: role.id, name: sessionNameFrom(target.name, sessionId), sessionId, cwd: verdict.real });
     sendJson(res, 201, { id: session.id });
     return true;
   }
-  const sessionMatch = /^\/api\/sessions\/([^/]+)\/(read|rename|send)$/.exec(url.pathname);
+  const sessionMatch = /^\/api\/sessions\/([^/]+)\/(read|rename|send-check)$/.exec(url.pathname);
   if (method !== "POST" || !sessionMatch) return false;
   const [, id, action] = sessionMatch;
   const session = sessions.get(id);
@@ -214,13 +223,13 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
     sendJson(res, 200, { read: true });
     return true;
   }
-  const view = await hub.runtimeOf(id);
+  // 端末へ入れる操作は、要求を受けた時点で claude agents を取り直して判定する（定期取得の値は使わない）
   if (action === "rename") {
     const name = validateName(jsonBody(await readJsonBody(req)).name);
-    if (view?.state === "stopped") throw new SessionConflictError("session is stopped");
-    if (view?.hasClaude) {
-      // Claude の名前が正本。人が押したときだけ /rename を送る（待ち・待機のときのみ）
-      if (view.state !== "waiting" && view.state !== "idle") throw new SessionConflictError("claude is busy");
+    const verdict = await hub.checkInput(id);
+    if (!verdict.ok) throw new SessionConflictError(verdict.reason ?? "cannot input now");
+    if (verdict.hasClaude) {
+      // Claude の名前が正本。人が押したときだけ /rename を送る
       sessions.write(session, `/rename ${name}\r`);
       sendJson(res, 200, { mode: "claude" });
     } else {
@@ -229,10 +238,11 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
     }
     return true;
   }
+  // send-check: サーバーは端末へ書かない。入れてよい状態なら本文を返し、画面が xterm の paste() で入れてから Enter を送る
   const prompt = await quickPrompts.get(str(jsonBody(await readJsonBody(req)).promptId));
-  if (session.exited) throw new SessionConflictError("session is stopped");
-  sessions.write(session, `${prompt.text}\r`);
-  sendJson(res, 200, { sent: true });
+  const verdict = await hub.checkInput(id);
+  if (!verdict.ok) throw new SessionConflictError(verdict.reason ?? "cannot input now");
+  sendJson(res, 200, { text: prompt.text });
   return true;
 }
 

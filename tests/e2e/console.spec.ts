@@ -429,10 +429,16 @@ test("段階2 K2: 名前を変えると /rename が端末に送られ、Claude �
   const row = rowOf(page, id);
   writeFileSync(STATUS_FILE, "busy");
   await expect(row.getByTestId("status")).toHaveAttribute("data-state", "working", { timeout: STATE_DEADLINE_MS });
-  await row.getByRole("button", { name: "名前を変える", exact: true }).click();
+  await expect(row.getByRole("button", { name: "名前を変える", exact: true })).toBeDisabled();
+  // サーバーも 409（作業中・許可待ちへは /rename を送らない）
+  const renameStatus = async (): Promise<number> =>
+    (await fetch(`${BASE}/api/sessions/${id}/rename`, { method: "POST", headers: { ...BEARER, "Content-Type": "application/json" }, body: JSON.stringify({ name: "blocked" }) })).status;
+  expect(await renameStatus()).toBe(409);
+  writeFileSync(STATUS_FILE, "waiting");
+  await expect(row.getByTestId("status")).toHaveAttribute("data-state", "waiting", { timeout: STATE_DEADLINE_MS });
+  await expect(row.getByRole("button", { name: "名前を変える", exact: true })).toBeDisabled();
+  expect(await renameStatus()).toBe(409);
   const form = page.getByTestId("rename-form");
-  await expect(form.getByRole("button", { name: "変更", exact: true })).toBeDisabled();
-  await page.keyboard.press("Escape");
 
   writeFileSync(STATUS_FILE, "idle");
   await expect(row.getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: STATE_DEADLINE_MS });
@@ -481,6 +487,20 @@ test("段階2 K3: よく使う指示を登録・編集・削除でき、ボタ�
   await expect(bar.getByRole("button", { name: "テスト実行", exact: true })).toBeDisabled();
   await rowOf(page, id).click();
   await expect(page.getByTestId("terminal")).toContainText("READY");
+  // Claude が作業中・許可待ちの間は送れない（ボタンは無効、サーバーも 409）。idle になってから送る
+  writeFileSync(STATUS_FILE, "busy");
+  await expect(rowOf(page, id).getByTestId("status")).toHaveAttribute("data-state", "working", { timeout: STATE_DEADLINE_MS });
+  await expect(bar.getByRole("button", { name: "テスト実行", exact: true })).toBeDisabled();
+  const promptId = ((JSON.parse(readFileSync(path.join(DATA_DIR, "quick-prompts.json"), "utf8")) as { items: Array<{ id: string }> }).items[0]).id;
+  const check = (): Promise<Response> =>
+    fetch(`${BASE}/api/sessions/${id}/send-check`, { method: "POST", headers: { ...BEARER, "Content-Type": "application/json" }, body: JSON.stringify({ promptId }) });
+  expect((await check()).status).toBe(409);
+  writeFileSync(STATUS_FILE, "waiting");
+  await expect(rowOf(page, id).getByTestId("status")).toHaveAttribute("data-state", "waiting", { timeout: STATE_DEADLINE_MS });
+  expect((await check()).status).toBe(409);
+  await expect(page.getByTestId("terminal")).not.toContainText("echo-quick-prompt-v2");
+  writeFileSync(STATUS_FILE, "idle");
+  await expect(rowOf(page, id).getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: STATE_DEADLINE_MS });
   await bar.getByRole("button", { name: "テスト実行", exact: true }).click();
   await expect(page.getByTestId("terminal")).toContainText("echo-quick-prompt-v2");
 
@@ -497,12 +517,44 @@ test("段階2 K3: よく使う指示を登録・編集・削除でき、ボタ�
   expect(saved).toEqual({ version: 1, items: [] });
 });
 
+test("段階2 K3: 複数行の指示は、括弧付き貼付モードの端末へ ESC[200~ ... ESC[201~ で包まれて入り、その直後に Enter が届く", async ({ page }) => {
+  const id = await apiCreate("bracketed-target", "e2e-bracketed");
+  const created = await fetch(`${BASE}/api/quick-prompts`, {
+    method: "POST",
+    headers: { ...BEARER, "Content-Type": "application/json" },
+    body: JSON.stringify({ label: "複数行", text: "first-line\nsecond-line" }),
+  });
+  const { id: promptId } = (await created.json()) as { id: string };
+  writeFileSync(STATUS_FILE, "idle");
+  await openPaired(page);
+  await rowOf(page, id).click();
+  await expect(page.getByTestId("terminal")).toContainText("READY");
+  await expect(rowOf(page, id).getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: STATE_DEADLINE_MS });
+  await page.getByTestId("quick-prompt-bar").getByRole("button", { name: "複数行", exact: true }).click();
+  const terminal = page.getByTestId("terminal");
+  await expect(terminal).toContainText('GOT:"\\u001b[200~first-line');
+  // 本文は括弧で包まれ（改行は \r）、閉じ括弧の直後に Enter（\r）が続く。端末アプリ側では 1 回の読み取りにまとまることがある
+  await expect(terminal).toContainText('first-line\\rsecond-line\\u001b[201~\\r"');
+  await fetch(`${BASE}/api/quick-prompts/${promptId}`, { method: "DELETE", headers: BEARER });
+});
+
 test("段階2 K4: 過去のセッション一覧から Sonnet 実装役を選ぶと、同じ作業場所で --resume 相当の起動をする", async ({ page }) => {
   const sessionId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  // 再開できるのは本店のワークツリーの行だけ。ワークツリーは役割 e2e-wt の起動で作る
+  const wtRes = await fetch(`${BASE}/api/sessions`, {
+    method: "POST",
+    headers: { ...BEARER, "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "resume-wt", roleId: "e2e-wt", branch: "release/e2e-resume" }),
+  });
+  expect(wtRes.status).toBe(201);
+  const state = (await (await fetch(`${BASE}/api/state`, { headers: BEARER })).json()) as { sessions: Array<{ id: string; cwd: string }> };
+  const wtCwd = state.sessions.find((x) => x.cwd.endsWith("release-e2e-resume"))?.cwd as string;
+  expect(wtCwd).toBeTruthy();
   writeFileSync(
     ALL_FILE,
     JSON.stringify([
-      { pid: 1, cwd: ROOT, kind: "interactive", startedAt: Date.now() - 3600000, sessionId, name: "past-work", status: "idle" },
+      { pid: 1, cwd: wtCwd, kind: "interactive", startedAt: Date.now() - 3600000, sessionId, name: "past-work", status: "idle" },
+      { pid: 3, cwd: ROOT, kind: "interactive", startedAt: Date.now() - 5400000, sessionId: "cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "designer", status: "idle" },
       { pid: 2, cwd: "/", kind: "interactive", startedAt: Date.now() - 7200000, sessionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "outside", status: "idle" },
     ]),
   );
@@ -513,13 +565,20 @@ test("段階2 K4: 過去のセッション一覧から Sonnet 実装役を選ぶ
   await shoot(page, "04-past-sessions");
   await item.getByRole("button", { name: "再開", exact: true }).click();
   await expect(page.getByTestId("terminal")).toContainText(`RESUMED=${sessionId}`);
-  await expect(page.getByTestId("terminal")).toContainText(`READY ${ROOT}`);
+  await expect(page.getByTestId("terminal")).toContainText(`READY ${wtCwd}`);
   await expect(page.getByTestId("session-row").filter({ hasText: "past-work" })).toHaveCount(1);
 
-  // 作業場所が本店・ワークツリーのどちらでもない行は再開できない（サーバーが拒否して画面に出す）
+  // 本店そのもの（Opus 設計役）・本店のワークツリーでない行は「再開不可（理由）」で、ボタンは無効（サーバーも拒否する）
   await page.getByRole("button", { name: "過去のセッション", exact: true }).click();
-  await page.locator('[data-testid="past-session"][data-session-id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"]').getByRole("button", { name: "再開", exact: true }).click();
-  await expect(page.getByRole("alert").filter({ hasText: "再開できませんでした" })).toContainText("not the main checkout");
+  const designer = page.locator('[data-testid="past-session"][data-session-id="cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb"]');
+  await expect(designer.getByTestId("past-blocked")).toContainText("Opus 設計役");
+  await expect(designer.getByRole("button", { name: "再開", exact: true })).toBeDisabled();
+  const outside = page.locator('[data-testid="past-session"][data-session-id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"]');
+  await expect(outside.getByTestId("past-blocked")).toContainText("ワークツリーではありません");
+  for (const blockedId of ["cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"]) {
+    const r = await fetch(`${BASE}/api/sessions/resume`, { method: "POST", headers: { ...BEARER, "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: blockedId }) });
+    expect(r.status).toBe(400);
+  }
   writeFileSync(ALL_FILE, "[]");
 });
 
@@ -535,8 +594,13 @@ test("段階2 K5: 台帳は既定で作業中・レビュー・WIP かつ直近 
     unknown: Number(await summary.getAttribute("data-unknown")),
   });
   // 既定: seed-a/b・seed-c(REVIEW)・seed-wip・K2 で作ったブランチは表示。seed-old・DONE・ABANDONED・未登録は隠れ、seed-baddate は日付不明
-  await expect.poll(async () => (await nums()).shown).toBeGreaterThanOrEqual(4);
+  // 更新の結果（ここまでに作られたブランチ分を含む）が出そろうまで待つ
+  await expect.poll(async () => {
+    const n = await nums();
+    return n.shown + n.hidden + n.unknown;
+  }).toBe(total);
   const initial = await nums();
+  expect(initial.shown).toBeGreaterThanOrEqual(4);
   expect(initial.unknown).toBe(1);
   expect(initial.shown + initial.hidden + initial.unknown).toBe(total);
   await expect(page.getByTestId("ledger-unknown-date")).toContainText("1 件");

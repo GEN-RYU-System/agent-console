@@ -17,7 +17,7 @@ interface Props {
 export function RenameForm({ session, busy, error, onSubmit }: Props) {
   const { t } = useTranslation();
   const [name, setName] = useState(session.name);
-  const claudeBusy = session.hasClaude && session.state !== "waiting" && session.state !== "idle";
+  const blocked = !session.canInput;
 
   const handleSubmit = (e: FormEvent): void => {
     e.preventDefault();
@@ -34,16 +34,16 @@ export function RenameForm({ session, busy, error, onSubmit }: Props) {
           onChange={(e) => setName(e.target.value)}
           maxLength={40}
           required
-          disabled={claudeBusy}
+          disabled={blocked}
           fullWidth
         />
-        {claudeBusy && <Callout variant="info" title={t("ac.rename.busyTitle")}>{t("ac.rename.busyBody")}</Callout>}
+        {blocked && <Callout variant="info" title={t("ac.rename.busyTitle")}>{t("ac.rename.busyBody")}</Callout>}
         {error !== null && (
           <Callout variant="warning" title={t("ac.rename.error")}>
             {error}
           </Callout>
         )}
-        <Button type="submit" disabled={claudeBusy} loading={busy} loadingText={t("ac.rename.sending")}>
+        <Button type="submit" disabled={blocked} loading={busy} loadingText={t("ac.rename.sending")}>
           {t("ac.rename.submit")}
         </Button>
       </Stack>

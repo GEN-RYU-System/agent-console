@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { parseFreePercent, parseMemsize, sessionMemory } from "../../server/memory.ts";
+import { describe, expect, it, vi } from "vitest";
+import { MemoryCollector, parseFreePercent, parseMemsize, sessionMemory } from "../../server/memory.ts";
 import { descendantPids, parsePsOutput, sumRssKb } from "../../server/process-tree.ts";
 
 describe("parsePsOutput with rss", () => {
@@ -45,5 +45,43 @@ describe("system memory parsers", () => {
     expect(parseFreePercent(text)).toBe(53);
     expect(parseFreePercent("nothing")).toBeNull();
     expect(parseFreePercent("System-wide memory free percentage: 999%")).toBeNull();
+  });
+});
+
+describe("MemoryCollector", () => {
+  const raw = { table: parsePsOutput(" 10 1 2048\n"), system: { totalMb: 8192, freePercent: 50, usedPercent: 50 } };
+  const sessions = [{ id: "a", name: "A", exited: false, term: { pid: 10 } }];
+
+  it("runs the OS commands once for concurrent requests", async () => {
+    const readRaw = vi.fn(async () => raw);
+    const c = new MemoryCollector(5000, () => 0, readRaw);
+    await Promise.all([c.collect(sessions), c.collect(sessions), c.collect(sessions)]);
+    expect(readRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it("serves from the cache for 5 seconds and re-reads after that", async () => {
+    let t = 0;
+    const readRaw = vi.fn(async () => raw);
+    const c = new MemoryCollector(5000, () => t, readRaw);
+    await c.collect(sessions);
+    t = 4999;
+    await c.collect(sessions);
+    expect(readRaw).toHaveBeenCalledTimes(1);
+    t = 5000;
+    await c.collect(sessions);
+    expect(readRaw).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the names it is given for each request even when the OS data is cached", async () => {
+    const c = new MemoryCollector(5000, () => 0, async () => raw);
+    expect((await c.collect(sessions)).sessions[0].name).toBe("A");
+    expect((await c.collect([{ ...sessions[0], name: "claude-name" }])).sessions[0].name).toBe("claude-name");
+  });
+
+  it("does not cache a failure", async () => {
+    const readRaw = vi.fn().mockRejectedValueOnce(new Error("boom")).mockResolvedValue(raw);
+    const c = new MemoryCollector(5000, () => 0, readRaw);
+    await expect(c.collect(sessions)).rejects.toThrow("boom");
+    await expect(c.collect(sessions)).resolves.toBeDefined();
   });
 });

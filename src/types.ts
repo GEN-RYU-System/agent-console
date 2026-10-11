@@ -10,6 +10,8 @@ export interface SessionView {
   createdAt: number;
   unread: number;
   hasClaude: boolean;
+  /** 今、名前の変更・よく使う指示を入れてよい状態か（Claude 起動中は idle のときだけ） */
+  canInput: boolean;
 }
 
 export interface RoleView {
@@ -62,7 +64,8 @@ export interface PastSession {
   cwd: string;
   startedAt: number | null;
   status: "busy" | "waiting" | "idle" | "unknown";
-  live: boolean;
+  /** null のとき再開できる。running=今動いている / main=本店そのもの / outside=本店のワークツリーでない / missing=存在しない */
+  blocked: "running" | "main" | "outside" | "missing" | null;
 }
 
 export interface MemorySnapshot {

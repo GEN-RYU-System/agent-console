@@ -70,6 +70,7 @@ export function buildChildEnv(source: Record<string, string | undefined>): Recor
 export class SessionManager {
   private readonly sessions = new Map<string, Session>();
   private changeListeners = new Set<() => void>();
+  private removedListeners = new Set<(id: string) => void>();
   private readonly maxSessions: number;
   /** worktree 作成中など、まだ sessions に入っていない作成途中の数（上限判定に含める）。 */
   private pending = 0;
@@ -84,6 +85,11 @@ export class SessionManager {
   onChange(listener: () => void): () => void {
     this.changeListeners.add(listener);
     return () => this.changeListeners.delete(listener);
+  }
+
+  onRemoved(listener: (id: string) => void): () => void {
+    this.removedListeners.add(listener);
+    return () => this.removedListeners.delete(listener);
   }
 
   private notify(): void {
@@ -195,6 +201,7 @@ export class SessionManager {
     if (!session.exited) throw new SessionConflictError("session is still running");
     for (const ws of session.clients) ws.close();
     this.sessions.delete(id);
+    for (const l of this.removedListeners) l(id);
     this.notify();
   }
 

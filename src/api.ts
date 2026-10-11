@@ -62,8 +62,9 @@ export const updateQuickPrompt = (id: string, input: { label: string; text: stri
   request(`/api/quick-prompts/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(input) });
 export const deleteQuickPrompt = (id: string): Promise<{ removed: boolean }> =>
   request(`/api/quick-prompts/${encodeURIComponent(id)}`, { method: "DELETE" });
-export const sendQuickPrompt = (sessionId: string, promptId: string): Promise<{ sent: boolean }> =>
-  request(`/api/sessions/${encodeURIComponent(sessionId)}/send`, { method: "POST", body: JSON.stringify({ promptId }) });
+/** サーバーが状態を取り直して、入れてよければ本文を返す（サーバーは端末へ書かない。画面が paste() で入れる）。 */
+export const checkQuickPromptSend = (sessionId: string, promptId: string): Promise<{ text: string }> =>
+  request(`/api/sessions/${encodeURIComponent(sessionId)}/send-check`, { method: "POST", body: JSON.stringify({ promptId }) });
 export const fetchPastSessions = (): Promise<{ available: boolean; items: PastSession[] }> => request("/api/past-sessions");
 export const resumeSession = (sessionId: string): Promise<{ id: string }> =>
   request("/api/sessions/resume", { method: "POST", body: JSON.stringify({ sessionId }) });

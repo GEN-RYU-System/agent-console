@@ -60,7 +60,7 @@ export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, o
           </Button>
           <div className="ac-session__actions">
             {s.state !== "stopped" && (
-              <Button variant="ghost" size="sm" onClick={() => onRename(s.id)}>
+              <Button variant="ghost" size="sm" disabled={!s.canInput} onClick={() => onRename(s.id)}>
                 {t("ac.rename.open")}
               </Button>
             )}

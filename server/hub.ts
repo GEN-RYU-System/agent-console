@@ -1,5 +1,5 @@
 import type { WebSocket } from "ws";
-import { agentForSession, fetchAgents, stateForSession, type AgentRow, type SessionState } from "./agents.ts";
+import { agentForSession, fetchAgents, inputVerdict, stateForSession, type AgentRow, type InputVerdict, type SessionState } from "./agents.ts";
 import type { Config } from "./config.ts";
 import { loadLedger, type LedgerSnapshot } from "./ledger.ts";
 import { BreakTracker, breakBody, osascriptSender, type NotificationSender } from "./notify.ts";
@@ -19,6 +19,8 @@ export interface SessionView {
   unread: number;
   /** Claude が動いている（名前の変更は /rename になる） */
   hasClaude: boolean;
+  /** 今、人の指示（名前の変更・よく使う指示）を入れてよい状態か（要求時にサーバーが取り直して再判定する） */
+  canInput: boolean;
 }
 
 export interface Snapshot {
@@ -44,6 +46,8 @@ export class Hub {
   ) {
     this.sendNotification = sendNotification !== undefined ? sendNotification : config.notify.macos ? osascriptSender(config.notify.osascriptBin) : null;
     sessions.onChange(() => void this.publish().catch((err) => this.onPollError("publish", err)));
+    // 一覧から外したセッションの前回の status・未読は持ち続けない
+    sessions.onRemoved((id) => this.tracker.forget(id));
   }
 
   start(): void {
@@ -97,9 +101,14 @@ export class Hub {
     return this.tracker.markRead(sessionId) ? this.publish() : Promise.resolve();
   }
 
-  /** 名前の変更・指示の送信の前に、そのセッションの今の状態を知る。 */
-  async runtimeOf(sessionId: string): Promise<SessionView | undefined> {
-    return (await this.snapshot()).sessions.find((v) => v.id === sessionId);
+  /**
+   * 端末へ入れてよいかを、要求を受けた時点で `claude agents --json` を取り直して判定する（定期取得の値は使わない）。
+   */
+  async checkInput(sessionId: string): Promise<InputVerdict> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return { ok: false, reason: "session not found", hasClaude: false };
+    const [rows, table] = await Promise.all([fetchAgents(this.config.claudeBin), readProcessTable().catch(() => [])]);
+    return inputVerdict({ exited: session.exited, pids: descendantPids(session.term.pid, table) }, rows);
   }
 
   /** このアプリのセッションの子孫プロセスの pid（過去セッション一覧で「実行中」を判定する）。 */
@@ -142,6 +151,7 @@ export class Hub {
         state: stateForSession(info, this.agents),
         unread: this.tracker.unreadOf(s.id),
         hasClaude: agent !== undefined,
+        canInput: inputVerdict(info, this.agents).ok,
       };
     });
     return { sessions: views, agentsAvailable: this.agents !== null };

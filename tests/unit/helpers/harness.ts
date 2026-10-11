@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { createAuth } from "../../../server/auth.ts";
 import type { Config } from "../../../server/config.ts";
+import { MemoryCollector } from "../../../server/memory.ts";
 import { QuickPromptStore } from "../../../server/quick-prompts.ts";
 import { Hub } from "../../../server/hub.ts";
 import { createRequestHandler } from "../../../server/http.ts";
@@ -104,7 +105,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const clock: Clock = { t: Date.now(), advance(ms) { this.t += ms; } };
   const auth = createAuth(TOKEN, port, { now: () => clock.t });
   const server = createServer(
-    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT } }),
+    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT } }),
   );
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));

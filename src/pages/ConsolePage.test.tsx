@@ -5,7 +5,7 @@ import "../i18n";
 import type { ConsoleState } from "../types";
 
 const state: ConsoleState = {
-  sessions: [{ id: "s1", name: "dead", roleId: "shell", branch: null, cwd: "/", state: "stopped", createdAt: 1, unread: 0, hasClaude: false }],
+  sessions: [{ id: "s1", name: "dead", roleId: "shell", branch: null, cwd: "/", state: "stopped", createdAt: 1, unread: 0, hasClaude: false, canInput: false }],
   agentsAvailable: true,
   roles: [{ id: "shell", labelKey: "role.shell", needsWorktree: false, canResume: false }],
   saSource: "abcdef0123456789",
@@ -18,7 +18,8 @@ const removeSession = vi.fn();
 const fetchState = vi.fn();
 const logout = vi.fn();
 const markRead = vi.fn();
-const sendQuickPrompt = vi.fn();
+const checkQuickPromptSend = vi.fn();
+const pasteAndEnter = vi.fn();
 const fetchQuickPrompts = vi.fn();
 const renameSession = vi.fn();
 
@@ -39,7 +40,7 @@ vi.mock("../api", () => ({
   getSessionToken: () => "session-token",
   logout: () => logout(),
   markRead: (id: string) => markRead(id),
-  sendQuickPrompt: (id: string, promptId: string) => sendQuickPrompt(id, promptId),
+  checkQuickPromptSend: (id: string, promptId: string) => checkQuickPromptSend(id, promptId),
   fetchQuickPrompts: () => fetchQuickPrompts(),
   renameSession: (id: string, name: string) => renameSession(id, name),
   fetchPastSessions: vi.fn(async () => ({ available: true, items: [] })),
@@ -49,7 +50,18 @@ vi.mock("../api", () => ({
 }));
 
 // xterm は jsdom で動かない（matchMedia が無い）。端末の描画は e2e で確認する
-vi.mock("../components/TerminalPane/TerminalPane", () => ({ TerminalPane: () => <div data-testid="terminal-stub" /> }));
+vi.mock("../components/TerminalPane/TerminalPane", async () => {
+  const { forwardRef, useImperativeHandle } = await import("react");
+  return {
+    TerminalPane: forwardRef(function TerminalStub(_props: { sessionId: string }, ref) {
+      useImperativeHandle(ref, () => ({ pasteAndEnter: (t: string) => pasteAndEnter(t) }), []);
+      return <div data-testid="terminal-stub" />;
+    }),
+  };
+});
+
+// 画面全体（SA の金型を含む）の読み込みは負荷時に数秒かかる。テストの 5 秒の制限に含めないよう、最初に 1 回だけ読む
+const { ConsolePage } = await import("./ConsolePage");
 
 class FakeWebSocket {
   static OPEN = 1;
@@ -65,8 +77,9 @@ beforeEach(() => {
   logout.mockReset();
   markRead.mockReset();
   markRead.mockResolvedValue({ read: true });
-  sendQuickPrompt.mockReset();
-  sendQuickPrompt.mockResolvedValue({ sent: true });
+  checkQuickPromptSend.mockReset();
+  checkQuickPromptSend.mockResolvedValue({ text: "run tests" });
+  pasteAndEnter.mockReset();
   renameSession.mockReset();
   fetchQuickPrompts.mockReset();
   fetchQuickPrompts.mockResolvedValue({ items: [{ id: "p1", label: "テスト実行", text: "run tests" }] });
@@ -78,7 +91,6 @@ beforeEach(() => {
 describe("ConsolePage removing a stopped session", () => {
   it("shows an error callout when removal fails (409 / 404 / network)", async () => {
     removeSession.mockRejectedValue(new Error("session is still running"));
-    const { ConsolePage } = await import("./ConsolePage");
     render(<ConsolePage />);
     fireEvent.click(await screen.findByText("一覧から外す"));
     const alert = await screen.findByRole("alert");
@@ -88,7 +100,6 @@ describe("ConsolePage removing a stopped session", () => {
 
   it("clears the error after a later successful removal", async () => {
     removeSession.mockRejectedValueOnce(new Error("boom")).mockResolvedValueOnce({ removed: true });
-    const { ConsolePage } = await import("./ConsolePage");
     render(<ConsolePage />);
     const button = await screen.findByText("一覧から外す");
     fireEvent.click(button);
@@ -100,7 +111,6 @@ describe("ConsolePage removing a stopped session", () => {
 
 describe("ConsolePage footer and authorization", () => {
   it("shows the app version in the footer", async () => {
-    const { ConsolePage } = await import("./ConsolePage");
     render(<ConsolePage />);
     expect((await screen.findByTestId("app-version")).textContent).toContain("0.3.0");
   });
@@ -108,27 +118,23 @@ describe("ConsolePage footer and authorization", () => {
   it("shows a login-required callout on 401", async () => {
     const { ApiError } = await import("../api");
     fetchState.mockRejectedValue(new ApiError("unauthorized", 401));
-    const { ConsolePage } = await import("./ConsolePage");
     render(<ConsolePage />);
     expect((await screen.findByRole("alert")).textContent).toContain("ログインが必要です");
   });
 
   it("shows the generic load error for other failures", async () => {
     fetchState.mockRejectedValue(new Error("boom"));
-    const { ConsolePage } = await import("./ConsolePage");
     render(<ConsolePage />);
     expect(await screen.findByText("状態を取得できません")).toBeTruthy();
   });
 
   it("shows the short commit in the footer", async () => {
-    const { ConsolePage } = await import("./ConsolePage");
     render(<ConsolePage />);
     expect((await screen.findByTestId("commit")).textContent).toContain("abcdef0");
     expect(screen.getByTestId("commit").textContent).not.toContain("abcdef01234");
   });
 
   it("logs out: calls the server logout and then shows the login-required callout", async () => {
-    const { ConsolePage } = await import("./ConsolePage");
     render(<ConsolePage />);
     fireEvent.click(await screen.findByText("ログアウト"));
     expect((await screen.findByRole("alert")).textContent).toContain("ログインが必要です");
@@ -137,11 +143,10 @@ describe("ConsolePage footer and authorization", () => {
 });
 
 describe("ConsolePage daily use", () => {
-  const live = { ...state.sessions[0], state: "idle" as const, unread: 2, hasClaude: true };
+  const live = { ...state.sessions[0], state: "idle" as const, unread: 2, hasClaude: true, canInput: true };
 
   it("puts the total unread count in the window title", async () => {
     fetchState.mockResolvedValue({ ...state, sessions: [live, { ...live, id: "s2", unread: 1 }] });
-    const { ConsolePage } = await import("./ConsolePage");
     render(<ConsolePage />);
     await screen.findAllByTestId("session-row");
     await waitFor(() => expect(document.title).toBe("(3) Agent Console"));
@@ -149,27 +154,43 @@ describe("ConsolePage daily use", () => {
 
   it("marks a row as read when it is selected", async () => {
     fetchState.mockResolvedValue({ ...state, sessions: [live] });
-    const { ConsolePage } = await import("./ConsolePage");
     render(<ConsolePage />);
     fireEvent.click(await screen.findByText("dead"));
     await waitFor(() => expect(markRead).toHaveBeenCalledWith("s1"));
   });
 
-  it("sends a quick prompt to the selected session only when a button is pressed", async () => {
+  it("asks the server first and pastes the returned text into the terminal only when a button is pressed", async () => {
     fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0 }] });
-    const { ConsolePage } = await import("./ConsolePage");
     render(<ConsolePage />);
     const button = await screen.findByRole("button", { name: "テスト実行" });
     expect((button as HTMLButtonElement).disabled).toBe(true);
-    expect(sendQuickPrompt).not.toHaveBeenCalled();
+    expect(checkQuickPromptSend).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText("dead"));
     await waitFor(() => expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "テスト実行" }));
-    await waitFor(() => expect(sendQuickPrompt).toHaveBeenCalledWith("s1", "p1"));
+    await waitFor(() => expect(checkQuickPromptSend).toHaveBeenCalledWith("s1", "p1"));
+    await waitFor(() => expect(pasteAndEnter).toHaveBeenCalledWith("run tests"));
+  });
+
+  it("does not paste and shows the server's reason when the state check is refused (409)", async () => {
+    checkQuickPromptSend.mockRejectedValue(new Error("claude is busy"));
+    fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0 }] });
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    await waitFor(() => expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "テスト実行" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("claude is busy");
+    expect(pasteAndEnter).not.toHaveBeenCalled();
+  });
+
+  it("disables the quick prompt buttons while input is not allowed", async () => {
+    fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0, canInput: false }] });
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("explains that a break is the app's own definition", async () => {
-    const { ConsolePage } = await import("./ConsolePage");
     render(<ConsolePage />);
     expect((await screen.findByTestId("notify-help")).textContent).toContain("Claude 公式");
   });

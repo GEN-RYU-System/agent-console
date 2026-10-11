@@ -1,5 +1,4 @@
 import { useTranslation } from "react-i18next";
-import { Badge } from "@sa/components/Badge";
 import { Button } from "@sa/components/Button";
 import { Callout } from "@sa/components/Callout";
 import { Card } from "@sa/components/Card";
@@ -49,11 +48,15 @@ export function PastSessionsList({ items, available, canResume, busyId, error, o
                 <span className="ac-past__muted">{formatStartedAt(p.startedAt)}</span>
               </div>
               <div className="ac-past__actions">
-                {p.live && <Badge variant="info">{t("ac.past.live")}</Badge>}
+                {p.blocked !== null && (
+                  <span className="ac-past__muted" data-testid="past-blocked" data-reason={p.blocked}>
+                    {t(`ac.past.blocked.${p.blocked}`)}
+                  </span>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={!canResume || p.live || busyId !== null}
+                  disabled={!canResume || p.blocked !== null || busyId !== null}
                   loading={busyId === p.sessionId}
                   loadingText={t("ac.past.resuming")}
                   onClick={() => onResume(p.sessionId)}

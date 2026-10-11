@@ -6,6 +6,7 @@ import { EmptyState } from "@sa/components/EmptyState";
 import { Modal } from "@sa/components/Modal";
 import {
   ApiError,
+  checkQuickPromptSend,
   createSession,
   fetchLedger,
   fetchPastSessions,
@@ -19,7 +20,6 @@ import {
   removeSession,
   renameSession,
   resumeSession,
-  sendQuickPrompt,
 } from "../api";
 import { LedgerBoard } from "../components/LedgerBoard/LedgerBoard";
 import { MemoryPanel } from "../components/MemoryPanel/MemoryPanel";
@@ -30,7 +30,7 @@ import { QuickPromptEditor } from "../components/QuickPrompts/QuickPromptEditor"
 import { RenameForm } from "../components/RenameForm/RenameForm";
 import { SessionList } from "../components/SessionList/SessionList";
 import { ThemeToggle } from "../components/ThemeToggle/ThemeToggle";
-import { TerminalPane } from "../components/TerminalPane/TerminalPane";
+import { TerminalPane, type TerminalHandle } from "../components/TerminalPane/TerminalPane";
 import type { ConsoleState, LedgerSnapshot, PastSession, QuickPrompt, SessionView } from "../types";
 import "./ConsolePage.css";
 
@@ -92,6 +92,7 @@ export function ConsolePage() {
   const [pastBusyId, setPastBusyId] = useState<string | null>(null);
   const [pastError, setPastError] = useState<string | null>(null);
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const terminalRef = useRef<TerminalHandle>(null);
   const sessionsRef = useRef<SessionView[]>([]);
   sessionsRef.current = state?.sessions ?? [];
 
@@ -145,7 +146,11 @@ export function ConsolePage() {
   const handleSendPrompt = (promptId: string): void => {
     if (selectedId === null) return;
     setQuickError(null);
-    sendQuickPrompt(selectedId, promptId).catch((err: unknown) => setQuickError(err instanceof Error ? err.message : String(err)));
+    // サーバーが状態を取り直して入れてよければ本文を返す。本文は xterm の paste() で入れてから Enter を送る
+    checkQuickPromptSend(selectedId, promptId).then(
+      ({ text }) => terminalRef.current?.pasteAndEnter(text),
+      (err: unknown) => setQuickError(err instanceof Error ? err.message : String(err)),
+    );
   };
 
   const handleRename = async (name: string): Promise<void> => {
@@ -266,7 +271,7 @@ export function ConsolePage() {
       <main className="ac-page__center">
         <QuickPromptBar
           prompts={quickPrompts}
-          canSend={activeSession !== undefined && activeSession.state !== "stopped"}
+          canSend={activeSession?.canInput === true}
           onSend={handleSendPrompt}
           onEdit={() => setQuickEditorOpen(true)}
         />
@@ -275,7 +280,7 @@ export function ConsolePage() {
             {quickError}
           </Callout>
         )}
-        <div className="ac-page__terminal">{activeId ? <TerminalPane sessionId={activeId} /> : <EmptyState title={t("ac.selectSession")} />}</div>
+        <div className="ac-page__terminal">{activeId ? <TerminalPane ref={terminalRef} sessionId={activeId} /> : <EmptyState title={t("ac.selectSession")} />}</div>
       </main>
       <aside className="ac-page__right">
         <LedgerBoard snapshot={ledger} onRefresh={handleRefresh} />

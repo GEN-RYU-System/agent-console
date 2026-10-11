@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -11,9 +11,33 @@ const SCROLLBACK_LINES = 2000;
 /** サーバーの WebSocket 上限（256KB）より十分小さく分割して送る（大量貼り付け対策）。 */
 const INPUT_CHUNK_CHARS = 16 * 1024;
 
+export interface TerminalHandle {
+  /**
+   * 文章を xterm の paste() で端末に入れ、その後 Enter（\r）を送る。
+   * paste() は、端末側が括弧付き貼付モードを有効にしていればそれで包み、そうでなければ改行を \r に直して入れる
+   * （@xterm/xterm の d.ts: 「Writes text to the terminal, performing the necessary transformations for pasted text」）。
+   * どちらも onData を通って WebSocket の人の入力経路に出る。
+   */
+  pasteAndEnter(text: string): void;
+}
+
 /** 表示中の 1 本だけ xterm を生成する。sessionId が変わる/外れるたびに破棄して再接続する。 */
-export function TerminalPane({ sessionId }: { sessionId: string }) {
+export const TerminalPane = forwardRef<TerminalHandle, { sessionId: string }>(function TerminalPane({ sessionId }, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      pasteAndEnter(text: string): void {
+        const term = termRef.current;
+        if (!term) return;
+        term.paste(text);
+        term.input("\r", true);
+      },
+    }),
+    [],
+  );
 
   useEffect(() => {
     const host = hostRef.current;
@@ -25,6 +49,7 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
+    termRef.current = term;
 
     const ws = openSocket("/ws/term", { session: sessionId });
     const send = (msg: object): void => {
@@ -59,9 +84,10 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
       resizeObserver.disconnect();
       dataSub.dispose();
       ws.close();
+      termRef.current = null;
       term.dispose();
     };
   }, [sessionId]);
 
   return <div ref={hostRef} className="ac-terminal" data-testid="terminal" />;
-}
+});

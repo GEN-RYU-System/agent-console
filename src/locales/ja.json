@@ -79,7 +79,7 @@
       "hintClaude": "Claude に /rename を送って名前を変えます（待ち・待機のときだけ）。",
       "hintApp": "このアプリでの表示名を変えます。",
       "busyTitle": "作業中は変えられません",
-      "busyBody": "Claude が作業中です。待ち・待機になってからやり直してください。",
+      "busyBody": "Claude が idle（待機）のときだけ変えられます。作業中・許可待ちなどの間は、終わってからやり直してください。",
       "error": "名前を変えられませんでした",
       "sending": "送信中",
       "submit": "変更",
@@ -110,12 +110,17 @@
       "empty": "過去のセッションがありません",
       "resume": "再開",
       "resuming": "再開中",
-      "live": "実行中",
       "error": "再開できませんでした",
       "unavailableTitle": "一覧を取得できません",
       "unavailableBody": "claude agents --all の実行に失敗しました。",
       "noRoleTitle": "再開できる役割がありません",
-      "noRoleBody": "設定の resumeCommand を持つ役割（Sonnet 実装）だけが再開できます。"
+      "noRoleBody": "設定の resumeCommand を持つ役割（Sonnet 実装）だけが再開できます。",
+      "blocked": {
+        "running": "再開不可（今動いています）",
+        "main": "再開不可（本店のセッション。Opus 設計役の再開は対象外）",
+        "outside": "再開不可（本店のワークツリーではありません）",
+        "missing": "再開不可（作業場所が見つかりません）"
+      }
     },
     "memory": {
       "open": "メモリ",

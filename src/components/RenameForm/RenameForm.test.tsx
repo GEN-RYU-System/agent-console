@@ -5,7 +5,7 @@ import "../../i18n";
 import type { SessionView } from "../../types";
 import { RenameForm } from "./RenameForm";
 
-const session: SessionView = { id: "s1", name: "old", roleId: "shell", branch: null, cwd: "/", state: "idle", createdAt: 1, unread: 0, hasClaude: true };
+const session: SessionView = { id: "s1", name: "old", roleId: "shell", branch: null, cwd: "/", state: "idle", createdAt: 1, unread: 0, hasClaude: true, canInput: true };
 
 describe("RenameForm", () => {
   it("submits the new name while Claude is waiting or idle", () => {
@@ -17,8 +17,8 @@ describe("RenameForm", () => {
     expect(screen.getByText(/\/rename を送って/)).toBeTruthy();
   });
 
-  it("is disabled while Claude is working", () => {
-    render(<RenameForm session={{ ...session, state: "working" }} busy={false} error={null} onSubmit={() => {}} />);
+  it("is disabled unless Claude is idle (working, waiting for a permission prompt, ...)", () => {
+    render(<RenameForm session={{ ...session, state: "working", canInput: false }} busy={false} error={null} onSubmit={() => {}} />);
     expect((screen.getByRole("button", { name: "変更" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("作業中は変えられません")).toBeTruthy();
   });

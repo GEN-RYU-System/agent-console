@@ -10,9 +10,9 @@ import "./MemoryPanel.css";
 export const MEMORY_REFRESH_MS = 10000;
 const PERCENT = 100;
 
-/** 物理メモリに対する割合（%）。合計が不明なら null。 */
+/** 物理メモリに対する割合（%・整数）。棒グラフ（ProgressBar は整数に丸めて表示する）と文字で同じ値にそろえる。合計が不明なら null。 */
 export function percentOf(mb: number, totalMb: number | null): number | null {
-  return totalMb === null || totalMb <= 0 ? null : Math.round((mb / totalMb) * PERCENT * 10) / 10;
+  return totalMb === null || totalMb <= 0 ? null : Math.round((mb / totalMb) * PERCENT);
 }
 
 interface Props {
