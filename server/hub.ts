@@ -1,7 +1,8 @@
 import type { WebSocket } from "ws";
-import { fetchAgents, stateForSession, type AgentRow, type SessionState } from "./agents.ts";
+import { agentForSession, fetchAgents, stateForSession, type AgentRow, type SessionState } from "./agents.ts";
 import type { Config } from "./config.ts";
 import { loadLedger, type LedgerSnapshot } from "./ledger.ts";
+import { BreakTracker, breakBody, osascriptSender, type NotificationSender } from "./notify.ts";
 import { startPolling } from "./poll.ts";
 import { descendantPids, readProcessTable } from "./process-tree.ts";
 import type { SessionManager } from "./sessions.ts";
@@ -14,6 +15,10 @@ export interface SessionView {
   cwd: string;
   state: SessionState;
   createdAt: number;
+  /** 区切り（busy→waiting/idle）で増え、行を選ぶと 0 に戻る */
+  unread: number;
+  /** Claude が動いている（名前の変更は /rename になる） */
+  hasClaude: boolean;
 }
 
 export interface Snapshot {
@@ -29,11 +34,15 @@ export class Hub {
   private subscribers = new Set<WebSocket>();
   private lastPayload = "";
   private stoppers: Array<() => void> = [];
+  private readonly tracker = new BreakTracker();
+  private readonly sendNotification: NotificationSender | null;
 
   constructor(
     private readonly config: Config,
     private readonly sessions: SessionManager,
+    sendNotification?: NotificationSender | null,
   ) {
+    this.sendNotification = sendNotification !== undefined ? sendNotification : config.notify.macos ? osascriptSender(config.notify.osascriptBin) : null;
     sessions.onChange(() => void this.publish().catch((err) => this.onPollError("publish", err)));
   }
 
@@ -62,10 +71,45 @@ export class Hub {
     }
   }
 
-  private async pollAgents(): Promise<void> {
+  /** claude agents を 1 回取得して区切りを判定し、配信する（定期実行の本体。テストからも呼べる）。 */
+  async pollAgents(): Promise<void> {
     // 不正な出力・実行失敗は null（=状態「不明」）。前回値は保持しない。
     this.agents = await fetchAgents(this.config.claudeBin);
+    await this.detectBreaks();
     await this.publish();
+  }
+
+  /** 前回の status と比べ、区切りがあれば未読を増やして macOS 通知を出す。取得失敗の間は何も判定しない。 */
+  private async detectBreaks(): Promise<void> {
+    if (this.agents === null) return;
+    const table = await readProcessTable().catch(() => []);
+    for (const s of this.sessions.list()) {
+      const agent = agentForSession({ exited: s.exited, pids: descendantPids(s.term.pid, table) }, this.agents);
+      const isBreak = this.tracker.observe(s.id, agent?.status ?? null);
+      if (isBreak && agent && (agent.status === "waiting" || agent.status === "idle")) {
+        this.sendNotification?.(breakBody(agent.name ?? s.name, agent.status));
+      }
+    }
+  }
+
+  /** 行を選んだとき。変化があれば購読者へ配信する。 */
+  markRead(sessionId: string): Promise<void> {
+    return this.tracker.markRead(sessionId) ? this.publish() : Promise.resolve();
+  }
+
+  /** 名前の変更・指示の送信の前に、そのセッションの今の状態を知る。 */
+  async runtimeOf(sessionId: string): Promise<SessionView | undefined> {
+    return (await this.snapshot()).sessions.find((v) => v.id === sessionId);
+  }
+
+  /** このアプリのセッションの子孫プロセスの pid（過去セッション一覧で「実行中」を判定する）。 */
+  async livePids(): Promise<Set<number>> {
+    const table = await readProcessTable().catch(() => []);
+    const pids = new Set<number>();
+    for (const s of this.sessions.list()) {
+      if (!s.exited) for (const pid of descendantPids(s.term.pid, table)) pids.add(pid);
+    }
+    return pids;
   }
 
   /** 同時に複数回呼ばれても実行は 1 本にまとめる。 */
@@ -84,15 +128,22 @@ export class Hub {
 
   async snapshot(): Promise<Snapshot> {
     const table = await readProcessTable().catch(() => []);
-    const views = this.sessions.list().map((s): SessionView => ({
-      id: s.id,
-      name: s.name,
-      roleId: s.roleId,
-      branch: s.branch,
-      cwd: s.cwd,
-      createdAt: s.createdAt,
-      state: stateForSession({ exited: s.exited, pids: descendantPids(s.term.pid, table) }, this.agents),
-    }));
+    const views = this.sessions.list().map((s): SessionView => {
+      const info = { exited: s.exited, pids: descendantPids(s.term.pid, table) };
+      const agent = agentForSession(info, this.agents);
+      return {
+        id: s.id,
+        // Claude 起動中は Claude 側の名前が正本。無ければアプリが付けた名前
+        name: agent?.name !== undefined && agent.name !== "" ? agent.name : s.name,
+        roleId: s.roleId,
+        branch: s.branch,
+        cwd: s.cwd,
+        createdAt: s.createdAt,
+        state: stateForSession(info, this.agents),
+        unread: this.tracker.unreadOf(s.id),
+        hasClaude: agent !== undefined,
+      };
+    });
     return { sessions: views, agentsAvailable: this.agents !== null };
   }
 

@@ -1,20 +1,42 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@sa/components/Button";
 import { Callout } from "@sa/components/Callout";
 import { EmptyState } from "@sa/components/EmptyState";
 import { Modal } from "@sa/components/Modal";
-import { ApiError, createSession, fetchLedger, fetchState, getSessionToken, logout, openSocket, refreshLedger, removeSession } from "../api";
+import {
+  ApiError,
+  createSession,
+  fetchLedger,
+  fetchPastSessions,
+  fetchQuickPrompts,
+  fetchState,
+  getSessionToken,
+  logout,
+  markRead,
+  openSocket,
+  refreshLedger,
+  removeSession,
+  renameSession,
+  resumeSession,
+  sendQuickPrompt,
+} from "../api";
 import { LedgerBoard } from "../components/LedgerBoard/LedgerBoard";
+import { MemoryPanel } from "../components/MemoryPanel/MemoryPanel";
 import { NewSessionForm, type NewSessionValues } from "../components/NewSessionForm/NewSessionForm";
+import { PastSessionsList } from "../components/PastSessions/PastSessionsList";
+import { QuickPromptBar } from "../components/QuickPrompts/QuickPromptBar";
+import { QuickPromptEditor } from "../components/QuickPrompts/QuickPromptEditor";
+import { RenameForm } from "../components/RenameForm/RenameForm";
 import { SessionList } from "../components/SessionList/SessionList";
 import { ThemeToggle } from "../components/ThemeToggle/ThemeToggle";
 import { TerminalPane } from "../components/TerminalPane/TerminalPane";
-import type { ConsoleState, LedgerSnapshot, SessionView } from "../types";
+import type { ConsoleState, LedgerSnapshot, PastSession, QuickPrompt, SessionView } from "../types";
 import "./ConsolePage.css";
 
 const LEDGER_POLL_MS = 60000;
 const RECONNECT_MS = 1000;
+const RENAME_CONFIRM_MS = 10000;
 
 function useConsoleState() {
   const [state, setState] = useState<ConsoleState | null>(null);
@@ -57,6 +79,40 @@ export function ConsolePage() {
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
+  const [quickPrompts, setQuickPrompts] = useState<QuickPrompt[]>([]);
+  const [quickEditorOpen, setQuickEditorOpen] = useState(false);
+  const [quickError, setQuickError] = useState<string | null>(null);
+  const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
+  const [renameBusy, setRenameBusy] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [renameNotice, setRenameNotice] = useState<string | null>(null);
+  const [pastOpen, setPastOpen] = useState(false);
+  const [pastItems, setPastItems] = useState<PastSession[] | null>(null);
+  const [pastAvailable, setPastAvailable] = useState(true);
+  const [pastBusyId, setPastBusyId] = useState<string | null>(null);
+  const [pastError, setPastError] = useState<string | null>(null);
+  const [memoryOpen, setMemoryOpen] = useState(false);
+  const sessionsRef = useRef<SessionView[]>([]);
+  sessionsRef.current = state?.sessions ?? [];
+
+  const loadQuickPrompts = useCallback(() => void fetchQuickPrompts().then((r) => setQuickPrompts(r.items), () => undefined), []);
+  useEffect(loadQuickPrompts, [loadQuickPrompts]);
+
+  const totalUnread = (state?.sessions ?? []).reduce((sum, s) => sum + s.unread, 0);
+  useEffect(() => {
+    document.title = totalUnread > 0 ? `(${totalUnread}) ${t("ac.title")}` : t("ac.title");
+  }, [totalUnread, t]);
+
+  // 選択中の行は見えているので、区切りが来ても既読にする（窓が見えているときだけ）
+  const selectedUnread = state?.sessions.find((s) => s.id === selectedId)?.unread ?? 0;
+  useEffect(() => {
+    if (selectedId !== null && selectedUnread > 0 && document.visibilityState === "visible") void markRead(selectedId).catch(() => undefined);
+  }, [selectedId, selectedUnread]);
+
+  const handleSelect = (id: string): void => {
+    setSelectedId(id);
+    if ((sessionsRef.current.find((s) => s.id === id)?.unread ?? 0) > 0) void markRead(id).catch(() => undefined);
+  };
 
   useEffect(() => {
     const load = (): void => void fetchLedger().then(setLedger, () => undefined);
@@ -86,6 +142,64 @@ export function ConsolePage() {
     removeSession(id).catch((err: unknown) => setRemoveError(err instanceof Error ? err.message : String(err)));
   };
 
+  const handleSendPrompt = (promptId: string): void => {
+    if (selectedId === null) return;
+    setQuickError(null);
+    sendQuickPrompt(selectedId, promptId).catch((err: unknown) => setQuickError(err instanceof Error ? err.message : String(err)));
+  };
+
+  const handleRename = async (name: string): Promise<void> => {
+    if (renameTargetId === null) return;
+    const targetId = renameTargetId;
+    const before = sessionsRef.current.find((s) => s.id === targetId)?.name;
+    setRenameBusy(true);
+    setRenameError(null);
+    try {
+      const { mode } = await renameSession(targetId, name);
+      setRenameTargetId(null);
+      if (mode === "claude") {
+        // Claude 側の名前が変わらなければ案内する（/rename を受け付けない状態など）
+        setTimeout(() => {
+          if (sessionsRef.current.find((s) => s.id === targetId)?.name === before) setRenameNotice(targetId);
+        }, RENAME_CONFIRM_MS);
+      }
+    } catch (err) {
+      setRenameError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRenameBusy(false);
+    }
+  };
+
+  const openPastSessions = (): void => {
+    setPastOpen(true);
+    setPastItems(null);
+    setPastError(null);
+    fetchPastSessions().then(
+      (r) => {
+        setPastItems(r.items);
+        setPastAvailable(r.available);
+      },
+      (err: unknown) => {
+        setPastItems([]);
+        setPastError(err instanceof Error ? err.message : String(err));
+      },
+    );
+  };
+
+  const handleResume = async (sessionId: string): Promise<void> => {
+    setPastBusyId(sessionId);
+    setPastError(null);
+    try {
+      const { id } = await resumeSession(sessionId);
+      setSelectedId(id);
+      setPastOpen(false);
+    } catch (err) {
+      setPastError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPastBusyId(null);
+    }
+  };
+
   const handleLogout = (): void => {
     void logout()
       .catch(() => undefined)
@@ -105,6 +219,9 @@ export function ConsolePage() {
   if (!state) return null;
   // 一覧から外れた（または存在しない）セッションは選択扱いにしない
   const activeId = state.sessions.some((s) => s.id === selectedId) ? selectedId : null;
+  const activeSession = state.sessions.find((s) => s.id === activeId);
+  const renameTarget = state.sessions.find((s) => s.id === renameTargetId);
+  const canResume = state.roles.some((r) => r.canResume);
 
   return (
     <div className="ac-page">
@@ -115,15 +232,50 @@ export function ConsolePage() {
             {t("ac.newSession")}
           </Button>
         </div>
+        <div className="ac-page__subbar">
+          <Button variant="outline" size="sm" onClick={openPastSessions}>
+            {t("ac.pastSessions")}
+          </Button>
+        </div>
         {removeError !== null && (
           <Callout variant="warning" title={t("ac.removeError")}>
             {removeError}
           </Callout>
         )}
-        <SessionList sessions={state.sessions} roles={state.roles} selectedId={activeId} onSelect={setSelectedId} onRemove={handleRemove} />
+        {renameNotice !== null && (
+          <Callout variant="warning" title={t("ac.rename.notReflectedTitle")}>
+            {t("ac.rename.notReflectedBody")}
+          </Callout>
+        )}
+        <SessionList
+          sessions={state.sessions}
+          roles={state.roles}
+          selectedId={activeId}
+          onSelect={handleSelect}
+          onRemove={handleRemove}
+          onRename={(id) => {
+            setRenameNotice(null);
+            setRenameError(null);
+            setRenameTargetId(id);
+          }}
+        />
+        <p className="ac-page__help" data-testid="notify-help">
+          {t("ac.notifyHelp")}
+        </p>
       </aside>
       <main className="ac-page__center">
-        {activeId ? <TerminalPane sessionId={activeId} /> : <EmptyState title={t("ac.selectSession")} />}
+        <QuickPromptBar
+          prompts={quickPrompts}
+          canSend={activeSession !== undefined && activeSession.state !== "stopped"}
+          onSend={handleSendPrompt}
+          onEdit={() => setQuickEditorOpen(true)}
+        />
+        {quickError !== null && (
+          <Callout variant="warning" title={t("ac.quick.sendError")}>
+            {quickError}
+          </Callout>
+        )}
+        <div className="ac-page__terminal">{activeId ? <TerminalPane sessionId={activeId} /> : <EmptyState title={t("ac.selectSession")} />}</div>
       </main>
       <aside className="ac-page__right">
         <LedgerBoard snapshot={ledger} onRefresh={handleRefresh} />
@@ -143,11 +295,28 @@ export function ConsolePage() {
         <span data-testid="claude-version">
           {t("ac.footer.claudeVersion")}: {state.claudeVersion}
         </span>
+        <Button variant="ghost" size="sm" onClick={() => setMemoryOpen(true)}>
+          {t("ac.memory.open")}
+        </Button>
         <ThemeToggle />
         <Button variant="ghost" size="sm" onClick={handleLogout}>
           {t("ac.logout")}
         </Button>
       </footer>
+      <Modal open={renameTarget !== undefined} onClose={() => setRenameTargetId(null)} title={t("ac.rename.title")} size="sm">
+        {renameTarget !== undefined && (
+          <RenameForm key={renameTarget.id} session={renameTarget} busy={renameBusy} error={renameError} onSubmit={(n) => void handleRename(n)} />
+        )}
+      </Modal>
+      <Modal open={quickEditorOpen} onClose={() => setQuickEditorOpen(false)} title={t("ac.quick.editTitle")} size="md">
+        <QuickPromptEditor prompts={quickPrompts} onChanged={loadQuickPrompts} />
+      </Modal>
+      <Modal open={pastOpen} onClose={() => setPastOpen(false)} title={t("ac.past.title")} size="lg">
+        <PastSessionsList items={pastItems} available={pastAvailable} canResume={canResume} busyId={pastBusyId} error={pastError} onResume={(id) => void handleResume(id)} />
+      </Modal>
+      <Modal open={memoryOpen} onClose={() => setMemoryOpen(false)} title={t("ac.memory.title")} size="md">
+        <MemoryPanel open={memoryOpen} />
+      </Modal>
       <Modal open={formOpen} onClose={() => setFormOpen(false)} title={t("ac.newSession")} size="sm">
         <NewSessionForm roles={state.roles} busy={busy} error={formError} onSubmit={(v) => void handleCreate(v)} />
       </Modal>

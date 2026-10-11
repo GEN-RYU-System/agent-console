@@ -8,9 +8,16 @@
   "agentsPollMs": 3000,
   "ledgerPollMs": 60000,
   "ringBufferBytes": 1048576,
+  "notify": { "macos": true },
   "roles": [
     { "id": "opus-designer", "labelKey": "role.opusDesigner", "command": ["/bin/zsh", "-ic", "ccopusgo"], "needsWorktree": false },
-    { "id": "sonnet-impl", "labelKey": "role.sonnetImpl", "command": ["/bin/zsh", "-ic", "claude --model sonnet"], "needsWorktree": true },
+    {
+      "id": "sonnet-impl",
+      "labelKey": "role.sonnetImpl",
+      "command": ["/bin/zsh", "-ic", "claude --model sonnet"],
+      "needsWorktree": true,
+      "resumeCommand": ["/bin/zsh", "-ic", "claude --model sonnet --resume \"$AC_RESUME_ID\""]
+    },
     { "id": "shell", "labelKey": "role.shell", "command": ["/bin/zsh", "-i"], "needsWorktree": false }
   ]
 }

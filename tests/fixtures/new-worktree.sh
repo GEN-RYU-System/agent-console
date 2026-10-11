@@ -11,5 +11,5 @@ branch: ${BRANCH}
 
 | ブランチ名 | 担当機能エリア | 開始日時 | 状態 | PR# | main | 備考 |
 |-----------|--------------|---------|------|-----|------|------|
-| ${BRANCH} | e2e | 2026-10-11 | IN_PROGRESS | | | stub |
+| ${BRANCH} | e2e | $(date '+%Y-%m-%d %H:%M') | IN_PROGRESS | | | stub |
 LEDGER

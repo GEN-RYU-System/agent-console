@@ -127,13 +127,39 @@ export class SessionManager {
     }
   }
 
-  private spawnSession(name: string, role: RoleConfig, branch: string | null, cwd: string): Session {
-    const term = spawn(role.command[0], role.command.slice(1), {
+  /**
+   * 過去のセッションを再開する。起動コマンドは役割の resumeCommand、sessionId は環境変数 AC_RESUME_ID で渡す
+   * （コマンド文字列に連結しない）。cwd の検証は呼び出し側（past-sessions.ts）で済ませる。
+   */
+  resume(input: { roleId: unknown; name: unknown; sessionId: string; cwd: string }): Session {
+    const role = this.findRole(input.roleId);
+    if (!role.resumeCommand) throw new SessionInputError("role cannot resume sessions");
+    if (this.sessions.size + this.pending >= this.maxSessions) throw new SessionInputError("too many sessions");
+    return this.spawnSession(validateName(input.name), role, null, input.cwd, role.resumeCommand, { AC_RESUME_ID: input.sessionId });
+  }
+
+  /** アプリ側の名前を変える（Claude が動いていないセッション用。Claude 起動中は /rename を使う）。 */
+  rename(id: string, name: unknown): void {
+    const session = this.sessions.get(id);
+    if (!session) throw new SessionNotFoundError("session not found");
+    session.name = validateName(name);
+    this.notify();
+  }
+
+  private spawnSession(
+    name: string,
+    role: RoleConfig,
+    branch: string | null,
+    cwd: string,
+    command: string[] = role.command,
+    extraEnv: Record<string, string> = {},
+  ): Session {
+    const term = spawn(command[0], command.slice(1), {
       name: "xterm-256color",
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
       cwd,
-      env: buildChildEnv(process.env),
+      env: { ...buildChildEnv(process.env), ...extraEnv },
     });
     const session: Session = {
       id: randomUUID(),

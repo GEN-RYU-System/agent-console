@@ -24,6 +24,21 @@ export function isSafeLedgerBranch(branch: string): boolean {
 export interface LedgerRow {
   branch: string;
   state: string;
+  /** 3 列目（開始日時）の生の文字列 */
+  startedAtText: string;
+}
+
+const STARTED_AT_PATTERN = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/;
+
+/** `YYYY-MM-DD HH:MM`（この Mac のローカル時刻）をエポックミリ秒にする。読めない・暦として不正なら null。 */
+export function parseStartedAt(text: string): number | null {
+  const m = STARTED_AT_PATTERN.exec(text.trim());
+  if (!m) return null;
+  const [year, month, day, hour, minute] = m.slice(1).map(Number);
+  const date = new Date(year, month - 1, day, hour, minute);
+  const valid =
+    date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day && date.getHours() === hour && date.getMinutes() === minute;
+  return valid ? date.getTime() : null;
 }
 
 /** `| ブランチ名 | 担当 | 開始 | 状態 | …` の 4 列目を状態とする。 */
@@ -32,11 +47,11 @@ export function parseLedgerRow(line: string): LedgerRow | null {
   // 先頭の '|' の左は空文字になるので除く
   const cols = cells[0] === "" ? cells.slice(1) : cells;
   if (cols.length < 4) return null;
-  return { branch: cols[0], state: cols[3] };
+  return { branch: cols[0], state: cols[3], startedAtText: cols[2] };
 }
 
 export type LookupResult =
-  | { kind: "found"; state: string }
+  | { kind: "found"; state: string; startedAt: number | null }
   | { kind: "unregistered" }
   | { kind: "conflict" }
   | { kind: "error"; message: string };
@@ -97,7 +112,7 @@ export async function lookupBranch(root: string, script: string, branch: string)
   try {
     const { stdout } = await execFileAsync("bash", [path.join(root, script), branch], { cwd: root, timeout: LOOKUP_TIMEOUT_MS });
     const row = parseLedgerRow(stdout.split("\n").find((l) => l.trim() !== "") ?? "");
-    return row ? { kind: "found", state: row.state } : { kind: "error", message: "exit 0 but no ledger row in output" };
+    return row ? { kind: "found", state: row.state, startedAt: parseStartedAt(row.startedAtText) } : { kind: "error", message: "exit 0 but no ledger row in output" };
   } catch (err) {
     return classifyLookupFailure(err as ExecFailure);
   }

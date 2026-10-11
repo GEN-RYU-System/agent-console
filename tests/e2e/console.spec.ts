@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -33,6 +33,11 @@ async function openPaired(page: Page): Promise<void> {
   await expect(page.getByRole("button", { name: "新しいセッション", exact: true })).toBeVisible();
 }
 
+const NAME_FILE = process.env.AC_E2E_NAME_FILE as string;
+const ALL_FILE = process.env.AC_E2E_ALL_FILE as string;
+const OSASCRIPT_LOG = process.env.AC_E2E_OSASCRIPT_LOG as string;
+const DATA_DIR = process.env.AC_E2E_DATA_DIR as string;
+const SHOT_DIR = process.env.AC_SHOT_DIR;
 const MAX_SERVER_RSS_MB = 150;
 const MAX_JS_HEAP_MB = 80;
 const STATE_DEADLINE_MS = 5000;
@@ -132,13 +137,15 @@ test("K4: 台帳ボードの件数が ledger-lookup.sh で引いた値と一致�
     const column = ["IN_PROGRESS", "REVIEW", "DONE", "UNREGISTERED"].includes(state) ? state : "OTHER";
     expected[column] += 1;
   }
+  // 既定の絞り込み（作業中・レビュー・WIP、直近 30 日）ではなく、すべてを表示して件数を突き合わせる
+  await page.addInitScript(() => window.localStorage.setItem("ac.ledgerFilter", JSON.stringify({ period: "all", state: "all", query: "" })));
   await openPaired(page);
   await page.getByRole("button", { name: "更新", exact: true }).click();
   for (const [column, count] of Object.entries(expected)) {
     await expect(page.getByTestId(`ledger-col-${column}`)).toHaveAttribute("data-count", String(count));
   }
-  // K2 で作ったブランチ分（IN_PROGRESS）が含まれていること
-  expect(expected.IN_PROGRESS).toBe(3);
+  // seed-a・seed-b・seed-old・seed-baddate と K2 で作ったブランチ分（IN_PROGRESS）が含まれていること
+  expect(expected.IN_PROGRESS).toBe(5);
 });
 
 test("停止したセッションは「停止」と表示され、一覧から外せる", async ({ page }) => {
@@ -367,4 +374,223 @@ test("テーマ: フッターの切替で <html> が変わり、再読込でも�
 
   expect(await context.cookies()).toEqual([]);
   expect(await page.evaluate(() => document.cookie)).toBe("");
+});
+
+// ---- 段階2（毎日の使い勝手）。サーバーを共有するので、既存の試験より後ろに置く ----
+
+/** AC_SHOT_DIR を指定したときだけ、1440x900 でライト・ダークの画面を保存する（CI では保存しない）。 */
+async function shoot(page: Page, name: string): Promise<void> {
+  if (!SHOT_DIR) return;
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(SHOT_DIR, `${name}-light.png`) });
+  await page.evaluate(() => document.documentElement.classList.add("force-dark"));
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(SHOT_DIR, `${name}-dark.png`) });
+  await page.evaluate(() => document.documentElement.classList.remove("force-dark"));
+}
+
+const rowOf = (page: Page, id: string) => page.locator(`[data-testid="session-row"][data-session-id="${id}"]`);
+
+test("段階2 K1: busy→idle で未読の印・窓タイトル・macOS 通知が出て、行を選ぶと未読が消える", async ({ page }) => {
+  const id = await apiCreate("notify-target", "e2e-plain");
+  await openPaired(page);
+  const row = rowOf(page, id);
+  writeFileSync(STATUS_FILE, "idle");
+  await expect(row.getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: STATE_DEADLINE_MS });
+  await expect(row.getByTestId("unread-badge")).toHaveCount(0);
+  writeFileSync(STATUS_FILE, "busy");
+  await expect(row.getByTestId("status")).toHaveAttribute("data-state", "working", { timeout: STATE_DEADLINE_MS });
+  const logBefore = readFileSync(OSASCRIPT_LOG, "utf8").split("\n").filter((l) => l.includes("notify-target")).length;
+
+  writeFileSync(STATUS_FILE, "idle");
+  await expect(row.getByTestId("unread-badge")).toBeVisible({ timeout: 6000 });
+  await expect(row.getByTestId("unread-badge")).toContainText("未読 1 件");
+  await expect(page).toHaveTitle(/^\(\d+\) Agent Console$/);
+  await expect
+    .poll(() => readFileSync(OSASCRIPT_LOG, "utf8").split("\n").filter((l) => l.includes("notify-target")).length, { timeout: 6000 })
+    .toBe(logBefore + 1);
+  const line = readFileSync(OSASCRIPT_LOG, "utf8").split("\n").filter((l) => l.includes("notify-target")).pop() as string;
+  expect(line).toContain('display notification "notify-target: 待機" with title "Agent Console"');
+  await expect(page.getByTestId("notify-help")).toContainText("Claude 公式");
+  await shoot(page, "01-session-list-unread");
+
+  await row.click();
+  await expect(row.getByTestId("unread-badge")).toHaveCount(0);
+  // 他のセッションの未読も読んで、後続の試験に残さない
+  for (const other of await page.getByTestId("session-row").all()) await other.click();
+  await expect(page.getByTestId("unread-badge")).toHaveCount(0);
+  await expect(page).toHaveTitle("Agent Console");
+});
+
+test("段階2 K2: 名前を変えると /rename が端末に送られ、Claude 側の名前が変われば表示も変わる。作業中は変えられない", async ({ page }) => {
+  const id = await apiCreate("rename-target", "e2e-plain");
+  await openPaired(page);
+  const row = rowOf(page, id);
+  writeFileSync(STATUS_FILE, "busy");
+  await expect(row.getByTestId("status")).toHaveAttribute("data-state", "working", { timeout: STATE_DEADLINE_MS });
+  await row.getByRole("button", { name: "名前を変える", exact: true }).click();
+  const form = page.getByTestId("rename-form");
+  await expect(form.getByRole("button", { name: "変更", exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
+
+  writeFileSync(STATUS_FILE, "idle");
+  await expect(row.getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: STATE_DEADLINE_MS });
+  await row.click();
+  await expect(page.getByTestId("terminal")).toContainText("READY");
+  await row.getByRole("button", { name: "名前を変える", exact: true }).click();
+  await form.getByLabel("新しい名前", { exact: false }).fill("renamed-by-ui");
+  await form.getByRole("button", { name: "変更", exact: true }).click();
+  await expect(page.getByTestId("terminal")).toContainText("/rename renamed-by-ui");
+
+  writeFileSync(NAME_FILE, "renamed-by-ui");
+  await expect(row).toContainText("renamed-by-ui", { timeout: STATE_DEADLINE_MS });
+  writeFileSync(NAME_FILE, "");
+  await expect(row).toContainText("rename-target", { timeout: STATE_DEADLINE_MS });
+});
+
+test("段階2 K2: /rename を送っても Claude 側の名前が 10 秒変わらなければ案内が出る", async ({ page }) => {
+  test.setTimeout(40000);
+  const id = await apiCreate("rename-silent", "e2e-plain");
+  await openPaired(page);
+  const row = rowOf(page, id);
+  writeFileSync(STATUS_FILE, "idle");
+  await expect(row.getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: STATE_DEADLINE_MS });
+  await row.getByRole("button", { name: "名前を変える", exact: true }).click();
+  await page.getByTestId("rename-form").getByLabel("新しい名前", { exact: false }).fill("never-applied");
+  await page.getByTestId("rename-form").getByRole("button", { name: "変更", exact: true }).click();
+  await expect(page.getByText("名前がまだ反映されていません")).toBeVisible({ timeout: 15000 });
+});
+
+test("段階2 K3: よく使う指示を登録・編集・削除でき、ボタン 1 回で選択中の端末に送られ、再読込後も残る（保存は 1 ファイル・権限 600）", async ({ page }) => {
+  const id = await apiCreate("quick-target", "e2e-plain");
+  await openPaired(page);
+  await page.getByRole("button", { name: "指示を編集", exact: true }).click();
+  const form = page.getByTestId("quick-prompt-form");
+  await form.getByLabel("ボタンの名前", { exact: false }).fill("テスト実行");
+  await form.getByLabel("送る文章", { exact: false }).fill("echo-quick-prompt");
+  await form.getByRole("button", { name: "追加", exact: true }).click();
+  await expect(page.getByTestId("quick-prompt-item")).toHaveCount(1);
+  await shoot(page, "03-quick-prompt-editor");
+  await page.getByTestId("quick-prompt-item").getByRole("button", { name: "編集", exact: true }).click();
+  await form.getByLabel("送る文章", { exact: false }).fill("echo-quick-prompt-v2");
+  await form.getByRole("button", { name: "保存", exact: true }).click();
+  await page.keyboard.press("Escape");
+
+  const bar = page.getByTestId("quick-prompt-bar");
+  await expect(bar.getByRole("button", { name: "テスト実行", exact: true })).toBeDisabled();
+  await rowOf(page, id).click();
+  await expect(page.getByTestId("terminal")).toContainText("READY");
+  await bar.getByRole("button", { name: "テスト実行", exact: true }).click();
+  await expect(page.getByTestId("terminal")).toContainText("echo-quick-prompt-v2");
+
+  const file = path.join(DATA_DIR, "quick-prompts.json");
+  expect(readdirSync(DATA_DIR)).toEqual(["quick-prompts.json"]);
+  expect(statSync(file).mode & 0o777).toBe(0o600);
+  await page.reload();
+  await expect(page.getByTestId("quick-prompt-bar").getByRole("button", { name: "テスト実行", exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "指示を編集", exact: true }).click();
+  await page.getByTestId("quick-prompt-item").getByRole("button", { name: "削除", exact: true }).click();
+  await expect(page.getByTestId("quick-prompt-item")).toHaveCount(0);
+  const saved = JSON.parse(readFileSync(file, "utf8")) as { version: number; items: unknown[] };
+  expect(saved).toEqual({ version: 1, items: [] });
+});
+
+test("段階2 K4: 過去のセッション一覧から Sonnet 実装役を選ぶと、同じ作業場所で --resume 相当の起動をする", async ({ page }) => {
+  const sessionId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  writeFileSync(
+    ALL_FILE,
+    JSON.stringify([
+      { pid: 1, cwd: ROOT, kind: "interactive", startedAt: Date.now() - 3600000, sessionId, name: "past-work", status: "idle" },
+      { pid: 2, cwd: "/", kind: "interactive", startedAt: Date.now() - 7200000, sessionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "outside", status: "idle" },
+    ]),
+  );
+  await openPaired(page);
+  await page.getByRole("button", { name: "過去のセッション", exact: true }).click();
+  const item = page.locator(`[data-testid="past-session"][data-session-id="${sessionId}"]`);
+  await expect(item).toContainText("past-work");
+  await shoot(page, "04-past-sessions");
+  await item.getByRole("button", { name: "再開", exact: true }).click();
+  await expect(page.getByTestId("terminal")).toContainText(`RESUMED=${sessionId}`);
+  await expect(page.getByTestId("terminal")).toContainText(`READY ${ROOT}`);
+  await expect(page.getByTestId("session-row").filter({ hasText: "past-work" })).toHaveCount(1);
+
+  // 作業場所が本店・ワークツリーのどちらでもない行は再開できない（サーバーが拒否して画面に出す）
+  await page.getByRole("button", { name: "過去のセッション", exact: true }).click();
+  await page.locator('[data-testid="past-session"][data-session-id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"]').getByRole("button", { name: "再開", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "再開できませんでした" })).toContainText("not the main checkout");
+  writeFileSync(ALL_FILE, "[]");
+});
+
+test("段階2 K5: 台帳は既定で作業中・レビュー・WIP かつ直近 30 日だけを表示し、隠れた件数と日付不明を別に数え、絞り込みは再読込後も残る", async ({ page }) => {
+  const dir = path.join(ROOT, ".claude-pipeline", "active-work.d");
+  const total = readdirSync(dir).filter((f) => f.endsWith(".md")).length;
+  await openPaired(page);
+  await page.getByRole("button", { name: "更新", exact: true }).click();
+  const summary = page.getByTestId("ledger-summary");
+  const nums = async (): Promise<{ shown: number; hidden: number; unknown: number }> => ({
+    shown: Number(await summary.getAttribute("data-shown")),
+    hidden: Number(await summary.getAttribute("data-hidden")),
+    unknown: Number(await summary.getAttribute("data-unknown")),
+  });
+  // 既定: seed-a/b・seed-c(REVIEW)・seed-wip・K2 で作ったブランチは表示。seed-old・DONE・ABANDONED・未登録は隠れ、seed-baddate は日付不明
+  await expect.poll(async () => (await nums()).shown).toBeGreaterThanOrEqual(4);
+  const initial = await nums();
+  expect(initial.unknown).toBe(1);
+  expect(initial.shown + initial.hidden + initial.unknown).toBe(total);
+  await expect(page.getByTestId("ledger-unknown-date")).toContainText("1 件");
+  await expect(page.getByTestId("ledger-card").filter({ hasText: "seed-old" })).toHaveCount(0);
+  await expect(page.getByTestId("ledger-card").filter({ hasText: "seed-a" })).toHaveCount(1);
+  await shoot(page, "05-ledger-filter");
+
+  await page.getByTestId("ledger-filters").getByLabel("期間", { exact: false }).selectOption("all");
+  await page.getByTestId("ledger-filters").getByLabel("状態", { exact: false }).selectOption("all");
+  await expect(summary).toHaveAttribute("data-shown", String(total));
+  await expect(summary).toHaveAttribute("data-hidden", "0");
+  await expect(summary).toHaveAttribute("data-unknown", "0");
+
+  await page.getByTestId("ledger-filters").getByLabel("ブランチ名で検索", { exact: false }).fill("SEED-OLD");
+  await expect(page.getByTestId("ledger-card")).toHaveCount(1);
+  await page.reload();
+  await expect(page.getByTestId("ledger-filters").getByLabel("ブランチ名で検索", { exact: false })).toHaveValue("SEED-OLD");
+  await expect(page.getByTestId("ledger-card")).toHaveCount(1);
+});
+
+test("段階2 K6: メモリ画面にセッションごと・サーバー・Mac 全体が MB と % で出て、10 秒ごとに更新される（値は OS の実出力と一致）", async ({ page }) => {
+  test.setTimeout(45000);
+  const id = await apiCreate("mem-view", "e2e-plain");
+  await openPaired(page);
+  await page.getByRole("button", { name: "メモリ", exact: true }).click();
+  const serverBox = page.getByTestId("memory-server");
+  await expect(serverBox).toContainText("MB");
+  await expect(serverBox).toContainText("%");
+  await expect(page.getByTestId(`memory-session-${id}`)).toContainText("MB");
+
+  const serverPid = execFileSync("lsof", ["-ti", `tcp:${E2E_PORT}`, "-sTCP:LISTEN"], { encoding: "utf8" }).trim().split("\n")[0];
+  const psRssMb = Number(execFileSync("ps", ["-o", "rss=", "-p", serverPid], { encoding: "utf8" }).trim()) / 1024;
+  const shown = Number(/([\d.]+) MB/.exec((await serverBox.textContent()) ?? "")?.[1]);
+  expect(Math.abs(shown - psRssMb)).toBeLessThan(40);
+  const sessionMb = Number(await page.getByTestId(`memory-session-${id}`).getAttribute("data-rss-mb"));
+  expect(sessionMb).toBeGreaterThan(0);
+  expect(sessionMb).toBeLessThan(psRssMb + 200);
+
+  if (process.platform === "darwin") {
+    const totalMb = Number(execFileSync("sysctl", ["-n", "hw.memsize"], { encoding: "utf8" }).trim()) / 1024 / 1024;
+    const detail = (await page.getByTestId("memory-system-detail").textContent()) ?? "";
+    expect(detail).toContain(`物理メモリ ${Math.round(totalMb)} MB`);
+    const pressure = execFileSync("memory_pressure", { encoding: "utf8" });
+    const freeNow = Number(/free percentage: (\d+)%/.exec(pressure)?.[1]);
+    const freeShown = Number(/空き率 (\d+) %/.exec(detail)?.[1]);
+    expect(Math.abs(freeShown - freeNow)).toBeLessThanOrEqual(10);
+  } else {
+    await expect(page.getByTestId("memory-system")).toContainText("取得できません");
+  }
+  await shoot(page, "02-memory");
+
+  // 開いている間は 10 秒ごとに読み直す
+  const first = await page.waitForResponse((r) => r.url().endsWith("/api/memory"), { timeout: 15000 });
+  const second = await page.waitForResponse((r) => r.url().endsWith("/api/memory"), { timeout: 15000 });
+  expect(first.status()).toBe(200);
+  expect(second.status()).toBe(200);
 });

@@ -3,9 +3,13 @@ import { stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { CHALLENGE_TTL_MS, PAIRING_TTL_MS, SESSION_MAX_MS, type Auth } from "./auth.ts";
+import { fetchAgents } from "./agents.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
-import { SessionConflictError, SessionInputError, SessionNotFoundError, type SessionManager } from "./sessions.ts";
+import { collectMemory } from "./memory.ts";
+import { assertResumableCwd, SESSION_ID_PATTERN, toPastSessions } from "./past-sessions.ts";
+import type { QuickPromptStore } from "./quick-prompts.ts";
+import { SessionConflictError, SessionInputError, SessionNotFoundError, validateName, type SessionManager } from "./sessions.ts";
 import { WorktreeError } from "./worktree.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -25,6 +29,7 @@ export interface AppDeps {
   auth: Auth;
   sessions: SessionManager;
   hub: Hub;
+  quickPrompts: QuickPromptStore;
   staticDir: string;
   meta: { saSource: string; claudeVersion: string; version: string; commit: string };
 }
@@ -101,7 +106,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
     const snap = await hub.snapshot();
     sendJson(res, 200, {
       ...snap,
-      roles: config.roles.map((r) => ({ id: r.id, labelKey: r.labelKey, needsWorktree: r.needsWorktree })),
+      roles: config.roles.map((r) => ({ id: r.id, labelKey: r.labelKey, needsWorktree: r.needsWorktree, canResume: r.resumeCommand !== undefined })),
       saSource: meta.saSource,
       claudeVersion: meta.claudeVersion,
       appVersion: meta.version,
@@ -133,6 +138,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
     sendJson(res, 201, { id: session.id });
     return;
   }
+  if (await handleDailyUse(deps, req, res, url)) return;
   const removeMatch = /^\/api\/sessions\/([^/]+)$/.exec(url.pathname);
   if (req.method === "DELETE" && removeMatch) {
     sessions.remove(removeMatch[1]);
@@ -140,6 +146,94 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
     return;
   }
   sendJson(res, 404, { error: "not found" });
+}
+
+/** `claude agents --json` の name を、セッション名として使える形（制御文字なし・40 字以内）にする。 */
+function sessionNameFrom(name: string | undefined, sessionId: string): string {
+  // eslint-disable-next-line no-control-regex
+  const cleaned = (name ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 40);
+  return cleaned === "" ? sessionId.slice(0, 8) : cleaned;
+}
+
+/** 段階2: 区切りの既読・名前・よく使う指示・過去のセッション・メモリ。すべて認証の内側。処理したら true。 */
+async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+  const { sessions, hub, config, quickPrompts } = deps;
+  const method = req.method ?? "GET";
+  if (method === "GET" && url.pathname === "/api/memory") {
+    sendJson(res, 200, await collectMemory(sessions.list()));
+    return true;
+  }
+  if (method === "GET" && url.pathname === "/api/quick-prompts") {
+    sendJson(res, 200, { items: await quickPrompts.list() });
+    return true;
+  }
+  if (method === "POST" && url.pathname === "/api/quick-prompts") {
+    const body = jsonBody(await readJsonBody(req));
+    sendJson(res, 201, await quickPrompts.create({ label: body.label, text: body.text }));
+    return true;
+  }
+  const promptMatch = /^\/api\/quick-prompts\/([^/]+)$/.exec(url.pathname);
+  if (promptMatch && method === "PUT") {
+    const body = jsonBody(await readJsonBody(req));
+    sendJson(res, 200, await quickPrompts.update(promptMatch[1], { label: body.label, text: body.text }));
+    return true;
+  }
+  if (promptMatch && method === "DELETE") {
+    await quickPrompts.remove(promptMatch[1]);
+    sendJson(res, 200, { removed: true });
+    return true;
+  }
+  if (method === "GET" && url.pathname === "/api/past-sessions") {
+    const rows = await fetchAgents(config.claudeBin, true);
+    const items = rows === null ? [] : toPastSessions(rows, await hub.livePids());
+    sendJson(res, 200, { available: rows !== null, items });
+    return true;
+  }
+  if (method === "POST" && url.pathname === "/api/sessions/resume") {
+    const sessionId = str(jsonBody(await readJsonBody(req)).sessionId);
+    if (!SESSION_ID_PATTERN.test(sessionId)) throw new SessionInputError("invalid sessionId");
+    const role = config.roles.find((r) => r.resumeCommand !== undefined);
+    if (!role) throw new SessionInputError("no role can resume sessions");
+    // 作業場所は画面から受け取らず、Claude の一覧（正本）から引く
+    const rows = await fetchAgents(config.claudeBin, true);
+    const target = rows === null ? undefined : toPastSessions(rows, await hub.livePids()).find((p) => p.sessionId === sessionId);
+    if (!target) throw new SessionNotFoundError("session not found in claude agents --all");
+    if (target.live) throw new SessionConflictError("session is already running in this app");
+    const cwd = await assertResumableCwd(target.cwd, config.salesanchorRoot);
+    const session = sessions.resume({ roleId: role.id, name: sessionNameFrom(target.name, sessionId), sessionId, cwd });
+    sendJson(res, 201, { id: session.id });
+    return true;
+  }
+  const sessionMatch = /^\/api\/sessions\/([^/]+)\/(read|rename|send)$/.exec(url.pathname);
+  if (method !== "POST" || !sessionMatch) return false;
+  const [, id, action] = sessionMatch;
+  const session = sessions.get(id);
+  if (!session) throw new SessionNotFoundError("session not found");
+  if (action === "read") {
+    await hub.markRead(id);
+    sendJson(res, 200, { read: true });
+    return true;
+  }
+  const view = await hub.runtimeOf(id);
+  if (action === "rename") {
+    const name = validateName(jsonBody(await readJsonBody(req)).name);
+    if (view?.state === "stopped") throw new SessionConflictError("session is stopped");
+    if (view?.hasClaude) {
+      // Claude の名前が正本。人が押したときだけ /rename を送る（待ち・待機のときのみ）
+      if (view.state !== "waiting" && view.state !== "idle") throw new SessionConflictError("claude is busy");
+      sessions.write(session, `/rename ${name}\r`);
+      sendJson(res, 200, { mode: "claude" });
+    } else {
+      sessions.rename(id, name);
+      sendJson(res, 200, { mode: "app" });
+    }
+    return true;
+  }
+  const prompt = await quickPrompts.get(str(jsonBody(await readJsonBody(req)).promptId));
+  if (session.exited) throw new SessionConflictError("session is stopped");
+  sessions.write(session, `${prompt.text}\r`);
+  sendJson(res, 200, { sent: true });
+  return true;
 }
 
 const PAIRING_PATHS: ReadonlySet<string> = new Set(["/api/pair/challenge", "/api/pair", "/api/pair/redeem"]);

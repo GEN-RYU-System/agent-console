@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { createAuth } from "../../../server/auth.ts";
 import type { Config } from "../../../server/config.ts";
+import { QuickPromptStore } from "../../../server/quick-prompts.ts";
 import { Hub } from "../../../server/hub.ts";
 import { createRequestHandler } from "../../../server/http.ts";
 import { SessionManager } from "../../../server/sessions.ts";
@@ -49,6 +50,12 @@ export interface HarnessOptions {
   port?: number;
   ledgerScript?: string;
   maxSessions?: number;
+  /** claude 役のスタブ（`agents --json` / `--all --json` の出力を返す）。既定は存在しないパス */
+  claudeBin?: string;
+  /** 区切りの通知の送信先（既定は送らない） */
+  sendNotification?: (body: string) => void;
+  /** 再開用の起動コマンド（指定すると role "resumable" が増える） */
+  resumeCommand?: string[];
 }
 
 /** 実 HTTP/WS/PTY（ダミー役割 sh）を 127.0.0.1 の空きポートで起動する。 */
@@ -76,23 +83,28 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     newWorktreeScript: "scripts/slow-worktree.sh",
     ledgerLookupScript: "scripts/ledger.sh",
     ledgerDir: "ledger",
-    claudeBin: "/nonexistent/claude",
+    claudeBin: options.claudeBin ?? "/nonexistent/claude",
     agentsPollMs: 60000,
     ledgerPollMs: 60000,
     ringBufferBytes: 1024 * 1024,
+    dataDir: path.join(dir, "data"),
+    notify: { macos: false, osascriptBin: "/nonexistent/osascript" },
     roles: [
       { id: "echo", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo READY; cat"], needsWorktree: false },
       { id: "short", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo bye"], needsWorktree: false },
       { id: "envcheck", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo TOKEN_IS=[$AGENT_CONSOLE_TOKEN]; cat"], needsWorktree: false },
       { id: "wt", labelKey: "role.sonnetImpl", command: ["/bin/sh", "-c", "cat"], needsWorktree: true },
+      ...(options.resumeCommand
+        ? [{ id: "resumable", labelKey: "role.sonnetImpl", command: ["/bin/sh", "-c", "cat"], needsWorktree: false, resumeCommand: options.resumeCommand }]
+        : []),
     ],
   };
   const sessions = new SessionManager(config, { maxSessions: options.maxSessions });
-  const hub = new Hub(config, sessions);
+  const hub = new Hub(config, sessions, options.sendNotification ?? null);
   const clock: Clock = { t: Date.now(), advance(ms) { this.t += ms; } };
   const auth = createAuth(TOKEN, port, { now: () => clock.t });
   const server = createServer(
-    createRequestHandler({ config, auth, sessions, hub, staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT } }),
+    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT } }),
   );
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
