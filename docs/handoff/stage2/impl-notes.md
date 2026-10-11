@@ -42,7 +42,7 @@
   - `input(data: string, wasUserInput?: boolean): void` 「Input data to application side. The data is treated the same way input typed into the terminal would (ie. the onData event will fire).」
   - `ignoreBracketedPasteMode?: boolean` 「Whether to ignore the bracketed paste mode. When true, this will always paste without the `\x1b[200~` and `\x1b[201~` sequences, even when the shell enables bracketed mode.」（既定は無視しない＝端末が有効にしていれば括弧で包む）
   - Context7（/xtermjs/xterm.js）は paste の本体コードまでは出さなかったため、挙動は e2e で実測した（下記）。
-- 実測（e2e「複数行の指示は、括弧付き貼付モード…」）: 括弧付き貼付モード（ESC[?2004h）を有効にした端末アプリには `"\u001b[200~first-line\rsecond-line\u001b[201~\r"` が届いた。本文は括弧で包まれ、改行は `\r` になり、Enter（`\r`）は閉じ括弧の直後に続く（端末アプリ側の 1 回の読み取りにまとまることがある）。括弧付き貼付を有効にしない端末（既存の役割）には、本文がそのまま入り、Enter が続く。
+- 実測（e2e「複数行の指示は、括弧付き貼付モード…」）: 括弧付き貼付モード（ESC[?2004h）を有効にした端末アプリには `"\u001b[200~first-line\rsecond-line\u001b[201~\r"` が届いた。本文は括弧で包まれ、改行は `\r` になり、Enter（`\r`）は閉じ括弧のすぐ後に続く。端末アプリ側で 1 回の読み取りにまとまるか 2 回に分かれるかは環境で変わる（CI では 2 回に分かれた: `"…\u001b[201~"` と `"\r"`）ため、役割スタブは届いたバイト列を連結して表示し、テストは連結後の並びで判定する。括弧付き貼付を有効にしない端末（既存の役割）には、本文がそのまま入り、Enter が続く。
 - 区切りの検知・通知・未読の処理は端末に書かない: `daily-use.integration.test.ts` で `sessions.write` が呼ばれないこと・端末の出力が変わらないことを固定（L5）。
 
 ### 2. L2 メモリ集計

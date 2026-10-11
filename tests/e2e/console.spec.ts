@@ -532,8 +532,8 @@ test("段階2 K3: 複数行の指示は、括弧付き貼付モードの端末�
   await expect(rowOf(page, id).getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: STATE_DEADLINE_MS });
   await page.getByTestId("quick-prompt-bar").getByRole("button", { name: "複数行", exact: true }).click();
   const terminal = page.getByTestId("terminal");
-  await expect(terminal).toContainText('GOT:"\\u001b[200~first-line');
-  // 本文は括弧で包まれ（改行は \r）、閉じ括弧の直後に Enter（\r）が続く。端末アプリ側では 1 回の読み取りにまとまることがある
+  await expect(terminal).toContainText('ALL:"\\u001b[200~first-line');
+  // 届いたバイト列の全体（読み取りの区切りは問わない）で、本文は括弧で包まれ（改行は \r）、閉じ括弧のすぐ後に Enter（\r）が来る。間に他の入力は無い
   await expect(terminal).toContainText('first-line\\rsecond-line\\u001b[201~\\r"');
   await fetch(`${BASE}/api/quick-prompts/${promptId}`, { method: "DELETE", headers: BEARER });
 });
