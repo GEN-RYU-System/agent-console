@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  ログイン時に Agent Console のサーバーを起動する LaunchAgent（雛形）。
+  scripts/ac-install.sh が __…__ を埋めて書き出す。手で編集しない。
+  RunAtLoad=true / KeepAlive=false / WorkingDirectory 必須（Sales Anchor の reaper と同じ作法）。
+  落ちた場合は Dock の起動アプリが launchctl kickstart で起こし直す。
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>__LABEL__</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE__</string>
+    <string>__CURRENT__/dist-server/server/index.js</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__CURRENT__</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>__LOGS__/server.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOGS__/server.err.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AGENT_CONSOLE_AUTH</key>
+    <string>keychain</string>
+    <key>PATH</key>
+    <string>__PATH__</string>
+  </dict>
+</dict>
+</plist>

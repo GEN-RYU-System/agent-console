@@ -12,6 +12,12 @@ import { SessionManager } from "../../../server/sessions.ts";
 import { attachWebSockets } from "../../../server/ws.ts";
 
 export const TOKEN = "t".repeat(40);
+export const COMMIT = "0123456789abcdef0123456789abcdef01234567";
+
+export interface Clock {
+  t: number;
+  advance(ms: number): void;
+}
 
 export interface Harness {
   port: number;
@@ -21,6 +27,9 @@ export interface Harness {
   hub: Hub;
   server: Server;
   secretPath: string;
+  clock: Clock;
+  /** 期限切れセッションの WebSocket を閉じる処理を、時計を進めた後に手動で実行する。 */
+  sweep: () => void;
   close: () => Promise<void>;
 }
 
@@ -36,6 +45,8 @@ async function freePort(): Promise<number> {
 }
 
 export interface HarnessOptions {
+  /** 指定すると、そのポートで待ち受ける（launchctl kickstart による起動の再現用）。 */
+  port?: number;
   ledgerScript?: string;
   maxSessions?: number;
 }
@@ -58,7 +69,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     writeFileSync(path.join(root, "scripts", "ledger.sh"), options.ledgerScript);
     chmodSync(path.join(root, "scripts", "ledger.sh"), 0o755);
   }
-  const port = await freePort();
+  const port = options.port ?? (await freePort());
   const config: Config = {
     port,
     salesanchorRoot: root,
@@ -78,11 +89,12 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   };
   const sessions = new SessionManager(config, { maxSessions: options.maxSessions });
   const hub = new Hub(config, sessions);
-  const auth = createAuth(TOKEN, port);
+  const clock: Clock = { t: Date.now(), advance(ms) { this.t += ms; } };
+  const auth = createAuth(TOKEN, port, { now: () => clock.t });
   const server = createServer(
-    createRequestHandler({ config, auth, sessions, hub, staticDir, meta: { saSource: "sha", claudeVersion: "v" } }),
+    createRequestHandler({ config, auth, sessions, hub, staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT } }),
   );
-  attachWebSockets(server, { config, auth, sessions, hub });
+  const controls = attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
   return {
     port,
@@ -92,6 +104,8 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     hub,
     server,
     secretPath,
+    clock,
+    sweep: () => controls.sweep(),
     close: async () => {
       sessions.killAll();
       server.closeAllConnections();

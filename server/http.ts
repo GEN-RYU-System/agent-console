@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
-import type { Auth } from "./auth.ts";
+import { CHALLENGE_TTL_MS, PAIRING_TTL_MS, SESSION_MAX_MS, type Auth } from "./auth.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
 import { SessionConflictError, SessionInputError, SessionNotFoundError, type SessionManager } from "./sessions.ts";
@@ -26,7 +26,7 @@ export interface AppDeps {
   sessions: SessionManager;
   hub: Hub;
   staticDir: string;
-  meta: { saSource: string; claudeVersion: string };
+  meta: { saSource: string; claudeVersion: string; version: string; commit: string };
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -52,7 +52,7 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
 
 class BadRequestError extends Error {}
 
-async function serveStatic(staticDir: string, pathname: string, res: ServerResponse): Promise<void> {
+async function serveStatic(staticDir: string, pathname: string, res: ServerResponse, csp: string, status = 200): Promise<void> {
   const root = path.resolve(staticDir);
   let decoded: string;
   try {
@@ -87,7 +87,11 @@ async function serveStatic(staticDir: string, pathname: string, res: ServerRespo
     if (res.headersSent) res.destroy();
     else res.writeHead(500).end();
   });
-  stream.on("open", () => res.writeHead(200, { "Content-Type": MIME[path.extname(target)] ?? "application/octet-stream" }));
+  stream.on("open", () => {
+    const type = MIME[path.extname(target)] ?? "application/octet-stream";
+    // HTML 応答にだけ CSP を付ける（画面のスクリプトの読込先・接続先を自分のオリジンに限る）
+    res.writeHead(status, { "Content-Type": type, ...(type.startsWith("text/html") ? { "Content-Security-Policy": csp } : {}) });
+  });
   stream.pipe(res);
 }
 
@@ -100,7 +104,19 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
       roles: config.roles.map((r) => ({ id: r.id, labelKey: r.labelKey, needsWorktree: r.needsWorktree })),
       saSource: meta.saSource,
       claudeVersion: meta.claudeVersion,
+      appVersion: meta.version,
+      commit: meta.commit,
     });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/logout") {
+    // セッショントークンを失効させる（サーバー秘密の Bearer では行えない）
+    const presented = (req.headers.authorization ?? "").replace(/^Bearer /, "");
+    if (!deps.auth.revokeSession(presented)) {
+      sendJson(res, 400, { error: "no session to log out" });
+      return;
+    }
+    sendJson(res, 200, { loggedOut: true });
     return;
   }
   if (req.method === "GET" && url.pathname === "/api/ledger") {
@@ -126,17 +142,110 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   sendJson(res, 404, { error: "not found" });
 }
 
+const PAIRING_PATHS: ReadonlySet<string> = new Set(["/api/pair/challenge", "/api/pair", "/api/pair/redeem"]);
+const NO_STORE = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
+
+function jsonBody(body: unknown): Record<string, unknown> {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) throw new BadRequestError("JSON object required");
+  return body as Record<string, unknown>;
+}
+
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
+
+/**
+ * 認証前に呼ばれるペアリング用のエンドポイント（相互認証）。
+ * - POST /api/pair/challenge {cnonce}            → {snonce, proof}（launcher がサーバーの証明を検証する）
+ * - POST /api/pair {cnonce, snonce, proof}       → {code, expiresInSec}（クライアントの証明を検証）
+ * - POST /api/pair/redeem {code}                 → {token, expiresInSec}（画面がコードを引換える。Origin 必須）
+ * 長期秘密そのものは受け取らない・返さない。
+ */
+async function handlePairing(deps: AppDeps, req: IncomingMessage, res: ServerResponse, pathname: string): Promise<boolean> {
+  const { auth } = deps;
+  if (req.method !== "POST") return false;
+  if (!PAIRING_PATHS.has(pathname)) return false;
+  // 他サイトのページからの連打（no-cors の text/plain など）を拒否する。launcher（curl）は Origin を付けず JSON で送る
+  if (req.headers.origin !== undefined && !auth.isOriginAllowed(req.headers.origin)) {
+    sendJson(res, 403, { error: "forbidden origin" });
+    return true;
+  }
+  if (!/^application\/json\s*(;|$)/i.test(req.headers["content-type"] ?? "")) {
+    sendJson(res, 415, { error: "content-type must be application/json" });
+    return true;
+  }
+  if (pathname === "/api/pair/challenge") {
+    const challenge = auth.issueChallenge(str(jsonBody(await readJsonBody(req)).cnonce));
+    if (challenge === "invalid") throw new BadRequestError("invalid cnonce");
+    if (challenge === "busy") {
+      res.setHeader("Retry-After", String(CHALLENGE_TTL_MS / 1000));
+      sendJson(res, 429, { error: "too many pending challenges" });
+      return true;
+    }
+    sendJson(res, 200, challenge);
+    return true;
+  }
+  if (pathname === "/api/pair") {
+    const body = jsonBody(await readJsonBody(req));
+    const code = auth.redeemChallenge({ cnonce: str(body.cnonce), snonce: str(body.snonce), proof: str(body.proof) });
+    if (code === null) {
+      sendJson(res, 401, { error: "unauthorized" });
+      return true;
+    }
+    sendJson(res, 200, { code, expiresInSec: PAIRING_TTL_MS / 1000 });
+    return true;
+  }
+  if (pathname === "/api/pair/redeem") {
+    if (!auth.isOriginAllowed(req.headers.origin)) {
+      sendJson(res, 403, { error: "forbidden origin" });
+      return true;
+    }
+    const token = auth.consumePairingCode(str(jsonBody(await readJsonBody(req)).code));
+    if (token === null) {
+      res.setHeader("Cache-Control", NO_STORE["Cache-Control"]);
+      sendJson(res, 401, { error: "invalid or expired code" });
+      return true;
+    }
+    sendJson(res, 200, { token, expiresInSec: SESSION_MAX_MS / 1000 });
+    return true;
+  }
+  return false;
+}
+
+/**
+ * HTML 応答の CSP。スクリプトは自分のオリジンのみ・接続先は自分の HTTP と WebSocket のみ・iframe 埋込み不可。
+ * style-src に 'unsafe-inline' が要る理由: xterm の DOM レンダラは実行時に <style> 要素を作り（テーマ・寸法）、
+ * React/SA 金型もインラインの style 属性を使う。img-src に data: が要る理由: SA の Select が矢印を data: の SVG（CSS の背景）で描く。
+ * どちらも無しだと CSP 違反が出ることを e2e で実測した（impl-notes）。
+ */
+export function contentSecurityPolicy(port: number): string {
+  return `default-src 'self'; connect-src 'self' ws://127.0.0.1:${port}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'`;
+}
+
 export function createRequestHandler(deps: AppDeps) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    // すべての応答に付ける
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("X-Content-Type-Options", "nosniff");
     try {
       if (!deps.auth.isHostAllowed(req.headers.host)) {
         sendJson(res, 421, { error: "misdirected request" });
         return;
       }
       const url = new URL(req.url ?? "/", `http://127.0.0.1:${deps.config.port}`);
+      if (url.pathname === "/healthz") {
+        // 本文の version / commit が、更新・切戻し・自己診断の成功判定に使われる
+        sendJson(res, 200, { ok: true, version: deps.meta.version, commit: deps.meta.commit });
+        return;
+      }
+      if (url.pathname.startsWith("/api/pair") && (await handlePairing(deps, req, res, url.pathname))) return;
       if (url.pathname.startsWith("/api/")) {
-        if (!deps.auth.isTokenValid(url, req.headers.authorization)) {
+        const method = deps.auth.authenticate({ authorization: req.headers.authorization });
+        if (method === null) {
           sendJson(res, 401, { error: "unauthorized" });
+          return;
+        }
+        // セッション認証の状態変更は Origin 必須（自分以外・欠落は 403）。サーバー秘密の Bearer（CLI）は対象外。
+        if (method === "session" && req.method !== "GET" && req.method !== "HEAD" && !deps.auth.isOriginAllowed(req.headers.origin)) {
+          sendJson(res, 403, { error: "forbidden origin" });
           return;
         }
         await handleApi(deps, req, res, url);
@@ -146,7 +255,7 @@ export function createRequestHandler(deps: AppDeps) {
         res.writeHead(405).end();
         return;
       }
-      await serveStatic(deps.staticDir, url.pathname, res);
+      await serveStatic(deps.staticDir, url.pathname, res, contentSecurityPolicy(deps.config.port));
     } catch (err) {
       if (err instanceof SessionInputError || err instanceof WorktreeError || err instanceof BadRequestError) {
         sendJson(res, 400, { error: err.message });

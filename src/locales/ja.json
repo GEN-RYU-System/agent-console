@@ -36,13 +36,22 @@
     },
     "footer": {
       "saSource": "Sales Anchor 展開元",
-      "claudeVersion": "Claude Code"
+      "claudeVersion": "Claude Code",
+      "version": "版",
+      "commit": "コミット"
     },
     "loadError": "状態を取得できません",
     "removeSession": "一覧から外す",
     "ledgerErrorTitle": "台帳を読めません",
     "ledgerErrorBody": "{{count}} 件で台帳の取得に失敗しました。最初のエラー: {{first}}",
-    "removeError": "一覧から外せませんでした"
+    "removeError": "一覧から外せませんでした",
+    "pairing": {
+      "failedTitle": "ペアリングできませんでした",
+      "failedBody": "コードが無効・使用済み・期限切れです。Dock の Agent Console アプリからもう一度開いてください。"
+    },
+    "unauthorizedTitle": "ログインが必要です",
+    "unauthorizedBody": "Dock の Agent Console アプリから開き直してください。",
+    "logout": "ログアウト"
   },
   "role": {
     "opusDesigner": "Opus 設計",

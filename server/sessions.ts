@@ -54,11 +54,14 @@ function clampDimension(value: unknown, fallback: number): number {
   return Math.max(1, Math.min(MAX_DIMENSION, Math.floor(value)));
 }
 
+/** 端末内のプロセスから見えてはいけない変数（サーバー秘密・認証方式・キーチェーン読込の差し替え口）。 */
+const CHILD_ENV_BLOCKLIST: ReadonlySet<string> = new Set(["AGENT_CONSOLE_TOKEN", "AGENT_CONSOLE_AUTH", "AC_SECURITY", "AC_STUB_LOG"]);
+
 /** pty の子プロセスへ渡す環境。サーバーの固定トークン（AGENT_CONSOLE_TOKEN）は端末内から見えないよう除く。 */
 export function buildChildEnv(source: Record<string, string | undefined>): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(source)) {
-    if (typeof v === "string" && k !== "AGENT_CONSOLE_TOKEN") env[k] = v;
+    if (typeof v === "string" && !CHILD_ENV_BLOCKLIST.has(k)) env[k] = v;
   }
   env.TERM = "xterm-256color";
   return env;

@@ -4,7 +4,7 @@ import { Button } from "@sa/components/Button";
 import { Callout } from "@sa/components/Callout";
 import { EmptyState } from "@sa/components/EmptyState";
 import { Modal } from "@sa/components/Modal";
-import { createSession, fetchLedger, fetchState, refreshLedger, removeSession, wsUrl } from "../api";
+import { ApiError, createSession, fetchLedger, fetchState, getSessionToken, logout, openSocket, refreshLedger, removeSession } from "../api";
 import { LedgerBoard } from "../components/LedgerBoard/LedgerBoard";
 import { NewSessionForm, type NewSessionValues } from "../components/NewSessionForm/NewSessionForm";
 import { SessionList } from "../components/SessionList/SessionList";
@@ -17,22 +17,23 @@ const RECONNECT_MS = 1000;
 
 function useConsoleState() {
   const [state, setState] = useState<ConsoleState | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadFailed, setLoadFailed] = useState<"unauthorized" | "error" | null>(null);
 
   useEffect(() => {
     let closed = false;
     let ws: WebSocket | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
-    fetchState().then(setState, () => setLoadFailed(true));
+    fetchState().then(setState, (err: unknown) => setLoadFailed(err instanceof ApiError && err.status === 401 ? "unauthorized" : "error"));
     const connect = (): void => {
-      ws = new WebSocket(wsUrl("/ws/events"));
+      ws = openSocket("/ws/events");
       ws.onmessage = (e) => {
         const snap = JSON.parse(String(e.data)) as { sessions: SessionView[]; agentsAvailable: boolean };
         setState((prev) => (prev ? { ...prev, ...snap } : prev));
       };
       ws.onclose = () => {
-        if (!closed) timer = setTimeout(connect, RECONNECT_MS);
+        // トークンが無い（未ログイン・ログアウト後）ときは再接続しない
+        if (!closed && getSessionToken() !== null) timer = setTimeout(connect, RECONNECT_MS);
       };
     };
     connect();
@@ -43,12 +44,12 @@ function useConsoleState() {
     };
   }, []);
 
-  return { state, loadFailed };
+  return { state, loadFailed, setLoadFailed };
 }
 
 export function ConsolePage() {
   const { t } = useTranslation();
-  const { state, loadFailed } = useConsoleState();
+  const { state, loadFailed, setLoadFailed } = useConsoleState();
   const [ledger, setLedger] = useState<LedgerSnapshot | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -84,6 +85,21 @@ export function ConsolePage() {
     removeSession(id).catch((err: unknown) => setRemoveError(err instanceof Error ? err.message : String(err)));
   };
 
+  const handleLogout = (): void => {
+    void logout()
+      .catch(() => undefined)
+      .finally(() => setLoadFailed("unauthorized"));
+  };
+
+  if (loadFailed === "unauthorized") {
+    return (
+      <div className="ac-page__notice">
+        <Callout variant="warning" title={t("ac.unauthorizedTitle")}>
+          {t("ac.unauthorizedBody")}
+        </Callout>
+      </div>
+    );
+  }
   if (loadFailed) return <EmptyState title={t("ac.loadError")} />;
   if (!state) return null;
   // 一覧から外れた（または存在しない）セッションは選択扱いにしない
@@ -115,9 +131,20 @@ export function ConsolePage() {
         <span data-testid="sa-source">
           {t("ac.footer.saSource")}: {state.saSource.slice(0, 12)}
         </span>
+        <span data-testid="app-version">
+          {t("ac.footer.version")}: {state.appVersion}
+        </span>
+        {state.commit !== "" && (
+          <span data-testid="commit">
+            {t("ac.footer.commit")}: {state.commit.slice(0, 7)}
+          </span>
+        )}
         <span data-testid="claude-version">
           {t("ac.footer.claudeVersion")}: {state.claudeVersion}
         </span>
+        <Button variant="ghost" size="sm" onClick={handleLogout}>
+          {t("ac.logout")}
+        </Button>
       </footer>
       <Modal open={formOpen} onClose={() => setFormOpen(false)} title={t("ac.newSession")} size="sm">
         <NewSessionForm roles={state.roles} busy={busy} error={formError} onSubmit={(v) => void handleCreate(v)} />

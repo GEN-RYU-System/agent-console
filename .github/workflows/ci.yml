@@ -22,6 +22,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: npm audit (moderate 以上で失敗)
+        run: npm audit --audit-level=moderate
+      - name: npm audit signatures (レジストリ署名・provenance の検証)
+        run: npm audit signatures
 
       # Sales Anchor（public）を salesanchorRoot として取得し、金型・トークンを .sa-cache へ展開する
       - name: Clone Sales Anchor
