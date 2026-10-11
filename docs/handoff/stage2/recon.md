@@ -77,14 +77,14 @@
 - 画面: src/components/LedgerBoard/LedgerBoard.tsx:35-45（列ごとにカード、ブランチ名のみ表示）。絞り込み機能は現行に無い
 
 ### D2 本店 .claude-pipeline/active-work.d の実測（作業ツリー。読み取りのみ）
-- ファイル 498 件（`ls | wc -l`）。git 追跡は 85 件（`git ls-files`）= 残りは未追跡（.gitignore:71 `!…active-work.d/*.md`）
+- ファイル 498 件（`ls | wc -l`）。git 追跡は 85 件（`git ls-files`）= 残りは未追跡（.gitignore:71 「!…active-work.d/*.md」）
 - ファイル構造: 1行目 `branch: …`、空行、ヘッダ `| ブランチ名 | 担当機能エリア | 開始日時 | 状態 | PR# | main | 備考 |`、区切り行、1行。`|` 行数が 0 のファイル 5 件、備考内の `|` 等で行数が 3 を超えるファイル 5 件
 - 日付形式の行 489（開始日時列が YYYY-MM-DD を含む）の月別: 2026-07: 21 / 2026-08: 3 / 2026-09: 274 / 2026-10: 191
 - 状態別（同 489 行）: DONE 344 / IN_PROGRESS 132 / WIP 7 / REVIEW 5 / pr-open 1。IN_PROGRESS の月別: 2026-07: 11 / 2026-09: 85 / 2026-10: 36
 - 開始日時の書式揺れ: 日付形式でない値が混入（例 `20260920_010000`, `20260919_010000` の別形式、列ずれによる文字列）。表記は `YYYY-MM-DD HH:MM` が大半
 
 ### D3 正本ルール
-- docs/specs/ledger-guard/design-phase2.md:12「置き場: `.claude-pipeline/active-work.d/<ブランチ名のセーフ形>.md`（1ブランチ1ファイル）」:13「1行目 `branch: <正式ブランチ名>`…続けて現行と同一の7列テーブル」:26「`scripts/ledger-view.sh`: 本体＋.d/全件を1枚の表に連結表示」:27「台帳の所在を知るのはこの3本だけ。読者・書き手は窓口だけを呼ぶ」:71「.d/ファイルはDONE後も残す（ADR-114踏襲）→ 件数増は対策③の掃き出し便で整理」
+- docs/specs/ledger-guard/design-phase2.md:12「置き場: 「.claude-pipeline/active-work.d/<ブランチ名のセーフ形>.md」（1ブランチ1ファイル）」:13「1行目 `branch: <正式ブランチ名>`…続けて現行と同一の7列テーブル」:26「`scripts/ledger-view.sh`: 本体＋.d/全件を1枚の表に連結表示」:27「台帳の所在を知るのはこの3本だけ。読者・書き手は窓口だけを呼ぶ」:71「.d/ファイルはDONE後も残す（ADR-114踏襲）→ 件数増は対策③の掃き出し便で整理」
 - 7列: scripts/ledger-view.sh:11 `| ブランチ名 | 担当機能エリア | 開始日時 | 状態 | PR# | main | 備考 |`
 - docs/STANDARD-WORKFLOW.md:99「tasks/todo.md・.claude-pipeline/active-work.md の『完了（DONE）』移動は、上記4つを満たした事実の記録である。実証がないまま完了へ移してはならない。」
 - 注: ledger.ts は窓口 ledger-lookup.sh 経由（ルール準拠）だが、ブランチ一覧は active-work.d を直接 readdir（ledger.ts:124-145）

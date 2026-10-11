@@ -45,7 +45,7 @@ Orca と比べて毎日の使い勝手の差が大きい 5 点を埋める。外
 - 再開: 役割に `resumeCommand`（設定）がある場合のみ。Sonnet 実装役は `["/bin/zsh","-ic","claude --model sonnet --resume \"$AC_RESUME_ID\""]` のように、sessionId は環境変数で渡し、シェル文字列に連結しない。sessionId は `^[0-9a-f-]{36}$` のみ受け付け。作業場所は一覧の cwd（存在確認、ワークツリー一覧に含まれるか本店であること）。
 
 ### 4-5. 台帳ボードの絞り込み（④）
-- 解析で、窓口 `ledger-lookup.sh` の出力行から 開始日時（3 列目）も取る。`YYYY-MM-DD HH:MM` を読めない行は「日付不明」。
+- 解析で、窓口「ledger-lookup.sh」（本店 scripts/ にある）の出力行から 開始日時（3 列目）も取る。`YYYY-MM-DD HH:MM` を読めない行は「日付不明」。
 - 既定: 状態 IN_PROGRESS・REVIEW・WIP、開始日が直近 30 日。画面で期間（7/30/90 日・すべて）、状態、文字検索。絞り込みの選択は閲覧者ごとの表示設定として localStorage（失敗しても既定で表示）。
 
 ### 4-6. メモリ画面（⑤）
