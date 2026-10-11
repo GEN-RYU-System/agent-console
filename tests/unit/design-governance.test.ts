@@ -134,4 +134,23 @@ describe("check-design-governance", () => {
       expect(run(makeProject({ "src/tokens.app.css": ":root { color: var(--x); }\n" })).status).toBe(1);
     });
   });
+
+  describe("values in src/tokens.app.css", () => {
+    const tok = (body: string) => makeProject({ "src/tokens.app.css": `:root { ${body} }\n` });
+
+    it("accepts font stacks (quoted or bare names, ending with a generic family)", () => {
+      expect(run(tok('--ac-font-mono: Menlo, Monaco, "Courier New", monospace;')).status).toBe(0);
+      expect(run(tok("--ac-font-mono: 'SF Mono', ui-monospace, monospace;")).status).toBe(0);
+    });
+
+    it("rejects color names, lengths and other values", () => {
+      expect(run(tok("--ac-bg: red;")).status).toBe(1);
+      expect(run(tok("--ac-gap: 17px;")).status).toBe(1);
+      expect(run(tok("--ac-gap: 0;")).status).toBe(1);
+      expect(run(tok("--ac-font-mono: red, monospace;")).status).toBe(1);
+      expect(run(tok("--ac-font-mono: Menlo, Monaco;")).status).toBe(1);
+      expect(run(tok("--ac-font-mono: 12px, monospace;")).status).toBe(1);
+      expect(run(tok("--ac-font-mono: var(--x);")).status).toBe(1);
+    });
+  });
 });

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@sa/components/Button";
+import { Callout } from "@sa/components/Callout";
 import { EmptyState } from "@sa/components/EmptyState";
 import { Modal } from "@sa/components/Modal";
 import { createSession, fetchLedger, fetchState, refreshLedger, removeSession, wsUrl } from "../api";
@@ -53,6 +54,7 @@ export function ConsolePage() {
   const [formOpen, setFormOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   useEffect(() => {
     const load = (): void => void fetchLedger().then(setLedger, () => undefined);
@@ -78,7 +80,8 @@ export function ConsolePage() {
   };
 
   const handleRemove = (id: string): void => {
-    void removeSession(id).catch(() => undefined);
+    setRemoveError(null);
+    removeSession(id).catch((err: unknown) => setRemoveError(err instanceof Error ? err.message : String(err)));
   };
 
   if (loadFailed) return <EmptyState title={t("ac.loadError")} />;
@@ -95,6 +98,11 @@ export function ConsolePage() {
             {t("ac.newSession")}
           </Button>
         </div>
+        {removeError !== null && (
+          <Callout variant="warning" title={t("ac.removeError")}>
+            {removeError}
+          </Callout>
+        )}
         <SessionList sessions={state.sessions} roles={state.roles} selectedId={activeId} onSelect={setSelectedId} onRemove={handleRemove} />
       </aside>
       <main className="ac-page__center">

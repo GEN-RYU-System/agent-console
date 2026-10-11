@@ -1,4 +1,6 @@
+import { writeFileSync } from "node:fs";
 import { request } from "node:http";
+import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { SessionConflictError, SessionInputError } from "../../server/sessions.ts";
@@ -67,6 +69,11 @@ async function waitFor(cond: () => boolean, ms = 3000): Promise<void> {
 }
 
 describe("static serving", () => {
+  beforeAll(() => {
+    // 静的ディレクトリの 1 つ上に置いた秘密ファイル（配信されてはいけない）
+    writeFileSync(path.join(h.dir, "package.json"), '{"secret":"PKG-SECRET"}');
+  });
+
   it("serves index.html at / and as SPA fallback", async () => {
     expect((await raw("/")).body).toContain("index");
     expect((await raw("/some/route")).body).toContain("index");
@@ -80,6 +87,23 @@ describe("static serving", () => {
     },
   );
 
+  it.each([
+    "/../package.json",
+    "/%2e%2e/package.json",
+    "/%2E%2E/package.json",
+    "/..%2fpackage.json",
+    "/%2e%2e%2fpackage.json",
+    "/%252e%252e/package.json",
+    "/%252e%252e%252fpackage.json",
+    "/assets/../../package.json",
+    "/....//package.json",
+    "/%2e%2e/%2e%2e/package.json",
+  ])("path traversal to package.json outside the static dir is refused (%s)", async (p) => {
+    const res = await raw(p);
+    expect(res.body).not.toContain("PKG-SECRET");
+    expect([400, 403, 404]).toContain(res.status);
+  });
+
   it("answers 400 for malformed percent-encoding", async () => {
     expect((await raw("/%E0%A4%A")).status).toBe(400);
   });
@@ -91,8 +115,9 @@ describe("Host header", () => {
     expect((await raw("/api/state", { headers: { ...authHeaders, Host: "evil.example" } })).status).toBe(421);
   });
 
-  it("accepts localhost:<port>", async () => {
-    expect((await raw("/", { headers: { Host: `localhost:${h.port}` } })).status).toBe(200);
+  it("accepts only 127.0.0.1:<port>; localhost:<port> is rejected like Origin", async () => {
+    expect((await raw("/", { headers: { Host: `127.0.0.1:${h.port}` } })).status).toBe(200);
+    expect((await raw("/", { headers: { Host: `localhost:${h.port}` } })).status).toBe(421);
   });
 
   it("rejects an unexpected Host on WebSocket upgrade", async () => {
@@ -200,6 +225,23 @@ describe("session lifecycle", () => {
     await waitFor(() => h.sessions.get(id)?.exited === true);
     const snap = await h.hub.snapshot();
     expect(snap.sessions.find((s) => s.id === id)?.state).toBe("stopped");
+  });
+});
+
+describe("child process environment", () => {
+  it("does not pass AGENT_CONSOLE_TOKEN to the pty child", async () => {
+    process.env.AGENT_CONSOLE_TOKEN = "leak-check-token-0123456789012345678901";
+    try {
+      const id = await createSession("envcheck");
+      const ws = await openWs(`/ws/term?session=${id}&t=${TOKEN}`, goodWsHeaders());
+      if (!("ws" in ws)) throw new Error("upgrade failed");
+      await waitFor(() => ws.text().includes("TOKEN_IS="));
+      expect(ws.text()).toContain("TOKEN_IS=[]");
+      expect(ws.text()).not.toContain("leak-check-token");
+      ws.ws.close();
+    } finally {
+      delete process.env.AGENT_CONSOLE_TOKEN;
+    }
   });
 });
 

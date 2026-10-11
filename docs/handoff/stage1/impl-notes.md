@@ -99,3 +99,14 @@ sans-serif             ls=0.84375px  nrows=54
 - `.sa-cache/frontend/src/components/AvatarUpload.css:31` `border: 1px solid var(--border);`
 
 （ADR-067:111-117 の「許可される例外」一覧には 1px 枠線は無い。SA の金型が実際に使っている範囲＝`border` / `outline` の 1px のみ許可。）
+
+## 修正ラウンド2
+
+- `src/tokens.app.css` の各 `--ac-*` の値は font stack（フォント名のカンマ区切り＋末尾に総称名）のみ許可。色名・数値単位・var() は違反（テスト付き）。
+- 端末入力の分割はコードポイント境界（`chunkInput.ts`）。
+- 「一覧から外す」失敗時は SA Callout で表示（成功時に消える）。
+- Host 許可は `127.0.0.1:<port>` のみ（Origin と一致。localhost は 421）。
+- pty の子プロセス env から `AGENT_CONSOLE_TOKEN` を除去（`buildChildEnv`）。固定トークンは 32 文字以上・`[A-Za-z0-9_-]` のみ。固定使用時は起動ログに警告（値は出さない）。
+- RingBuffer: 先頭位置の管理＋境界チャンクのみ subarray で、push ごとの全体コピーをしない。10MB 書込（64B×163,840 回）のテストを追加。最初に試した `chunks.slice()` 方式は 19 秒かかったため先頭位置方式に変更。
+- 静的配信のパストラバーサル専用テスト 10 パターン（`/../package.json`・`%2e%2e`・二重エンコード等）を追加。実装は既に拒否しており、テストは追加時点から pass（RED なし）。
+- テスト先行の例外: ConsolePage の失敗表示テストは実装と同時に作成。

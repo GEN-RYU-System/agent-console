@@ -3,6 +3,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { wsUrl } from "../../api";
+import { splitByCodePoints } from "./chunkInput";
 import { readTerminalAppearance } from "./terminalTokens";
 import "./TerminalPane.css";
 
@@ -37,9 +38,7 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
     ws.onopen = syncSize;
     ws.onmessage = (e) => term.write(typeof e.data === "string" ? e.data : "");
     const dataSub = term.onData((data) => {
-      for (let i = 0; i < data.length; i += INPUT_CHUNK_CHARS) {
-        send({ type: "input", data: data.slice(i, i + INPUT_CHUNK_CHARS) });
-      }
+      for (const chunk of splitByCodePoints(data, INPUT_CHUNK_CHARS)) send({ type: "input", data: chunk });
     });
     const resizeObserver = new ResizeObserver(syncSize);
     resizeObserver.observe(host);

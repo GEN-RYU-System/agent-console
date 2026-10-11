@@ -72,6 +72,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     roles: [
       { id: "echo", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo READY; cat"], needsWorktree: false },
       { id: "short", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo bye"], needsWorktree: false },
+      { id: "envcheck", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo TOKEN_IS=[$AGENT_CONSOLE_TOKEN]; cat"], needsWorktree: false },
       { id: "wt", labelKey: "role.sonnetImpl", command: ["/bin/sh", "-c", "cat"], needsWorktree: true },
     ],
   };

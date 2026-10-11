@@ -1,8 +1,7 @@
-import { randomBytes } from "node:crypto";
 import { accessSync, constants, existsSync } from "node:fs";
 import { createServer } from "node:http";
 import path from "node:path";
-import { createAuth } from "./auth.ts";
+import { createAuth, resolveToken } from "./auth.ts";
 import { fetchClaudeVersion } from "./agents.ts";
 import { loadConfig } from "./config.ts";
 import { Hub } from "./hub.ts";
@@ -12,8 +11,6 @@ import { readSaSource } from "./tokens.ts";
 import { attachWebSockets } from "./ws.ts";
 
 const LISTEN_HOST = "127.0.0.1";
-const TOKEN_BYTES = 32;
-const MIN_FIXED_TOKEN_LENGTH = 32;
 
 function assertSpawnHelperExecutable(): void {
   const helper = path.join(process.cwd(), "node_modules", "node-pty", "prebuilds", `${process.platform}-${process.arch}`, "spawn-helper");
@@ -26,18 +23,10 @@ function assertSpawnHelperExecutable(): void {
   }
 }
 
-/** 通常は起動ごとにランダム生成。e2e 用に AGENT_CONSOLE_TOKEN（32 文字以上）で固定できる。 */
-function resolveToken(): string {
-  const fixed = process.env.AGENT_CONSOLE_TOKEN;
-  if (fixed === undefined || fixed === "") return randomBytes(TOKEN_BYTES).toString("hex");
-  if (fixed.length < MIN_FIXED_TOKEN_LENGTH) throw new Error(`AGENT_CONSOLE_TOKEN は ${MIN_FIXED_TOKEN_LENGTH} 文字以上にしてください`);
-  return fixed;
-}
-
 async function main(): Promise<void> {
   assertSpawnHelperExecutable();
   const config = loadConfig();
-  const token = resolveToken();
+  const { token, fixed } = resolveToken(process.env);
   const auth = createAuth(token, config.port);
   const sessions = new SessionManager(config);
   const hub = new Hub(config, sessions);
@@ -48,6 +37,7 @@ async function main(): Promise<void> {
 
   server.listen(config.port, LISTEN_HOST, () => {
     hub.start();
+    if (fixed) console.warn("agent-console: 警告: AGENT_CONSOLE_TOKEN で固定したトークンを使用中です（テスト用途のみ）");
     console.log(`agent-console: http://${LISTEN_HOST}:${config.port}/?t=${token}`);
   });
 

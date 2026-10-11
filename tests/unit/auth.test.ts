@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createAuth } from "../../server/auth.ts";
+import { createAuth, resolveToken } from "../../server/auth.ts";
 
 const auth = createAuth("secret-token", 4319);
 
@@ -29,13 +29,42 @@ describe("auth", () => {
     expect(auth.isOriginAllowed(undefined)).toBe(false);
   });
 
-  it("allows only 127.0.0.1:<port> and localhost:<port> as Host", () => {
+  it("allows only 127.0.0.1:<port> as Host (same as Origin; localhost is rejected)", () => {
     expect(auth.isHostAllowed("127.0.0.1:4319")).toBe(true);
-    expect(auth.isHostAllowed("localhost:4319")).toBe(true);
-    expect(auth.isHostAllowed("LOCALHOST:4319")).toBe(true);
+    expect(auth.isHostAllowed("localhost:4319")).toBe(false);
+    expect(auth.isHostAllowed("LOCALHOST:4319")).toBe(false);
     expect(auth.isHostAllowed("evil.example:4319")).toBe(false);
     expect(auth.isHostAllowed("127.0.0.1:9999")).toBe(false);
     expect(auth.isHostAllowed("127.0.0.1")).toBe(false);
     expect(auth.isHostAllowed(undefined)).toBe(false);
+  });
+});
+
+describe("resolveToken", () => {
+  it("generates a random 64-hex token when no fixed token is given", () => {
+    const a = resolveToken({});
+    const b = resolveToken({ AGENT_CONSOLE_TOKEN: "" });
+    expect(a.fixed).toBe(false);
+    expect(a.token).toMatch(/^[0-9a-f]{64}$/);
+    expect(b.token).not.toBe(a.token);
+  });
+
+  it("accepts a fixed token of 32+ characters from [A-Za-z0-9_-]", () => {
+    const t = "Abc_def-0123456789012345678901234567";
+    expect(resolveToken({ AGENT_CONSOLE_TOKEN: t })).toEqual({ token: t, fixed: true });
+  });
+
+  it("rejects short tokens and tokens with other characters", () => {
+    expect(() => resolveToken({ AGENT_CONSOLE_TOKEN: "short" })).toThrow(/AGENT_CONSOLE_TOKEN/);
+    expect(() => resolveToken({ AGENT_CONSOLE_TOKEN: "a".repeat(31) + "!" })).toThrow(/AGENT_CONSOLE_TOKEN/);
+    expect(() => resolveToken({ AGENT_CONSOLE_TOKEN: "a".repeat(40) + " " })).toThrow(/AGENT_CONSOLE_TOKEN/);
+  });
+
+  it("never puts the token value in the error message", () => {
+    try {
+      resolveToken({ AGENT_CONSOLE_TOKEN: "secret!value" });
+    } catch (e) {
+      expect((e as Error).message).not.toContain("secret!value");
+    }
   });
 });

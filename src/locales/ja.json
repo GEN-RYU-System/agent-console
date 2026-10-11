@@ -41,7 +41,8 @@
     "loadError": "状態を取得できません",
     "removeSession": "一覧から外す",
     "ledgerErrorTitle": "台帳を読めません",
-    "ledgerErrorBody": "{{count}} 件で台帳の取得に失敗しました。最初のエラー: {{first}}"
+    "ledgerErrorBody": "{{count}} 件で台帳の取得に失敗しました。最初のエラー: {{first}}",
+    "removeError": "一覧から外せませんでした"
   },
   "role": {
     "opusDesigner": "Opus 設計",
