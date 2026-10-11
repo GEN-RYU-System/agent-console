@@ -479,6 +479,75 @@ describe("generated artifacts (macOS only)", () => {
   }, 60000);
 });
 
+describe("launcher app icon (v0.3.1)", () => {
+  const repoIcns = path.join(REPO, "ops", "launcher", "icon", "AgentConsole.icns");
+  const appIcns = (e: AcEnv): string => path.join(e.appsDir, "Agent Console.app", "Contents", "Resources", "applet.icns");
+  const same = (a: string, b: string): boolean => spawnSync("cmp", [a, b]).status === 0;
+
+  it("K1: install places the repo icns into the launcher app byte-for-byte and re-signs it", async () => {
+    const e = await installed();
+    expect(same(appIcns(e), repoIcns)).toBe(true);
+    expect(e.log()).toMatch(/codesign --force --sign - .*Agent Console\.app/);
+  }, 60000);
+
+  it("install fails (does not continue silently) when the version has no icns", async () => {
+    const e = await fresh();
+    const r = e.run("ac-install.sh", ["v1.0.0"], { FAKE_NO_ICON_TAGS: "v1.0.0" });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("アイコン");
+  }, 60000);
+
+  it("K1c: update rebuilds the launcher app with the new version's icns", async () => {
+    const e = await installed();
+    const r = e.run("ac-update.sh", ["v1.1.0"]);
+    expect(r.status, r.stderr).toBe(0);
+    expect(same(appIcns(e), repoIcns)).toBe(true);
+    expect(e.log().match(/osacompile -o /g)?.length).toBe(2);
+  }, 90000);
+
+  it("K1c: rollback to a version without icns builds the default icon and says so", async () => {
+    const e = await installed();
+    expect(e.run("ac-update.sh", ["v1.1.0"], {}).status).toBe(0);
+    // v1.0.0 の導入物から icns を除いた状態を作る（Trash へ移す＝削除しない）
+    const old = path.join(e.home, "versions", "v1.0.0", "ops", "launcher", "icon", "AgentConsole.icns");
+    const trash = path.join(e.base, "icns-aside");
+    mkdirSync(trash);
+    execFileSync("mv", [old, path.join(trash, "AgentConsole.icns")]);
+    const r = e.run("ac-rollback.sh");
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout).toContain("標準の絵");
+    expect(existsSync(appIcns(e))).toBe(false);
+  }, 90000);
+
+  it("K1c: rollback to a version with icns restores that icns", async () => {
+    const e = await installed();
+    expect(e.run("ac-update.sh", ["v1.1.0"]).status).toBe(0);
+    const r = e.run("ac-rollback.sh");
+    expect(r.status, r.stderr).toBe(0);
+    expect(same(appIcns(e), repoIcns)).toBe(true);
+  }, 90000);
+
+  it.skipIf(!isDarwin)("K1b: with the real osacompile and codesign, the launcher app passes codesign --verify --deep --strict", async () => {
+    const e = await fresh();
+    const r = e.run("ac-install.sh", ["v1.0.0"], { AC_OSACOMPILE: "/usr/bin/osacompile", AC_CODESIGN: "/usr/bin/codesign" });
+    expect(r.status, r.stderr).toBe(0);
+    const app = path.join(e.appsDir, "Agent Console.app");
+    expect(spawnSync("/usr/bin/codesign", ["--verify", "--deep", "--strict", app]).status).toBe(0);
+    expect(same(appIcns(e), repoIcns)).toBe(true);
+    const plist = readFileSync(path.join(app, "Contents", "Info.plist"), "utf8");
+    expect(plist).toMatch(/<key>CFBundleIconFile<\/key>\s*<string>applet<\/string>/);
+  }, 90000);
+
+  it.skipIf(!isDarwin)("K2: the icns holds the 10 iconset images (16-512 at @1x and @2x)", async () => {
+    const e = await fresh();
+    const out = path.join(e.base, "x.iconset");
+    execFileSync("/usr/bin/iconutil", ["-c", "iconset", repoIcns, "-o", out]);
+    expect(readdirSync(out).sort()).toEqual(
+      [16, 32, 128, 256, 512].flatMap((n) => [`icon_${n}x${n}.png`, `icon_${n}x${n}@2x.png`]).sort(),
+    );
+  });
+});
+
 describe("shell portability", () => {
   it.each(["scripts/ac-install.sh", "scripts/ac-update.sh", "scripts/ac-rollback.sh", "scripts/ac-uninstall.sh", "scripts/lib/ac-common.sh", "ops/launcher/launch.sh"])(
     "%s has no $variable directly followed by a non-ASCII character (bash would read it as part of the name; set -u then aborts silently inside `if !`)",

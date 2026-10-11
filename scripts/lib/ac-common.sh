@@ -8,7 +8,7 @@
 # 本番実行では無視する（汚染された環境変数で取得元・security・curl・launchctl などが差し替わらないように）。
 if [ -z "${AC_STUB_LOG:-}" ]; then
   unset AC_HOME AC_LAUNCH_AGENTS_DIR AC_APPS_DIR AC_TRASH AC_LAUNCHCTL AC_SECURITY AC_GH AC_NPM AC_OSACOMPILE \
-    AC_PLUTIL AC_CURL AC_REPO AC_PORT AC_DIAG_PORT AC_LABEL AC_UID AC_NODE AC_CLAUDE AC_HEALTH_WAIT_SEC
+    AC_PLUTIL AC_CODESIGN AC_CURL AC_REPO AC_PORT AC_DIAG_PORT AC_LABEL AC_UID AC_NODE AC_CLAUDE AC_HEALTH_WAIT_SEC
 fi
 
 AC_HOME="${AC_HOME:-$HOME/Library/Application Support/agent-console}"
@@ -21,12 +21,16 @@ AC_GH="${AC_GH:-gh}"
 AC_NPM="${AC_NPM:-npm}"
 AC_OSACOMPILE="${AC_OSACOMPILE:-osacompile}"
 AC_PLUTIL="${AC_PLUTIL:-plutil}"
+AC_CODESIGN="${AC_CODESIGN:-codesign}"
 AC_CURL="${AC_CURL:-curl}"
 AC_REPO="${AC_REPO:-shingo-cc/agent-console}"
 AC_PORT="${AC_PORT:-4319}"
 AC_DIAG_PORT="${AC_DIAG_PORT:-4320}"
 AC_LABEL="${AC_LABEL:-local.agent-console.server}"
 AC_APP_NAME="Agent Console.app"
+# osacompile が生成するアプリの Info.plist の CFBundleIconFile（実測: applet）
+AC_ICON_FILE="applet.icns"
+AC_ICON_REL="ops/launcher/icon/AgentConsole.icns"
 AC_MARKER=".agent-console-home"
 AC_UID="${AC_UID:-$(id -u)}"
 AC_SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -269,15 +273,35 @@ ac_write_plist() {
 }
 
 # 起動アプリ（Dock 用）を雛形から生成する（既存のアプリは Trash へ移してから作る。スクリプトは標準入力で渡し、一時ファイルを作らない）
+# 第2引数: アイコン（icns）を取る版のタグ（$AC_HOME/versions/<tag>/ops/launcher/icon/AgentConsole.icns）
+# 第3引数: "require" のとき icns が無ければ失敗、それ以外は標準の絵で作り、その旨を出力する
 ac_build_launcher_app() {
-  local node_bin="$1" template="$AC_SOURCE_DIR/ops/launcher/AgentConsole.applescript" app
+  local node_bin="$1" tag="$2" mode="${3:-optional}" template="$AC_SOURCE_DIR/ops/launcher/AgentConsole.applescript" app icon
+  icon="$AC_HOME/versions/$tag/$AC_ICON_REL"
   ac_require_plain_path "$AC_HOME"
   ac_require_plain_path "$node_bin"
+  if [ ! -f "$icon" ]; then
+    [ "$mode" = "require" ] && ac_die "アイコン（${AC_ICON_REL}）が $tag にありません。起動アプリを作れません"
+    icon=""
+  fi
   app="$AC_APPS_DIR/$AC_APP_NAME"
   mkdir -p "$AC_APPS_DIR"
   ac_trash "$app" "app"
   sed -e "s|__AC_HOME__|$(printf '%s' "$AC_HOME" | ac_sed_escape)|g" -e "s|__AC_NODE__|$(printf '%s' "$node_bin" | ac_sed_escape)|g" "$template" |
     "$AC_OSACOMPILE" -o "$app" || ac_die "起動アプリの生成に失敗しました"
+  if [ -z "$icon" ]; then
+    ac_log "$tag にはアイコンが無いため、起動アプリは標準の絵で作りました"
+    echo "起動アプリ: $tag にアイコンが無いため標準の絵で作りました"
+    return 0
+  fi
+  mkdir -p "$app/Contents/Resources"
+  cp "$icon" "$app/Contents/Resources/$AC_ICON_FILE" || ac_die "アイコンの複製に失敗しました"
+  # 差し替えで osacompile の署名が無効になるため、ad-hoc 署名をし直す（新しい鍵・証明書は使わない）
+  if [ "$(uname -s)" = "Darwin" ] || [ -n "${AC_STUB_LOG:-}" ]; then
+    "$AC_CODESIGN" --force --sign - "$app" >/dev/null 2>&1 || ac_die "起動アプリの再署名に失敗しました"
+  fi
+  touch "$app"
+  ac_log "起動アプリのアイコンを $tag のものにしました"
 }
 
 # --- 版の導入（clone → 到達性確認 → npm ci --ignore-scripts → postinstall → sa-sync → build → 別ポートで自己診断 → versions/<tag> へ） ---

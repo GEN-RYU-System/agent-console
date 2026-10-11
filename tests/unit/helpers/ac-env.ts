@@ -116,6 +116,8 @@ while [ $# -gt 0 ]; do if [ "$1" = "--branch" ]; then tag="$2"; fi; shift; done
 mkdir -p "$dir/dist-server/server" "$dir/scripts"
 printf '{"name":"agent-console","version":"%s"}\\n' "\${tag#v}" > "$dir/package.json"
 cp "${fixture}" "$dir/dist-server/server/index.js"
+mkdir -p "$dir/ops/launcher/icon"
+case " \${FAKE_NO_ICON_TAGS:-} " in *" $tag "*) ;; *) cp "${path.join(REPO, "ops", "launcher", "icon", "AgentConsole.icns")}" "$dir/ops/launcher/icon/AgentConsole.icns" ;; esac
 echo "console.log('sa-sync stub')" > "$dir/scripts/sa-sync.mjs"
 echo "import { appendFileSync } from 'node:fs'; appendFileSync(process.env.AC_STUB_LOG, 'postinstall-ran\\n')" > "$dir/scripts/postinstall.mjs"
 git -C "$dir" init -q
@@ -135,6 +137,7 @@ mkdir -p "$out"
 if [ -n "$src" ]; then cp "$src" "$out/script.applescript"; else cat > "$out/script.applescript"; fi
 exit 0`,
   );
+  const codesign = stub(binDir, "codesign", `echo "codesign $*" >> "${stubLog}"\nexit 0`);
   const plutil = stub(binDir, "plutil", `echo "plutil $*" >> "${stubLog}"\nif [ -x /usr/bin/plutil ]; then exec /usr/bin/plutil "$@"; fi\nexit 0`);
 
   const env: Record<string, string> = {
@@ -150,6 +153,7 @@ exit 0`,
     AC_NPM: npm,
     AC_OSACOMPILE: osacompile,
     AC_PLUTIL: plutil,
+    AC_CODESIGN: codesign,
     AC_NODE: process.execPath,
     AC_PORT: String(port),
     AC_DIAG_PORT: String(diagPort),

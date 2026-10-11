@@ -10,7 +10,7 @@ const state: ConsoleState = {
   roles: [{ id: "shell", labelKey: "role.shell", needsWorktree: false, canResume: false }],
   saSource: "abcdef0123456789",
   claudeVersion: "1.0.0",
-  appVersion: "0.3.0",
+  appVersion: "0.3.1",
   commit: "abcdef0123456789abcdef0123456789abcdef01",
 };
 
@@ -123,7 +123,7 @@ describe("ConsolePage removing a stopped session", () => {
 describe("ConsolePage footer and authorization", () => {
   it("shows the app version in the footer", async () => {
     render(<ConsolePage />);
-    expect((await screen.findByTestId("app-version")).textContent).toContain("0.3.0");
+    expect((await screen.findByTestId("app-version")).textContent).toContain("0.3.1");
   });
 
   it("shows a login-required callout on 401", async () => {

@@ -6,6 +6,7 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib/ac-common.sh"
 
 ac_guard_test_paths
+node_bin="$(ac_resolve_node)"
 [ -f "$AC_HOME/$AC_MARKER" ] || ac_die "導入されていません"
 ac_acquire_lock
 
@@ -26,4 +27,5 @@ if ! ac_restart_and_wait "$previous"; then
   ac_restart_and_wait "$cur" || ac_log "警告: $cur への復帰後も /healthz が期待の版・コミットで応答しません"
   ac_die "切戻しに失敗しました（current は $cur に戻しました）"
 fi
+ac_build_launcher_app "$node_bin" "$previous"
 echo "切り戻しました: $cur -> ${previous}（コミット $(ac_commit_of "$AC_HOME/versions/$previous")）"
