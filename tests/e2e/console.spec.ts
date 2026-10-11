@@ -132,7 +132,7 @@ test("停止したセッションは「停止」と表示され、一覧から�
   await expect(page.getByRole("button", { name: "一覧から外す", exact: true })).toHaveCount(0);
 });
 
-test.fixme("端末の文字間隔が正常（xterm の letter-spacing が 1px 未満）— 等幅フォントの指定方法が NEEDS_DECISION（総称名 monospace では xterm の計測がずれる）", async ({ page }) => {
+test("端末の文字間隔が正常（xterm の letter-spacing が 1px 未満）", async ({ page }) => {
   await page.goto(PAGE_URL);
   await page.getByTestId("session-row").first().click();
   await expect(page.getByTestId("terminal")).toContainText("READY");

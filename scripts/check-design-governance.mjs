@@ -7,6 +7,7 @@ import path from "node:path";
 
 const root = process.cwd();
 const violations = [];
+const APP_TOKEN_FILE = "src/tokens.app.css";
 
 const NAMED_COLORS = new Set(
   (
@@ -70,6 +71,14 @@ for (const file of cssFiles) {
     if (!decl) continue;
     const [, prop, rawValue] = decl;
     const lineNo = lineOf(content, chunk.index + text.search(/\S/));
+    if (file === APP_TOKEN_FILE) {
+      // アプリ固有トークンのファイルには --ac- で始まるカスタムプロパティだけを置ける（等幅フォント名の唯一の置き場）
+      if (!prop.startsWith("--ac-")) report(file, lineNo, `${APP_TOKEN_FILE} には --ac- のカスタムプロパティ以外を置けない`, text);
+      continue;
+    }
+    if ((prop === "font-family" || prop === "font") && !/^\s*(var\([^)]*\)|inherit|initial|unset|revert)\s*$/.test(rawValue)) {
+      report(file, lineNo, `font-family の直書き（${APP_TOKEN_FILE} のトークンを使う）`, text);
+    }
     const value = rawValue.replace(/url\([^)]*\)/g, "").replace(/"[^"]*"|'[^']*'/g, "");
     const withoutVar = value.replace(/var\(\s*--[\w-]+/g, "var(");
     for (const m of withoutVar.matchAll(/(?<![\w-])[a-zA-Z]+(?![\w-])/g)) {
@@ -105,6 +114,7 @@ for (const file of codeFiles) {
     }
   }
 }
+scanLines(codeFiles, /\bfontFamily\s*:\s*["'`]/, "fontFamily の直書き（トークンを使う）");
 scanLines(codeFiles, /\b(fontSize|lineHeight|letterSpacing)\s*:\s*-?\d/, "数値の文字サイズ・行間の直書き");
 
 // ② pages 配下の生要素

@@ -1,0 +1,9 @@
+/*
+ * アプリ固有トークン。Sales Anchor のトークンに等幅フォントが無いための置き場。
+ * SA に --font-mono が追加されたら --ac-font-mono を置き換える（PO 判断待ち）。
+ * ダークで値が変わらないので force-dark の定義は不要。
+ * このファイルには --ac- で始まるカスタムプロパティだけを置く（check-design-governance が検査）。
+ */
+:root {
+  --ac-font-mono: Menlo, Monaco, "Courier New", monospace;
+}

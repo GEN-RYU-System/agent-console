@@ -18,7 +18,7 @@ describe("cssLengthToPx", () => {
 
 describe("readTerminalAppearance", () => {
   afterEach(() => {
-    for (const name of ["--font-sm", "--bg-surface", "--text-primary", "--bg-active"]) document.documentElement.style.removeProperty(name);
+    for (const name of ["--font-sm", "--bg-surface", "--text-primary", "--bg-active", "--ac-font-mono"]) document.documentElement.style.removeProperty(name);
   });
 
   it("reads colors and the font size from the tokens", () => {
@@ -27,9 +27,11 @@ describe("readTerminalAppearance", () => {
     root.setProperty("--bg-surface", "token-bg");
     root.setProperty("--text-primary", "token-fg");
     root.setProperty("--bg-active", "token-sel");
+    root.setProperty("--ac-font-mono", "Token Mono, monospace");
     const a = readTerminalAppearance();
     expect(a.theme).toEqual({ background: "token-bg", foreground: "token-fg", cursor: "token-fg", selectionBackground: "token-sel" });
     expect(a.fontSize).toBeCloseTo(8);
+    expect(a.fontFamily).toBe("Token Mono, monospace");
   });
 
   it("falls back to the root font size when the token is missing", () => {

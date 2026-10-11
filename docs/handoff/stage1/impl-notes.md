@@ -76,7 +76,7 @@ server/index.ts:  const meta = { saSource: await readSaSource(), claudeVersion: 
 - 画面幅: 段階1は PC 幅（1280px 以上）専用（design.md §3 に追記）。左右の列幅は % 指定。
 - e2e の役割プロセスは argv に目印を持つ node スクリプト（`tests/fixtures/role.mjs`）。sh の exec で目印が消えない。ロケーターは exact＋フォーム内に限定（macOS CI の「起動」が「Claude 未起動」と衝突した件）。
 
-### 端末の文字間隔（NEEDS_DECISION）
+### 端末の文字間隔（設計者判断で解決）
 
 原因の切り分け（`/tmp/CC報告ファイル/orca-selfbuilt/fix1-font-experiment.txt`、各 fontFamily で `.xterm-rows` の letter-spacing を実測）:
 
@@ -89,4 +89,13 @@ Courier New            ls=0.00625px  nrows=50
 sans-serif             ls=0.84375px  nrows=54
 ```
 
-総称名 `monospace` だと、xterm（DOM レンダラ）が計算する行の letter-spacing が 5.5px になり、文字間が広がる。実フォント名では 0px。`lang="en"` を端末に付けても直らなかった（試して戻した）。SA のトークンに等幅フォントは無い。直すには実フォント名のスタックが必要なので、置き場所の判断を仰ぐ（案は報告参照）。e2e の回帰テストは `test.fixme` で入れてある。
+総称名 `monospace` だと、xterm（DOM レンダラ）が計算する行の letter-spacing が 5.5px になり、文字間が広がる。実フォント名では 0px。`lang="en"` を端末に付けても直らなかった（試して戻した）。SA のトークンに等幅フォントは無い。設計者判断（2026-10-11）: アプリ固有トークン `--ac-font-mono`（Menlo, Monaco, "Courier New", monospace）を `src/tokens.app.css` に 1 か所だけ登録し、TerminalPane は他のトークンと同じく getComputedStyle で読む。`check-design-governance` は font-family の直書きを `src/tokens.app.css` 以外で禁止し、このファイルには `--ac-` のカスタムプロパティ以外を置けないようにした（テスト付き）。SA に `--font-mono` が追加されたら置換する（PO 判断待ち）。e2e の回帰テスト（letter-spacing < 1px）は有効化済み。
+
+### 1px 枠線の許可の根拠（SA 金型の実使用箇所）
+
+- `.sa-cache/frontend/src/components/Callout.css:11` `border: 1px solid var(--border);`
+- `.sa-cache/frontend/src/components/Button.css:11` `border: 1px solid transparent;`
+- `.sa-cache/frontend/src/components/Drawer.css:57` `border-bottom: 1px solid var(--border-subtle);`
+- `.sa-cache/frontend/src/components/AvatarUpload.css:31` `border: 1px solid var(--border);`
+
+（ADR-067:111-117 の「許可される例外」一覧には 1px 枠線は無い。SA の金型が実際に使っている範囲＝`border` / `outline` の 1px のみ許可。）

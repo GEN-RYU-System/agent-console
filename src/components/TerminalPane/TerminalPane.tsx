@@ -19,7 +19,6 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
     if (!host) return;
     const term = new Terminal({
       scrollback: SCROLLBACK_LINES,
-      fontFamily: "monospace",
       ...readTerminalAppearance(),
     });
     const fit = new FitAddon();
@@ -49,6 +48,7 @@ export function TerminalPane({ sessionId }: { sessionId: string }) {
     const themeObserver = new MutationObserver(() => {
       const appearance = readTerminalAppearance();
       term.options.theme = appearance.theme;
+      term.options.fontFamily = appearance.fontFamily;
       term.options.fontSize = appearance.fontSize;
       syncSize();
     });
