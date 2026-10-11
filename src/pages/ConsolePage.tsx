@@ -3,12 +3,12 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@sa/components/Button";
 import { EmptyState } from "@sa/components/EmptyState";
 import { Modal } from "@sa/components/Modal";
-import { createSession, fetchLedger, fetchState, refreshLedger, wsUrl } from "../api";
+import { createSession, fetchLedger, fetchState, refreshLedger, removeSession, wsUrl } from "../api";
 import { LedgerBoard } from "../components/LedgerBoard/LedgerBoard";
 import { NewSessionForm, type NewSessionValues } from "../components/NewSessionForm/NewSessionForm";
 import { SessionList } from "../components/SessionList/SessionList";
 import { TerminalPane } from "../components/TerminalPane/TerminalPane";
-import type { ConsoleState, LedgerGroups, SessionView } from "../types";
+import type { ConsoleState, LedgerSnapshot, SessionView } from "../types";
 import "./ConsolePage.css";
 
 const LEDGER_POLL_MS = 60000;
@@ -48,7 +48,7 @@ function useConsoleState() {
 export function ConsolePage() {
   const { t } = useTranslation();
   const { state, loadFailed } = useConsoleState();
-  const [ledger, setLedger] = useState<LedgerGroups | null>(null);
+  const [ledger, setLedger] = useState<LedgerSnapshot | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -77,8 +77,14 @@ export function ConsolePage() {
     }
   };
 
+  const handleRemove = (id: string): void => {
+    void removeSession(id).catch(() => undefined);
+  };
+
   if (loadFailed) return <EmptyState title={t("ac.loadError")} />;
   if (!state) return null;
+  // 一覧から外れた（または存在しない）セッションは選択扱いにしない
+  const activeId = state.sessions.some((s) => s.id === selectedId) ? selectedId : null;
 
   return (
     <div className="ac-page">
@@ -89,13 +95,13 @@ export function ConsolePage() {
             {t("ac.newSession")}
           </Button>
         </div>
-        <SessionList sessions={state.sessions} roles={state.roles} selectedId={selectedId} onSelect={setSelectedId} />
+        <SessionList sessions={state.sessions} roles={state.roles} selectedId={activeId} onSelect={setSelectedId} onRemove={handleRemove} />
       </aside>
       <main className="ac-page__center">
-        {selectedId ? <TerminalPane sessionId={selectedId} /> : <EmptyState title={t("ac.selectSession")} />}
+        {activeId ? <TerminalPane sessionId={activeId} /> : <EmptyState title={t("ac.selectSession")} />}
       </main>
       <aside className="ac-page__right">
-        <LedgerBoard groups={ledger} onRefresh={handleRefresh} />
+        <LedgerBoard snapshot={ledger} onRefresh={handleRefresh} />
       </aside>
       <footer className="ac-page__footer" data-testid="footer">
         <span data-testid="sa-source">

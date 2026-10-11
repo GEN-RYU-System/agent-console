@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@sa/components/Button";
+import { Callout } from "@sa/components/Callout";
 import { Select } from "@sa/components/Select";
 import { Stack } from "@sa/components/Stack";
 import { TextField } from "@sa/components/TextField";
@@ -48,12 +49,16 @@ export function NewSessionForm({ roles, busy, error, onSubmit }: Props) {
             helperText={t("ac.form.branchHint")}
             value={branch}
             onChange={(e) => setBranch(e.target.value)}
-            placeholder="release/topic"
+            placeholder={t("ac.form.branchPlaceholder")}
             required
             fullWidth
           />
         )}
-        {error !== null && <TextField label={t("ac.form.error")} value={error} readOnly error={error} fullWidth />}
+        {error !== null && (
+          <Callout variant="warning" title={t("ac.form.error")}>
+            {error}
+          </Callout>
+        )}
         <Button type="submit" loading={busy} loadingText={t("ac.form.creating")}>
           {t("ac.form.submit")}
         </Button>

@@ -26,6 +26,16 @@ export interface ConsoleState {
 
 export type LookupResult = { kind: "found"; state: string } | { kind: "unregistered" } | { kind: "conflict" };
 
+export interface LedgerError {
+  branch: string;
+  message: string;
+}
+
+export interface LedgerSnapshot {
+  groups: LedgerGroups;
+  errors: LedgerError[];
+}
+
 export interface LedgerCard {
   branch: string;
   result: LookupResult;

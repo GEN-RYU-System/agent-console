@@ -5,7 +5,7 @@ import path from "node:path";
 import type { Auth } from "./auth.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
-import { SessionInputError, type SessionManager } from "./sessions.ts";
+import { SessionConflictError, SessionInputError, SessionNotFoundError, type SessionManager } from "./sessions.ts";
 import { WorktreeError } from "./worktree.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -50,9 +50,17 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   }
 }
 
+class BadRequestError extends Error {}
+
 async function serveStatic(staticDir: string, pathname: string, res: ServerResponse): Promise<void> {
   const root = path.resolve(staticDir);
-  let target = path.resolve(root, "." + decodeURIComponent(pathname));
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    throw new BadRequestError("malformed URL");
+  }
+  let target = path.resolve(root, "." + decoded);
   if (target !== root && !target.startsWith(root + path.sep)) {
     res.writeHead(403).end();
     return;
@@ -73,8 +81,14 @@ async function serveStatic(staticDir: string, pathname: string, res: ServerRespo
       return;
     }
   }
-  res.writeHead(200, { "Content-Type": MIME[path.extname(target)] ?? "application/octet-stream" });
-  createReadStream(target).pipe(res);
+  const stream = createReadStream(target);
+  stream.on("error", (err) => {
+    console.error("static read failed:", err.message);
+    if (res.headersSent) res.destroy();
+    else res.writeHead(500).end();
+  });
+  stream.on("open", () => res.writeHead(200, { "Content-Type": MIME[path.extname(target)] ?? "application/octet-stream" }));
+  stream.pipe(res);
 }
 
 async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
@@ -103,12 +117,22 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
     sendJson(res, 201, { id: session.id });
     return;
   }
+  const removeMatch = /^\/api\/sessions\/([^/]+)$/.exec(url.pathname);
+  if (req.method === "DELETE" && removeMatch) {
+    sessions.remove(removeMatch[1]);
+    sendJson(res, 200, { removed: true });
+    return;
+  }
   sendJson(res, 404, { error: "not found" });
 }
 
 export function createRequestHandler(deps: AppDeps) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     try {
+      if (!deps.auth.isHostAllowed(req.headers.host)) {
+        sendJson(res, 421, { error: "misdirected request" });
+        return;
+      }
       const url = new URL(req.url ?? "/", `http://127.0.0.1:${deps.config.port}`);
       if (url.pathname.startsWith("/api/")) {
         if (!deps.auth.isTokenValid(url, req.headers.authorization)) {
@@ -124,8 +148,16 @@ export function createRequestHandler(deps: AppDeps) {
       }
       await serveStatic(deps.staticDir, url.pathname, res);
     } catch (err) {
-      if (err instanceof SessionInputError || err instanceof WorktreeError) {
+      if (err instanceof SessionInputError || err instanceof WorktreeError || err instanceof BadRequestError) {
         sendJson(res, 400, { error: err.message });
+        return;
+      }
+      if (err instanceof SessionNotFoundError) {
+        sendJson(res, 404, { error: err.message });
+        return;
+      }
+      if (err instanceof SessionConflictError) {
+        sendJson(res, 409, { error: err.message });
         return;
       }
       console.error("request failed:", err);

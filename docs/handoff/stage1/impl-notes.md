@@ -62,3 +62,31 @@ server/index.ts:  const meta = { saSource: await readSaSource(), claudeVersion: 
 
 - 実 Claude での手動 1 回（K2 の後半）は未実施。
 - CI（ubuntu/macos）は未確認（push 後の実行結果を見ていない）。ubuntu では node-pty を node-gyp でビルドする想定で、未検証。
+
+## 修正ラウンド1（レビュー・評価への対応）
+
+- WebSocket: term / events 両方に error リスナ、maxPayload を 256KB に明示（`server/ws.ts` の `MAX_WS_PAYLOAD_BYTES`）。超過は ws が 1009 でその接続だけ閉じる。クライアントは入力を 16KB ごとに分割して送る。統合テストで「2MB フレーム送信 → 1009 で閉じる・他セッション継続・API 生存」を検証。リスナを外すと vitest が `Unhandled Errors: RangeError: Max payload size exceeded` を出すことを確認済み。
+- ポーリング: `server/poll.ts`（前回完了後に次を予約・例外は捕捉して継続）。agents 取得失敗時は状態「不明」（前回値は保持しない。コメントと実装を一致）。台帳の手動更新と定期更新は 1 本にまとめる。
+- 台帳: lookup の exit 0/1/2 以外・スクリプト不在・台帳ファイル読取失敗は `errors` として返し、UI は SA Callout で「台帳を読めません」。未登録列には混ぜない。台帳由来のブランチ名は `isSafeLedgerBranch` で検証してから渡す。
+- セッション: 停止は一覧に「停止」と表示し、`DELETE /api/sessions/:id`（停止中のみ。実行中は 409）で外せる。上限は worktree 作成前に枠を確保。
+- Host ヘッダ検査（127.0.0.1:port / localhost:port 以外は 421。静的配信・API・WS すべて）。decodeURIComponent 失敗は 400、静的配信の ReadStream error を処理。
+- 統合テスト（`tests/unit/server.integration.test.ts`、実 HTTP/WS/PTY）: 静的配信のパストラバーサル、/ws/term の認証・Origin・Host、入力検証、body 上限、1009、停止セッションの削除、上限の予約、台帳エラー。
+- デザイン検査を強化（named color、oklch/oklab/lab/lch/hwb/color()、CSS の px/rem/em、インライン style の数値・単位・色名、数値の fontSize/lineHeight/letterSpacing、pages の `<a`）。許可は ADR-067 の例外（%・@media・calc 内の var・opacity 0/1・min-width 0）に加え、SA の金型 CSS が実際に使っている 1px の枠線（border/outline のみ）。ADR-067:111-117 の例外一覧に 1px 枠線は載っていないため、これは SA の金型実装（`Modal.css` など）に合わせた判断。
+- 端末: 文字サイズは `--font-sm` を getComputedStyle で数値化、配色は `--bg-surface` `--text-primary` `--bg-active`。`<html>` の class 変化を MutationObserver で監視して再読込。
+- 画面幅: 段階1は PC 幅（1280px 以上）専用（design.md §3 に追記）。左右の列幅は % 指定。
+- e2e の役割プロセスは argv に目印を持つ node スクリプト（`tests/fixtures/role.mjs`）。sh の exec で目印が消えない。ロケーターは exact＋フォーム内に限定（macOS CI の「起動」が「Claude 未起動」と衝突した件）。
+
+### 端末の文字間隔（NEEDS_DECISION）
+
+原因の切り分け（`/tmp/CC報告ファイル/orca-selfbuilt/fix1-font-experiment.txt`、各 fontFamily で `.xterm-rows` の letter-spacing を実測）:
+
+```
+monospace              ls=5.53125px  nrows=54
+Menlo                  ls=0px        nrows=47
+ui-monospace, monospace ls=5.53125px  nrows=54
+monospace, monospace   ls=5.53125px  nrows=54
+Courier New            ls=0.00625px  nrows=50
+sans-serif             ls=0.84375px  nrows=54
+```
+
+総称名 `monospace` だと、xterm（DOM レンダラ）が計算する行の letter-spacing が 5.5px になり、文字間が広がる。実フォント名では 0px。`lang="en"` を端末に付けても直らなかった（試して戻した）。SA のトークンに等幅フォントは無い。直すには実フォント名のスタックが必要なので、置き場所の判断を仰ぐ（案は報告参照）。e2e の回帰テストは `test.fixme` で入れてある。

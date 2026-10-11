@@ -1,0 +1,100 @@
+import { execFileSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+import { createAuth } from "../../../server/auth.ts";
+import type { Config } from "../../../server/config.ts";
+import { Hub } from "../../../server/hub.ts";
+import { createRequestHandler } from "../../../server/http.ts";
+import { SessionManager } from "../../../server/sessions.ts";
+import { attachWebSockets } from "../../../server/ws.ts";
+
+export const TOKEN = "t".repeat(40);
+
+export interface Harness {
+  port: number;
+  base: string;
+  dir: string;
+  sessions: SessionManager;
+  hub: Hub;
+  server: Server;
+  secretPath: string;
+  close: () => Promise<void>;
+}
+
+async function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const s = net.createServer();
+    s.listen(0, "127.0.0.1", () => {
+      const { port } = s.address() as net.AddressInfo;
+      s.close(() => resolve(port));
+    });
+    s.on("error", reject);
+  });
+}
+
+export interface HarnessOptions {
+  ledgerScript?: string;
+  maxSessions?: number;
+}
+
+/** 実 HTTP/WS/PTY（ダミー役割 sh）を 127.0.0.1 の空きポートで起動する。 */
+export async function startHarness(options: HarnessOptions = {}): Promise<Harness> {
+  const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "ac-it-")));
+  const root = path.join(dir, "root");
+  const staticDir = path.join(dir, "static");
+  mkdirSync(path.join(root, "scripts"), { recursive: true });
+  mkdirSync(path.join(root, "ledger"), { recursive: true });
+  mkdirSync(staticDir);
+  writeFileSync(path.join(staticDir, "index.html"), "<html>index</html>");
+  const secretPath = path.join(dir, "secret.txt");
+  writeFileSync(secretPath, "TOP-SECRET");
+  execFileSync("git", ["init", "-q"], { cwd: root });
+  writeFileSync(path.join(root, "scripts", "slow-worktree.sh"), "#!/bin/bash\nsleep 0.3\n");
+  chmodSync(path.join(root, "scripts", "slow-worktree.sh"), 0o755);
+  if (options.ledgerScript !== undefined) {
+    writeFileSync(path.join(root, "scripts", "ledger.sh"), options.ledgerScript);
+    chmodSync(path.join(root, "scripts", "ledger.sh"), 0o755);
+  }
+  const port = await freePort();
+  const config: Config = {
+    port,
+    salesanchorRoot: root,
+    newWorktreeScript: "scripts/slow-worktree.sh",
+    ledgerLookupScript: "scripts/ledger.sh",
+    ledgerDir: "ledger",
+    claudeBin: "/nonexistent/claude",
+    agentsPollMs: 60000,
+    ledgerPollMs: 60000,
+    ringBufferBytes: 1024 * 1024,
+    roles: [
+      { id: "echo", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo READY; cat"], needsWorktree: false },
+      { id: "short", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo bye"], needsWorktree: false },
+      { id: "wt", labelKey: "role.sonnetImpl", command: ["/bin/sh", "-c", "cat"], needsWorktree: true },
+    ],
+  };
+  const sessions = new SessionManager(config, { maxSessions: options.maxSessions });
+  const hub = new Hub(config, sessions);
+  const auth = createAuth(TOKEN, port);
+  const server = createServer(
+    createRequestHandler({ config, auth, sessions, hub, staticDir, meta: { saSource: "sha", claudeVersion: "v" } }),
+  );
+  attachWebSockets(server, { config, auth, sessions, hub });
+  await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
+  return {
+    port,
+    base: `http://127.0.0.1:${port}`,
+    dir,
+    sessions,
+    hub,
+    server,
+    secretPath,
+    close: async () => {
+      sessions.killAll();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    },
+  };
+}

@@ -16,7 +16,8 @@
       "branchHint": "release/ から始まる小文字英数字とハイフン",
       "submit": "起動",
       "creating": "作成中",
-      "error": "作成に失敗しました"
+      "error": "作成に失敗しました",
+      "branchPlaceholder": "release/topic"
     },
     "state": {
       "working": "作業中",
@@ -37,7 +38,10 @@
       "saSource": "Sales Anchor 展開元",
       "claudeVersion": "Claude Code"
     },
-    "loadError": "状態を取得できません"
+    "loadError": "状態を取得できません",
+    "removeSession": "一覧から外す",
+    "ledgerErrorTitle": "台帳を読めません",
+    "ledgerErrorBody": "{{count}} 件で台帳の取得に失敗しました。最初のエラー: {{first}}"
   },
   "role": {
     "opusDesigner": "Opus 設計",

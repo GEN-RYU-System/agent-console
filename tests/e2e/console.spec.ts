@@ -20,12 +20,18 @@ function sha256OrNull(file: string): string | null {
   return existsSync(file) ? createHash("sha256").update(readFileSync(file)).digest("hex") : null;
 }
 
+// ロケーターは exact で、フォーム内に限定する（一覧の状態ラベル「Claude 未起動」などと衝突させない）
+const openForm = async (page: Page) => {
+  await page.getByRole("button", { name: "新しいセッション", exact: true }).click();
+  return page.getByTestId("new-session-form");
+};
+
 async function createViaUi(page: Page, name: string, role: "e2e-plain" | "e2e-wt", branch?: string): Promise<void> {
-  await page.getByRole("button", { name: "新しいセッション" }).click();
-  await page.getByLabel("名前", { exact: false }).fill(name);
-  await page.getByLabel("役割", { exact: false }).selectOption(role);
-  if (branch) await page.getByLabel("ブランチ名", { exact: false }).fill(branch);
-  await page.getByRole("button", { name: "起動" }).click();
+  const form = await openForm(page);
+  await form.getByLabel("名前", { exact: false }).fill(name);
+  await form.getByLabel("役割", { exact: false }).selectOption(role);
+  if (branch) await form.getByLabel("ブランチ名", { exact: false }).fill(branch);
+  await form.getByRole("button", { name: "起動", exact: true }).click();
 }
 
 async function apiCreate(name: string, roleId: string): Promise<string> {
@@ -59,12 +65,12 @@ test("K2: 新しいセッション -> ワークツリー作成 -> 役割コマ�
 
 test("K2: 不正なブランチ名は作成されずエラーが画面に出る", async ({ page }) => {
   await page.goto(PAGE_URL);
-  await page.getByRole("button", { name: "新しいセッション" }).click();
-  await page.getByLabel("名前", { exact: false }).fill("bad");
-  await page.getByLabel("役割", { exact: false }).selectOption("e2e-wt");
-  await page.getByLabel("ブランチ名", { exact: false }).fill("release/Bad;rm");
-  await page.getByRole("button", { name: "起動" }).click();
-  await expect(page.getByRole("alert").first()).toContainText("branch");
+  const form = await openForm(page);
+  await form.getByLabel("名前", { exact: false }).fill("bad");
+  await form.getByLabel("役割", { exact: false }).selectOption("e2e-wt");
+  await form.getByLabel("ブランチ名", { exact: false }).fill("release/Bad;rm");
+  await form.getByRole("button", { name: "起動", exact: true }).click();
+  await expect(form.getByRole("alert")).toContainText("branch");
   await expect(page.getByTestId("session-row")).toHaveCount(1);
 });
 
@@ -106,12 +112,34 @@ test("K4: 台帳ボードの件数が ledger-lookup.sh で引いた値と一致�
     expected[column] += 1;
   }
   await page.goto(PAGE_URL);
-  await page.getByRole("button", { name: "更新" }).click();
+  await page.getByRole("button", { name: "更新", exact: true }).click();
   for (const [column, count] of Object.entries(expected)) {
     await expect(page.getByTestId(`ledger-col-${column}`)).toHaveAttribute("data-count", String(count));
   }
   // K2 で作ったブランチ分（IN_PROGRESS）が含まれていること
   expect(expected.IN_PROGRESS).toBe(3);
+});
+
+test("停止したセッションは「停止」と表示され、一覧から外せる", async ({ page }) => {
+  await apiCreate("short-lived", "e2e-short");
+  await page.goto(PAGE_URL);
+  const row = page.getByTestId("session-row").filter({ hasText: "short-lived" });
+  await expect(row.getByTestId("status")).toHaveAttribute("data-state", "stopped", { timeout: STATE_DEADLINE_MS });
+  await expect(row.getByText("停止", { exact: true })).toBeVisible();
+  await row.getByRole("button", { name: "一覧から外す", exact: true }).click();
+  await expect(page.getByTestId("session-row").filter({ hasText: "short-lived" })).toHaveCount(0);
+  // 実行中のセッションには外すボタンが無い
+  await expect(page.getByRole("button", { name: "一覧から外す", exact: true })).toHaveCount(0);
+});
+
+test.fixme("端末の文字間隔が正常（xterm の letter-spacing が 1px 未満）— 等幅フォントの指定方法が NEEDS_DECISION（総称名 monospace では xterm の計測がずれる）", async ({ page }) => {
+  await page.goto(PAGE_URL);
+  await page.getByTestId("session-row").first().click();
+  await expect(page.getByTestId("terminal")).toContainText("READY");
+  const spacing = await page.evaluate(() =>
+    Math.max(...[...document.querySelectorAll(".xterm-rows > div > span")].map((s) => Math.abs(parseFloat((s as HTMLElement).style.letterSpacing || "0")))),
+  );
+  expect(spacing).toBeLessThan(1);
 });
 
 test("K8: 不正トークンは 401、不正 Origin の WebSocket は 403、待受は 127.0.0.1 のみ", async () => {

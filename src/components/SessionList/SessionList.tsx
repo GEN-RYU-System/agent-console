@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { Button } from "@sa/components/Button";
 import { Card } from "@sa/components/Card";
 import { EmptyState } from "@sa/components/EmptyState";
 import { Stack } from "@sa/components/Stack";
@@ -11,9 +12,10 @@ interface Props {
   roles: RoleView[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onRemove: (id: string) => void;
 }
 
-export function SessionList({ sessions, roles, selectedId, onSelect }: Props) {
+export function SessionList({ sessions, roles, selectedId, onSelect, onRemove }: Props) {
   const { t } = useTranslation();
   if (sessions.length === 0) {
     return <EmptyState size="compact" title={t("ac.noSessions")} description={t("ac.noSessionsHint")} />;
@@ -27,26 +29,28 @@ export function SessionList({ sessions, roles, selectedId, onSelect }: Props) {
       {sessions.map((s) => (
         <Card
           key={s.id}
-          variant="interactive"
           density="compact"
-          role="button"
-          tabIndex={0}
-          aria-pressed={s.id === selectedId}
           data-testid="session-row"
           data-session-id={s.id}
           data-state={s.state}
           className={s.id === selectedId ? "ac-session ac-session--selected" : "ac-session"}
-          onClick={() => onSelect(s.id)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              onSelect(s.id);
-            }
-          }}
         >
-          <span className="ac-session__name">{s.name}</span>
-          <span className="ac-session__role">{roleLabel(s.roleId)}</span>
-          <StatusDot state={s.state} />
+          <Button
+            variant="ghost"
+            fullWidth
+            layoutClassName="ac-session__select"
+            aria-current={s.id === selectedId ? "true" : undefined}
+            onClick={() => onSelect(s.id)}
+          >
+            <span className="ac-session__name">{s.name}</span>
+            <span className="ac-session__role">{roleLabel(s.roleId)}</span>
+            <StatusDot state={s.state} />
+          </Button>
+          {s.state === "stopped" && (
+            <Button variant="outline" size="sm" onClick={() => onRemove(s.id)}>
+              {t("ac.removeSession")}
+            </Button>
+          )}
         </Card>
       ))}
     </Stack>

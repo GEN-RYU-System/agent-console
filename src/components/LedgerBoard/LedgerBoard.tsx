@@ -1,17 +1,19 @@
 import { useTranslation } from "react-i18next";
 import { Badge } from "@sa/components/Badge";
 import { Button } from "@sa/components/Button";
+import { Callout } from "@sa/components/Callout";
 import { Card } from "@sa/components/Card";
-import { LEDGER_COLUMNS, type LedgerGroups } from "../../types";
+import { LEDGER_COLUMNS, type LedgerSnapshot } from "../../types";
 import "./LedgerBoard.css";
 
 interface Props {
-  groups: LedgerGroups | null;
+  snapshot: LedgerSnapshot | null;
   onRefresh: () => void;
 }
 
-export function LedgerBoard({ groups, onRefresh }: Props) {
+export function LedgerBoard({ snapshot, onRefresh }: Props) {
   const { t } = useTranslation();
+  const errors = snapshot?.errors ?? [];
   return (
     <section className="ac-ledger" aria-label={t("ac.ledger")}>
       <header className="ac-ledger__header">
@@ -20,8 +22,15 @@ export function LedgerBoard({ groups, onRefresh }: Props) {
           {t("ac.ledgerRefresh")}
         </Button>
       </header>
+      {errors.length > 0 && (
+        <Callout variant="warning" title={t("ac.ledgerErrorTitle")}>
+          <span data-testid="ledger-error">
+            {t("ac.ledgerErrorBody", { count: errors.length, first: `${errors[0].branch}: ${errors[0].message}` })}
+          </span>
+        </Callout>
+      )}
       {LEDGER_COLUMNS.map((column) => {
-        const cards = groups?.[column] ?? [];
+        const cards = snapshot?.groups[column] ?? [];
         return (
           <div key={column} className="ac-ledger__column" data-testid={`ledger-col-${column}`} data-count={cards.length}>
             <div className="ac-ledger__column-head">

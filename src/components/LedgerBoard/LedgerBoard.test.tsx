@@ -18,7 +18,7 @@ const groups: LedgerGroups = {
 
 describe("LedgerBoard", () => {
   it("shows the count per column", () => {
-    render(<LedgerBoard groups={groups} onRefresh={() => {}} />);
+    render(<LedgerBoard snapshot={{ groups, errors: [] }} onRefresh={() => {}} />);
     expect(screen.getByTestId("ledger-col-IN_PROGRESS").getAttribute("data-count")).toBe("2");
     expect(screen.getByTestId("ledger-col-REVIEW").getAttribute("data-count")).toBe("0");
     expect(screen.getByTestId("ledger-col-UNREGISTERED").getAttribute("data-count")).toBe("1");
@@ -26,14 +26,26 @@ describe("LedgerBoard", () => {
   });
 
   it("renders empty columns before data has loaded", () => {
-    render(<LedgerBoard groups={null} onRefresh={() => {}} />);
+    render(<LedgerBoard snapshot={null} onRefresh={() => {}} />);
     expect(screen.getByTestId("ledger-col-DONE").getAttribute("data-count")).toBe("0");
   });
 
   it("calls onRefresh from the refresh button", () => {
     const onRefresh = vi.fn();
-    render(<LedgerBoard groups={groups} onRefresh={onRefresh} />);
+    render(<LedgerBoard snapshot={{ groups, errors: [] }} onRefresh={onRefresh} />);
     fireEvent.click(screen.getByText("更新"));
     expect(onRefresh).toHaveBeenCalledOnce();
+  });
+
+  it("shows a ledger error callout, separate from the unregistered column", () => {
+    render(<LedgerBoard snapshot={{ groups, errors: [{ branch: "scripts/ledger-lookup.sh", message: "exit 127" }] }} onRefresh={() => {}} />);
+    expect(screen.getByText("台帳を読めません")).toBeTruthy();
+    expect(screen.getByTestId("ledger-error").textContent).toContain("exit 127");
+    expect(screen.getByTestId("ledger-col-UNREGISTERED").getAttribute("data-count")).toBe("1");
+  });
+
+  it("shows no error callout when there are no errors", () => {
+    render(<LedgerBoard snapshot={{ groups, errors: [] }} onRefresh={() => {}} />);
+    expect(screen.queryByText("台帳を読めません")).toBeNull();
   });
 });

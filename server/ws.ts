@@ -6,6 +6,9 @@ import type { Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
 import type { Session, SessionManager } from "./sessions.ts";
 
+/** 端末入力は小さなメッセージのみ。超過した接続だけを ws が 1009 で閉じる。 */
+export const MAX_WS_PAYLOAD_BYTES = 256 * 1024;
+
 function reject(socket: Duplex, status: number, text: string): void {
   socket.write(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\n\r\n`);
   socket.destroy();
@@ -16,6 +19,8 @@ function attachTerminal(sessions: SessionManager, session: Session, ws: WebSocke
   const backlog = session.ring.snapshot();
   if (backlog !== "") ws.send(backlog);
   session.clients.add(ws);
+  // 過大フレームなどのエラー: ws がこの接続だけを 1009 等で閉じる。ここで受けてプロセスを落とさない
+  ws.on("error", () => undefined);
   ws.on("message", (raw) => {
     let msg: { type?: string; data?: unknown; cols?: unknown; rows?: unknown };
     try {
@@ -30,9 +35,10 @@ function attachTerminal(sessions: SessionManager, session: Session, ws: WebSocke
 }
 
 export function attachWebSockets(server: Server, deps: { config: Config; auth: Auth; sessions: SessionManager; hub: Hub }): void {
-  const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
   server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     socket.on("error", () => socket.destroy());
+    if (!deps.auth.isHostAllowed(req.headers.host)) return reject(socket, 421, "Misdirected Request");
     const url = new URL(req.url ?? "/", `http://127.0.0.1:${deps.config.port}`);
     if (!deps.auth.isTokenValid(url, req.headers.authorization)) return reject(socket, 401, "Unauthorized");
     if (!deps.auth.isOriginAllowed(req.headers.origin)) return reject(socket, 403, "Forbidden");

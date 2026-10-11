@@ -32,6 +32,13 @@ describe("NewSessionForm", () => {
 
   it("shows a server error", () => {
     render(<NewSessionForm roles={roles} busy={false} error="boom" onSubmit={() => {}} />);
-    expect(screen.getByText("boom")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("boom");
+    expect(screen.getByText("作成に失敗しました")).toBeTruthy();
+  });
+
+  it("takes the branch placeholder from the dictionary", () => {
+    render(<NewSessionForm roles={roles} busy={false} error={null} onSubmit={() => {}} />);
+    fireEvent.change(screen.getByLabelText("役割", { exact: false }), { target: { value: "sonnet-impl" } });
+    expect(screen.getByLabelText("ブランチ名", { exact: false }).getAttribute("placeholder")).toBe("release/topic");
   });
 });

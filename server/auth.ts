@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 export interface Auth {
   isTokenValid(url: URL, authorization: string | undefined): boolean;
   isOriginAllowed(origin: string | undefined): boolean;
+  isHostAllowed(host: string | undefined): boolean;
 }
 
 function safeEqual(a: string, b: string): boolean {
@@ -13,6 +14,7 @@ function safeEqual(a: string, b: string): boolean {
 
 export function createAuth(token: string, port: number): Auth {
   const ownOrigin = `http://127.0.0.1:${port}`;
+  const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
   return {
     isTokenValid(url, authorization) {
       const fromQuery = url.searchParams.get("t");
@@ -22,6 +24,10 @@ export function createAuth(token: string, port: number): Auth {
     },
     isOriginAllowed(origin) {
       return origin === ownOrigin;
+    },
+    // DNS リバインディング対策: Host が自分自身の待受先以外なら拒否
+    isHostAllowed(host) {
+      return host !== undefined && allowedHosts.has(host.toLowerCase());
     },
   };
 }

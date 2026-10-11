@@ -1,4 +1,4 @@
-import type { ConsoleState, LedgerGroups } from "./types";
+import type { ConsoleState, LedgerSnapshot } from "./types";
 
 export const token = new URLSearchParams(window.location.search).get("t") ?? "";
 
@@ -13,8 +13,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const fetchState = (): Promise<ConsoleState> => request("/api/state");
-export const fetchLedger = (): Promise<LedgerGroups> => request("/api/ledger");
-export const refreshLedger = (): Promise<LedgerGroups> => request("/api/ledger/refresh", { method: "POST" });
+export const fetchLedger = (): Promise<LedgerSnapshot> => request("/api/ledger");
+export const refreshLedger = (): Promise<LedgerSnapshot> => request("/api/ledger/refresh", { method: "POST" });
+export const removeSession = (id: string): Promise<{ removed: boolean }> =>
+  request(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
 export const createSession = (input: { name: string; roleId: string; branch?: string }): Promise<{ id: string }> =>
   request("/api/sessions", { method: "POST", body: JSON.stringify(input) });
 

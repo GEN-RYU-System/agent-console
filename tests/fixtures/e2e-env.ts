@@ -50,7 +50,8 @@ export function prepareE2eEnv(): void {
   copyFileSync(path.join(here, "claude-stub.sh"), claudeBin);
   chmodSync(claudeBin, 0o755);
 
-  const roleCommand = "echo READY $(pwd); cat";
+  const roleScript = path.join(here, "role.mjs");
+  const marker = "agent-console-e2e-role";
   const config = {
     port: E2E_PORT,
     salesanchorRoot: root,
@@ -62,8 +63,9 @@ export function prepareE2eEnv(): void {
     ledgerPollMs: 60000,
     ringBufferBytes: 1048576,
     roles: [
-      { id: "e2e-plain", labelKey: "role.shell", command: ["/bin/sh", "-c", roleCommand, "agent-console-e2e-role"], needsWorktree: false },
-      { id: "e2e-wt", labelKey: "role.sonnetImpl", command: ["/bin/sh", "-c", roleCommand, "agent-console-e2e-role"], needsWorktree: true },
+      { id: "e2e-plain", labelKey: "role.shell", command: [process.execPath, roleScript, marker], needsWorktree: false },
+      { id: "e2e-wt", labelKey: "role.sonnetImpl", command: [process.execPath, roleScript, marker], needsWorktree: true },
+      { id: "e2e-short", labelKey: "role.shell", command: [process.execPath, "-e", "console.log('bye')", marker], needsWorktree: false },
     ],
   };
   const configFile = path.join(base, "config.json");

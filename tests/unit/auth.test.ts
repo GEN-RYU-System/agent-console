@@ -28,4 +28,14 @@ describe("auth", () => {
     expect(auth.isOriginAllowed("http://localhost:4319")).toBe(false);
     expect(auth.isOriginAllowed(undefined)).toBe(false);
   });
+
+  it("allows only 127.0.0.1:<port> and localhost:<port> as Host", () => {
+    expect(auth.isHostAllowed("127.0.0.1:4319")).toBe(true);
+    expect(auth.isHostAllowed("localhost:4319")).toBe(true);
+    expect(auth.isHostAllowed("LOCALHOST:4319")).toBe(true);
+    expect(auth.isHostAllowed("evil.example:4319")).toBe(false);
+    expect(auth.isHostAllowed("127.0.0.1:9999")).toBe(false);
+    expect(auth.isHostAllowed("127.0.0.1")).toBe(false);
+    expect(auth.isHostAllowed(undefined)).toBe(false);
+  });
 });

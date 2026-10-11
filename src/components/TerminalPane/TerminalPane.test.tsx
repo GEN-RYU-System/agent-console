@@ -3,6 +3,7 @@ import { render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const disposeTerm = vi.fn();
+let lastTerm: { options: Record<string, unknown> } | null = null;
 const closeWs = vi.fn();
 
 vi.mock("@xterm/xterm", () => ({
@@ -12,8 +13,12 @@ vi.mock("@xterm/xterm", () => ({
     loadAddon = vi.fn();
     open = vi.fn();
     write = vi.fn();
+    options: Record<string, unknown> = {};
     onData = vi.fn(() => ({ dispose: vi.fn() }));
     dispose = disposeTerm;
+    constructor() {
+      lastTerm = this;
+    }
   },
 }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit = vi.fn(); } }));
@@ -48,5 +53,15 @@ describe("TerminalPane", () => {
     const { rerender } = render(<TerminalPane sessionId="a" />);
     rerender(<TerminalPane sessionId="b" />);
     expect(disposeTerm).toHaveBeenCalledOnce();
+  });
+
+  it("re-reads the theme from the tokens when the html class changes (dark toggle)", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    render(<TerminalPane sessionId="a" />);
+    document.documentElement.style.setProperty("--bg-surface", "dark-bg");
+    document.documentElement.classList.add("force-dark");
+    await vi.waitFor(() => expect((lastTerm?.options.theme as { background: string } | undefined)?.background).toBe("dark-bg"));
+    document.documentElement.classList.remove("force-dark");
+    document.documentElement.style.removeProperty("--bg-surface");
   });
 });
