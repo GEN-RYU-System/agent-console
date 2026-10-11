@@ -9,7 +9,7 @@ PO 承認（2026-10-12）: (1) 名前をダブルクリックで変えられる�
 
 ## 依頼文との相違（先に）
 - 【事実】依頼文の「SessionSummary」という型は無い。型名は `SessionView`（サーバー `server/hub.ts:10`、画面 `src/types.ts:3`）。
-- 【事実】`src/locales/en.json` は存在しない。`src/locales/` は `ja.json` のみ（`ls src/locales` → `ja.json`）。
+- 【事実】src/locales/en.json は存在しない。src/locales/ は `src/locales/ja.json` のみ（ls src/locales の結果は ja.json のみ）。
 - 【事実】hub の取得間隔に「定数」は無い。設定値 `agentsPollMs`（`agent-console.config.json:8` = 3000）。画面側の定数は `LEDGER_POLL_MS`・`RECONNECT_MS`・`RENAME_CONFIRM_MS`。
 - 【事実】`.sa-cache` は gitignore（`.gitignore:3`）のため新 worktree には無い。(h) は `/Users/tanizawashingo/agent-console/.sa-cache/`（SOURCE = 6c1c5e82418e3ba38c10702f2a74161fd24a7e80）を読んだ。
 
@@ -71,7 +71,7 @@ inputVerdict `server/agents.ts:66-88`
 AgentStatus は `server/agents.ts:6: "busy" | "waiting" | "idle" | "unknown"`、`waitingFor?: string` は `:13`（空文字は undefined に正規化 `:47`）。
 
 【事実】`SessionState` の idle でも `waitingFor` があると `canInput` は false（state と canInput は 1 対 1 ではない）。
-【事実】Claude が動いていないシェル（no-claude）は canInput true（`agents.ts:84`）。
+【事実】Claude が動いていないシェル（no-claude）は canInput true（`server/agents.ts:84`）。
 
 ## (b) rename API
 
@@ -145,7 +145,7 @@ AgentStatus は `server/agents.ts:6: "busy" | "waiting" | "idle" | "unknown"`、
 ```
 画面 `src/types.ts:3-15`（フィールド同一: id, name, roleId, branch, cwd, state, createdAt, unread, hasClaude, canInput。`:12` のコメント「Claude 起動中は idle のときだけ」）。`ConsoleState` `src/types.ts:23-32`。`SessionState` は画面側にも同一の union（`src/types.ts:1`）。
 受信 `src/pages/ConsolePage.tsx:54-55`: WebSocket `/ws/events` の `JSON.parse` を `{ sessions: SessionView[]; agentsAvailable: boolean }` として `setState((prev) => ({...prev, ...snap}))`（実行時の検証は無い）。
-【事実】予約の有無を画面に出すには SessionView に項目を足す必要がある（現状に項目なし）。足すと型が server/hub.ts と src/types.ts の 2 か所、ならびに SessionView を手書きしているテスト（`SessionList.test.tsx:10-11`、`RenameForm.test.tsx:8`、`ConsolePage.test.tsx:8,173,230`）に波及する。項目を任意（`?`）にすれば既存テストは変えずに済む【推測】。
+【事実】予約の有無を画面に出すには SessionView に項目を足す必要がある（現状に項目なし）。足すと型が server/hub.ts と src/types.ts の 2 か所、ならびに SessionView を手書きしているテスト（`src/components/SessionList/SessionList.test.tsx:10-11`、`src/components/RenameForm/RenameForm.test.tsx:8`、`src/pages/ConsolePage.test.tsx:8,173,230`）に波及する。項目を任意（`?`）にすれば既存テストは変えずに済む【推測】。
 
 ## (e) 画面側
 
@@ -160,7 +160,7 @@ SessionList `src/components/SessionList/SessionList.tsx:32-84`
 68:              onClick={() => onRename(s.id)}
 ```
 Props（`:11-18`）: `onSelect, onRemove, onRename: (id: string) => void`。名前は `<Button>` 内の `<span data-testid="session-name">`。ダブルクリック先の名前 span は選択ボタン（`onClick=onSelect`）の子なので、dblclick は先に click が 2 回 onSelect を呼ぶ【事実: DOM の click→click→dblclick の順は標準仕様。コードの onSelect は `ConsolePage` の handleSelect】。
-鉛筆は `disabled={!s.canInput}` で、作業中は押せない（`SessionList.test.tsx:53-56`）。予約を許すなら、この disabled 条件の扱いが変わる。
+鉛筆は `disabled={!s.canInput}` で、作業中は押せない（`src/components/SessionList/SessionList.test.tsx:53-56`）。予約を許すなら、この disabled 条件の扱いが変わる。
 
 SessionList.test.tsx（`src/components/SessionList/SessionList.test.tsx`、105 行、8 件）で rename を見るもの:
 - `:53-56` 作業中は鉛筆が disabled
@@ -218,7 +218,7 @@ ConsolePage.test.tsx は `renameSession` を vi.fn で差し替え（`:24,47,96`
 
 ## (f) i18n
 
-【事実】`ja.json` のみ。`en.json` は無い（CLAUDE.md 系の「ja/en 同一キー」規約があっても、このリポジトリには en が無い。【未確認】他の場所で en を持つ決定があるか）。
+【事実】`src/locales/ja.json` のみ。en.json は無い（CLAUDE.md 系の「ja/en 同一キー」規約があっても、このリポジトリには en が無い。【未確認】他の場所で en を持つ決定があるか）。
 `src/locales/ja.json:74-87` ac.rename.* 全件
 ```
 "rename": {
@@ -236,7 +236,7 @@ ConsolePage.test.tsx は `renameSession` を vi.fn で差し替え（`:24,47,96`
   "notReflectedBody": "/rename を送りましたが、Claude 側の名前が 10 秒たっても変わっていません。端末を確認してください。"
 }
 ```
-関連: `ja.json:44 "removeSession": "一覧から外す"`、`ja.json:73`（直前）`"notifyHelp"`。
+関連: `src/locales/ja.json:44` "removeSession": "一覧から外す"`、`src/locales/ja.json:73`（直前）`"notifyHelp"`。
 【事実】`hintClaude`（「待機のときだけ」）と `busyTitle/busyBody`（「作業中は変えられません」）は、予約を許すと文言が事実と食い違う。
 
 ## (g) 関係する試験
@@ -278,7 +278,7 @@ rename を見ている試験の一覧（`grep -rn "rename\|名前を変える\|c
 【事実】`onDoubleClick` は `ButtonHTMLAttributes` に含まれ、型で禁止されておらず（除外は ownProps・className・style のみ）、`...rest` が `<button>` に展開されるため受け渡される。
 【事実】`disabled` な button では、ブラウザは click 系イベントを発火しない（【未確認】dblclick の扱いはブラウザ依存。試験で確認が必要）。
 入力欄の金型: `.sa-cache/frontend/src/components/TextField.tsx` に `TextField`（label 付き）と `TextFieldControl`（裸の input、forwardRef、`variant`/`size` を受ける `:44-62`）がある。行内編集に使うなら `TextFieldControl` が候補【推測】。
-governance スクリプト `scripts/check-design-governance.mjs:136` は `src/pages/**/*.tsx` の生 `<button|input|select|textarea|a` を禁止。SessionList は `src/components/` なので対象外だが、ADR-144 §1（生 `<input>` 禁止、TextField を使う）の原則は同じ。
+governance スクリプト `scripts/check-design-governance.mjs:136` は src/pages 配下の tsx の生 `<button|input|select|textarea|a` を禁止。SessionList は `src/components/` なので対象外だが、ADR-144 §1（生 `<input>` 禁止、TextField を使う）の原則は同じ。
 
 ## (i) バージョンと CHANGELOG
 
@@ -296,18 +296,18 @@ governance スクリプト `scripts/check-design-governance.mjs:136` は `src/pa
 `docs/handoff/stage2/design.md:93,95`（リスク表）
 - `:93` `/rename` を Claude が受け付けない状態で送る → 「要求時に取り直した status が idle（waitingFor 無し）のときだけ有効。送信後 10 秒で name が変わらなければ画面に「反映されていません」」
 - `:95` 既知の制約（受容）: 「状態確認（send-check）の応答後〜貼付の間（ミリ秒〜通信 1 往復）に Claude が busy になっても、貼付は WebSocket の人の入力経路なのでサーバー側では止められない（review-stage2-r2 N2）」。窓を小さく保つ対処あり。`:96`「Claude が起動途中で `claude agents` に載る前のシェル、Claude 終了直後のシェルには入力できる」も受容済み。
-【事実】予約の自動送信は「人がボタンを押したときのみ」（`design.md:37`）の前提を変える。人の操作の後で、サーバーが判定と書き込みを自分で行う経路になる。判定（checkInput）と書き込み（`sessions.write`）の間の時間差は、`http.ts:217-221` が同一リクエスト内で連続して行う現状でも `await` を 1 回挟む（fetchAgents の完了〜write）。自動送信でも同じ形で、時間差の大きさは現状と同等【推測】。
+【事実】予約の自動送信は「人がボタンを押したときのみ」（`docs/handoff/stage2/design.md:37`）の前提を変える。人の操作の後で、サーバーが判定と書き込みを自分で行う経路になる。判定（checkInput）と書き込み（`sessions.write`）の間の時間差は、`server/http.ts:217-221` が同一リクエスト内で連続して行う現状でも `await` を 1 回挟む（fetchAgents の完了〜write）。自動送信でも同じ形で、時間差の大きさは現状と同等【推測】。
 
 ADR-067 / ADR-144（SA 側。このリポジトリには無い）
 - 本リポジトリでの扱い: 各 handoff の design.md 冒頭に「対象ADR: ADR-067, ADR-144」（例 `docs/handoff/v0.3.6-compact-session-card/design.md:5`、`docs/handoff/v0.3.3-resume-picker/design.md:5`）。強制は `scripts/check-design-governance.mjs:1-2`（ADR-067 / ADR-144 の検査、違反は file:line で exit 1）、`npm run lint`（`package.json` scripts.lint）。
 - ADR-144（`/Users/tanizawashingo/salesanchor/docs/adr/ADR-144-ui-component-governance.md:31-47`）: pages 配下は金型優先。生 `<select>` / 生 `<input type=text|search|省略>` / 自作タブ / 色直値は禁止。例外口は `{/* ui-allow: <理由> (#<課題番号>) */}`（理由と番号の両方必須）。金型が無いときは PO 許可を得てから新設（`:59-64`）。
-- ADR-067（`ADR-067-design-token-enforcement.md`）: 色・寸法はトークン。許可される例外は %・@media・calc 内の var・opacity 0/1・min-width 0（`scripts/check-design-governance.mjs:2` の記述）。
+- ADR-067（`/Users/tanizawashingo/salesanchor/docs/adr/ADR-067-design-token-enforcement.md`）: 色・寸法はトークン。許可される例外は %・@media・calc 内の var・opacity 0/1・min-width 0（`scripts/check-design-governance.mjs:2` の記述）。
 - 【事実】SessionList.css は `var(--space-*)`・`var(--border)` などのトークンのみ（`src/components/SessionList/SessionList.css:1-30`）。行内編集の入力欄も金型 `TextFieldControl` ＋トークンで作る必要がある。
 
 ## 設計に効く事実のまとめ（判断は design.md で）
-1. 取得は 3 秒ごと（`agentsPollMs`）。予約の発火は「定期取得で state が idle かつ waitingFor 無し（= canInput）になった時点」を観測して行うのが既存の入口（`hub.ts:81-86` の pollAgents 直後）。ただし送信前の判定は既存どおり `checkInput` で取り直せる（`hub.ts:109-114`）。
-2. 予約の保存場所は現状無い。メモリだけなら tracker と同様に `onRemoved`（`hub.ts:52`）で掃除でき、exited には掃除のフックが無い。サーバー再起動で消える（tracker もメモリのみ `notify.ts`）。
-3. 鉛筆の disabled（`SessionList.tsx:67`）、RenameForm の blocked（`RenameForm.tsx:20,37,46`）、e2e の toBeDisabled（`console.spec.ts:466,473`）、ja.json の文言（hintClaude / busyTitle / busyBody）は、作業中でも入力できる設計にすると全部が影響を受ける。
-4. ダブルクリック先の名前 span は選択ボタンの内側（`SessionList.tsx:40-49`）。Button は onDoubleClick を通せる（§h）が、click ×2 が先に onSelect を呼ぶ。名前の編集中は入力欄を Button の外に出す必要がある（button 内に input は置けない）【推測】。
-5. 状態不明（`agents === null`、`stateForSession` = unknown、`inputVerdict` = `claude state is unknown`）のときも予約の対象にする、という PO 承認は、`hasClaude` が false のまま ok=false になる場合（`agents.ts:82`）があり、「Claude 無しシェルの app 名変更」との区別がつかない。予約の送り先（/rename かアプリ名か）は発火時の `hasClaude` で決める必要がある【推測】。
+1. 取得は 3 秒ごと（`agentsPollMs`）。予約の発火は「定期取得で state が idle かつ waitingFor 無し（= canInput）になった時点」を観測して行うのが既存の入口（`server/hub.ts:81-86` の pollAgents 直後）。ただし送信前の判定は既存どおり `checkInput` で取り直せる（`server/hub.ts:109-114`）。
+2. 予約の保存場所は現状無い。メモリだけなら tracker と同様に `onRemoved`（`server/hub.ts:52`）で掃除でき、exited には掃除のフックが無い。サーバー再起動で消える（tracker もメモリのみ `server/notify.ts`）。
+3. 鉛筆の disabled（`src/components/SessionList/SessionList.tsx:67`）、RenameForm の blocked（`src/components/RenameForm/RenameForm.tsx:20,37,46`）、e2e の toBeDisabled（`tests/e2e/console.spec.ts:466,473`）、ja.json の文言（hintClaude / busyTitle / busyBody）は、作業中でも入力できる設計にすると全部が影響を受ける。
+4. ダブルクリック先の名前 span は選択ボタンの内側（`src/components/SessionList/SessionList.tsx:40-49`）。Button は onDoubleClick を通せる（§h）が、click ×2 が先に onSelect を呼ぶ。名前の編集中は入力欄を Button の外に出す必要がある（button 内に input は置けない）【推測】。
+5. 状態不明（`agents === null`、`stateForSession` = unknown、`inputVerdict` = `claude state is unknown`）のときも予約の対象にする、という PO 承認は、`hasClaude` が false のまま ok=false になる場合（`server/agents.ts:82`）があり、「Claude 無しシェルの app 名変更」との区別がつかない。予約の送り先（/rename かアプリ名か）は発火時の `hasClaude` で決める必要がある【推測】。
 6. 予約中に Claude 側の名前が別途変わる・ユーザーが再度名前を変える・セッションが stopped / 除外されるときの扱いは現状に規定が無い（【未確認】要設計）。
