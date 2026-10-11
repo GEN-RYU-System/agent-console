@@ -28,6 +28,8 @@ export interface Harness {
   server: Server;
   secretPath: string;
   clock: Clock;
+  /** 期限切れセッションの WebSocket を閉じる処理を、時計を進めた後に手動で実行する。 */
+  sweep: () => void;
   close: () => Promise<void>;
 }
 
@@ -92,7 +94,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const server = createServer(
     createRequestHandler({ config, auth, sessions, hub, staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT } }),
   );
-  attachWebSockets(server, { config, auth, sessions, hub });
+  const controls = attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
   return {
     port,
@@ -103,6 +105,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     server,
     secretPath,
     clock,
+    sweep: () => controls.sweep(),
     close: async () => {
       sessions.killAll();
       server.closeAllConnections();

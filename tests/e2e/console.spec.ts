@@ -292,6 +292,31 @@ test("別のタブ（別の sessionStorage）にはセッションが共有さ�
   await expect(other.getByRole("alert")).toContainText("ログインが必要です");
 });
 
+test("CSP: 画面・端末・モーダルの操作で CSP 違反が 1 件も出ない（応答にも CSP ヘッダがある）", async ({ page }) => {
+  const violations: string[] = [];
+  page.on("console", (msg) => {
+    if (/content security policy/i.test(msg.text())) violations.push(msg.text());
+  });
+  page.on("pageerror", (err) => {
+    if (/content security policy/i.test(err.message)) violations.push(err.message);
+  });
+  await page.addInitScript(() => {
+    document.addEventListener("securitypolicyviolation", (e) => console.error(`Content Security Policy violation: ${e.violatedDirective} ${e.blockedURI}`));
+  });
+  const response = await page.goto(`${BASE}/pair?code=${await newPairingCode()}`);
+  expect(response?.headers()["content-security-policy"]).toContain("default-src 'self'");
+  expect(response?.headers()["referrer-policy"]).toBe("no-referrer");
+  expect(response?.headers()["x-content-type-options"]).toBe("nosniff");
+  await expect(page.getByRole("button", { name: "新しいセッション", exact: true })).toBeVisible();
+  // モーダル（SA 金型）と端末（xterm の style 要素・インライン style）を実際に使う
+  await createViaUi(page, "csp-session", "e2e-plain");
+  await expect(page.getByTestId("terminal")).toContainText("READY");
+  await page.getByTestId("terminal").click();
+  await page.keyboard.type("csp-check");
+  await expect(page.getByTestId("terminal")).toContainText("csp-check");
+  expect(violations).toEqual([]);
+});
+
 test("/healthz は認証なしで ok を返す", async () => {
   const res = await fetch(`${BASE}/healthz`);
   expect(res.status).toBe(200);

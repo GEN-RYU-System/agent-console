@@ -128,13 +128,54 @@ describe("pairing codes", () => {
   });
 });
 
+describe("pending challenge limit", () => {
+  it("refuses new challenges when 64 are pending, without evicting the older ones", () => {
+    const { auth, clock } = makeAuth();
+    const first = auth.issueChallenge(CNONCE) as { snonce: string };
+    for (let i = 1; i < 64; i++) expect(typeof auth.issueChallenge(CNONCE)).toBe("object");
+    expect(auth.issueChallenge(CNONCE)).toBe("busy");
+    // 最初のチャレンジは押し出されておらず、まだ使える
+    expect(typeof auth.redeemChallenge({ cnonce: CNONCE, snonce: first.snonce, proof: clientProof(SECRET, CNONCE, first.snonce) })).toBe("string");
+    // 1 つ空いたら受け付ける。期限が切れれば全部空く
+    expect(typeof auth.issueChallenge(CNONCE)).toBe("object");
+    clock.t += CHALLENGE_TTL_MS + 1;
+    expect(typeof auth.issueChallenge(CNONCE)).toBe("object");
+  });
+});
+
+describe("session helpers for WebSocket lifetime", () => {
+  it("sessionTokenOf returns the session token (not the secret) from Bearer or subprotocol", () => {
+    const { auth } = makeAuth();
+    const token = newSession(auth);
+    expect(auth.sessionTokenOf({ authorization: `Bearer ${token}` })).toBe(token);
+    expect(auth.sessionTokenOf({ protocols: [`ac.${token}`] })).toBe(token);
+    expect(auth.sessionTokenOf({ authorization: `Bearer ${SECRET}` })).toBeNull();
+    expect(auth.sessionTokenOf({ authorization: "Bearer nope" })).toBeNull();
+  });
+
+  it("isSessionValid follows expiry and revocation, and revocation notifies listeners", () => {
+    const { auth, clock } = makeAuth();
+    const revoked: string[] = [];
+    auth.onSessionRevoked((t) => revoked.push(t));
+    const a = newSession(auth);
+    const b = newSession(auth);
+    expect(auth.isSessionValid(a)).toBe(true);
+    auth.revokeSession(a);
+    expect(auth.isSessionValid(a)).toBe(false);
+    expect(revoked).toEqual([a]);
+    clock.t += SESSION_MAX_MS + 1;
+    expect(auth.isSessionValid(b)).toBe(false);
+  });
+});
+
 describe("mutual authentication (challenge / proof)", () => {
   it("returns the server proof HMAC(secret, server|cnonce|snonce) so the client can verify the server", () => {
     const { auth } = makeAuth();
     const c = auth.issueChallenge(CNONCE);
-    expect(c).not.toBeNull();
-    expect(c?.snonce).toMatch(/^[0-9a-f]{64}$/);
-    expect(c?.proof).toBe(serverProof(SECRET, CNONCE, c?.snonce as string));
+    expect(typeof c).toBe("object");
+    const ch = c as { snonce: string; proof: string };
+    expect(ch.snonce).toMatch(/^[0-9a-f]{64}$/);
+    expect(ch.proof).toBe(serverProof(SECRET, CNONCE, ch.snonce));
   });
 
   it("accepts the client proof once, then issues a pairing code that redeems once", () => {
@@ -170,7 +211,7 @@ describe("mutual authentication (challenge / proof)", () => {
 
   it("rejects malformed cnonce / snonce / proof input", () => {
     const { auth } = makeAuth();
-    for (const bad of ["", "xyz", "g".repeat(32), "a".repeat(8), "a".repeat(500)]) expect(auth.issueChallenge(bad)).toBeNull();
+    for (const bad of ["", "xyz", "g".repeat(32), "a".repeat(8), "a".repeat(500)]) expect(auth.issueChallenge(bad)).toBe("invalid");
     expect(auth.redeemChallenge({ cnonce: CNONCE, snonce: "nope", proof: "x" })).toBeNull();
   });
 

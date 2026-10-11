@@ -115,3 +115,13 @@
 - 原因: `ac_mtime` が `stat -f %m "$1"`（BSD の書き方）を先に試していた。GNU stat では `-f` は「ファイルシステムの状態を表示」（GNU coreutils マニュアル stat-invocation: 「`-f`/`--file-system`: Report information about the file systems where the given files are located.」）で、`%m` はファイルではなくファイルシステムの書式として扱われ、複数行（`File: …`）を出力して終了コード 0 になる。その出力が算術式に入り、`File:` が未定義変数として `set -u` に引っかかった。macOS の stat では `-f %m` が最終更新のエポック秒（`man stat`: `-f format`）なので、ローカルでは通っていた。
 - 対処: GNU 形式を先に試す。`stat -c %Y`（GNU: 「`%Y`: Time of last data modification as seconds since Epoch」）。macOS では `stat -c` は `stat: illegal option -- c` で失敗する（この Mac で実測）ので、次の `stat -f %m` に落ちる。出力が数字だけでなければ失敗にし、呼び出し側は「作成時刻を取得できない場合は回収しない」（安全側）。`find -mmin` も BSD の `man find` に有る（macOS）が、GNU 側をこの環境で確認できないため、両 OS で挙動を確認できた stat の順序入替えを採用した。
 - テスト: GNU 風スタブ（`-c %Y` は秒、`-f` は複数行を出して成功）と BSD 風スタブ（`-c` は失敗、`-f %m` は秒）の両方で正しい秒が返ること、使えない出力のときは失敗（回収しない）、実ディレクトリの更新時刻が数字で返ること。
+
+## 修正ラウンド2（再点検 N1・N2・N5）
+
+- N1: `/api/pair/challenge`・`/api/pair`・`/api/pair/redeem` は、Origin ヘッダが付いていて自分以外（`null` や localhost 含む）なら 403（launcher の curl は Origin を付けない）。Content-Type は `application/json`（`; charset=` は可）以外なら 415（no-cors の text/plain 送信を弾く）。保留チャレンジが 64 件に達したら新規を 429（`Retry-After: 30`）で拒否し、古いチャレンジは押し出さない（launcher の snonce が妨害されない）。テスト: auth 単体と統合（64 件で 429・最初のチャレンジでペアリングできる・期限後に回復）。
+- N2: セッション認証した WebSocket（events・term）をトークンごとに追跡。ログアウトで該当セッションの接続をサーバー側で閉じる（close コード 1008）。期限切れ（12 時間）は 30 秒ごとの `sweep`（`isSessionValid`）で閉じる。サーバー秘密の Bearer（CLI）の接続は対象外。別セッションの接続は影響を受けない。テスト: 統合（ログアウトで 1008、別セッションは開いたまま、期限切れ＋sweep で 1008、有効なら何もしない）。
+- N5: すべての応答に `Referrer-Policy: no-referrer` と `X-Content-Type-Options: nosniff`（エラー・421・404・405 を含む。統合テストで 12 パターン）。HTML 応答にだけ `Content-Security-Policy: default-src 'self'; connect-src 'self' ws://127.0.0.1:<port>; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'`。
+  - `style-src 'unsafe-inline'` が必要な根拠: 無しで e2e の CSP 検査を実行すると、`Applying inline style violates the following Content Security Policy directive 'default-src 'self''` が多数出る（xterm の DOM レンダラが実行時に作る `<style>` 要素、React・SA 金型のインライン style）。生出力: `/tmp/CC報告ファイル/orca-selfbuilt/s15-r2-csp-without-style-src.txt`。
+  - `img-src data:` が必要な根拠: SA の Select が矢印を data: の SVG（CSS の背景）で描く。無しだと `Loading the image 'data:image/svg+xml,…' violates … 'img-src' was not explicitly set, so 'default-src' is used as a fallback`（e2e の CSP 検査で実測）。
+  - スクリプト・接続先は自分のオリジンのみ（`script-src` に unsafe-inline・unsafe-eval を許さない）。e2e「CSP: 画面・端末・モーダルの操作で CSP 違反が 1 件も出ない」で、ペアリング・モーダル・端末入出力まで通して違反 0 件を確認。
+- N3 は現状維持（`/healthz` は版とコミットのみ、認証不要）。

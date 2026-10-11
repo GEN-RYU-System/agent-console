@@ -11,7 +11,7 @@ import { createRequestHandler } from "./http.ts";
 import { resolveSecret } from "./secret.ts";
 import { SessionManager } from "./sessions.ts";
 import { readSaSource } from "./tokens.ts";
-import { attachWebSockets } from "./ws.ts";
+import { attachWebSockets, SESSION_SWEEP_MS } from "./ws.ts";
 
 const LISTEN_HOST = "127.0.0.1";
 const execFileAsync = promisify(execFile);
@@ -55,7 +55,9 @@ async function main(): Promise<void> {
   const meta = { saSource: await readSaSource(), claudeVersion: await fetchClaudeVersion(config.claudeBin), version: readVersion(), commit: await readCommit() };
 
   const server = createServer(createRequestHandler({ config, auth, sessions, hub, staticDir: path.join(process.cwd(), "dist"), meta }));
-  attachWebSockets(server, { config, auth, sessions, hub });
+  const controls = attachWebSockets(server, { config, auth, sessions, hub });
+  // 期限切れ（12 時間）になったセッションの WebSocket を閉じる
+  setInterval(() => controls.sweep(), SESSION_SWEEP_MS).unref();
 
   server.listen(config.port, LISTEN_HOST, () => {
     hub.start();

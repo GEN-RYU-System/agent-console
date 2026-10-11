@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { CHALLENGE_TTL_MS, PAIRING_TTL_MS, SESSION_MAX_MS } from "../../server/auth.ts";
 import { clientProof, serverProof } from "../../server/pair-proof.ts";
+import { contentSecurityPolicy } from "../../server/http.ts";
 import { COMMIT, startHarness, TOKEN, type Harness } from "./helpers/harness.ts";
 
 let h: Harness;
@@ -124,7 +125,7 @@ describe("mutual authentication endpoints", () => {
 
   it("POST /api/pair no longer accepts the secret as Bearer (abolished)", async () => {
     expect((await raw("/api/pair", { method: "POST", headers: bearer, body: "{}" })).status).toBe(401);
-    expect((await raw("/api/pair", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}` }, body: "" })).status).toBe(400);
+    expect((await raw("/api/pair", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}`, ...json }, body: "" })).status).toBe(400);
   });
 
   it("rejects a wrong client proof, and the snonce cannot be retried", async () => {
@@ -250,5 +251,152 @@ describe("/api/state", () => {
     const body = JSON.parse(res.body) as { appVersion: string; commit: string };
     expect(body.appVersion).toBe("9.9.9");
     expect(body.commit).toBe(COMMIT);
+  });
+});
+
+describe("pairing endpoints reject cross-site and non-JSON requests", () => {
+  const PAIRING_ENDPOINTS: Array<[string, unknown]> = [
+    ["/api/pair/challenge", { cnonce: CNONCE }],
+    ["/api/pair", { cnonce: CNONCE, snonce: "ee".repeat(32), proof: "00".repeat(32) }],
+    ["/api/pair/redeem", { code: "x" }],
+  ];
+
+  it.each(PAIRING_ENDPOINTS)("%s: a foreign or null Origin is 403 (launcher/curl sends no Origin)", async (target, body) => {
+    expect((await post(target, body, { ...json, Origin: "http://evil.example" })).status).toBe(403);
+    expect((await post(target, body, { ...json, Origin: "null" })).status).toBe(403);
+    expect((await post(target, body, { ...json, Origin: "http://localhost:" + h.port })).status).toBe(403);
+  });
+
+  it("an own Origin is accepted on challenge, and so is no Origin at all", async () => {
+    expect((await post("/api/pair/challenge", { cnonce: CNONCE }, { ...json, Origin: h.base })).status).toBe(200);
+    expect((await post("/api/pair/challenge", { cnonce: CNONCE })).status).toBe(200);
+  });
+
+  it.each(PAIRING_ENDPOINTS)("%s: Content-Type other than application/json is 415 (text/plain, form, missing)", async (target, body) => {
+    const send = (headers: Record<string, string>) => raw(target, { method: "POST", headers: { ...headers, Origin: h.base }, body: JSON.stringify(body) });
+    expect((await send({ "Content-Type": "text/plain" })).status).toBe(415);
+    expect((await send({ "Content-Type": "application/x-www-form-urlencoded" })).status).toBe(415);
+    expect((await send({})).status).toBe(415);
+  });
+
+  it("accepts application/json with a charset parameter", async () => {
+    const res = await raw("/api/pair/challenge", { method: "POST", headers: { "Content-Type": "application/json; charset=utf-8" }, body: JSON.stringify({ cnonce: CNONCE }) });
+    expect(res.status).toBe(200);
+  });
+
+  it("refuses new challenges with 429 when 64 are pending, keeps the older ones valid, and recovers after they expire", async () => {
+    const small = await startHarness();
+    try {
+      const send = (path: string, body: unknown) =>
+        new Promise<Raw>((resolve, reject) => {
+          const req = request({ host: "127.0.0.1", port: small.port, path, method: "POST", headers: json }, (res) => {
+            const chunks: Buffer[] = [];
+            res.on("data", (c: Buffer) => chunks.push(c));
+            res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8"), headers: res.headers }));
+          });
+          req.on("error", reject);
+          req.end(JSON.stringify(body));
+        });
+      const first = JSON.parse((await send("/api/pair/challenge", { cnonce: CNONCE })).body) as { snonce: string };
+      for (let i = 1; i < 64; i++) expect((await send("/api/pair/challenge", { cnonce: CNONCE })).status).toBe(200);
+      const refused = await send("/api/pair/challenge", { cnonce: CNONCE });
+      expect(refused.status).toBe(429);
+      expect(refused.headers["retry-after"]).toBe("30");
+      // 押し出されていない: 最初のチャレンジでペアリングできる
+      const paired = await send("/api/pair", { cnonce: CNONCE, snonce: first.snonce, proof: clientProof(TOKEN, CNONCE, first.snonce) });
+      expect(paired.status).toBe(200);
+      small.clock.advance(CHALLENGE_TTL_MS + 1000);
+      expect((await send("/api/pair/challenge", { cnonce: CNONCE })).status).toBe(200);
+    } finally {
+      await small.close();
+    }
+  }, 30000);
+});
+
+describe("open WebSockets end with their session", () => {
+  const openSocket = (headers: Record<string, string>, protocols: string[], path = "/ws/events"): Promise<WebSocket> =>
+    new Promise((resolve, reject) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${h.port}${path}`, protocols, { headers });
+      ws.on("open", () => resolve(ws));
+      ws.on("error", reject);
+    });
+  const closed = (ws: WebSocket): Promise<number> => new Promise((resolve) => ws.on("close", (code) => resolve(code)));
+
+  it("logout closes that session's open sockets (events and terminal) but not another session's", async () => {
+    const a = await sessionToken();
+    const b = await sessionToken();
+    const sessionId = (await h.sessions.create({ name: "ws-life", roleId: "echo" })).id;
+    const ev = await openSocket({ Origin: h.base }, [`ac.${a}`]);
+    const term = await openSocket({ Origin: h.base }, [`ac.${a}`], `/ws/term?session=${sessionId}`);
+    const other = await openSocket({ Origin: h.base }, [`ac.${b}`]);
+    const evClosed = closed(ev);
+    const termClosed = closed(term);
+    const res = await raw("/api/logout", { method: "POST", headers: { Authorization: `Bearer ${a}`, ...json, Origin: h.base } });
+    expect(res.status).toBe(200);
+    expect(await evClosed).toBe(1008);
+    expect(await termClosed).toBe(1008);
+    expect(other.readyState).toBe(WebSocket.OPEN);
+    other.close();
+  });
+
+  it("closes sockets of an expired session on the periodic sweep, and leaves secret-Bearer sockets alone", async () => {
+    const token = await sessionToken();
+    const session = await openSocket({ Origin: h.base }, [`ac.${token}`]);
+    const cli = await openSocket({ Origin: h.base, Authorization: `Bearer ${TOKEN}` }, []);
+    const sessionClosed = closed(session);
+    h.clock.advance(SESSION_MAX_MS + 1000);
+    h.sweep();
+    expect(await sessionClosed).toBe(1008);
+    expect(cli.readyState).toBe(WebSocket.OPEN);
+    cli.close();
+  });
+
+  it("sweep does nothing while the session is still valid", async () => {
+    const token = await sessionToken();
+    const ws = await openSocket({ Origin: h.base }, [`ac.${token}`]);
+    h.sweep();
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+    ws.close();
+  });
+});
+
+describe("security headers", () => {
+  const CSP = contentSecurityPolicy(0);
+
+  it("builds the CSP for the app's own origin only", () => {
+    expect(contentSecurityPolicy(4319)).toBe("default-src 'self'; connect-src 'self' ws://127.0.0.1:4319; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'");
+    expect(CSP).not.toContain("*");
+    expect(CSP).not.toContain("unsafe-eval");
+    expect(CSP).not.toMatch(/script-src[^;]*unsafe-inline/);
+  });
+
+  it("every response carries Referrer-Policy: no-referrer and X-Content-Type-Options: nosniff", async () => {
+    const targets: Array<[string, { method?: string; headers?: Record<string, string>; body?: string }]> = [
+      ["/", {}],
+      ["/pair?code=x", {}],
+      ["/healthz", {}],
+      ["/api/state", {}],
+      ["/api/state", { headers: bearer }],
+      ["/nope.json", {}],
+      ["/%E0%A4%A", {}],
+      ["/", { headers: { Host: "evil.example" } }],
+      ["/api/pair/challenge", { method: "POST", headers: json, body: JSON.stringify({ cnonce: CNONCE }) }],
+      ["/api/pair/challenge", { method: "POST", headers: { "Content-Type": "text/plain" }, body: "x" }],
+      ["/api/pair/redeem", { method: "POST", headers: { ...json, Origin: h.base }, body: JSON.stringify({ code: "bad" }) }],
+      ["/", { method: "DELETE" }],
+    ];
+    for (const [target, opts] of targets) {
+      const res = await raw(target, opts);
+      expect(res.headers["referrer-policy"], `${target} ${res.status}`).toBe("no-referrer");
+      expect(res.headers["x-content-type-options"], `${target} ${res.status}`).toBe("nosniff");
+    }
+  });
+
+  it("HTML responses carry the CSP for this port; JSON and other responses do not need one", async () => {
+    const csp = contentSecurityPolicy(h.port);
+    expect((await raw("/")).headers["content-security-policy"]).toBe(csp);
+    expect((await raw("/pair?code=x")).headers["content-security-policy"]).toBe(csp);
+    expect((await raw("/some/route")).headers["content-security-policy"]).toBe(csp);
+    expect((await raw("/healthz")).headers["content-security-policy"]).toBeUndefined();
   });
 });

@@ -6,6 +6,7 @@ const MIN_FIXED_TOKEN_LENGTH = 32;
 const FIXED_TOKEN_PATTERN = /^[A-Za-z0-9_-]+$/;
 const MAX_SESSIONS = 64;
 const MAX_PENDING_CODES = 64;
+const MAX_PENDING_CHALLENGES = 64;
 
 /** 起動アプリが発行するペアリングコードの有効期間。 */
 export const PAIRING_TTL_MS = 30_000;
@@ -53,19 +54,28 @@ export interface Challenge {
   proof: string;
 }
 
+/** issueChallenge の結果: 形式不正 / 保留が上限（古いものを押し出さずに拒否する） / 成功。 */
+export type ChallengeResult = Challenge | "invalid" | "busy";
+
 export interface Auth {
   /** サーバー秘密（Bearer）またはセッショントークン（Bearer / ac.<token> サブプロトコル）。どちらでもなければ null。 */
   authenticate(credentials: RequestCredentials): AuthMethod | null;
   isOriginAllowed(origin: string | undefined): boolean;
   isHostAllowed(host: string | undefined): boolean;
-  /** 相互認証 1/2: cnonce に対し snonce とサーバーの証明を返す。cnonce が不正なら null。 */
-  issueChallenge(cnonce: string): Challenge | null;
+  /** 相互認証 1/2: cnonce に対し snonce とサーバーの証明を返す。cnonce が不正なら "invalid"、保留が上限なら "busy"。 */
+  issueChallenge(cnonce: string): ChallengeResult;
   /** 相互認証 2/2: クライアントの証明が正しければペアリングコードを返す。snonce は成否にかかわらず消費される。 */
   redeemChallenge(input: { cnonce: string; snonce: string; proof: string }): string | null;
   issuePairingCode(ttlMs: number): string;
   /** コードを消費してセッショントークンを返す。無効・失効・再使用は null。 */
   consumePairingCode(code: string): string | null;
   revokeSession(token: string): boolean;
+  /** 要求が有効なセッション（Bearer か ac.<token> サブプロトコル）を示していれば、そのトークンを返す。秘密の Bearer は null。 */
+  sessionTokenOf(credentials: RequestCredentials): string | null;
+  /** セッションがまだ有効か（失効・期限切れなら false）。 */
+  isSessionValid(token: string): boolean;
+  /** セッションが失効（ログアウト）したときに呼ばれる。期限切れは isSessionValid の定期確認で検出する。 */
+  onSessionRevoked(listener: (token: string) => void): void;
   /** WebSocket の要求サブプロトコルから、有効なセッションの `ac.<token>` をそのまま返す（応答に同じ値を返すため）。 */
   sessionFromProtocols(protocols: readonly string[]): string | null;
 }
@@ -91,6 +101,7 @@ export function createAuth(secret: string, port: number, options: AuthOptions = 
   const codes = new Map<string, { digest: Buffer; expiresAt: number }>();
   const sessions = new Map<string, { digest: Buffer; expiresAt: number }>();
   const challenges = new Map<string, { cnonce: string; expiresAt: number }>();
+  const revokedListeners: Array<(token: string) => void> = [];
 
   const purge = (): void => {
     const t = now();
@@ -149,9 +160,10 @@ export function createAuth(secret: string, port: number, options: AuthOptions = 
       return host === ownHost;
     },
     issueChallenge(cnonce) {
-      if (!NONCE_PATTERN.test(cnonce)) return null;
+      if (!NONCE_PATTERN.test(cnonce)) return "invalid";
       purge();
-      dropOldest(challenges, MAX_PENDING_CODES);
+      // 上限に達したら新規を拒否する。古い（launcher が待っている）チャレンジを押し出して妨害されないようにする
+      if (challenges.size >= MAX_PENDING_CHALLENGES) return "busy";
       const snonce = randomBytes(TOKEN_BYTES).toString("hex");
       challenges.set(snonce, { cnonce, expiresAt: now() + CHALLENGE_TTL_MS });
       return { snonce, proof: serverProof(secret, cnonce, snonce) };
@@ -188,7 +200,26 @@ export function createAuth(secret: string, port: number, options: AuthOptions = 
       const key = sessionKey(token);
       if (key === null) return false;
       sessions.delete(key);
+      for (const listener of revokedListeners) listener(token);
       return true;
+    },
+    sessionTokenOf({ authorization, protocols }) {
+      if (authorization?.startsWith("Bearer ")) {
+        const presented = authorization.slice("Bearer ".length);
+        if (!safeEqualDigest(sha256(presented), secretDigest) && sessionKey(presented) !== null) return presented;
+      }
+      for (const protocol of protocols ?? []) {
+        if (!protocol.startsWith(SESSION_SUBPROTOCOL_PREFIX)) continue;
+        const token = protocol.slice(SESSION_SUBPROTOCOL_PREFIX.length);
+        if (sessionKey(token) !== null) return token;
+      }
+      return null;
+    },
+    isSessionValid(token) {
+      return sessionKey(token) !== null;
+    },
+    onSessionRevoked(listener) {
+      revokedListeners.push(listener);
     },
   };
 }
