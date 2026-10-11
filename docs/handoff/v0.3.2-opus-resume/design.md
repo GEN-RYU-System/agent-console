@@ -24,6 +24,7 @@
 ## 4. 仕組み
 - ccopusgo: `--high` の後に `--resume <id>` を受け付ける。id は `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`。依頼文との併用は拒否（終了コード 2）。claude の引数は配列で組み、既存の2分岐の引数順を変えない。`claude --help`（2.1.296）で `-r, --resume [value]` と `--append-system-prompt` の併用が可能なことを確認済み。なお同ヘルプの `--system-prompt-snapshot`（既定 on）により、再開時は会話に記録済みの起動指示がそのまま使われる。
 - agent-console: 役割の設定に `resumeScope: "main" | "worktree"` を追加（設定が正本）。opus-designer に `resumeScope: "main"` と `resumeCommand: ["/bin/zsh","-ic","ccopusgo --resume \"$AC_RESUME_ID\""]`、sonnet-impl に `resumeScope: "worktree"`。再開時は cwd の判定（classifyCwd の main / worktree）から、その scope を持つ役割を選ぶ（「resumeCommand を持つ最初の役割」をやめる＝段階2レビュー L8 の解消）。該当役割が無ければ従来どおり不可。
+- scope に対応する役割が設定に無い行は不可理由 noRole（設計者承認 2026-10-11）。
 - 判定 `main` は「不可」ではなく「本店（Opus 設計役で再開）」に意味を変える。running・outside・missing は従来どおり不可。
 - 一覧 API は各行に再開する役割 id（無ければ null）を返し、画面は役割のラベルを表示する。
 
