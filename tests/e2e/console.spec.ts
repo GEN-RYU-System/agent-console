@@ -10,7 +10,19 @@ import { E2E_PORT, E2E_TOKEN } from "../fixtures/e2e-env";
 const ROOT = process.env.AC_E2E_ROOT as string;
 const STATUS_FILE = process.env.AC_E2E_STATUS_FILE as string;
 const BASE = `http://127.0.0.1:${E2E_PORT}`;
-const PAGE_URL = `${BASE}/?t=${E2E_TOKEN}`;
+const BEARER = { Authorization: `Bearer ${E2E_TOKEN}` };
+
+/** サーバー秘密で 1 回限りコードを発行し、/pair?code= で入る（URL に長期秘密は載せない）。 */
+async function newPairingCode(): Promise<string> {
+  const res = await fetch(`${BASE}/api/pair`, { method: "POST", headers: BEARER });
+  expect(res.status).toBe(200);
+  return ((await res.json()) as { code: string }).code;
+}
+
+async function openPaired(page: Page): Promise<void> {
+  await page.goto(`${BASE}/pair?code=${await newPairingCode()}`);
+  await expect(page.getByRole("button", { name: "新しいセッション", exact: true })).toBeVisible();
+}
 
 const MAX_SERVER_RSS_MB = 150;
 const MAX_JS_HEAP_MB = 80;
@@ -50,7 +62,7 @@ const claudeJsonHashBefore = sha256OrNull(path.join(os.homedir(), ".claude.json"
 test.describe.configure({ mode: "serial" });
 
 test("K2: 新しいセッション -> ワークツリー作成 -> 役割コマンドが端末に出て入力できる", async ({ page }) => {
-  await page.goto(PAGE_URL);
+  await openPaired(page);
   await createViaUi(page, "wt-session", "e2e-wt", "release/e2e-one");
   const terminal = page.getByTestId("terminal");
   await expect(terminal).toContainText("READY");
@@ -64,7 +76,7 @@ test("K2: 新しいセッション -> ワークツリー作成 -> 役割コマ�
 });
 
 test("K2: 不正なブランチ名は作成されずエラーが画面に出る", async ({ page }) => {
-  await page.goto(PAGE_URL);
+  await openPaired(page);
   const form = await openForm(page);
   await form.getByLabel("名前", { exact: false }).fill("bad");
   await form.getByLabel("役割", { exact: false }).selectOption("e2e-wt");
@@ -75,7 +87,7 @@ test("K2: 不正なブランチ名は作成されずエラーが画面に出る"
 });
 
 test("K3: タブを開き直しても同じセッションの直近出力が戻る", async ({ page }) => {
-  await page.goto(PAGE_URL);
+  await openPaired(page);
   const row = page.getByTestId("session-row").first();
   await expect(row).toBeVisible();
   await page.reload();
@@ -86,7 +98,7 @@ test("K3: タブを開き直しても同じセッションの直近出力が戻�
 });
 
 test("K1: 一覧の状態が claude agents --json の status と 5 秒以内に一致する", async ({ page }) => {
-  await page.goto(PAGE_URL);
+  await openPaired(page);
   const state = page.getByTestId("session-row").first().getByTestId("status");
   writeFileSync(STATUS_FILE, "busy");
   await expect(state).toHaveAttribute("data-state", "working", { timeout: STATE_DEADLINE_MS });
@@ -111,7 +123,7 @@ test("K4: 台帳ボードの件数が ledger-lookup.sh で引いた値と一致�
     const column = ["IN_PROGRESS", "REVIEW", "DONE", "UNREGISTERED"].includes(state) ? state : "OTHER";
     expected[column] += 1;
   }
-  await page.goto(PAGE_URL);
+  await openPaired(page);
   await page.getByRole("button", { name: "更新", exact: true }).click();
   for (const [column, count] of Object.entries(expected)) {
     await expect(page.getByTestId(`ledger-col-${column}`)).toHaveAttribute("data-count", String(count));
@@ -122,7 +134,7 @@ test("K4: 台帳ボードの件数が ledger-lookup.sh で引いた値と一致�
 
 test("停止したセッションは「停止」と表示され、一覧から外せる", async ({ page }) => {
   await apiCreate("short-lived", "e2e-short");
-  await page.goto(PAGE_URL);
+  await openPaired(page);
   const row = page.getByTestId("session-row").filter({ hasText: "short-lived" });
   await expect(row.getByTestId("status")).toHaveAttribute("data-state", "stopped", { timeout: STATE_DEADLINE_MS });
   await expect(row.getByText("停止", { exact: true })).toBeVisible();
@@ -133,7 +145,7 @@ test("停止したセッションは「停止」と表示され、一覧から�
 });
 
 test("端末の文字間隔が正常（xterm の letter-spacing が 1px 未満）", async ({ page }) => {
-  await page.goto(PAGE_URL);
+  await openPaired(page);
   await page.getByTestId("session-row").first().click();
   await expect(page.getByTestId("terminal")).toContainText("READY");
   const spacing = await page.evaluate(() =>
@@ -145,14 +157,16 @@ test("端末の文字間隔が正常（xterm の letter-spacing が 1px 未満�
 test("K8: 不正トークンは 401、不正 Origin の WebSocket は 403、待受は 127.0.0.1 のみ", async () => {
   const bad = await fetch(`${BASE}/api/state?t=wrong`);
   expect(bad.status).toBe(401);
+  // ?t=（URL の秘密）は廃止: 正しい秘密を付けても 401
+  expect((await fetch(`${BASE}/api/state?t=${E2E_TOKEN}`)).status).toBe(401);
   const none = await fetch(`${BASE}/api/state`);
   expect(none.status).toBe(401);
   const ok = await fetch(`${BASE}/api/state`, { headers: { Authorization: `Bearer ${E2E_TOKEN}` } });
   expect(ok.status).toBe(200);
 
-  const wsStatus = (url: string, origin?: string): Promise<number> =>
+  const wsStatus = (url: string, origin?: string, extra: Record<string, string> = {}): Promise<number> =>
     new Promise((resolve) => {
-      const ws = new WebSocket(url, { headers: origin ? { Origin: origin } : {} });
+      const ws = new WebSocket(url, { headers: { ...(origin ? { Origin: origin } : {}), ...extra } });
       ws.on("unexpected-response", (_req, res) => resolve(res.statusCode ?? 0));
       ws.on("open", () => {
         ws.close();
@@ -161,10 +175,11 @@ test("K8: 不正トークンは 401、不正 Origin の WebSocket は 403、待�
       ws.on("error", () => undefined);
     });
   const wsBase = `ws://127.0.0.1:${E2E_PORT}/ws/events`;
-  expect(await wsStatus(`${wsBase}?t=wrong`, BASE)).toBe(401);
-  expect(await wsStatus(`${wsBase}?t=${E2E_TOKEN}`, "http://evil.example")).toBe(403);
-  expect(await wsStatus(`${wsBase}?t=${E2E_TOKEN}`)).toBe(403);
-  expect(await wsStatus(`${wsBase}?t=${E2E_TOKEN}`, BASE)).toBe(101);
+  expect(await wsStatus(wsBase, BASE, { Authorization: "Bearer wrong" })).toBe(401);
+  expect(await wsStatus(`${wsBase}?t=${E2E_TOKEN}`, BASE)).toBe(401);
+  expect(await wsStatus(wsBase, "http://evil.example", BEARER)).toBe(403);
+  expect(await wsStatus(wsBase, undefined, BEARER)).toBe(403);
+  expect(await wsStatus(wsBase, BASE, BEARER)).toBe(101);
 
   const listeners = execFileSync("lsof", ["-nP", `-iTCP:${E2E_PORT}`, "-sTCP:LISTEN"], { encoding: "utf8" });
   const addresses = listeners.split("\n").slice(1).filter(Boolean).map((l) => l.split(/\s+/).slice(-2)[0]);
@@ -177,7 +192,7 @@ test("K7: ダミーセッション 3 本で サーバー RSS <= 150MB かつ ブ
   const need = Math.max(0, 3 - (existing as { sessions: unknown[] }).sessions.length);
   for (let i = 0; i < need; i++) await apiCreate(`mem-${i}`, "e2e-plain");
 
-  await page.goto(PAGE_URL);
+  await openPaired(page);
   await expect(page.getByTestId("session-row")).toHaveCount(3);
   await page.getByTestId("session-row").nth(2).click();
   await expect(page.getByTestId("terminal")).toContainText("READY");
@@ -204,8 +219,52 @@ test("K5: テスト前後で ~/.claude/settings.json と ~/.claude.json のハ�
 });
 
 test("フッターに Sales Anchor 展開元 SHA と claude --version が出る", async ({ page }) => {
-  await page.goto(PAGE_URL);
+  await openPaired(page);
   const sha = readFileSync(path.join(process.cwd(), ".sa-cache", "SOURCE"), "utf8").trim();
   await expect(page.getByTestId("sa-source")).toContainText(sha.slice(0, 12));
   await expect(page.getByTestId("claude-version")).toContainText("0.0.0-stub");
+  const { version } = JSON.parse(readFileSync(path.join(process.cwd(), "package.json"), "utf8")) as { version: string };
+  await expect(page.getByTestId("app-version")).toContainText(version);
+});
+
+test("ペアリング: /pair?code で一覧が開き、URL に秘密もコードも残らず、Cookie は HttpOnly・SameSite=Strict・Path=/", async ({ page, context }) => {
+  const code = await newPairingCode();
+  await page.goto(`${BASE}/pair?code=${code}`);
+  await expect(page.getByRole("button", { name: "新しいセッション", exact: true })).toBeVisible();
+  const url = page.url();
+  expect(url).toBe(`${BASE}/`);
+  expect(url).not.toContain(code);
+  expect(url).not.toContain(E2E_TOKEN);
+  const cookie = (await context.cookies(BASE)).find((c) => c.name === "ac_session");
+  expect(cookie).toBeDefined();
+  expect(cookie?.httpOnly).toBe(true);
+  expect(cookie?.sameSite).toBe("Strict");
+  expect(cookie?.path).toBe("/");
+  expect(cookie?.secure).toBe(false);
+  // HttpOnly なので JS からは見えない
+  expect(await page.evaluate(() => document.cookie)).not.toContain("ac_session");
+});
+
+test("ペアリング: 使用済みコードは 401 で案内画面（Callout）が出る", async ({ page, browser }) => {
+  const code = await newPairingCode();
+  const first = await browser.newContext();
+  const firstPage = await first.newPage();
+  await firstPage.goto(`${BASE}/pair?code=${code}`);
+  await expect(firstPage.getByRole("button", { name: "新しいセッション", exact: true })).toBeVisible();
+  await first.close();
+
+  const response = await page.goto(`${BASE}/pair?code=${code}`);
+  expect(response?.status()).toBe(401);
+  await expect(page.getByRole("alert")).toContainText("ペアリングできませんでした");
+});
+
+test("未ログインで開くとログインが必要の案内（Callout）が出る", async ({ page }) => {
+  await page.goto(`${BASE}/`);
+  await expect(page.getByRole("alert")).toContainText("ログインが必要です");
+});
+
+test("/healthz は認証なしで ok を返す", async () => {
+  const res = await fetch(`${BASE}/healthz`);
+  expect(res.status).toBe(200);
+  expect(await res.text()).toBe("ok");
 });

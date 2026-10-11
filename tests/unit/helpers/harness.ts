@@ -13,6 +13,11 @@ import { attachWebSockets } from "../../../server/ws.ts";
 
 export const TOKEN = "t".repeat(40);
 
+export interface Clock {
+  t: number;
+  advance(ms: number): void;
+}
+
 export interface Harness {
   port: number;
   base: string;
@@ -21,6 +26,7 @@ export interface Harness {
   hub: Hub;
   server: Server;
   secretPath: string;
+  clock: Clock;
   close: () => Promise<void>;
 }
 
@@ -78,9 +84,10 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   };
   const sessions = new SessionManager(config, { maxSessions: options.maxSessions });
   const hub = new Hub(config, sessions);
-  const auth = createAuth(TOKEN, port);
+  const clock: Clock = { t: Date.now(), advance(ms) { this.t += ms; } };
+  const auth = createAuth(TOKEN, port, { now: () => clock.t });
   const server = createServer(
-    createRequestHandler({ config, auth, sessions, hub, staticDir, meta: { saSource: "sha", claudeVersion: "v" } }),
+    createRequestHandler({ config, auth, sessions, hub, staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9" } }),
   );
   attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
@@ -92,6 +99,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     hub,
     server,
     secretPath,
+    clock,
     close: async () => {
       sessions.killAll();
       server.closeAllConnections();

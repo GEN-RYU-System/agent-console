@@ -79,6 +79,14 @@ export function defaultConfigPath(): string {
   return process.env.AGENT_CONSOLE_CONFIG ?? path.join(process.cwd(), "agent-console.config.json");
 }
 
+/** 自己診断（別ポートで起動確認）用に AGENT_CONSOLE_PORT でポートだけ上書きできる。 */
+export function applyPortOverride(config: Config, raw: string | undefined): Config {
+  if (raw === undefined || raw === "") return config;
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("AGENT_CONSOLE_PORT は 1〜65535 の整数にしてください");
+  return { ...config, port };
+}
+
 export function loadConfig(file: string = defaultConfigPath()): Config {
-  return parseConfig(JSON.parse(readFileSync(file, "utf8")));
+  return applyPortOverride(parseConfig(JSON.parse(readFileSync(file, "utf8"))), process.env.AGENT_CONSOLE_PORT);
 }

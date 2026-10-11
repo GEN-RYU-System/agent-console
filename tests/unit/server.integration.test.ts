@@ -58,7 +58,7 @@ function openWs(pathAndQuery: string, headers: Record<string, string>): Promise<
   });
 }
 
-const goodWsHeaders = (): Record<string, string> => ({ Origin: h.base });
+const goodWsHeaders = (): Record<string, string> => ({ Origin: h.base, Authorization: `Bearer ${TOKEN}` });
 
 async function waitFor(cond: () => boolean, ms = 3000): Promise<void> {
   const start = Date.now();
@@ -121,7 +121,7 @@ describe("Host header", () => {
   });
 
   it("rejects an unexpected Host on WebSocket upgrade", async () => {
-    const r = await openWs(`/ws/events?t=${TOKEN}`, { ...goodWsHeaders(), Host: "evil.example" });
+    const r = await openWs(`/ws/events`, { ...goodWsHeaders(), Host: "evil.example" });
     expect("status" in r && r.status).toBe(421);
   });
 });
@@ -154,17 +154,17 @@ describe("API validation", () => {
 describe("/ws/term", () => {
   it("rejects missing token (401) and wrong origin (403) and unknown session (404)", async () => {
     const id = await createSession("echo");
-    const noToken = await openWs(`/ws/term?session=${id}`, goodWsHeaders());
+    const noToken = await openWs(`/ws/term?session=${id}`, { Origin: h.base });
     expect("status" in noToken && noToken.status).toBe(401);
-    const badOrigin = await openWs(`/ws/term?session=${id}&t=${TOKEN}`, { Origin: "http://evil.example" });
+    const badOrigin = await openWs(`/ws/term?session=${id}`, { Origin: "http://evil.example", Authorization: `Bearer ${TOKEN}` });
     expect("status" in badOrigin && badOrigin.status).toBe(403);
-    const unknown = await openWs(`/ws/term?session=nope&t=${TOKEN}`, goodWsHeaders());
+    const unknown = await openWs(`/ws/term?session=nope`, goodWsHeaders());
     expect("status" in unknown && unknown.status).toBe(404);
   });
 
   it("streams output, accepts input, and replays the backlog to a new connection", async () => {
     const id = await createSession("echo");
-    const first = await openWs(`/ws/term?session=${id}&t=${TOKEN}`, goodWsHeaders());
+    const first = await openWs(`/ws/term?session=${id}`, goodWsHeaders());
     if (!("ws" in first)) throw new Error("upgrade failed");
     const out = first;
     await waitFor(() => out.text().includes("READY"));
@@ -172,7 +172,7 @@ describe("/ws/term", () => {
     await waitFor(() => out.text().includes("ping-it"));
     first.ws.close();
 
-    const second = await openWs(`/ws/term?session=${id}&t=${TOKEN}`, goodWsHeaders());
+    const second = await openWs(`/ws/term?session=${id}`, goodWsHeaders());
     if (!("ws" in second)) throw new Error("upgrade failed");
     const replay = second;
     await waitFor(() => replay.text().includes("READY") && replay.text().includes("ping-it"));
@@ -182,8 +182,8 @@ describe("/ws/term", () => {
   it("closes only the offending connection on an oversized frame; the server and other sessions keep working", async () => {
     const victimId = await createSession("echo", "victim");
     const otherId = await createSession("echo", "other");
-    const victim = await openWs(`/ws/term?session=${victimId}&t=${TOKEN}`, goodWsHeaders());
-    const other = await openWs(`/ws/term?session=${otherId}&t=${TOKEN}`, goodWsHeaders());
+    const victim = await openWs(`/ws/term?session=${victimId}`, goodWsHeaders());
+    const other = await openWs(`/ws/term?session=${otherId}`, goodWsHeaders());
     if (!("ws" in victim) || !("ws" in other)) throw new Error("upgrade failed");
     const otherOut = other;
     await waitFor(() => otherOut.text().includes("READY"));
@@ -199,7 +199,7 @@ describe("/ws/term", () => {
   });
 
   it("closes only the offending /ws/events connection on an oversized frame", async () => {
-    const ev = await openWs(`/ws/events?t=${TOKEN}`, goodWsHeaders());
+    const ev = await openWs(`/ws/events`, goodWsHeaders());
     if (!("ws" in ev)) throw new Error("upgrade failed");
     const closed = new Promise<number>((resolve) => ev.ws.on("close", (code) => resolve(code)));
     ev.ws.send("x".repeat(2 * 1024 * 1024));
@@ -233,7 +233,7 @@ describe("child process environment", () => {
     process.env.AGENT_CONSOLE_TOKEN = "leak-check-token-0123456789012345678901";
     try {
       const id = await createSession("envcheck");
-      const ws = await openWs(`/ws/term?session=${id}&t=${TOKEN}`, goodWsHeaders());
+      const ws = await openWs(`/ws/term?session=${id}`, goodWsHeaders());
       if (!("ws" in ws)) throw new Error("upgrade failed");
       await waitFor(() => ws.text().includes("TOKEN_IS="));
       expect(ws.text()).toContain("TOKEN_IS=[]");

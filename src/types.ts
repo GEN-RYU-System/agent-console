@@ -22,6 +22,7 @@ export interface ConsoleState {
   roles: RoleView[];
   saSource: string;
   claudeVersion: string;
+  appVersion: string;
 }
 
 export type LookupResult = { kind: "found"; state: string } | { kind: "unregistered" } | { kind: "conflict" };

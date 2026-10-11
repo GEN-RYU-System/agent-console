@@ -1,27 +1,110 @@
 import { describe, expect, it } from "vitest";
-import { createAuth, resolveToken } from "../../server/auth.ts";
+import {
+  createAuth,
+  DEV_PAIRING_TTL_MS,
+  PAIRING_TTL_MS,
+  resolveToken,
+  SESSION_MAX_MS,
+  SESSION_COOKIE_NAME,
+} from "../../server/auth.ts";
 
-const auth = createAuth("secret-token", 4319);
+function makeAuth() {
+  const clock = { t: 1_000_000 };
+  const auth = createAuth("secret-token", 4319, { now: () => clock.t });
+  return { auth, clock };
+}
 
-describe("auth", () => {
-  it("accepts the token in the query string", () => {
-    expect(auth.isTokenValid(new URL("http://127.0.0.1:4319/api/x?t=secret-token"), undefined)).toBe(true);
+describe("authenticate (Bearer / Cookie)", () => {
+  it("accepts the secret as a Bearer header", () => {
+    const { auth } = makeAuth();
+    expect(auth.authenticate({ authorization: "Bearer secret-token" })).toBe("bearer");
   });
 
-  it("accepts the token as a Bearer header", () => {
-    expect(auth.isTokenValid(new URL("http://127.0.0.1:4319/api/x"), "Bearer secret-token")).toBe(true);
+  it("rejects wrong, missing and different-length secrets without throwing", () => {
+    const { auth } = makeAuth();
+    expect(auth.authenticate({ authorization: "Bearer nope" })).toBeNull();
+    expect(auth.authenticate({ authorization: "Bearer s" })).toBeNull();
+    expect(auth.authenticate({ authorization: "Basic secret-token" })).toBeNull();
+    expect(auth.authenticate({})).toBeNull();
   });
 
-  it("rejects a wrong or missing token", () => {
-    expect(auth.isTokenValid(new URL("http://127.0.0.1:4319/api/x?t=nope"), undefined)).toBe(false);
-    expect(auth.isTokenValid(new URL("http://127.0.0.1:4319/api/x"), undefined)).toBe(false);
-    expect(auth.isTokenValid(new URL("http://127.0.0.1:4319/api/x"), "Bearer nope")).toBe(false);
+  it("accepts a session cookie created by pairing, among other cookies", () => {
+    const { auth } = makeAuth();
+    const sessionId = auth.consumePairingCode(auth.issuePairingCode(PAIRING_TTL_MS));
+    expect(sessionId).not.toBeNull();
+    expect(auth.authenticate({ cookie: `a=1; ${SESSION_COOKIE_NAME}=${sessionId}; b=2` })).toBe("cookie");
+    expect(auth.authenticate({ cookie: `${SESSION_COOKIE_NAME}=wrong` })).toBeNull();
+    expect(auth.authenticate({ cookie: `other=${sessionId}` })).toBeNull();
   });
 
-  it("rejects tokens of a different length without throwing", () => {
-    expect(auth.isTokenValid(new URL("http://127.0.0.1:4319/?t=s"), undefined)).toBe(false);
+  it("expires a session after 24 hours", () => {
+    const { auth, clock } = makeAuth();
+    const sessionId = auth.consumePairingCode(auth.issuePairingCode(PAIRING_TTL_MS)) as string;
+    clock.t += SESSION_MAX_MS - 1;
+    expect(auth.authenticate({ cookie: `${SESSION_COOKIE_NAME}=${sessionId}` })).toBe("cookie");
+    clock.t += 2;
+    expect(auth.authenticate({ cookie: `${SESSION_COOKIE_NAME}=${sessionId}` })).toBeNull();
+  });
+});
+
+describe("pairing codes", () => {
+  it("are 64 hex characters and unique", () => {
+    const { auth } = makeAuth();
+    const a = auth.issuePairingCode(PAIRING_TTL_MS);
+    const b = auth.issuePairingCode(PAIRING_TTL_MS);
+    expect(a).toMatch(/^[0-9a-f]{64}$/);
+    expect(a).not.toBe(b);
   });
 
+  it("can be used once only", () => {
+    const { auth } = makeAuth();
+    const code = auth.issuePairingCode(PAIRING_TTL_MS);
+    expect(auth.consumePairingCode(code)).not.toBeNull();
+    expect(auth.consumePairingCode(code)).toBeNull();
+  });
+
+  it("expire after 30 seconds", () => {
+    const { auth, clock } = makeAuth();
+    const ok = auth.issuePairingCode(PAIRING_TTL_MS);
+    const late = auth.issuePairingCode(PAIRING_TTL_MS);
+    clock.t += PAIRING_TTL_MS - 1;
+    expect(auth.consumePairingCode(ok)).not.toBeNull();
+    clock.t += 2;
+    expect(auth.consumePairingCode(late)).toBeNull();
+  });
+
+  it("use a 5 minute lifetime for the development log code", () => {
+    expect(PAIRING_TTL_MS).toBe(30_000);
+    expect(DEV_PAIRING_TTL_MS).toBe(300_000);
+    const { auth, clock } = makeAuth();
+    const code = auth.issuePairingCode(DEV_PAIRING_TTL_MS);
+    clock.t += DEV_PAIRING_TTL_MS - 1;
+    expect(auth.consumePairingCode(code)).not.toBeNull();
+  });
+
+  it("reject unknown, empty and malformed codes", () => {
+    const { auth } = makeAuth();
+    for (const c of ["", "x", "0".repeat(64), "g".repeat(64), "a".repeat(10000)]) expect(auth.consumePairingCode(c)).toBeNull();
+  });
+
+  it("do not authenticate as Bearer", () => {
+    const { auth } = makeAuth();
+    const code = auth.issuePairingCode(PAIRING_TTL_MS);
+    expect(auth.authenticate({ authorization: `Bearer ${code}` })).toBeNull();
+  });
+});
+
+describe("session cookie", () => {
+  it("is HttpOnly, SameSite=Strict, Path=/, 24h, and not Secure (plain http on 127.0.0.1)", () => {
+    const { auth } = makeAuth();
+    const cookie = auth.sessionCookie("abc");
+    expect(cookie).toBe(`${SESSION_COOKIE_NAME}=abc; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400`);
+    expect(cookie).not.toMatch(/Secure/i);
+  });
+});
+
+describe("origin and host", () => {
+  const { auth } = makeAuth();
   it("allows only the own origin", () => {
     expect(auth.isOriginAllowed("http://127.0.0.1:4319")).toBe(true);
     expect(auth.isOriginAllowed("http://evil.example")).toBe(false);

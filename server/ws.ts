@@ -40,7 +40,9 @@ export function attachWebSockets(server: Server, deps: { config: Config; auth: A
     socket.on("error", () => socket.destroy());
     if (!deps.auth.isHostAllowed(req.headers.host)) return reject(socket, 421, "Misdirected Request");
     const url = new URL(req.url ?? "/", `http://127.0.0.1:${deps.config.port}`);
-    if (!deps.auth.isTokenValid(url, req.headers.authorization)) return reject(socket, 401, "Unauthorized");
+    if (deps.auth.authenticate({ authorization: req.headers.authorization, cookie: req.headers.cookie }) === null) {
+      return reject(socket, 401, "Unauthorized");
+    }
     if (!deps.auth.isOriginAllowed(req.headers.origin)) return reject(socket, 403, "Forbidden");
 
     if (url.pathname === "/ws/events") {

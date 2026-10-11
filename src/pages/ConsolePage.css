@@ -43,3 +43,11 @@
   font-size: var(--font-xs);
   color: var(--text-muted);
 }
+
+.ac-page__notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--space-6);
+}

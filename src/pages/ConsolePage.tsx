@@ -4,7 +4,7 @@ import { Button } from "@sa/components/Button";
 import { Callout } from "@sa/components/Callout";
 import { EmptyState } from "@sa/components/EmptyState";
 import { Modal } from "@sa/components/Modal";
-import { createSession, fetchLedger, fetchState, refreshLedger, removeSession, wsUrl } from "../api";
+import { ApiError, createSession, fetchLedger, fetchState, refreshLedger, removeSession, wsUrl } from "../api";
 import { LedgerBoard } from "../components/LedgerBoard/LedgerBoard";
 import { NewSessionForm, type NewSessionValues } from "../components/NewSessionForm/NewSessionForm";
 import { SessionList } from "../components/SessionList/SessionList";
@@ -17,14 +17,14 @@ const RECONNECT_MS = 1000;
 
 function useConsoleState() {
   const [state, setState] = useState<ConsoleState | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadFailed, setLoadFailed] = useState<"unauthorized" | "error" | null>(null);
 
   useEffect(() => {
     let closed = false;
     let ws: WebSocket | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
-    fetchState().then(setState, () => setLoadFailed(true));
+    fetchState().then(setState, (err: unknown) => setLoadFailed(err instanceof ApiError && err.status === 401 ? "unauthorized" : "error"));
     const connect = (): void => {
       ws = new WebSocket(wsUrl("/ws/events"));
       ws.onmessage = (e) => {
@@ -84,6 +84,15 @@ export function ConsolePage() {
     removeSession(id).catch((err: unknown) => setRemoveError(err instanceof Error ? err.message : String(err)));
   };
 
+  if (loadFailed === "unauthorized") {
+    return (
+      <div className="ac-page__notice">
+        <Callout variant="warning" title={t("ac.unauthorizedTitle")}>
+          {t("ac.unauthorizedBody")}
+        </Callout>
+      </div>
+    );
+  }
   if (loadFailed) return <EmptyState title={t("ac.loadError")} />;
   if (!state) return null;
   // 一覧から外れた（または存在しない）セッションは選択扱いにしない
@@ -114,6 +123,9 @@ export function ConsolePage() {
       <footer className="ac-page__footer" data-testid="footer">
         <span data-testid="sa-source">
           {t("ac.footer.saSource")}: {state.saSource.slice(0, 12)}
+        </span>
+        <span data-testid="app-version">
+          {t("ac.footer.version")}: {state.appVersion}
         </span>
         <span data-testid="claude-version">
           {t("ac.footer.claudeVersion")}: {state.claudeVersion}

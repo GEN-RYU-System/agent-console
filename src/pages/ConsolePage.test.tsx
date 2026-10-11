@@ -10,12 +10,22 @@ const state: ConsoleState = {
   roles: [{ id: "shell", labelKey: "role.shell", needsWorktree: false }],
   saSource: "abcdef0123456789",
   claudeVersion: "1.0.0",
+  appVersion: "0.2.0",
 };
 
 const removeSession = vi.fn();
+const fetchState = vi.fn();
 
 vi.mock("../api", () => ({
-  fetchState: vi.fn(async () => state),
+  ApiError: class extends Error {
+    constructor(
+      message: string,
+      readonly status: number,
+    ) {
+      super(message);
+    }
+  },
+  fetchState: () => fetchState(),
   fetchLedger: vi.fn(async () => ({ groups: { IN_PROGRESS: [], REVIEW: [], DONE: [], OTHER: [], UNREGISTERED: [] }, errors: [] })),
   refreshLedger: vi.fn(),
   createSession: vi.fn(),
@@ -33,6 +43,8 @@ class FakeWebSocket {
 
 beforeEach(() => {
   removeSession.mockReset();
+  fetchState.mockReset();
+  fetchState.mockResolvedValue(state);
   vi.stubGlobal("WebSocket", FakeWebSocket);
 });
 
@@ -56,5 +68,28 @@ describe("ConsolePage removing a stopped session", () => {
     await screen.findByRole("alert");
     fireEvent.click(screen.getByText("一覧から外す"));
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+});
+
+describe("ConsolePage footer and authorization", () => {
+  it("shows the app version in the footer", async () => {
+    const { ConsolePage } = await import("./ConsolePage");
+    render(<ConsolePage />);
+    expect((await screen.findByTestId("app-version")).textContent).toContain("0.2.0");
+  });
+
+  it("shows a login-required callout on 401", async () => {
+    const { ApiError } = await import("../api");
+    fetchState.mockRejectedValue(new ApiError("unauthorized", 401));
+    const { ConsolePage } = await import("./ConsolePage");
+    render(<ConsolePage />);
+    expect((await screen.findByRole("alert")).textContent).toContain("ログインが必要です");
+  });
+
+  it("shows the generic load error for other failures", async () => {
+    fetchState.mockRejectedValue(new Error("boom"));
+    const { ConsolePage } = await import("./ConsolePage");
+    render(<ConsolePage />);
+    expect(await screen.findByText("状態を取得できません")).toBeTruthy();
   });
 });
