@@ -1,5 +1,6 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { createServer } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
@@ -395,6 +396,44 @@ describe("locking and guards", () => {
     const t = e.run("ac-uninstall.sh", [], { AC_TRASH: `${process.env.HOME}/.Trash` });
     expect(t.status).not.toBe(0);
     expect(t.stderr).toContain("一時ディレクトリ以外");
+  });
+});
+
+describe("ac_mtime (GNU and BSD stat differ)", () => {
+  const run = (script: string, env: Record<string, string> = {}) =>
+    spawnSync("bash", ["-c", `source "${REPO}/scripts/lib/ac-common.sh"; ${script}`], { env: { PATH: process.env.PATH ?? "", HOME: "/tmp", ...env }, encoding: "utf8" });
+
+  it("returns the epoch seconds of the directory's mtime as a plain number", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "ac-mtime-"));
+    spawnSync("touch", ["-t", "202001010000", dir]);
+    const r = run(`ac_mtime "${dir}"`);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/^[0-9]+$/);
+    expect(Math.abs(Number(r.stdout) - Date.parse("2020-01-01T00:00:00") / 1000)).toBeLessThan(86400);
+  });
+
+  it("works when only a GNU-style stat exists (stat -f would print filesystem info: the bug seen on ubuntu)", () => {
+    // GNU stat の挙動を再現するスタブ: -c %Y は秒を返し、-f は複数行の「ファイルシステム情報」を出して成功する
+    const bin = mkdtempSync(path.join(os.tmpdir(), "ac-gnustat-"));
+    writeFileSync(path.join(bin, "stat"), '#!/bin/bash\nif [ "$1" = -c ]; then echo 1577836800; exit 0; fi\nif [ "$1" = -f ]; then printf "  File: \\"x\\"\\n    ID: 0 Namelen: 255\\n"; exit 0; fi\nexit 1\n');
+    chmodSync(path.join(bin, "stat"), 0o755);
+    const r = run(`ac_mtime /whatever`, { PATH: `${bin}:${process.env.PATH ?? ""}` });
+    expect(r.stdout).toBe("1577836800");
+  });
+
+  it("works when only a BSD-style stat exists (-c is an illegal option)", () => {
+    const bin = mkdtempSync(path.join(os.tmpdir(), "ac-bsdstat-"));
+    writeFileSync(path.join(bin, "stat"), '#!/bin/bash\nif [ "$1" = -c ]; then echo "stat: illegal option -- c" >&2; exit 1; fi\nif [ "$1" = -f ] && [ "$2" = %m ]; then echo 1577836800; exit 0; fi\nexit 1\n');
+    chmodSync(path.join(bin, "stat"), 0o755);
+    const r = run(`ac_mtime /whatever`, { PATH: `${bin}:${process.env.PATH ?? ""}` });
+    expect(r.stdout).toBe("1577836800");
+  });
+
+  it("fails (so the lock is NOT reclaimed) when no usable stat output exists", () => {
+    const bin = mkdtempSync(path.join(os.tmpdir(), "ac-nostat-"));
+    writeFileSync(path.join(bin, "stat"), "#!/bin/bash\necho garbage\nexit 0\n");
+    chmodSync(path.join(bin, "stat"), 0o755);
+    expect(run(`ac_mtime /whatever`, { PATH: `${bin}:${process.env.PATH ?? ""}` }).status).not.toBe(0);
   });
 });
 

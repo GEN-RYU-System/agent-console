@@ -110,3 +110,8 @@
 
 ### テスト先行の例外
 - 統合テスト・フロントのテスト・スクリプトのテストの一部は、実装と同時または直後に作成した。auth・pair-proof のテストは先に書いて RED を確認した。
+
+### CI ubuntu 失敗（ロックの経過時間判定: `line 145: File: unbound variable`、run 38104266309）
+- 原因: `ac_mtime` が `stat -f %m "$1"`（BSD の書き方）を先に試していた。GNU stat では `-f` は「ファイルシステムの状態を表示」（GNU coreutils マニュアル stat-invocation: 「`-f`/`--file-system`: Report information about the file systems where the given files are located.」）で、`%m` はファイルではなくファイルシステムの書式として扱われ、複数行（`File: …`）を出力して終了コード 0 になる。その出力が算術式に入り、`File:` が未定義変数として `set -u` に引っかかった。macOS の stat では `-f %m` が最終更新のエポック秒（`man stat`: `-f format`）なので、ローカルでは通っていた。
+- 対処: GNU 形式を先に試す。`stat -c %Y`（GNU: 「`%Y`: Time of last data modification as seconds since Epoch」）。macOS では `stat -c` は `stat: illegal option -- c` で失敗する（この Mac で実測）ので、次の `stat -f %m` に落ちる。出力が数字だけでなければ失敗にし、呼び出し側は「作成時刻を取得できない場合は回収しない」（安全側）。`find -mmin` も BSD の `man find` に有る（macOS）が、GNU 側をこの環境で確認できないため、両 OS で挙動を確認できた stat の順序入替えを採用した。
+- テスト: GNU 風スタブ（`-c %Y` は秒、`-f` は複数行を出して成功）と BSD 風スタブ（`-c` は失敗、`-f %m` は秒）の両方で正しい秒が返ること、使えない出力のときは失敗（回収しない）、実ディレクトリの更新時刻が数字で返ること。

@@ -97,7 +97,17 @@ AC_LOCK_OWNED=0
 
 ac_lock_dir() { printf '%s/lock' "$AC_HOME"; }
 
-ac_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
+# 更新時刻（エポック秒）。GNU と BSD で stat の意味が違うため、GNU 形式（-c %Y）を先に試す。
+#  - GNU: `-c format` と `%Y`（最終更新のエポック秒）。`-f` は「ファイルシステムの状態」で、`stat -f %m <file>` は
+#    ファイル情報ではなく複数行（"File: …"）を出して終了コード 0 になる（CI ubuntu で再現）
+#  - BSD(macOS): `-c` は "illegal option" で失敗するので、次の `-f %m`（最終更新のエポック秒）に落ちる
+# 数値以外が返ったら 0 を返す（古い扱い）ではなく失敗にして、呼び出し側で安全側（回収しない）に倒す
+ac_mtime() {
+  local out
+  out="$(stat -c %Y "$1" 2>/dev/null)" || out="$(stat -f %m "$1" 2>/dev/null)" || return 1
+  [[ "$out" =~ ^[0-9]+$ ]] || return 1
+  printf '%s' "$out"
+}
 
 # ロックの保持者（pid-<n> の n）を出す。無ければ空
 ac_lock_holder() {
@@ -126,7 +136,7 @@ ac_take_lock() {
 
 ac_acquire_lock() {
   mkdir -p "$AC_HOME"
-  local lock holder age
+  local lock holder age mtime
   lock="$(ac_lock_dir)"
   if mkdir "$lock" 2>/dev/null; then
     ac_take_lock
@@ -142,7 +152,8 @@ ac_acquire_lock() {
     ac_log "前回の異常終了で残ったロックを回収します（pid $holder は存在しません）"
     rmdir "$lock/pid-$holder" 2>/dev/null || ac_lock_busy
   else
-    age=$(($(date +%s) - $(ac_mtime "$lock")))
+    mtime="$(ac_mtime "$lock")" || { ac_log "ロックの作成時刻を取得できないため回収しません"; ac_lock_busy; }
+    age=$(($(date +%s) - mtime))
     [ "$age" -gt "$AC_LOCK_STALE_SEC" ] || ac_lock_busy
     ac_log "保持者の記録が無いまま ${age} 秒経ったロックを回収します"
   fi
