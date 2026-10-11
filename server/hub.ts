@@ -37,6 +37,8 @@ export class Hub {
   private lastPayload = "";
   private stoppers: Array<() => void> = [];
   private readonly tracker = new BreakTracker();
+  /** 直近の snapshot の表示名（ps を走らせずに名前だけ欲しい呼び出し用） */
+  private lastNames = new Map<string, string>();
   private readonly sendNotification: NotificationSender | null;
 
   constructor(
@@ -111,6 +113,11 @@ export class Hub {
     return inputVerdict({ exited: session.exited, pids: descendantPids(session.term.pid, table) }, rows);
   }
 
+  /** 一覧と同じ表示名（Claude の name 優先）。直近の snapshot の値で、ps は走らせない。まだ無いセッションは含まない。 */
+  displayNames(): ReadonlyMap<string, string> {
+    return this.lastNames;
+  }
+
   /** このアプリのセッションの子孫プロセスの pid（過去セッション一覧で「実行中」を判定する）。 */
   async livePids(): Promise<Set<number>> {
     const table = await readProcessTable().catch(() => []);
@@ -154,6 +161,7 @@ export class Hub {
         canInput: inputVerdict(info, this.agents).ok,
       };
     });
+    this.lastNames = new Map(views.map((v) => [v.id, v.name]));
     return { sessions: views, agentsAvailable: this.agents !== null };
   }
 

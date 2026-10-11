@@ -13,7 +13,7 @@ interface Props {
   onSubmit: (name: string) => void;
 }
 
-/** 名前の変更。Claude 起動中は Claude の /rename（待ち・待機のときだけ）、それ以外はアプリ側の名前。 */
+/** 名前の変更。Claude 起動中は Claude の /rename（サーバーが取り直した status が idle のときだけ。canInput が false の間は押せない）、Claude が動いていなければアプリ側の名前。 */
 export function RenameForm({ session, busy, error, onSubmit }: Props) {
   const { t } = useTranslation();
   const [name, setName] = useState(session.name);

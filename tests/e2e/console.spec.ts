@@ -34,6 +34,7 @@ async function openPaired(page: Page): Promise<void> {
 }
 
 const NAME_FILE = process.env.AC_E2E_NAME_FILE as string;
+const SLOW_FILE = process.env.AC_E2E_SLOW_FILE as string;
 const ALL_FILE = process.env.AC_E2E_ALL_FILE as string;
 const OSASCRIPT_LOG = process.env.AC_E2E_OSASCRIPT_LOG as string;
 const DATA_DIR = process.env.AC_E2E_DATA_DIR as string;
@@ -535,6 +536,40 @@ test("段階2 K3: 複数行の指示は、括弧付き貼付モードの端末�
   await expect(terminal).toContainText('ALL:"\\u001b[200~first-line');
   // 届いたバイト列の全体（読み取りの区切りは問わない）で、本文は括弧で包まれ（改行は \r）、閉じ括弧のすぐ後に Enter（\r）が来る。間に他の入力は無い
   await expect(terminal).toContainText('first-line\\rsecond-line\\u001b[201~\\r"');
+  await fetch(`${BASE}/api/quick-prompts/${promptId}`, { method: "DELETE", headers: BEARER });
+});
+
+test("段階2 K3: 状態確認中に別のセッションへ切り替えると、どちらの端末にも入らず案内が出る", async ({ page }) => {
+  const a = await apiCreate("switch-a", "e2e-plain");
+  const b = await apiCreate("switch-b", "e2e-plain");
+  const created = await fetch(`${BASE}/api/quick-prompts`, {
+    method: "POST",
+    headers: { ...BEARER, "Content-Type": "application/json" },
+    body: JSON.stringify({ label: "切替確認", text: "must-not-appear-anywhere" }),
+  });
+  const { id: promptId } = (await created.json()) as { id: string };
+  writeFileSync(STATUS_FILE, "idle");
+  await openPaired(page);
+  await rowOf(page, a).click();
+  await expect(page.getByTestId("terminal")).toContainText("READY");
+  await expect(rowOf(page, a).getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: STATE_DEADLINE_MS });
+  const button = page.getByTestId("quick-prompt-bar").getByRole("button", { name: "切替確認", exact: true });
+  await expect(button).toBeEnabled();
+
+  // 状態確認（claude agents の取得）が 3 秒かかる間に、別の行を選ぶ
+  writeFileSync(SLOW_FILE, "3");
+  try {
+    await button.click();
+    await rowOf(page, b).click();
+    await expect(page.getByText("別のセッションへ切り替わったため、指示は入れませんでした")).toBeVisible({ timeout: 10000 });
+  } finally {
+    writeFileSync(SLOW_FILE, "");
+  }
+  await expect(page.getByTestId("terminal")).toContainText("READY");
+  await expect(page.getByTestId("terminal")).not.toContainText("must-not-appear-anywhere");
+  await rowOf(page, a).click();
+  await expect(page.getByTestId("terminal")).toContainText("READY");
+  await expect(page.getByTestId("terminal")).not.toContainText("must-not-appear-anywhere");
   await fetch(`${BASE}/api/quick-prompts/${promptId}`, { method: "DELETE", headers: BEARER });
 });
 

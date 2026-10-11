@@ -78,10 +78,38 @@ describe("MemoryCollector", () => {
     expect((await c.collect([{ ...sessions[0], name: "claude-name" }])).sessions[0].name).toBe("claude-name");
   });
 
-  it("does not cache a failure", async () => {
+  it("does not cache a rejected read (a read that succeeds with system: null is cached like any other result)", async () => {
     const readRaw = vi.fn().mockRejectedValueOnce(new Error("boom")).mockResolvedValue(raw);
     const c = new MemoryCollector(5000, () => 0, readRaw);
     await expect(c.collect(sessions)).rejects.toThrow("boom");
     await expect(c.collect(sessions)).resolves.toBeDefined();
+  });
+
+  it("caches a successful read whose system part is null for the TTL (the real reader reports system failure that way)", async () => {
+    const readRaw = vi.fn(async () => ({ table: raw.table, system: null }));
+    const c = new MemoryCollector(5000, () => 0, readRaw);
+    await c.collect(sessions);
+    await c.collect(sessions);
+    expect(readRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-reads at once when a live session's pid is missing from the cached table (a session created within the TTL)", async () => {
+    const readRaw = vi.fn(async () => raw);
+    const c = new MemoryCollector(5000, () => 0, readRaw);
+    await c.collect(sessions);
+    const fresh = [...sessions, { id: "b", name: "B", exited: false, term: { pid: 99 } }];
+    await c.collect(fresh);
+    expect(readRaw).toHaveBeenCalledTimes(2);
+    // 見つからない pid が残っても、同時の要求は 1 回にまとまる
+    await Promise.all([c.collect(fresh), c.collect(fresh)]);
+    expect(readRaw.mock.calls.length).toBeLessThanOrEqual(4);
+  });
+
+  it("does not force a re-read for exited sessions that are not in the table", async () => {
+    const readRaw = vi.fn(async () => raw);
+    const c = new MemoryCollector(5000, () => 0, readRaw);
+    await c.collect([...sessions, { id: "x", name: "X", exited: true, term: { pid: 98 } }]);
+    await c.collect([...sessions, { id: "x", name: "X", exited: true, term: { pid: 98 } }]);
+    expect(readRaw).toHaveBeenCalledTimes(1);
   });
 });

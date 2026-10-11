@@ -102,8 +102,8 @@ export class MemoryCollector {
     }),
   ) {}
 
-  private raw(): Promise<RawMemory> {
-    if (this.cached && this.now() - this.cached.at < this.ttlMs) return Promise.resolve(this.cached.raw);
+  private raw(force = false): Promise<RawMemory> {
+    if (!force && this.cached && this.now() - this.cached.at < this.ttlMs) return Promise.resolve(this.cached.raw);
     if (this.inFlight) return this.inFlight;
     const run = this.readRaw()
       .then((raw) => {
@@ -116,7 +116,9 @@ export class MemoryCollector {
   }
 
   async collect(sessions: ReadonlyArray<SessionForMemory>): Promise<MemorySnapshot> {
-    const raw = await this.raw();
+    let raw = await this.raw();
+    // キャッシュ後に作られたセッションは ps の表に居ない。0 MB と表示しないよう、そのときだけ読み直す
+    if (sessions.some((s) => !s.exited && !raw.table.some((r) => r.pid === s.term.pid))) raw = await this.raw(true);
     return {
       sessions: sessionMemory(sessions, raw.table),
       serverRssMb: toMb(process.memoryUsage().rss / KB_PER_MB),

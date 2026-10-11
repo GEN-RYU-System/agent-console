@@ -10,6 +10,9 @@ case "${1:-}" in
       cat "${STUB_ALL_FILE:-/dev/null}" 2>/dev/null || echo '[]'
       exit 0
     fi
+    # $STUB_SLOW_FILE に秒数があるときだけ、その秒数待ってから答える（状態確認が遅い場面の再現用）
+    SLOW="$(cat "${STUB_SLOW_FILE:-/dev/null}" 2>/dev/null | head -1)"
+    [ -n "${SLOW}" ] && sleep "${SLOW}"
     STATUS="$(cat "${STUB_STATUS_FILE:-/dev/null}" 2>/dev/null || echo idle)"
     # $STUB_NAME_FILE に中身があるときだけ name を返す（Claude 側の名前。無ければアプリの名前が表示される）
     NAME="$(cat "${STUB_NAME_FILE:-/dev/null}" 2>/dev/null | head -1)"

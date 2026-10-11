@@ -165,8 +165,8 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
   const method = req.method ?? "GET";
   if (method === "GET" && url.pathname === "/api/memory") {
     // 名前は一覧と同じ表示名（Claude の name 優先）にそろえる
-    const views = new Map((await hub.snapshot()).sessions.map((v) => [v.id, v.name]));
-    sendJson(res, 200, await deps.memory.collect(sessions.list().map((s) => ({ id: s.id, name: views.get(s.id) ?? s.name, exited: s.exited, term: s.term }))));
+    const names = hub.displayNames();
+    sendJson(res, 200, await deps.memory.collect(sessions.list().map((s) => ({ id: s.id, name: names.get(s.id) ?? s.name, exited: s.exited, term: s.term }))));
     return true;
   }
   if (method === "GET" && url.pathname === "/api/quick-prompts") {

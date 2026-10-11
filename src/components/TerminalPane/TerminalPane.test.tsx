@@ -72,19 +72,31 @@ describe("TerminalPane", () => {
 
   it("pasteAndEnter pastes the text through xterm paste() and then sends Enter, in that order", async () => {
     const { TerminalPane } = await import("./TerminalPane");
-    const ref = createRef<{ pasteAndEnter: (t: string) => void }>();
+    const ref = createRef<{ pasteAndEnter: (id: string, t: string) => boolean }>();
     render(<TerminalPane ref={ref} sessionId="a" />);
-    ref.current?.pasteAndEnter("line1\nline2");
+    expect(ref.current?.pasteAndEnter("a", "line1\nline2")).toBe(true);
     expect(calls).toEqual(["paste:line1\nline2", "input:\r"]);
     expect(lastTerm?.paste).toHaveBeenCalledOnce();
   });
 
+  it("never pastes into a terminal that belongs to a different session than the one the text was checked for", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    const ref = createRef<{ pasteAndEnter: (id: string, t: string) => boolean }>();
+    const { rerender } = render(<TerminalPane ref={ref} sessionId="a" />);
+    // 確認したのは a。表示が b に切り替わった後に a の確認結果が届いても、b の端末には入れない
+    rerender(<TerminalPane ref={ref} sessionId="b" />);
+    expect(ref.current?.pasteAndEnter("a", "secret")).toBe(false);
+    expect(calls).toEqual([]);
+    expect(ref.current?.pasteAndEnter("b", "for-b")).toBe(true);
+    expect(calls).toEqual(["paste:for-b", "input:\r"]);
+  });
+
   it("does nothing after the terminal was disposed", async () => {
     const { TerminalPane } = await import("./TerminalPane");
-    const ref = createRef<{ pasteAndEnter: (t: string) => void }>();
+    const ref = createRef<{ pasteAndEnter: (id: string, t: string) => boolean }>();
     const { unmount } = render(<TerminalPane ref={ref} sessionId="a" />);
     unmount();
-    ref.current?.pasteAndEnter("x");
+    expect(ref.current?.pasteAndEnter("a", "x") ?? false).toBe(false);
     expect(calls).toEqual([]);
   });
 });

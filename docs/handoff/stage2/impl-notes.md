@@ -73,3 +73,10 @@
 - 前回の別のタイムアウト: src/pages/ConsolePage.test.tsx の最初のテスト。`await import("./ConsolePage")`（SA の金型を含む画面全体の変換・読込）が最初のテストの 5 秒に含まれていた。ファイルの先頭で 1 回だけ読むようにした。
 - 別の遅いファイル（失敗はしていない）: tests/unit/scripts.test.ts は 1 つの it が最大 24 秒（導入・更新・切戻しの実スクリプトを複数回起動）。通っている理由（5 秒の判定にかからない理由）は調べていない（未確認）。今回は変更していない。
 - 修正後の既定並列（load averages 約 23）: `Test Files 41 passed (41)` / `Tests 446 passed (446)`（Duration 186s）。
+
+## 修正ラウンド2（review-stage2-r2.md への対応）
+- N1（MEDIUM）: `handleSendPrompt` は、send-check を呼んだセッション ID（checkedId）を覚え、応答時に ①今の選択（ref）が checkedId と同じ ②`TerminalPane.pasteAndEnter(checkedId, text)` が true（端末が checkedId のものである）の両方を満たすときだけ貼付・Enter をする。どちらかが違えば何も入れず、「確認している間に別のセッションへ切り替わったため…」を表示する。`TerminalPane` は端末とセッション ID を 1 組（`termRef`）で持つので、effect が差し替わる途中でも別セッションの端末には入らない。テスト: TerminalPane の単体（a を確認した後 b に切り替わると false・何も入らない）、ConsolePage の単体（確認中に別の行を選ぶと貼付されず案内）、e2e「状態確認中に別のセッションへ切り替えると、どちらの端末にも入らず案内が出る」（スタブの `claude agents` を `STUB_SLOW_FILE` で 3 秒遅らせる）。
+- N3: `/api/memory` の名前は `hub.displayNames()`（直近の snapshot の値）から取り、`hub.snapshot()`（ps を毎回実行）を呼ばない（テストで固定）。また、キャッシュ後に作られたセッションの pid が ps の表に無いときだけ、その場でキャッシュを読み直す（新しいセッションが最大 5 秒 0 MB と出る問題）。終了済みセッションでは読み直さない。
+- N5: 本番の読み取り関数は例外を投げず、Mac 全体の取得失敗は `system: null` の成功結果として 5 秒キャッシュされる（回復が最大 5 秒遅れる）。キャッシュを外さずこの挙動を採り、テスト名を実態に直した（「does not cache a rejected read」と「caches a successful read whose system part is null」）。理由: 取得に失敗する環境（macOS 以外）で毎回コマンドを起動し続けるより、5 秒の遅れのほうが害が小さい。
+- N6: RenameForm のコメントと画面のヒント文を現仕様（idle のときだけ）に直した。
+- N2・N4・N7: 現状維持。design.md §9 に既知の制約として追記（別コミット）。

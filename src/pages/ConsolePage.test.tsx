@@ -53,8 +53,19 @@ vi.mock("../api", () => ({
 vi.mock("../components/TerminalPane/TerminalPane", async () => {
   const { forwardRef, useImperativeHandle } = await import("react");
   return {
-    TerminalPane: forwardRef(function TerminalStub(_props: { sessionId: string }, ref) {
-      useImperativeHandle(ref, () => ({ pasteAndEnter: (t: string) => pasteAndEnter(t) }), []);
+    TerminalPane: forwardRef(function TerminalStub(props: { sessionId: string }, ref) {
+      // 本物と同じく、確認したセッションと表示中のセッションが同じときだけ入れる
+      useImperativeHandle(
+        ref,
+        () => ({
+          pasteAndEnter: (id: string, t: string) => {
+            if (id !== props.sessionId) return false;
+            pasteAndEnter(t);
+            return true;
+          },
+        }),
+        [props.sessionId],
+      );
       return <div data-testid="terminal-stub" />;
     }),
   };
@@ -170,6 +181,22 @@ describe("ConsolePage daily use", () => {
     fireEvent.click(screen.getByRole("button", { name: "テスト実行" }));
     await waitFor(() => expect(checkQuickPromptSend).toHaveBeenCalledWith("s1", "p1"));
     await waitFor(() => expect(pasteAndEnter).toHaveBeenCalledWith("run tests"));
+  });
+
+  it("discards the text and says so when the selection changed while the server was checking", async () => {
+    let release: (v: { text: string }) => void = () => {};
+    checkQuickPromptSend.mockReturnValue(new Promise((resolve) => (release = resolve)));
+    const other = { ...live, id: "s2", name: "other", unread: 0 };
+    fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0 }, other] });
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    await waitFor(() => expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "テスト実行" }));
+    await waitFor(() => expect(checkQuickPromptSend).toHaveBeenCalledWith("s1", "p1"));
+    fireEvent.click(screen.getByText("other"));
+    release({ text: "run tests" });
+    expect((await screen.findByRole("alert")).textContent).toContain("切り替わった");
+    expect(pasteAndEnter).not.toHaveBeenCalled();
   });
 
   it("does not paste and shows the server's reason when the state check is refused (409)", async () => {

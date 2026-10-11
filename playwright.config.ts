@@ -26,6 +26,7 @@ export default defineConfig({
       AGENT_CONSOLE_TOKEN: E2E_TOKEN,
       STUB_STATUS_FILE: process.env.AC_E2E_STATUS_FILE as string,
       STUB_NAME_FILE: process.env.AC_E2E_NAME_FILE as string,
+      STUB_SLOW_FILE: process.env.AC_E2E_SLOW_FILE as string,
       STUB_ALL_FILE: process.env.AC_E2E_ALL_FILE as string,
       STUB_OSASCRIPT_LOG: process.env.AC_E2E_OSASCRIPT_LOG as string,
     },

@@ -93,6 +93,8 @@ export function ConsolePage() {
   const [pastError, setPastError] = useState<string | null>(null);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const terminalRef = useRef<TerminalHandle>(null);
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
   const sessionsRef = useRef<SessionView[]>([]);
   sessionsRef.current = state?.sessions ?? [];
 
@@ -145,10 +147,14 @@ export function ConsolePage() {
 
   const handleSendPrompt = (promptId: string): void => {
     if (selectedId === null) return;
+    const checkedId = selectedId;
     setQuickError(null);
-    // サーバーが状態を取り直して入れてよければ本文を返す。本文は xterm の paste() で入れてから Enter を送る
-    checkQuickPromptSend(selectedId, promptId).then(
-      ({ text }) => terminalRef.current?.pasteAndEnter(text),
+    // サーバーが状態を取り直して入れてよければ本文を返す。本文は xterm の paste() で入れてから Enter を送る。
+    // 確認している間に別のセッションへ切り替わっていたら、確認したセッションの端末ではないので何も入れない
+    checkQuickPromptSend(checkedId, promptId).then(
+      ({ text }) => {
+        if (selectedIdRef.current !== checkedId || terminalRef.current?.pasteAndEnter(checkedId, text) !== true) setQuickError(t("ac.quick.switched"));
+      },
       (err: unknown) => setQuickError(err instanceof Error ? err.message : String(err)),
     );
   };

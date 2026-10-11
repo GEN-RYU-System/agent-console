@@ -285,6 +285,13 @@ describe("past sessions (K4)", () => {
 });
 
 describe("memory (K6)", () => {
+  it("does not run ps through hub.snapshot for names (names come from the last snapshot)", async () => {
+    const snapshot = vi.spyOn(h.hub, "snapshot");
+    await api("GET", "/api/memory");
+    expect(snapshot).not.toHaveBeenCalled();
+    snapshot.mockRestore();
+  });
+
   it("returns per-session (display name), server and system memory", async () => {
     const id = await newSession("echo", "mem");
     setAgents([row(pidOf(id), "idle", { name: "display-from-claude" })]);

@@ -63,6 +63,8 @@ export function prepareE2eEnv(): void {
 
   const nameFile = path.join(base, "agent-name");
   writeFileSync(nameFile, "");
+  const slowFile = path.join(base, "agents-slow");
+  writeFileSync(slowFile, "");
   const allFile = path.join(base, "agents-all.json");
   writeFileSync(allFile, "[]");
   const osascriptLog = path.join(base, "osascript.log");
@@ -110,6 +112,7 @@ export function prepareE2eEnv(): void {
   process.env.AC_E2E_STATUS_FILE = statusFile;
   process.env.AC_E2E_NAME_FILE = nameFile;
   process.env.AC_E2E_ALL_FILE = allFile;
+  process.env.AC_E2E_SLOW_FILE = slowFile;
   process.env.AC_E2E_OSASCRIPT_LOG = osascriptLog;
   process.env.AC_E2E_DATA_DIR = dataDir;
 }
