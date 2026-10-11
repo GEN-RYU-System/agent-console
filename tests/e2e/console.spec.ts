@@ -517,6 +517,30 @@ test("段階2 K3: よく使う指示を登録・編集・削除でき、ボタ�
   expect(saved).toEqual({ version: 1, items: [] });
 });
 
+test("v0.3.4 K4: 「↑」「↓」で指示を並べ替えると、編集画面と上部のボタン列が新しい順になり、保存ファイルの順も変わる", async ({ page }) => {
+  for (const label of ["並び一", "並び二"]) {
+    await fetch(`${BASE}/api/quick-prompts`, {
+      method: "POST",
+      headers: { ...BEARER, "Content-Type": "application/json" },
+      body: JSON.stringify({ label, text: `echo-${label}` }),
+    });
+  }
+  await openPaired(page);
+  const bar = page.getByTestId("quick-prompt-bar");
+  await expect(bar.getByRole("button")).toHaveText(["並び一", "並び二", "指示を編集"]);
+  await page.getByRole("button", { name: "指示を編集", exact: true }).click();
+  const items = page.getByTestId("quick-prompt-item");
+  await expect(items.first().getByRole("button", { name: "上へ", exact: true })).toBeDisabled();
+  await expect(items.last().getByRole("button", { name: "下へ", exact: true })).toBeDisabled();
+  await items.last().getByRole("button", { name: "上へ", exact: true }).click();
+  await expect(items.first()).toContainText("並び二");
+  await page.keyboard.press("Escape");
+  await expect(bar.getByRole("button")).toHaveText(["並び二", "並び一", "指示を編集"]);
+  const saved = JSON.parse(readFileSync(path.join(DATA_DIR, "quick-prompts.json"), "utf8")) as { items: Array<{ id: string; label: string }> };
+  expect(saved.items.map((i) => i.label)).toEqual(["並び二", "並び一"]);
+  for (const item of saved.items) await fetch(`${BASE}/api/quick-prompts/${item.id}`, { method: "DELETE", headers: BEARER });
+});
+
 test("段階2 K3: 複数行の指示は、括弧付き貼付モードの端末へ ESC[200~ ... ESC[201~ で包まれて入り、その直後に Enter が届く", async ({ page }) => {
   const id = await apiCreate("bracketed-target", "e2e-bracketed");
   const created = await fetch(`${BASE}/api/quick-prompts`, {

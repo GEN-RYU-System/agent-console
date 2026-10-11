@@ -10,7 +10,7 @@ const state: ConsoleState = {
   roles: [{ id: "shell", labelKey: "role.shell", needsWorktree: false }],
   saSource: "abcdef0123456789",
   claudeVersion: "1.0.0",
-  appVersion: "0.3.3",
+  appVersion: "0.3.4",
   commit: "abcdef0123456789abcdef0123456789abcdef01",
 };
 
@@ -139,7 +139,7 @@ describe("ConsolePage resume picker (K1-K3 screen side)", () => {
 describe("ConsolePage footer and authorization", () => {
   it("shows the app version in the footer", async () => {
     render(<ConsolePage />);
-    expect((await screen.findByTestId("app-version")).textContent).toContain("0.3.3");
+    expect((await screen.findByTestId("app-version")).textContent).toContain("0.3.4");
   });
 
   it("shows a login-required callout on 401", async () => {
