@@ -58,3 +58,55 @@
 
 ## テスト
 - TDD の例外: ペアリングの統合テスト（`tests/unit/pairing.integration.test.ts`）とフロントのテストは実装と同時に作成。auth・keychain は RED を確認してから実装。
+
+## 修正ラウンド1（レビュー M1〜M3・L1〜L9 と CI 失敗への対応）
+
+設計の改訂（design.md §4-3, §4-4, §6, §8。コミット 8768c3b）を先に別コミットで行い、その後に実装した。
+
+### A. CI の失敗（server-process.test.ts「dev/fixed mode」で 404、期待 401）
+- 根拠: CI ログ（run 38102704905）`AssertionError: expected 404 to be 401`。旧実装は使用済みコードの `GET /pair?code=` に「SPA の index.html を 401 で返す」作りで、サーバーは `process.cwd()/dist` から配信する。CI では `npm test` が `npm run build` より前に走るため `dist` が無く、`serveStatic` が 404 を返した。ローカルでは `dist` が既にビルド済みで通っていた。
+- 対処: (1) ペアリングを `POST /api/pair/redeem`（JSON の 401）に移したため、テストは画面（`dist`）に依存しない API だけを使う。(2) `GET /pair` は常に SPA（静的配信）で、コードを消費しない（テストで検証）。
+
+### B. 相互認証（M1）
+- 流れ: launcher が `cnonce` を送る → サーバーが `snonce` と `HMAC(secret, "server|cnonce|snonce")` を返す → launcher が検証（不一致なら何も送らず中止）→ `HMAC(secret, "client|snonce|cnonce")` を `POST /api/pair` に送り 1 回限りコードを得る。snonce は 30 秒・1 回限り（証明が誤りでも消費）。`Bearer`（秘密）による `/api/pair` は廃止。
+- HMAC は `ops/launcher/pair-proof.mjs`（秘密は標準入力）。`server/pair-proof.ts` と形式が一致することをテスト（`pair-proof.test.ts`）。
+- 実機相当の確認（一時ポート・スタブ秘密・キーチェーン不使用。生出力: `/tmp/CC報告ファイル/orca-selfbuilt/s15-r1-mutual-auth-demo.txt`）: 本物のサーバー（keychain モード）に対して launcher が通り、コードが 1 回だけ引換えられる。`/healthz` に 200 を返すだけの偽サーバーに対しては、`pair-proof: サーバーの証明が一致しません…` で中止し、偽サーバーが受け取ったのは `GET /healthz` と `POST /api/pair/challenge`（cnonce のみ）だけ。秘密・クライアント証明は送っておらず、`open` も呼ばれない。さらに実 Chrome の `--app` 窓で、コードが画面側で引換えられた（5 秒後に自分で引換えると 401）。
+
+### C. Cookie の廃止（M2）
+- セッショントークンはタブの sessionStorage（`ac.session`）。API は `Authorization: Bearer`、WebSocket は `Sec-WebSocket-Protocol: ac.<token>`（ws の `handleProtocols` で受理した値を応答に返す）。セッション最長 12 時間。`POST /api/logout` でサーバー側失効、画面にログアウト（SA Button）。Set-Cookie は全応答で 0 件（統合テスト・e2e で検証）。別タブには共有されない（e2e）。
+- `GET /pair` は常に SPA。画面が `POST /api/pair/redeem`（Origin 必須）でコードを引換え、`history.replaceState` で `/` にする。StrictMode の二重実行でも 1 度しか引換えない（テスト）。
+
+### D. タグの検証（M3）
+- 到達性: `gh api repos/<repo>/compare/main...<SHA> --jq .status` が `identical` か `behind` のときだけ進む（`ahead`・`diverged` は中止し Trash へ）。shallow clone でも履歴を取得せずに判定できる。
+- `npm ci --ignore-scripts` ＋ `scripts/postinstall.mjs` を明示実行。実測（この Mac、`git archive HEAD` を一時ディレクトリに展開して実行）:
+  ```
+  npm ci --ignore-scripts → 成功
+  spawn-helper 実行権: 前 -rw-r--r-- → postinstall.mjs 後 -rwxr-xr-x
+  esbuild 0.28.2（@esbuild/darwin-arm64 あり）で `node -e "require('esbuild')"` 成功
+  sa-sync → build: ✓ built in 525ms
+  node-pty: pty output: "PTY_OK"
+  起動した dist-server の /healthz: {"ok":true,"version":"0.2.0","commit":""}（git 履歴の無い archive のため commit は空。クローンでは SHA が入る）
+  ```
+  esbuild・node-pty とも `--ignore-scripts` で問題なく動いたので NEEDS_DECISION は不要。
+- 導入・更新・切戻しの出力にタグのコミット SHA を表示し、画面下部にも短縮 SHA（`/api/state` の `commit`）を表示。
+
+### E. `rm` の全廃（L1）
+- スクリプト（`scripts/`・`ops/launcher/`）から `rm`（`-f` 含む）と `unlink` を除去。単一ファイルも Trash へ。pid・ロックはファイルを作らず空ディレクトリ（`rmdir` で消せる）、診断プロセスの pid はシェル変数、起動アプリは osacompile の標準入力で渡す（一時ファイル無し）。テストは `rm` の全形・`unlink`・`-delete` を検出（コメント行は除く、`rmdir` は許可）。
+
+### F. ロックの原子化（L2）
+- `mkdir lock` 成功の直後に `lock/pid-<pid>`（空ディレクトリ）を作る。回収は「pid-<n> があり、そのプロセスが不在」または「pid-<n> が無く、作成から 10 分超」のみ。各段（`rmdir pid-<n>`・`rmdir lock`・`mkdir lock`）のどれかが失敗した側は中止する。テスト: 生きた保持者・新しい保持者無しロックは回収しない、古いものは回収する、同時に 2 つ取得しにいって勝つのは 1 つだけ（実プロセス）。
+
+### G. 成功判定（L3）
+- `/healthz` の本文 `{"ok":true,"version":"<package.json>","commit":"<git rev-parse HEAD>"}` が期待の版・コミットと完全一致したときだけ成功。自己診断（別ポート）・更新・切戻し・導入すべて。テスト: kickstart が何もせず旧プロセスが 200 を返し続けても更新は失敗して元に戻る、別プロセスが診断ポートで 200 を返しても自己診断は通らない。
+
+### H. キーチェーン記述（L5）
+- design.md §6・§8 を事実に修正（`-T` 無しで `security` が作成した項目は同じユーザーの任意のプロセスが読み出せ得る＝未検証。保護は別ユーザー・ファイル直読みに対するもので、同一ユーザーのマルウェアは対象外）。実機での読み出し確認は未実施（キーチェーンに触れない約束）。
+
+### I. その他
+- 本番では `AC_*` の差し替えを無視（スクリプトは `AC_STUB_LOG` が無ければ `unset`、サーバーの `AC_SECURITY` は `securityBinFor` が同条件）。`AC_LAUNCHER_NODE`（起動アプリが導入時の node の絶対パスを渡す）だけは常に有効。launcher 自体は本物の `security` に触れずに確認できないため、挙動ではなく静的に検査。
+- ペアリングコードは使用後すぐ無効（auth・統合テストで確認済み）。
+- launcher テストの不安定: 原因は vitest 既定のテスト時間 5 秒に対し、全体並列実行時の起動待ち（1 秒単位の待ち）が長引いたこと。各テストに 40 秒の明示タイムアウトと 20 秒の起動待ちを設定。偽サーバーではなく本物のサーバーを使うように変更。
+- 隠れた不具合を 1 件発見: 全角括弧の直前の `$変数`（例 `$version）`）を bash が変数名の一部として読み、`set -u` のエラーが `if !` の中で黙って握りつぶされて処理が続いた。`${変数}` に修正し、静的テスト（非 ASCII の直前の `$変数` を禁止）を追加。
+
+### テスト先行の例外
+- 統合テスト・フロントのテスト・スクリプトのテストの一部は、実装と同時または直後に作成した。auth・pair-proof のテストは先に書いて RED を確認した。

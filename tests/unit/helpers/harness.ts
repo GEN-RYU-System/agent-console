@@ -43,6 +43,8 @@ async function freePort(): Promise<number> {
 }
 
 export interface HarnessOptions {
+  /** 指定すると、そのポートで待ち受ける（launchctl kickstart による起動の再現用）。 */
+  port?: number;
   ledgerScript?: string;
   maxSessions?: number;
 }
@@ -65,7 +67,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     writeFileSync(path.join(root, "scripts", "ledger.sh"), options.ledgerScript);
     chmodSync(path.join(root, "scripts", "ledger.sh"), 0o755);
   }
-  const port = await freePort();
+  const port = options.port ?? (await freePort());
   const config: Config = {
     port,
     salesanchorRoot: root,

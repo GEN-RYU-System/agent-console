@@ -18,10 +18,10 @@ prev="$(ac_current_tag)"
 
 ac_install_version "$tag" "$node_bin" || ac_die "$tag の導入（自己診断）に失敗しました。current は $prev のままです"
 ac_switch_current "$tag"
-if ! ac_restart_and_wait; then
-  ac_log "$tag での起動確認に失敗しました。$prev に戻します"
+if ! ac_restart_and_wait "$tag"; then
+  ac_log "$tag での起動確認（/healthz の版・コミットの一致）に失敗しました。$prev に戻します"
   ac_switch_current "$prev"
-  ac_restart_and_wait || ac_log "警告: $prev への切戻し後も /healthz が応答しません"
+  ac_restart_and_wait "$prev" || ac_log "警告: $prev への切戻し後も /healthz が期待の版・コミットで応答しません"
   ac_die "更新に失敗しました（current は $prev に戻しました）"
 fi
-echo "更新しました: $prev -> $tag"
+echo "更新しました: $prev -> ${tag}（コミット ${AC_LAST_COMMIT}）"

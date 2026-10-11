@@ -20,10 +20,10 @@ done < <(ac_list_versions)
 [ -n "$previous" ] || ac_die "$cur より前の版が導入されていません（切戻し先がありません）"
 
 ac_switch_current "$previous"
-if ! ac_restart_and_wait; then
-  ac_log "$previous での起動確認に失敗しました。$cur に戻します"
+if ! ac_restart_and_wait "$previous"; then
+  ac_log "$previous での起動確認（/healthz の版・コミットの一致）に失敗しました。$cur に戻します"
   ac_switch_current "$cur"
-  ac_restart_and_wait || ac_log "警告: $cur への復帰後も /healthz が応答しません"
+  ac_restart_and_wait "$cur" || ac_log "警告: $cur への復帰後も /healthz が期待の版・コミットで応答しません"
   ac_die "切戻しに失敗しました（current は $cur に戻しました）"
 fi
-echo "切り戻しました: $cur -> $previous"
+echo "切り戻しました: $cur -> ${previous}（コミット $(ac_commit_of "$AC_HOME/versions/$previous")）"

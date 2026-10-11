@@ -33,19 +33,20 @@ ensure_secret
 ac_install_version "$tag" "$node_bin" || ac_die "$tag の導入に失敗しました（current は変更していません）"
 ac_switch_current "$tag"
 ac_write_plist "$node_bin"
-ac_build_launcher_app
+ac_build_launcher_app "$node_bin"
 
 plist="$(ac_plist_path)"
 "$AC_LAUNCHCTL" bootout "gui/$AC_UID/$AC_LABEL" >/dev/null 2>&1 || true
 "$AC_LAUNCHCTL" bootstrap "gui/$AC_UID" "$plist" || ac_die "launchctl bootstrap に失敗しました"
 
-if ac_wait_healthy "$AC_PORT" "$AC_HEALTH_WAIT_SEC"; then
-  health="200 ok"
+if ac_wait_matches "$AC_PORT" "${tag#v}" "$AC_LAST_COMMIT" "$AC_HEALTH_WAIT_SEC"; then
+  health="200 ok（version ${tag#v}・commit ${AC_LAST_COMMIT:0:7} が一致）"
 else
-  health="失敗（ログ: $AC_HOME/logs/）"
+  health="失敗（期待の版・コミットで応答しません。ログ: $AC_HOME/logs/）"
 fi
 echo "--- 導入結果 ---"
 echo "版: $tag"
+echo "コミット: $AC_LAST_COMMIT"
 "$AC_LAUNCHCTL" print "gui/$AC_UID/$AC_LABEL" 2>/dev/null | grep -E '^\s*(state|pid) =' || echo "launchctl print: 取得できません"
 echo "healthz: $health"
-[ "$health" = "200 ok" ] || exit 1
+case "$health" in "200 ok"*) ;; *) exit 1 ;; esac

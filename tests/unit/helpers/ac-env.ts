@@ -74,7 +74,7 @@ start_server() {
 }
 case "$1" in
   bootstrap) start_server ;;
-  kickstart) start_server ;;
+  kickstart) [ "\${FAKE_NO_RESTART:-}" = 1 ] || start_server ;;
   bootout) stop_server ;;
   print) if [ -f "${pidFile}" ] && kill -0 "$(cat "${pidFile}")" 2>/dev/null; then echo "	state = running"; echo "	pid = $(cat "${pidFile}")"; else echo "	state = not running"; fi ;;
 esac
@@ -108,14 +108,19 @@ exit 0`,
     binDir,
     "gh",
     `echo "gh $*" >> "${stubLog}"
+if [ "$1" = api ]; then echo "\${FAKE_COMPARE_STATUS:-behind}"; exit 0; fi
 [ "$1 $2" = "repo clone" ] || exit 2
 dir="$4"; tag=""
 while [ $# -gt 0 ]; do if [ "$1" = "--branch" ]; then tag="$2"; fi; shift; done
 [ "\${FAKE_CLONE_FAIL:-}" = 1 ] && exit 1
 mkdir -p "$dir/dist-server/server" "$dir/scripts"
-printf '{"name":"agent-console","version":"%s"}\\n' "$tag" > "$dir/package.json"
+printf '{"name":"agent-console","version":"%s"}\\n' "\${tag#v}" > "$dir/package.json"
 cp "${fixture}" "$dir/dist-server/server/index.js"
 echo "console.log('sa-sync stub')" > "$dir/scripts/sa-sync.mjs"
+echo "import { appendFileSync } from 'node:fs'; appendFileSync(process.env.AC_STUB_LOG, 'postinstall-ran\\n')" > "$dir/scripts/postinstall.mjs"
+git -C "$dir" init -q
+git -C "$dir" -c user.name=stub -c user.email=stub@example.invalid add -A
+git -C "$dir" -c user.name=stub -c user.email=stub@example.invalid commit -q -m "release $tag"
 exit 0`,
   );
 
@@ -126,7 +131,8 @@ exit 0`,
     `echo "osacompile $*" >> "${stubLog}"
 out=""; src=""
 while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift ;; *) src="$1" ;; esac; shift; done
-mkdir -p "$out"; cp "$src" "$out/script.applescript"
+mkdir -p "$out"
+if [ -n "$src" ]; then cp "$src" "$out/script.applescript"; else cat > "$out/script.applescript"; fi
 exit 0`,
   );
   const plutil = stub(binDir, "plutil", `echo "plutil $*" >> "${stubLog}"\nif [ -x /usr/bin/plutil ]; then exec /usr/bin/plutil "$@"; fi\nexit 0`);

@@ -4,6 +4,13 @@
 # 秘密（サーバー秘密）は変数に持つだけで、引数・ログ・ps に出さない。
 # 片付け（撤去・失敗した版・置き換える起動アプリ）は削除せず Trash へ移す（元に戻せる）。
 
+# 差し替え用の AC_* 環境変数は、テストモード（AC_STUB_LOG が設定されているとき）だけ有効。
+# 本番実行では無視する（汚染された環境変数で取得元・security・curl・launchctl などが差し替わらないように）。
+if [ -z "${AC_STUB_LOG:-}" ]; then
+  unset AC_HOME AC_LAUNCH_AGENTS_DIR AC_APPS_DIR AC_TRASH AC_LAUNCHCTL AC_SECURITY AC_GH AC_NPM AC_OSACOMPILE \
+    AC_PLUTIL AC_CURL AC_REPO AC_PORT AC_DIAG_PORT AC_LABEL AC_UID AC_NODE AC_CLAUDE AC_HEALTH_WAIT_SEC
+fi
+
 AC_HOME="${AC_HOME:-$HOME/Library/Application Support/agent-console}"
 AC_LAUNCH_AGENTS_DIR="${AC_LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}"
 AC_APPS_DIR="${AC_APPS_DIR:-$HOME/Applications}"
@@ -84,35 +91,73 @@ ac_trash() {
 }
 
 # --- 排他（macOS に flock は無いので mkdir ロック＋trap） ---
+# 保持者は、ロック直下の空ディレクトリ pid-<pid> で表す（ファイルを作らない＝rmdir だけで解除できる）。
+AC_LOCK_STALE_SEC=600
+AC_LOCK_OWNED=0
+
 ac_lock_dir() { printf '%s/lock' "$AC_HOME"; }
 
-ac_acquire_lock() {
-  mkdir -p "$AC_HOME"
+ac_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
+
+# ロックの保持者（pid-<n> の n）を出す。無ければ空
+ac_lock_holder() {
+  local d
+  for d in "$(ac_lock_dir)"/pid-*; do
+    [ -d "$d" ] || continue
+    basename "$d" | sed 's/^pid-//'
+    return 0
+  done
+}
+
+ac_lock_busy() {
+  ac_die "別の導入・更新・切戻しが実行中です（ロック: $(ac_lock_dir)）"
+}
+
+ac_take_lock() {
   local lock
   lock="$(ac_lock_dir)"
-  if ! mkdir "$lock" 2>/dev/null; then
-    local holder=""
-    [ -f "$lock/pid" ] && holder="$(cat "$lock/pid" 2>/dev/null || true)"
-    if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
-      ac_log "前回の異常終了で残ったロックを解除します（pid $holder は存在しません）"
-      rm -f "$lock/pid"
-      rmdir "$lock" 2>/dev/null || ac_die "ロックを解除できません: $lock"
-      mkdir "$lock" || ac_die "ロックを取得できません: $lock"
-    else
-      ac_die "別の導入・更新・切戻しが実行中です（ロック: ${lock}）"
-    fi
-  fi
-  printf '%s\n' "$$" >"$lock/pid"
+  # mkdir 成功の直後に保持者を記録する
+  mkdir "$lock/pid-$$" 2>/dev/null || { rmdir "$lock" 2>/dev/null || true; ac_lock_busy; }
+  AC_LOCK_OWNED=1
   trap 'ac_release_lock' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
 }
 
+ac_acquire_lock() {
+  mkdir -p "$AC_HOME"
+  local lock holder age
+  lock="$(ac_lock_dir)"
+  if mkdir "$lock" 2>/dev/null; then
+    ac_take_lock
+    return
+  fi
+  # 既にロックがある。回収してよいのは次の 2 つだけ
+  #  (1) pid-<n> があり、そのプロセスが存在しない
+  #  (2) pid-<n> が無く、ロックの作成から AC_LOCK_STALE_SEC 秒を超えている（mkdir 直後に落ちた場合）
+  # 回収の各段（rmdir / mkdir）のどれかが失敗した側は「実行中」として中止する（同時回収で両方が取得しない）
+  holder="$(ac_lock_holder)"
+  if [ -n "$holder" ]; then
+    kill -0 "$holder" 2>/dev/null && ac_lock_busy
+    ac_log "前回の異常終了で残ったロックを回収します（pid $holder は存在しません）"
+    rmdir "$lock/pid-$holder" 2>/dev/null || ac_lock_busy
+  else
+    age=$(($(date +%s) - $(ac_mtime "$lock")))
+    [ "$age" -gt "$AC_LOCK_STALE_SEC" ] || ac_lock_busy
+    ac_log "保持者の記録が無いまま ${age} 秒経ったロックを回収します"
+  fi
+  rmdir "$lock" 2>/dev/null || ac_lock_busy
+  mkdir "$lock" 2>/dev/null || ac_lock_busy
+  ac_take_lock
+}
+
 ac_release_lock() {
+  [ "$AC_LOCK_OWNED" -eq 1 ] || return 0
   local lock
   lock="$(ac_lock_dir)"
-  rm -f "$lock/pid" 2>/dev/null || true
+  rmdir "$lock/pid-$$" 2>/dev/null || true
   rmdir "$lock" 2>/dev/null || true
+  AC_LOCK_OWNED=0
 }
 
 # --- 版の管理 ---
@@ -141,17 +186,24 @@ ac_random_hex() {
   head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'
 }
 
-ac_healthy() {
-  "$AC_CURL" -fsS -m 2 "http://127.0.0.1:$1/healthz" >/dev/null 2>&1
+# /healthz の本文が期待の版・コミットと一致するか（旧プロセスや別プロセスの応答では成功にしない）
+ac_healthz_matches() {
+  local port="$1" version="$2" commit="$3" body
+  body="$("$AC_CURL" -fsS -m 2 "http://127.0.0.1:$port/healthz" 2>/dev/null)" || return 1
+  [ "$body" = "{\"ok\":true,\"version\":\"$version\",\"commit\":\"$commit\"}" ]
 }
 
-ac_wait_healthy() {
-  local port="$1" max="$2" waited=0
-  until ac_healthy "$port"; do
+ac_wait_matches() {
+  local port="$1" version="$2" commit="$3" max="$4" waited=0
+  until ac_healthz_matches "$port" "$version" "$commit"; do
     waited=$((waited + 1))
     [ "$waited" -le "$max" ] || return 1
     sleep 1
   done
+}
+
+ac_commit_of() {
+  git -C "$1" rev-parse HEAD 2>/dev/null
 }
 
 ac_resolve_node() {
@@ -205,58 +257,69 @@ ac_write_plist() {
   fi
 }
 
-# 起動アプリ（Dock 用）を雛形から生成する（既存のアプリは Trash へ移してから作る）
+# 起動アプリ（Dock 用）を雛形から生成する（既存のアプリは Trash へ移してから作る。スクリプトは標準入力で渡し、一時ファイルを作らない）
 ac_build_launcher_app() {
-  local template="$AC_SOURCE_DIR/ops/launcher/AgentConsole.applescript" app tmp
+  local node_bin="$1" template="$AC_SOURCE_DIR/ops/launcher/AgentConsole.applescript" app
   ac_require_plain_path "$AC_HOME"
+  ac_require_plain_path "$node_bin"
   app="$AC_APPS_DIR/$AC_APP_NAME"
   mkdir -p "$AC_APPS_DIR"
-  tmp="$(mktemp "${TMPDIR:-/tmp}/ac-launcher.XXXXXX")"
-  sed -e "s|__AC_HOME__|$(printf '%s' "$AC_HOME" | ac_sed_escape)|g" "$template" >"$tmp"
   ac_trash "$app" "app"
-  "$AC_OSACOMPILE" -o "$app" "$tmp" || ac_die "起動アプリの生成に失敗しました"
-  rm -f -- "$tmp"
+  sed -e "s|__AC_HOME__|$(printf '%s' "$AC_HOME" | ac_sed_escape)|g" -e "s|__AC_NODE__|$(printf '%s' "$node_bin" | ac_sed_escape)|g" "$template" |
+    "$AC_OSACOMPILE" -o "$app" || ac_die "起動アプリの生成に失敗しました"
 }
 
-# --- 版の導入（clone → npm ci → sa-sync → build → 別ポートで自己診断 → versions/<tag> へ） ---
+# --- 版の導入（clone → 到達性確認 → npm ci --ignore-scripts → postinstall → sa-sync → build → 別ポートで自己診断 → versions/<tag> へ） ---
+# 診断サーバーを別ポートで起動し、/healthz の本文が期待の版・コミットと一致したら成功
 ac_diagnose() {
-  local dir="$1" node_bin="$2" pid_file log_file diag_pid ok=1
-  pid_file="$AC_HOME/logs/diag.pid"
+  local dir="$1" node_bin="$2" version="$3" commit="$4" diag_pid log_file ok=1 waited=0 old_pwd old_umask
   log_file="$AC_HOME/logs/diag.log"
   [ -f "$dir/dist-server/server/index.js" ] || { ac_log "自己診断: dist-server/server/index.js がありません"; return 1; }
-  (
-    umask 077
-    cd "$dir" || exit 1
-    # 診断用の使い捨て秘密は環境変数で渡す（引数に出さない）。本番のキーチェーン秘密は使わない
-    AGENT_CONSOLE_TOKEN="$(ac_random_hex)" AGENT_CONSOLE_PORT="$AC_DIAG_PORT" AGENT_CONSOLE_AUTH="" \
-      "$node_bin" dist-server/server/index.js >"$log_file" 2>&1 &
-    echo $! >"$pid_file"
-  )
-  diag_pid="$(cat "$pid_file")"
+  old_pwd="$PWD"
+  old_umask="$(umask)"
+  umask 077
+  cd "$dir" || return 1
+  # 診断用の使い捨て秘密は環境変数で渡す（引数に出さない）。本番のキーチェーン秘密は使わない
+  AGENT_CONSOLE_TOKEN="$(ac_random_hex)" AGENT_CONSOLE_PORT="$AC_DIAG_PORT" AGENT_CONSOLE_AUTH="" \
+    "$node_bin" dist-server/server/index.js >"$log_file" 2>&1 &
+  diag_pid=$!
+  cd "$old_pwd" || return 1
+  umask "$old_umask"
   # 診断サーバーが落ちたら待たずに失敗とする
-  local waited=0
   while [ "$waited" -lt 15 ]; do
-    if ac_healthy "$AC_DIAG_PORT"; then ok=0; break; fi
+    if ac_healthz_matches "$AC_DIAG_PORT" "$version" "$commit"; then ok=0; break; fi
     kill -0 "$diag_pid" 2>/dev/null || break
     sleep 1
     waited=$((waited + 1))
   done
   kill "$diag_pid" 2>/dev/null || true
   wait "$diag_pid" 2>/dev/null || true
-  rm -f "$pid_file"
   if [ "$ok" -ne 0 ]; then
-    ac_log "自己診断に失敗しました（ログ: ${log_file}）"
+    ac_log "自己診断に失敗しました（期待: version $version / commit ${commit}。ログ: ${log_file}）"
     return 1
   fi
-  ac_log "自己診断 OK（別ポート $AC_DIAG_PORT で /healthz が 200）"
+  ac_log "自己診断 OK（別ポート $AC_DIAG_PORT の /healthz が version ${version}・commit ${commit:0:7} と一致）"
 }
 
+# タグのコミットが origin/main から到達可能か（GitHub の compare API: identical か behind なら到達可能）
+ac_reachable_from_main() {
+  local sha="$1" status
+  status="$("$AC_GH" api "repos/$AC_REPO/compare/main...$sha" --jq .status 2>/dev/null)" || return 1
+  case "$status" in identical | behind) return 0 ;; *) ac_log "コミット $sha は origin/main から到達できません（compare の status: ${status:-不明}）"; return 1 ;; esac
+}
+
+# 成功すると AC_LAST_COMMIT にタグのコミット SHA が入る
+AC_LAST_COMMIT=""
 ac_install_version() {
-  local tag="$1" node_bin="$2" final tmp
+  local tag="$1" node_bin="$2" final tmp version sha
+  version="${tag#v}"
   final="$AC_HOME/versions/$tag"
   if [ -d "$final" ]; then
-    ac_log "$tag は導入済みです。自己診断だけ行います"
-    ac_diagnose "$final" "$node_bin" || return 1
+    sha="$(ac_commit_of "$final")" || sha=""
+    [ -n "$sha" ] || { ac_log "$tag のコミットを取得できません"; return 1; }
+    ac_log "$tag は導入済みです（コミット ${sha}）。自己診断だけ行います"
+    ac_diagnose "$final" "$node_bin" "$version" "$sha" || return 1
+    AC_LAST_COMMIT="$sha"
     return 0
   fi
   tmp="$AC_HOME/versions/.tmp-$tag-$$"
@@ -266,26 +329,44 @@ ac_install_version() {
     ac_trash "$tmp" "failed-$tag"
     return 1
   fi
-  if ! (
-    cd "$tmp" &&
-      "$AC_NPM" ci >&2 &&
-      "$node_bin" scripts/sa-sync.mjs >&2 &&
-      "$AC_NPM" run build >&2
-  ); then
-    ac_log "導入手順（npm ci / sa-sync / build）に失敗しました: $tag"
+  sha="$(ac_commit_of "$tmp")" || sha=""
+  if [ -z "$sha" ]; then
+    ac_log "取得した $tag のコミットを確認できません"
     ac_trash "$tmp" "failed-$tag"
     return 1
   fi
-  if ! ac_diagnose "$tmp" "$node_bin"; then
+  ac_log "$tag のコミット: $sha"
+  if ! ac_reachable_from_main "$sha"; then
+    ac_log "$tag は origin/main に含まれないコミットを指しています。導入を中止します"
+    ac_trash "$tmp" "failed-$tag"
+    return 1
+  fi
+  # 依存のライフサイクルスクリプトは実行しない（--ignore-scripts）。必要な処理（node-pty の spawn-helper の実行権）は
+  # リポジトリ内の scripts/postinstall.mjs を明示的に実行する
+  if ! (
+    cd "$tmp" &&
+      "$AC_NPM" ci --ignore-scripts >&2 &&
+      "$node_bin" scripts/postinstall.mjs >&2 &&
+      "$node_bin" scripts/sa-sync.mjs >&2 &&
+      "$AC_NPM" run build >&2
+  ); then
+    ac_log "導入手順（npm ci --ignore-scripts / postinstall / sa-sync / build）に失敗しました: $tag"
+    ac_trash "$tmp" "failed-$tag"
+    return 1
+  fi
+  if ! ac_diagnose "$tmp" "$node_bin" "$version" "$sha"; then
     ac_trash "$tmp" "failed-$tag"
     return 1
   fi
   mv "$tmp" "$final"
-  ac_log "$tag を導入しました"
+  AC_LAST_COMMIT="$sha"
+  ac_log "$tag を導入しました（コミット ${sha}）"
 }
 
-# サービスを再起動して /healthz を待つ。成功 0 / 失敗 1
+# サービスを再起動して、/healthz の本文が指定した版（タグ）の期待値と一致するまで待つ。成功 0 / 失敗 1
 ac_restart_and_wait() {
+  local tag="$1" sha
+  sha="$(ac_commit_of "$AC_HOME/versions/$tag")" || return 1
   "$AC_LAUNCHCTL" kickstart -k "gui/$AC_UID/$AC_LABEL" >/dev/null 2>&1 || true
-  ac_wait_healthy "$AC_PORT" "$AC_HEALTH_WAIT_SEC"
+  ac_wait_matches "$AC_PORT" "${tag#v}" "$sha" "$AC_HEALTH_WAIT_SEC"
 }
