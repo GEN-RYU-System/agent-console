@@ -1,4 +1,4 @@
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync, existsSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync, existsSync } from "node:fs";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import net from "node:net";
 import os from "node:os";
@@ -22,6 +22,8 @@ export interface AcEnv {
   home: string;
   agentsDir: string;
   appsDir: string;
+  trashDir: string;
+  trashed(): string[];
   stubLog: string;
   keychainFile: string;
   port: number;
@@ -46,6 +48,7 @@ export async function makeAcEnv(): Promise<AcEnv> {
   const home = path.join(base, "home", "agent-console");
   const agentsDir = path.join(base, "LaunchAgents");
   const appsDir = path.join(base, "Applications");
+  const trashDir = path.join(base, "Trash");
   const binDir = path.join(base, "bin");
   mkdirSync(binDir, { recursive: true });
   const stubLog = path.join(base, "stub.log");
@@ -64,7 +67,10 @@ export async function makeAcEnv(): Promise<AcEnv> {
 stop_server() { if [ -f "${pidFile}" ]; then kill "$(cat "${pidFile}")" 2>/dev/null || true; rm -f "${pidFile}"; sleep 0.2; fi; }
 start_server() {
   stop_server
-  ( cd "${home}/current" && FAKE_MAIN=1 AGENT_CONSOLE_PORT="${port}" nohup node dist-server/server/index.js >> "${base}/fake-server.log" 2>&1 & echo $! > "${pidFile}" )
+  cd "${home}/current" || exit 1
+  # node 自身の pid を記録する（&& でつなげて丸ごと背景にすると $! がサブシェルの pid になり、止められなくなる）
+  FAKE_MAIN=1 AGENT_CONSOLE_PORT="${port}" nohup node dist-server/server/index.js >> "${base}/fake-server.log" 2>&1 < /dev/null &
+  echo $! > "${pidFile}"
 }
 case "$1" in
   bootstrap) start_server ;;
@@ -131,6 +137,7 @@ exit 0`,
     AC_HOME: home,
     AC_LAUNCH_AGENTS_DIR: agentsDir,
     AC_APPS_DIR: appsDir,
+    AC_TRASH: trashDir,
     AC_LAUNCHCTL: launchctl,
     AC_SECURITY: security,
     AC_GH: gh,
@@ -153,6 +160,8 @@ exit 0`,
     home,
     agentsDir,
     appsDir,
+    trashDir,
+    trashed: () => (existsSync(trashDir) ? readdirSync(trashDir).sort() : []),
     stubLog,
     keychainFile,
     port,

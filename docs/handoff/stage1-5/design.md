@@ -65,9 +65,10 @@
 | `scripts/ac-install.sh <tag>` | 初回導入。秘密が無ければ作成→版を導入（下の install-version）→plist 書出し・lint・bootstrap→起動アプリ生成→`/healthz` 確認 |
 | `scripts/ac-update.sh <tag>` | install-version → current を切替（`ln -sfn`）→ `launchctl kickstart -k` → `/healthz` 確認。失敗したら元の版に戻す |
 | `scripts/ac-rollback.sh` | versions/ のうち current より 1 つ前（semver 順）へ切替 → kickstart → `/healthz` 確認 |
-| `scripts/ac-uninstall.sh` | bootout → plist と起動アプリを撤去。versions/ とキーチェーンの秘密は残す（`--purge` 指定時のみ撤去） |
+| `scripts/ac-uninstall.sh` | bootout → plist と起動アプリを **Trash へ移動**（削除しない）。versions/ とキーチェーンの秘密は残す（`--purge` 指定時のみ、versions/・current・logs を Trash へ移動し、キーチェーンの秘密を削除） |
 | install-version（内部） | `gh repo clone shingo-cc/agent-console versions/<tag> -- --branch <tag> --depth 1` → `npm ci` → sa-sync → build → 別ポート（4320）で自己診断（起動→`/healthz` 200→停止）。失敗した版は current にしない |
 
+- **片付けは削除せず Trash へ移す**（PO 方針 2026-10-11: 再帰・強制の削除コマンドをスクリプトに書かない）。移動先は `~/.Trash/agent-console-<種類>-<YYYYmmdd-HHMMSS>`（テストでは `AC_TRASH` で差し替え）。対象は撤去する plist・起動アプリ、失敗した版の一時ディレクトリ、置き換える旧 plist・旧起動アプリ、`--purge` の versions/・current・logs。移動元はマーカーのある AC_HOME 配下か LaunchAgents・Applications 配下に限る。キーチェーンの秘密の削除（`--purge`）だけは元に戻せない。
 - テストでは対象ディレクトリ（`AC_HOME`）・`launchctl`・`security`・`git/gh`・`open` を環境変数で差し替え、一時ディレクトリ内で導入→更新→切戻し→撤去を通す。
 - 版を出す手順: package.json の version を上げる PR → マージ → `vX.Y.Z` タグを付けて push（タグは Opus/Sonnet が付ける）。
 

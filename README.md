@@ -22,9 +22,10 @@ Local console for running parallel Claude Code sessions (Orca-inspired, lightwei
 | 初回導入 | `! bash scripts/ac-install.sh v0.2.0` | サーバー秘密をキーチェーンに保存 → 版を取得・ビルド → **別ポートで自己診断** → ログイン時自動起動を登録 → Dock 用の `~/Applications/Agent Console.app` を生成 → `/healthz` を確認して結果を表示 |
 | 更新 | `! bash scripts/ac-update.sh v0.3.0` | 新しい版を導入 → 自己診断に通ったときだけ切替 → 再起動 → `/healthz` 確認。失敗したら元の版に戻る |
 | 切戻し | `! bash scripts/ac-rollback.sh` | 1 つ前の版（semver 順）に切替 → 再起動 → `/healthz` 確認 |
-| 撤去 | `! bash scripts/ac-uninstall.sh` | 自動起動と起動アプリを外す。導入済みの版とキーチェーンの秘密は残す |
-| 完全撤去 | `! bash scripts/ac-uninstall.sh --purge` | 上に加えて、導入済みの版とキーチェーンの秘密も削除 |
+| 撤去 | `! bash scripts/ac-uninstall.sh` | 自動起動と起動アプリを外して **Trash へ移す**（削除しない）。導入済みの版とキーチェーンの秘密は残す |
+| 完全撤去 | `! bash scripts/ac-uninstall.sh --purge` | 上に加えて、導入済みの版・current・logs を Trash へ移し、キーチェーンの秘密を削除（秘密の削除だけは元に戻せない） |
 
+- 片付けはすべて `~/.Trash/agent-console-<種類>-<日時>` への移動で、スクリプトは削除コマンドを使わない。戻したいときは Trash から元の場所へ戻す。
 - 導入後は Dock に `Agent Console.app`（`~/Applications`）をドラッグして固定する。1 回クリックすると、Chrome のアプリ窓がログイン済みで開く。
 - 使用中の版は、画面下部の「版」で確認できる。
 - 置き場所: `~/Library/Application Support/agent-console/`（`versions/<tag>/`、`current`、`logs/`）、`~/Library/LaunchAgents/local.agent-console.server.plist`、キーチェーンのサービス `agent-console` / アカウント `server`。

@@ -32,14 +32,19 @@
 | 4 起動ログ | 完了（開発時のみペアリング URL。本番は秘密・セッション・コードを出さない） |
 | 5 フロント | 完了（Cookie 認証、ペアリング失敗画面、版表示） |
 | 6 plist 雛形 | 完了（`ops/launchd/local.agent-console.server.plist.template`） |
-| 7 ac-install/update/rollback/uninstall＋lib | **保留（BLOCKED）**: 下記 |
+| 7 ac-install/update/rollback/uninstall＋lib | 完了（下記の方針、`tests/unit/scripts.test.ts`） |
 | 8 起動アプリ | 完了（`ops/launcher/AgentConsole.applescript`・`launch.sh`、テスト付き）。osacompile は実機で構文確認 |
 | 9 CI audit | 完了（`npm audit --audit-level=moderate`・`npm audit signatures`、ローカルで両方 exit 0） |
 | 10 version 0.2.0・CHANGELOG | 完了 |
 | 11 README | 完了 |
 
-### 保留の理由
-スクリプト本文（`scripts/lib/ac-common.sh` と `scripts/ac-uninstall.sh`）に、AC_HOME 配下でマーカー確認済みのパスだけを対象にしたディレクトリ削除（再帰・強制の削除コマンド）を書く Bash コマンドが、agent-danger-hook に「不可逆操作」として拒否された。実行ではなく本文を書き出すだけだったが、言い換え再試行はしていない。スクリプトのテスト（`tests/unit/scripts.test.ts`、スタブ・一時ディレクトリ）は先に書いてあり、スクリプトが無いため現在は失敗する。
+### 項目 7 の方針（設計者判断 2026-10-11）
+スクリプト本文に再帰・強制の削除コマンドを書く Bash コマンドが agent-danger-hook に拒否された。Write ツールでフックを避けることはせず、設計者の判断で「削除を一切使わず Trash へ移す」設計にした。
+- 移動先: `$AC_TRASH`（既定 `$HOME/.Trash`）の `agent-console-<種類>-<YYYYmmdd-HHMMSS>`。
+- 対象: 撤去する plist・起動アプリ、失敗した版の一時ディレクトリ（種類 `failed-<tag>`）、置き換える旧 plist・旧起動アプリ、`--purge` の versions/・current・logs。
+- 移動元はマーカー（`.agent-console-home`）のある AC_HOME 配下か、LaunchAgents・Applications 配下に限る（`ac_trash`）。テストモードでは Trash も含め一時ディレクトリ以外を拒否する。
+- 例外: キーチェーンの秘密の削除（`--purge`）は元に戻せない。pid・ロック・一時ファイルなど自分が作った単一ファイルは通常のファイル削除を使う（再帰・強制ではない）。
+- テストで「元の場所に無く Trash に有る」ことと、スクリプトに再帰削除のコマンドが無いことを検証。
 
 ## 認証まわりの判断（カードに無い細部）
 

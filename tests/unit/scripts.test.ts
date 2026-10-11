@@ -99,7 +99,23 @@ describe("ac-install.sh", () => {
     expect(existsSync(path.join(e.home, "current"))).toBe(false);
     expect(versionsDir(e)).toEqual([]);
     expect(existsSync(path.join(e.agentsDir, "local.agent-console.server.plist"))).toBe(false);
+    // 失敗した版は削除せず Trash へ（元に戻せる）
+    expect(e.trashed().some((n) => /^agent-console-failed-v9\.9\.9-\d{8}-\d{6}/.test(n))).toBe(true);
   }, 60000);
+
+  it("moves the previous plist and launcher app to Trash (never deletes) when re-installing", async () => {
+    const e = await installed();
+    const r = e.run("ac-install.sh", ["v1.0.0"]);
+    expect(r.status, r.stderr).toBe(0);
+    const names = e.trashed();
+    expect(names.some((n) => n.startsWith("agent-console-plist-"))).toBe(true);
+    expect(names.some((n) => n.startsWith("agent-console-app-"))).toBe(true);
+    const plistInTrash = names.find((n) => n.startsWith("agent-console-plist-")) as string;
+    expect(readFileSync(path.join(e.trashDir, plistInTrash), "utf8")).toContain("local.agent-console.server");
+    // 新しい plist とアプリは元の場所にある
+    expect(existsSync(path.join(e.agentsDir, "local.agent-console.server.plist"))).toBe(true);
+    expect(existsSync(path.join(e.appsDir, "Agent Console.app"))).toBe(true);
+  }, 90000);
 });
 
 describe("ac-update.sh", () => {
@@ -121,6 +137,7 @@ describe("ac-update.sh", () => {
     expect(currentTag(e)).toBe("v1.0.0");
     expect(versionsDir(e)).toEqual(["v1.0.0"]);
     expect(await version(e)).toBe("v1.0.0");
+    expect(e.trashed().some((n) => n.startsWith("agent-console-failed-v9.9.9-"))).toBe(true);
   }, 90000);
 
   it("keeps current when the download fails", async () => {
@@ -166,27 +183,53 @@ describe("ac-rollback.sh", () => {
 });
 
 describe("ac-uninstall.sh", () => {
-  it("removes the plist and the launcher app but keeps versions and the keychain secret", async () => {
+  it("moves the plist and the launcher app to Trash (not deleted) and keeps versions and the keychain secret", async () => {
     const e = await installed();
     const secret = e.secret();
+    const plist = path.join(e.agentsDir, "local.agent-console.server.plist");
+    const app = path.join(e.appsDir, "Agent Console.app");
     const r = e.run("ac-uninstall.sh");
     expect(r.status, r.stderr).toBe(0);
-    expect(existsSync(path.join(e.agentsDir, "local.agent-console.server.plist"))).toBe(false);
-    expect(existsSync(path.join(e.appsDir, "Agent Console.app"))).toBe(false);
+    // 元の場所に無く、Trash に有る
+    expect(existsSync(plist)).toBe(false);
+    expect(existsSync(app)).toBe(false);
+    const names = e.trashed();
+    const trashedPlist = names.find((n) => /^agent-console-plist-\d{8}-\d{6}/.test(n)) as string;
+    const trashedApp = names.find((n) => /^agent-console-app-\d{8}-\d{6}/.test(n)) as string;
+    expect(trashedPlist).toBeDefined();
+    expect(trashedApp).toBeDefined();
+    expect(readFileSync(path.join(e.trashDir, trashedPlist), "utf8")).toContain("local.agent-console.server");
+    expect(existsSync(path.join(e.trashDir, trashedApp, "script.applescript"))).toBe(true);
+    // 版と秘密は残る
     expect(existsSync(path.join(e.home, "versions", "v1.0.0"))).toBe(true);
     expect(e.secret()).toBe(secret);
     expect(e.log()).toContain("launchctl bootout gui/501/local.agent-console.server");
     expect(e.log()).not.toContain("delete-generic-password");
   }, 60000);
 
-  it("--purge also removes versions and deletes the keychain item", async () => {
+  it("--purge moves versions, current and logs to Trash and deletes the keychain item", async () => {
     const e = await installed();
     const r = e.run("ac-uninstall.sh", ["--purge"]);
     expect(r.status, r.stderr).toBe(0);
     expect(existsSync(path.join(e.home, "versions"))).toBe(false);
     expect(() => lstatSync(path.join(e.home, "current"))).toThrow();
+    expect(existsSync(path.join(e.home, "logs"))).toBe(false);
+    const names = e.trashed();
+    const trashedVersions = names.find((n) => /^agent-console-versions-/.test(n)) as string;
+    expect(trashedVersions).toBeDefined();
+    expect(existsSync(path.join(e.trashDir, trashedVersions, "v1.0.0", "package.json"))).toBe(true);
+    expect(names.some((n) => /^agent-console-current-/.test(n))).toBe(true);
+    expect(names.some((n) => /^agent-console-logs-/.test(n))).toBe(true);
     expect(e.log()).toContain("security delete-generic-password -s agent-console -a server");
   }, 60000);
+
+  it("never runs a recursive forced delete (scripts contain no such command)", () => {
+    for (const file of ["scripts/ac-install.sh", "scripts/ac-update.sh", "scripts/ac-rollback.sh", "scripts/ac-uninstall.sh", "scripts/lib/ac-common.sh", "ops/launcher/launch.sh"]) {
+      const text = readFileSync(path.join(REPO, file), "utf8");
+      expect(text, file).not.toMatch(/\brm\s+-[a-zA-Z]*r/);
+      expect(text, file).not.toMatch(/\brm\s+--recursive/);
+    }
+  });
 
   it("refuses to purge a directory without the Agent Console marker", async () => {
     const e = await fresh();
@@ -194,7 +237,16 @@ describe("ac-uninstall.sh", () => {
     const r = e.run("ac-uninstall.sh", ["--purge"]);
     expect(r.status).not.toBe(0);
     expect(existsSync(path.join(e.home, "versions", "v0.0.1"))).toBe(true);
+    expect(e.trashed()).toEqual([]);
   });
+
+  it("only moves paths inside the allowed locations", async () => {
+    const e = await installed();
+    // マーカーを持たない別の場所の plist には触れない（AC_LAUNCH_AGENTS_DIR 配下だけが対象）
+    const r = e.run("ac-uninstall.sh");
+    expect(r.status, r.stderr).toBe(0);
+    for (const n of e.trashed()) expect(n).toMatch(/^agent-console-(plist|app)-/);
+  }, 60000);
 });
 
 describe("locking and guards", () => {
@@ -230,6 +282,9 @@ describe("locking and guards", () => {
     expect(r.status).not.toBe(0);
     expect(r.stderr).toContain("一時ディレクトリ以外");
     expect(e.log()).toBe("");
+    const t = e.run("ac-uninstall.sh", [], { AC_TRASH: `${process.env.HOME}/.Trash` });
+    expect(t.status).not.toBe(0);
+    expect(t.stderr).toContain("一時ディレクトリ以外");
   });
 });
 
