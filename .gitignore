@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.sa-cache/
+test-results/
+playwright-report/
+*.log
+.pr-body-*.md
+.npm-cache/
+dist-server/
