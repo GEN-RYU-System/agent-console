@@ -70,38 +70,48 @@ const viewOf = async (id: string): Promise<Record<string, unknown>> => {
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 150));
 
 describe("break notifications (K1)", () => {
-  it("notifies once on busy -> idle, counts unread, clears it when read, and writes nothing to the terminal", async () => {
-    const id = await newSession("echo", "notify-me");
-    const pid = pidOf(id);
-    const write = vi.spyOn(h.sessions, "write");
-    await vi.waitFor(() => expect(ringOf(id)).toContain("READY"));
-    const ringBefore = ringOf(id);
+  // 1 つの it に何度も ps・bash を起動する手順を詰めると、負荷時に 5 秒に近づく。順に進む手順を it ごとに分ける
+  let id = "";
+  let pid = 0;
+  let ringBefore = "";
+  let write: ReturnType<typeof vi.spyOn>;
 
+  beforeAll(async () => {
+    id = await newSession("echo", "notify-me");
+    pid = pidOf(id);
+    write = vi.spyOn(h.sessions, "write");
+    await vi.waitFor(() => expect(ringOf(id)).toContain("READY"));
+    ringBefore = ringOf(id);
+  });
+  afterAll(() => write.mockRestore());
+
+  it("does not notify for the first observation or for idle -> busy", async () => {
     setAgents([row(pid, "idle")]);
     await h.hub.pollAgents();
-    expect(sent).toEqual([]);
-    expect((await viewOf(id)).unread).toBe(0);
-
     setAgents([row(pid, "busy")]);
     await h.hub.pollAgents();
     expect(sent).toEqual([]);
+  });
 
+  it("notifies once on busy -> idle and counts unread", async () => {
     setAgents([row(pid, "idle")]);
     await h.hub.pollAgents();
     expect(sent).toEqual(["claude-name: 待機"]);
-    expect((await viewOf(id)).unread).toBe(1);
-
     await h.hub.pollAgents();
     expect(sent).toHaveLength(1);
+    expect((await viewOf(id)).unread).toBe(1);
+  });
 
+  it("clears the unread count when the row is read", async () => {
     expect((await api("POST", `/api/sessions/${id}/read`)).status).toBe(200);
     expect((await viewOf(id)).unread).toBe(0);
+  });
 
+  it("writes nothing to the terminal while detecting, notifying and marking as read", async () => {
     // 区切りの検知・通知・未読の処理は、端末に 1 バイトも書かない
     await settle();
     expect(write).not.toHaveBeenCalled();
     expect(ringOf(id)).toBe(ringBefore);
-    write.mockRestore();
   });
 
   it("does not notify when the claude lookup fails", async () => {
