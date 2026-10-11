@@ -3,7 +3,7 @@
 調査対象は Sales Anchor の origin/main（1af58612ed97、`git show origin/main:<path>`）。
 
 ## 既存 ADR の検索結果
-- ADR-033（アプリ内テーマ切り替え）: `docs/adr/` で `git grep -i theme` 相当。SA `frontend/src/contexts/ThemeContext.tsx:2` が ADR-033 を参照。
+- ADR-033（アプリ内テーマ切り替え）: `docs/adr/` で `git grep -i theme` 相当。SA の frontend/src/contexts/ThemeContext.tsx:2 が ADR-033 を参照。
 - ADR-067（デザイントークン）、ADR-144（UI ガバナンス）: 金型を使い、直値を持たない。
 
 ## 事実

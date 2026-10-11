@@ -25,7 +25,7 @@
 | 切替ボタン・アイコン | SA の IconToggleButton と THEME_ICONS |
 | 文言 | SA 辞書の `nav.switchToDark` / `nav.switchToLight` |
 
-## 4. 外部事例・過去事例
+## 4. 外部・過去事例の参照と我々への応用
 - 外部: ブラウザ側のテーマ保存は localStorage が一般的（MDN Web Storage API。Cookie と違い要求ごとに送られず、オリジン単位で分離される）。
 - 過去事例: agent-console 段階1.5 の Cookie 全廃（docs/handoff/stage1-5/design.md K5）。応用: テーマも Cookie を使わず localStorage にして Set-Cookie 0 件を保つ。SA ThemeContext の cookie 方式をそのまま写さない。
 - 過去事例: 描画後にクラスを付けるとライトが一瞬映る（SA ThemeContext.tsx:67 のコメント「チラつき防止」）。応用: main.tsx で描画前に反映する。
