@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- macOS icon body: 824x824 at (100,100), corner radius 184 (about 22.37%) -->
+  <defs>
+    <clipPath id="body"><rect x="100" y="100" width="824" height="824" rx="184" ry="184"/></clipPath>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b0a14"/>
+      <stop offset="1" stop-color="#030308"/>
+    </linearGradient>
+    <radialGradient id="blue"><stop offset="0" stop-color="#2f6bff" stop-opacity="0.95"/><stop offset="1" stop-color="#2f6bff" stop-opacity="0"/></radialGradient>
+    <radialGradient id="violet"><stop offset="0" stop-color="#8a3ffc" stop-opacity="0.95"/><stop offset="1" stop-color="#8a3ffc" stop-opacity="0"/></radialGradient>
+    <radialGradient id="cyan"><stop offset="0" stop-color="#22d3ee" stop-opacity="0.9"/><stop offset="1" stop-color="#22d3ee" stop-opacity="0"/></radialGradient>
+    <radialGradient id="pink"><stop offset="0" stop-color="#ff4fa8" stop-opacity="0.9"/><stop offset="1" stop-color="#ff4fa8" stop-opacity="0"/></radialGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="38"/></filter>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g clip-path="url(#body)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#bg)"/>
+    <!-- soft blurred light mass: slightly distorted overlapping ellipses -->
+    <g filter="url(#soft)">
+      <ellipse cx="450" cy="470" rx="190" ry="170" fill="url(#blue)" transform="rotate(-20 450 470)"/>
+      <ellipse cx="585" cy="445" rx="175" ry="185" fill="url(#violet)" transform="rotate(25 585 445)"/>
+      <ellipse cx="470" cy="600" rx="175" ry="150" fill="url(#cyan)" transform="rotate(15 470 600)"/>
+      <ellipse cx="600" cy="590" rx="165" ry="150" fill="url(#pink)" transform="rotate(-30 600 590)"/>
+    </g>
+    <!-- thin glowing white ring, slightly off-circle -->
+    <ellipse cx="512" cy="512" rx="262" ry="256" fill="none" stroke="#ffffff" stroke-opacity="0.9" stroke-width="4" filter="url(#glow)" transform="rotate(-12 512 512)"/>
+    <!-- "AI" as paths (no font dependency) -->
+    <g fill="none" stroke="#ffffff" stroke-width="54" stroke-linejoin="round" stroke-linecap="butt" transform="translate(12 0)" filter="url(#glow)">
+      <path d="M390 604 L470 424 L550 604"/>
+      <path d="M424 548 H516"/>
+      <path d="M612 412 V612" stroke-width="54"/>
+    </g>
+  </g>
+</svg>

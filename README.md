@@ -28,14 +28,15 @@ Local console for running parallel Claude Code sessions (Orca-inspired, lightwei
 
 | やること | 1 行コマンド | 何が起きるか |
 |---|---|---|
-| 初回導入 | `! bash scripts/ac-install.sh v0.2.0` | サーバー秘密をキーチェーンに保存 → 版を取得（**タグのコミットが origin/main に含まれることを確認**、`npm ci --ignore-scripts`、**コミット SHA を表示**）・ビルド → **別ポートで自己診断（/healthz の版・コミットが一致）** → ログイン時自動起動を登録 → Dock 用の `~/Applications/Agent Console.app` を生成 → `/healthz` を確認して結果を表示 |
-| 更新 | `! bash scripts/ac-update.sh v0.3.0` | 新しい版を導入（上と同じ検証）→ 自己診断に通ったときだけ切替 → 再起動 → `/healthz` の版・コミットの一致を確認。失敗したら元の版に戻る |
+| 初回導入 | `! bash scripts/ac-install.sh v0.2.0` | サーバー秘密をキーチェーンに保存 → 版を取得（**タグのコミットが origin/main に含まれることを確認**、`npm ci --ignore-scripts`、**コミット SHA を表示**）・ビルド → **別ポートで自己診断（/healthz の版・コミットが一致）** → ログイン時自動起動を登録 → Dock 用の `~/Applications/Agent Console.app` を生成（アイコン入り。更新・切戻しでも切替先の版の絵で作り直す。icns の無い版は標準の絵） → `/healthz` を確認して結果を表示 |
+| 更新 | `! bash scripts/ac-update.sh v0.3.1` | 新しい版を導入（上と同じ検証）→ 自己診断に通ったときだけ切替 → 再起動 → `/healthz` の版・コミットの一致を確認。失敗したら元の版に戻る |
 | 切戻し | `! bash scripts/ac-rollback.sh` | 1 つ前の版（semver 順）に切替 → 再起動 → `/healthz` の版・コミットの一致を確認 |
 | 撤去 | `! bash scripts/ac-uninstall.sh` | 自動起動と起動アプリを外して **Trash へ移す**（削除しない）。導入済みの版とキーチェーンの秘密は残す |
 | 完全撤去 | `! bash scripts/ac-uninstall.sh --purge` | 上に加えて、導入済みの版・current・logs を Trash へ移し、キーチェーンの秘密を削除（秘密の削除だけは元に戻せない） |
 
 - 片付けはすべて `~/.Trash/agent-console-<種類>-<日時>` への移動で、スクリプトは削除コマンド（`rm` を含む）を使わない。戻したいときは Trash から元の場所へ戻す。
 - 導入後は Dock に `Agent Console.app`（`~/Applications`）をドラッグして固定する。1 回クリックすると、Chrome のアプリ窓がログイン済みで開く。
+- Dock の絵が古いままなら、Dock から `Agent Console.app` を外して付け直す（Dock が古い絵を覚えているため。スクリプトは Dock を再起動しない）。
 - 使用中の版とコミットは、画面下部の「版」「コミット」で確認できる。
 - 置き場所: `~/Library/Application Support/agent-console/`（`versions/<tag>/`、`current`、`logs/`）、`~/Library/LaunchAgents/local.agent-console.server.plist`、キーチェーンのサービス `agent-console` / アカウント `server`。
 - 新しい版を出す手順: package.json の version を上げる PR → マージ → `vX.Y.Z` タグを付けて push → CHANGELOG に 1 行追記。

@@ -33,7 +33,7 @@ ensure_secret
 ac_install_version "$tag" "$node_bin" || ac_die "$tag の導入に失敗しました（current は変更していません）"
 ac_switch_current "$tag"
 ac_write_plist "$node_bin"
-ac_build_launcher_app "$node_bin"
+ac_build_launcher_app "$node_bin" "$tag" require
 
 plist="$(ac_plist_path)"
 "$AC_LAUNCHCTL" bootout "gui/$AC_UID/$AC_LABEL" >/dev/null 2>&1 || true

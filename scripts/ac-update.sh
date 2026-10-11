@@ -24,4 +24,5 @@ if ! ac_restart_and_wait "$tag"; then
   ac_restart_and_wait "$prev" || ac_log "警告: $prev への切戻し後も /healthz が期待の版・コミットで応答しません"
   ac_die "更新に失敗しました（current は $prev に戻しました）"
 fi
+ac_build_launcher_app "$node_bin" "$tag"
 echo "更新しました: $prev -> ${tag}（コミット ${AC_LAST_COMMIT}）"
