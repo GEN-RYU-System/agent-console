@@ -64,8 +64,10 @@ export interface PastSession {
   cwd: string;
   startedAt: number | null;
   status: "busy" | "waiting" | "idle" | "unknown";
-  /** null のとき再開できる。running=今動いている / main=本店そのもの / outside=本店のワークツリーでない / missing=存在しない */
-  blocked: "running" | "main" | "outside" | "missing" | null;
+  /** null のとき再開できる。running=今動いている / outside=本店でも本店のワークツリーでもない / missing=存在しない / noRole=その作業場所で再開できる役割が設定に無い */
+  blocked: "running" | "outside" | "missing" | "noRole" | null;
+  /** 再開に使う役割の id（RoleView.id）。再開できない行は null */
+  resumeRoleId: string | null;
 }
 
 export interface MemorySnapshot {

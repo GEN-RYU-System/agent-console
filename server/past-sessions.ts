@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { realpath, stat } from "node:fs/promises";
 import { promisify } from "node:util";
 import type { AgentRow, AgentStatus } from "./agents.ts";
+import type { ResumeScope, RoleConfig } from "./config.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -13,11 +14,12 @@ export const SESSION_ID_PATTERN = /^[0-9a-f-]{36}$/;
 /**
  * 再開できない理由。
  * running: その sessionId が今動いている（このアプリの中でも別のターミナルでも。二重に同じセッションへ書かない）
- * main: cwd が本店そのもの（Opus 設計役のセッションは本店で動く。Opus 設計役の再開は設計 §12 の PO 判断なので対象外）
- * outside: cwd が本店のワークツリーではない
+ * outside: cwd が本店でも本店のワークツリーでもない
  * missing: cwd が存在しない
+ * noRole: cwd の種類（本店 / ワークツリー）に再開できる役割が設定に無い
+ * 本店そのもの（main）は不可ではなく、resumeScope が "main" の役割（Opus 設計役）で再開する。
  */
-export type ResumeBlock = "running" | "main" | "outside" | "missing";
+export type ResumeBlock = "running" | "outside" | "missing" | "noRole";
 
 export interface PastSession {
   sessionId: string;
@@ -27,6 +29,8 @@ export interface PastSession {
   status: AgentStatus;
   /** null のとき再開できる */
   blocked: ResumeBlock | null;
+  /** 再開に使う役割の id。再開できない行は null */
+  resumeRoleId: string | null;
 }
 
 /**
@@ -45,6 +49,7 @@ export function toPastSessions(rows: AgentRow[], livePids: ReadonlySet<number>, 
       startedAt: r.startedAt ?? null,
       status: r.status,
       blocked: livePids.has(r.pid) || runningIds.has(r.sessionId) ? "running" : null,
+      resumeRoleId: null,
     });
   }
   return out.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
@@ -64,7 +69,9 @@ async function realOrNull(p: string): Promise<string | null> {
 }
 
 export interface CwdVerdict {
-  block: Exclude<ResumeBlock, "running"> | null;
+  block: Extract<ResumeBlock, "outside" | "missing"> | null;
+  /** 再開できるときの作業場所の種類（本店そのもの / 本店のワークツリー） */
+  scope: ResumeScope | null;
   /** 実在するときの実パス */
   real: string | null;
 }
@@ -76,18 +83,24 @@ export async function classifyCwd(
   worktrees: readonly string[],
 ): Promise<CwdVerdict> {
   const real = await realOrNull(cwd);
-  if (real === null || !(await stat(real)).isDirectory()) return { block: "missing", real: null };
-  if (real === (await realOrNull(root))) return { block: "main", real };
+  if (real === null || !(await stat(real)).isDirectory()) return { block: "missing", scope: null, real: null };
+  if (real === (await realOrNull(root))) return { block: null, scope: "main", real };
   for (const wt of worktrees) {
-    if ((await realOrNull(wt)) === real) return { block: null, real };
+    if ((await realOrNull(wt)) === real) return { block: null, scope: "worktree", real };
   }
-  return { block: "outside", real };
+  return { block: "outside", scope: null, real };
 }
 
-/** 一覧の各行に、cwd による再開不可の理由を付ける（running が先に付いていればそれを優先）。 */
+/** 作業場所の種類に対応する再開役割（設定の resumeScope が正本）。無ければ undefined。 */
+export function roleForScope(roles: readonly RoleConfig[], scope: ResumeScope): RoleConfig | undefined {
+  return roles.find((r) => r.resumeScope === scope && r.resumeCommand !== undefined);
+}
+
+/** 一覧の各行に、cwd による再開不可の理由と再開する役割 id を付ける（running が先に付いていればそれを優先）。 */
 export async function withResumability(
   items: PastSession[],
   root: string,
+  roles: readonly RoleConfig[],
   listWorktrees: (root: string) => Promise<string[]> = listWorktreePaths,
 ): Promise<PastSession[]> {
   const worktrees = await listWorktrees(root).catch(() => []);
@@ -97,7 +110,13 @@ export async function withResumability(
       out.push(item);
       continue;
     }
-    out.push({ ...item, blocked: (await classifyCwd(item.cwd, root, worktrees)).block });
+    const verdict = await classifyCwd(item.cwd, root, worktrees);
+    if (verdict.scope === null) {
+      out.push({ ...item, blocked: verdict.block });
+      continue;
+    }
+    const role = roleForScope(roles, verdict.scope);
+    out.push(role ? { ...item, blocked: null, resumeRoleId: role.id } : { ...item, blocked: "noRole" });
   }
   return out;
 }

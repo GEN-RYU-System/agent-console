@@ -7,7 +7,7 @@ import { fetchAgents } from "./agents.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
 import type { MemoryCollector } from "./memory.ts";
-import { classifyCwd, listWorktreePaths, SESSION_ID_PATTERN, toPastSessions, withResumability } from "./past-sessions.ts";
+import { classifyCwd, listWorktreePaths, roleForScope, SESSION_ID_PATTERN, toPastSessions, withResumability } from "./past-sessions.ts";
 import type { QuickPromptStore } from "./quick-prompts.ts";
 import { SessionConflictError, SessionInputError, SessionNotFoundError, validateName, type SessionManager } from "./sessions.ts";
 import { WorktreeError } from "./worktree.ts";
@@ -191,15 +191,13 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
   }
   if (method === "GET" && url.pathname === "/api/past-sessions") {
     const [rows, running] = await Promise.all([fetchAgents(config.claudeBin, true), fetchAgents(config.claudeBin)]);
-    const items = rows === null ? [] : await withResumability(toPastSessions(rows, await hub.livePids(), runningIdsOf(running)), config.salesanchorRoot);
+    const items = rows === null ? [] : await withResumability(toPastSessions(rows, await hub.livePids(), runningIdsOf(running)), config.salesanchorRoot, config.roles);
     sendJson(res, 200, { available: rows !== null, items });
     return true;
   }
   if (method === "POST" && url.pathname === "/api/sessions/resume") {
     const sessionId = str(jsonBody(await readJsonBody(req)).sessionId);
     if (!SESSION_ID_PATTERN.test(sessionId)) throw new SessionInputError("invalid sessionId");
-    const role = config.roles.find((r) => r.resumeCommand !== undefined);
-    if (!role) throw new SessionInputError("no role can resume sessions");
     // 作業場所は画面から受け取らず、Claude の一覧（正本）から引く
     const [rows, running] = await Promise.all([fetchAgents(config.claudeBin, true), fetchAgents(config.claudeBin)]);
     // 今動いている一覧を取得できなければ、二重起動でないことを確認できないので再開しない
@@ -208,7 +206,10 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
     if (!target) throw new SessionNotFoundError("session not found in claude agents --all");
     if (target.blocked === "running") throw new SessionConflictError("session is already running");
     const verdict = await classifyCwd(target.cwd, config.salesanchorRoot, await listWorktreePaths(config.salesanchorRoot).catch(() => []));
-    if (verdict.block !== null || verdict.real === null) throw new SessionInputError(`cannot resume: working directory is ${verdict.block ?? "missing"}`);
+    if (verdict.block !== null || verdict.real === null || verdict.scope === null) throw new SessionInputError(`cannot resume: working directory is ${verdict.block ?? "missing"}`);
+    // 作業場所の種類（本店 / ワークツリー）から、設定の resumeScope で役割を選ぶ
+    const role = roleForScope(config.roles, verdict.scope);
+    if (!role) throw new SessionInputError(`cannot resume: no role can resume ${verdict.scope} sessions`);
     const session = sessions.resume({ roleId: role.id, name: sessionNameFrom(target.name, sessionId), sessionId, cwd: verdict.real });
     sendJson(res, 201, { id: session.id });
     return true;

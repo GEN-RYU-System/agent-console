@@ -30,6 +30,7 @@ beforeAll(async () => {
     claudeBin: stub,
     sendNotification: (body) => sent.push(body),
     resumeCommand: ["/bin/sh", "-c", "echo RESUMED=$AC_RESUME_ID; cat"],
+    mainResumeCommand: ["/bin/sh", "-c", "echo RESUMED_MAIN=$AC_RESUME_ID; cat"],
   });
   // 再開の試験用に、本店（コミット 1 つ）とそのワークツリーを作る
   const root = realpathSync(path.join(h.dir, "root"));
@@ -251,7 +252,7 @@ describe("quick prompts (K3)", () => {
 describe("past sessions (K4)", () => {
   const mainRoot = (): string => realpathSync(path.join(h.dir, "root"));
 
-  it("lists every row with its reason, and resumes only a worktree session with the id in AC_RESUME_ID", async () => {
+  it("lists every row with its reason and role, and resumes a worktree session with the Sonnet role (id in AC_RESUME_ID)", async () => {
     writeRows(allFile, [
       { pid: 99991, status: "idle", name: "old work", sessionId: ID_A, cwd: worktree, startedAt: 300 },
       { pid: 99992, status: "idle", name: "designer", sessionId: ID_B, cwd: mainRoot(), startedAt: 200 },
@@ -259,20 +260,28 @@ describe("past sessions (K4)", () => {
     ]);
     setAgents([]);
     const list = await api("GET", "/api/past-sessions");
-    expect((list.json.items as Array<{ sessionId: string; blocked: string | null }>).map((i) => [i.sessionId, i.blocked])).toEqual([
-      [ID_A, null],
-      [ID_B, "main"],
-      [ID_C, "outside"],
+    expect((list.json.items as Array<{ sessionId: string; blocked: string | null; resumeRoleId: string | null }>).map((i) => [i.sessionId, i.blocked, i.resumeRoleId])).toEqual([
+      [ID_A, null, "resumable"],
+      [ID_B, null, "resumable-main"],
+      [ID_C, "outside", null],
     ]);
 
     const resumed = await api("POST", "/api/sessions/resume", { sessionId: ID_A });
     expect(resumed.status).toBe(201);
     await vi.waitFor(() => expect(ringOf(resumed.json.id as string)).toContain(`RESUMED=${ID_A}`));
     expect(h.sessions.get(resumed.json.id as string)?.cwd).toBe(worktree);
+    expect(h.sessions.get(resumed.json.id as string)?.roleId).toBe("resumable");
   });
 
-  it("rejects the main checkout, a directory outside, an invalid id and an unknown id", async () => {
-    expect((await api("POST", "/api/sessions/resume", { sessionId: ID_B })).status).toBe(400);
+  it("resumes a main-checkout session with the Opus role (resumeScope main), in the main checkout", async () => {
+    const resumed = await api("POST", "/api/sessions/resume", { sessionId: ID_B });
+    expect(resumed.status).toBe(201);
+    await vi.waitFor(() => expect(ringOf(resumed.json.id as string)).toContain(`RESUMED_MAIN=${ID_B}`));
+    expect(h.sessions.get(resumed.json.id as string)?.cwd).toBe(mainRoot());
+    expect(h.sessions.get(resumed.json.id as string)?.roleId).toBe("resumable-main");
+  });
+
+  it("rejects a directory outside, an invalid id and an unknown id", async () => {
     expect((await api("POST", "/api/sessions/resume", { sessionId: ID_C })).status).toBe(400);
     expect((await api("POST", "/api/sessions/resume", { sessionId: "x;id" })).status).toBe(400);
     expect((await api("POST", "/api/sessions/resume", { sessionId: "44444444-4444-4444-8444-444444444444" })).status).toBe(404);

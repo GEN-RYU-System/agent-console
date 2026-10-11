@@ -10,12 +10,20 @@
   "ringBufferBytes": 1048576,
   "notify": { "macos": true },
   "roles": [
-    { "id": "opus-designer", "labelKey": "role.opusDesigner", "command": ["/bin/zsh", "-ic", "ccopusgo"], "needsWorktree": false },
+    {
+      "id": "opus-designer",
+      "labelKey": "role.opusDesigner",
+      "command": ["/bin/zsh", "-ic", "ccopusgo"],
+      "needsWorktree": false,
+      "resumeScope": "main",
+      "resumeCommand": ["/bin/zsh", "-ic", "ccopusgo --resume \"$AC_RESUME_ID\""]
+    },
     {
       "id": "sonnet-impl",
       "labelKey": "role.sonnetImpl",
       "command": ["/bin/zsh", "-ic", "claude --model sonnet"],
       "needsWorktree": true,
+      "resumeScope": "worktree",
       "resumeCommand": ["/bin/zsh", "-ic", "claude --model sonnet --resume \"$AC_RESUME_ID\""]
     },
     { "id": "shell", "labelKey": "role.shell", "command": ["/bin/zsh", "-i"], "needsWorktree": false }

@@ -9,7 +9,12 @@ export interface RoleConfig {
   needsWorktree: boolean;
   /** 過去のセッションを再開する起動コマンド。sessionId は環境変数 AC_RESUME_ID で渡す（コマンド文字列に連結しない）。 */
   resumeCommand?: string[];
+  /** 再開できる作業場所: main=本店そのもの（Opus 設計役）/ worktree=本店のワークツリー（Sonnet 実装役）。resumeCommand と対で指定する。 */
+  resumeScope?: ResumeScope;
 }
+
+export type ResumeScope = "main" | "worktree";
+const RESUME_SCOPES: readonly string[] = ["main", "worktree"];
 
 export interface NotifyConfig {
   /** 区切りの macOS 通知（既定 true） */
@@ -55,11 +60,18 @@ function parseRole(raw: unknown, index: number): RoleConfig {
   }
   if (typeof r.needsWorktree !== "boolean") throw new Error(`config: roles[${index}].needsWorktree must be boolean`);
   const role: RoleConfig = { id: r.id, labelKey: r.labelKey, command: r.command as string[], needsWorktree: r.needsWorktree };
-  if (r.resumeCommand === undefined) return role;
+  if (r.resumeCommand === undefined) {
+    if (r.resumeScope !== undefined) throw new Error(`config: roles[${index}].resumeScope requires resumeCommand`);
+    return role;
+  }
   if (!Array.isArray(r.resumeCommand) || r.resumeCommand.length === 0 || !r.resumeCommand.every((c) => typeof c === "string")) {
     throw new Error(`config: roles[${index}].resumeCommand must be a non-empty string array`);
   }
-  return { ...role, resumeCommand: r.resumeCommand as string[] };
+  if (r.resumeScope === undefined) return { ...role, resumeCommand: r.resumeCommand as string[] };
+  if (typeof r.resumeScope !== "string" || !RESUME_SCOPES.includes(r.resumeScope)) {
+    throw new Error(`config: roles[${index}].resumeScope must be "main" or "worktree"`);
+  }
+  return { ...role, resumeCommand: r.resumeCommand as string[], resumeScope: r.resumeScope as ResumeScope };
 }
 
 function parseNotify(raw: unknown): NotifyConfig {
@@ -93,9 +105,13 @@ export function parseConfig(raw: unknown): Config {
   if (!Array.isArray(o.roles) || o.roles.length === 0) throw new Error("config: roles is required (non-empty array)");
   const roles = o.roles.map(parseRole);
   const ids = new Set<string>();
+  const scopes = new Set<string>();
   for (const role of roles) {
     if (ids.has(role.id)) throw new Error(`config: duplicate role id ${role.id}`);
     ids.add(role.id);
+    if (role.resumeScope === undefined) continue;
+    if (scopes.has(role.resumeScope)) throw new Error(`config: duplicate resumeScope ${role.resumeScope}`);
+    scopes.add(role.resumeScope);
   }
   return {
     port: o.port as number,
