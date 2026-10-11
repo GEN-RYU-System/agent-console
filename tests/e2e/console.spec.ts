@@ -597,6 +597,7 @@ test("段階2 K4: 過去のセッション一覧から Sonnet 実装役を選ぶ
   await page.getByRole("button", { name: "過去のセッション", exact: true }).click();
   const item = page.locator(`[data-testid="past-session"][data-session-id="${sessionId}"]`);
   await expect(item).toContainText("past-work");
+  await expect(item.getByTestId("past-role")).toContainText("Sonnet 実装");
   await shoot(page, "04-past-sessions");
   await item.getByRole("button", { name: "再開", exact: true }).click();
   await expect(page.getByTestId("terminal")).toContainText(`RESUMED=${sessionId}`);
@@ -606,7 +607,7 @@ test("段階2 K4: 過去のセッション一覧から Sonnet 実装役を選ぶ
   // 本店そのもの（Opus 設計役）・本店のワークツリーでない行は「再開不可（理由）」で、ボタンは無効（サーバーも拒否する）
   await page.getByRole("button", { name: "過去のセッション", exact: true }).click();
   const designer = page.locator('[data-testid="past-session"][data-session-id="cccccccc-bbbb-4bbb-8bbb-bbbbbbbbbbbb"]');
-  await expect(designer.getByTestId("past-blocked")).toContainText("Opus 設計役");
+  await expect(designer.getByTestId("past-blocked")).toContainText("再開できる役割が設定にありません");
   await expect(designer.getByRole("button", { name: "再開", exact: true })).toBeDisabled();
   const outside = page.locator('[data-testid="past-session"][data-session-id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"]');
   await expect(outside.getByTestId("past-blocked")).toContainText("ワークツリーではありません");

@@ -2,15 +2,19 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import "../../i18n";
-import type { PastSession } from "../../types";
+import type { PastSession, RoleView } from "../../types";
 import { PastSessionsList } from "./PastSessionsList";
 
 const items: PastSession[] = [
-  { sessionId: "11111111-1111-4111-8111-111111111111", name: "old work", cwd: "/repo", startedAt: 1700000000000, status: "idle", blocked: null },
-  { sessionId: "22222222-2222-4222-8222-222222222222", name: "running", cwd: "/repo", startedAt: null, status: "busy", blocked: "running" },
+  { sessionId: "11111111-1111-4111-8111-111111111111", name: "old work", cwd: "/repo", startedAt: 1700000000000, status: "idle", blocked: null, resumeRoleId: "sonnet-impl" },
+  { sessionId: "22222222-2222-4222-8222-222222222222", name: "running", cwd: "/repo", startedAt: null, status: "busy", blocked: "running", resumeRoleId: null },
+];
+const roles: RoleView[] = [
+  { id: "opus-designer", labelKey: "role.opusDesigner", needsWorktree: false, canResume: true },
+  { id: "sonnet-impl", labelKey: "role.sonnetImpl", needsWorktree: true, canResume: true },
 ];
 
-const base = { items, available: true, canResume: true, busyId: null, error: null, onResume: () => {} };
+const base = { items, available: true, canResume: true, roles, busyId: null, error: null, onResume: () => {} };
 
 describe("PastSessionsList", () => {
   it("resumes the chosen session by id", () => {
@@ -21,6 +25,20 @@ describe("PastSessionsList", () => {
     fireEvent.click(buttons[0]);
     expect(onResume).toHaveBeenCalledWith(items[0].sessionId);
     expect(screen.getByTestId("past-blocked").textContent).toContain("今動いています");
+  });
+
+  it("K5: shows which role each resumable row will be resumed as (label via i18n), and nothing for blocked rows", () => {
+    const rows: PastSession[] = [
+      items[0],
+      { sessionId: "33333333-3333-4333-8333-333333333333", name: "designer", cwd: "/main", startedAt: 1, status: "idle", blocked: null, resumeRoleId: "opus-designer" },
+      items[1],
+    ];
+    render(<PastSessionsList {...base} items={rows} />);
+    const labels = screen.getAllByTestId("past-role");
+    expect(labels.map((l) => [l.getAttribute("data-role-id"), l.textContent])).toEqual([
+      ["sonnet-impl", "再開する役割: Sonnet 実装"],
+      ["opus-designer", "再開する役割: Opus 設計"],
+    ]);
   });
 
   it("disables resuming when no role can resume and says why", () => {
@@ -44,18 +62,19 @@ describe("PastSessionsList", () => {
   });
 
   it("says why a row cannot be resumed (main checkout / outside / missing) and disables it", () => {
-    const rows: PastSession[] = (["main", "outside", "missing"] as const).map((blocked, i) => ({
+    const rows: PastSession[] = (["noRole", "outside", "missing"] as const).map((blocked, i) => ({
       sessionId: `0000000${i}-0000-4000-8000-000000000000`,
       name: blocked,
       cwd: "/x",
       startedAt: 1,
       status: "idle",
       blocked,
+      resumeRoleId: null,
     }));
     render(<PastSessionsList {...base} items={rows} />);
     const reasons = screen.getAllByTestId("past-blocked");
-    expect(reasons.map((r) => r.getAttribute("data-reason"))).toEqual(["main", "outside", "missing"]);
-    expect(reasons[0].textContent).toContain("Opus 設計役");
+    expect(reasons.map((r) => r.getAttribute("data-reason"))).toEqual(["noRole", "outside", "missing"]);
+    expect(reasons[0].textContent).toContain("再開できる役割が設定にありません");
     for (const b of screen.getAllByRole("button", { name: "再開" })) expect((b as HTMLButtonElement).disabled).toBe(true);
   });
 });

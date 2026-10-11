@@ -115,12 +115,13 @@
       "unavailableTitle": "一覧を取得できません",
       "unavailableBody": "claude agents --all の実行に失敗しました。",
       "noRoleTitle": "再開できる役割がありません",
-      "noRoleBody": "設定の resumeCommand を持つ役割（Sonnet 実装）だけが再開できます。",
+      "noRoleBody": "設定で再開を許可した役割（Opus 設計・Sonnet 実装）だけが再開できます。",
+      "resumeAs": "再開する役割: {{role}}",
       "blocked": {
         "running": "再開不可（今動いています）",
-        "main": "再開不可（本店のセッション。Opus 設計役の再開は対象外）",
         "outside": "再開不可（本店のワークツリーではありません）",
-        "missing": "再開不可（作業場所が見つかりません）"
+        "missing": "再開不可（作業場所が見つかりません）",
+        "noRole": "再開不可（この作業場所で再開できる役割が設定にありません）"
       }
     },
     "memory": {

@@ -4,7 +4,7 @@ import { Callout } from "@sa/components/Callout";
 import { Card } from "@sa/components/Card";
 import { EmptyState } from "@sa/components/EmptyState";
 import { Stack } from "@sa/components/Stack";
-import type { PastSession } from "../../types";
+import type { PastSession, RoleView } from "../../types";
 import "./PastSessions.css";
 
 interface Props {
@@ -12,6 +12,8 @@ interface Props {
   items: PastSession[] | null;
   available: boolean;
   canResume: boolean;
+  /** 再開する役割のラベル（labelKey）を引くための役割一覧 */
+  roles: RoleView[];
   busyId: string | null;
   error: string | null;
   onResume: (sessionId: string) => void;
@@ -20,8 +22,12 @@ interface Props {
 const formatStartedAt = (ms: number | null): string => (ms === null ? "-" : new Date(ms).toLocaleString("ja-JP"));
 
 /** 正本は `claude agents --all --json`。アプリは保存しない。 */
-export function PastSessionsList({ items, available, canResume, busyId, error, onResume }: Props) {
+export function PastSessionsList({ items, available, canResume, roles, busyId, error, onResume }: Props) {
   const { t } = useTranslation();
+  const roleLabel = (id: string): string => {
+    const role = roles.find((r) => r.id === id);
+    return role === undefined ? id : t(role.labelKey);
+  };
   if (items === null) return <span className="ac-past__muted">{t("ac.past.loading")}</span>;
   return (
     <Stack gap="3">
@@ -48,6 +54,11 @@ export function PastSessionsList({ items, available, canResume, busyId, error, o
                 <span className="ac-past__muted">{formatStartedAt(p.startedAt)}</span>
               </div>
               <div className="ac-past__actions">
+                {p.resumeRoleId !== null && (
+                  <span className="ac-past__muted" data-testid="past-role" data-role-id={p.resumeRoleId}>
+                    {t("ac.past.resumeAs", { role: roleLabel(p.resumeRoleId) })}
+                  </span>
+                )}
                 {p.blocked !== null && (
                   <span className="ac-past__muted" data-testid="past-blocked" data-reason={p.blocked}>
                     {t(`ac.past.blocked.${p.blocked}`)}

@@ -57,6 +57,8 @@ export interface HarnessOptions {
   sendNotification?: (body: string) => void;
   /** 再開用の起動コマンド（指定すると role "resumable" が増える） */
   resumeCommand?: string[];
+  /** 本店そのもの（Opus 設計役）を再開する起動コマンド（指定すると role "resumable-main" が増える） */
+  mainResumeCommand?: string[];
 }
 
 /** 実 HTTP/WS/PTY（ダミー役割 sh）を 127.0.0.1 の空きポートで起動する。 */
@@ -96,7 +98,10 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
       { id: "envcheck", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo TOKEN_IS=[$AGENT_CONSOLE_TOKEN]; cat"], needsWorktree: false },
       { id: "wt", labelKey: "role.sonnetImpl", command: ["/bin/sh", "-c", "cat"], needsWorktree: true },
       ...(options.resumeCommand
-        ? [{ id: "resumable", labelKey: "role.sonnetImpl", command: ["/bin/sh", "-c", "cat"], needsWorktree: false, resumeCommand: options.resumeCommand }]
+        ? [{ id: "resumable", labelKey: "role.sonnetImpl", command: ["/bin/sh", "-c", "cat"], needsWorktree: false, resumeCommand: options.resumeCommand, resumeScope: "worktree" as const }]
+        : []),
+      ...(options.mainResumeCommand
+        ? [{ id: "resumable-main", labelKey: "role.opusDesigner", command: ["/bin/sh", "-c", "cat"], needsWorktree: false, resumeCommand: options.mainResumeCommand, resumeScope: "main" as const }]
         : []),
     ],
   };

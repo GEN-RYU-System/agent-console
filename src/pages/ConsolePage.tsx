@@ -323,7 +323,7 @@ export function ConsolePage() {
         <QuickPromptEditor prompts={quickPrompts} onChanged={loadQuickPrompts} />
       </Modal>
       <Modal open={pastOpen} onClose={() => setPastOpen(false)} title={t("ac.past.title")} size="lg">
-        <PastSessionsList items={pastItems} available={pastAvailable} canResume={canResume} busyId={pastBusyId} error={pastError} onResume={(id) => void handleResume(id)} />
+        <PastSessionsList items={pastItems} available={pastAvailable} canResume={canResume} roles={state.roles} busyId={pastBusyId} error={pastError} onResume={(id) => void handleResume(id)} />
       </Modal>
       <Modal open={memoryOpen} onClose={() => setMemoryOpen(false)} title={t("ac.memory.title")} size="md">
         <MemoryPanel open={memoryOpen} />

@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseAgentsOutput } from "../../server/agents.ts";
-import { classifyCwd, SESSION_ID_PATTERN, toPastSessions, withResumability } from "../../server/past-sessions.ts";
+import type { RoleConfig } from "../../server/config.ts";
+import { classifyCwd, roleForScope, SESSION_ID_PATTERN, toPastSessions, withResumability } from "../../server/past-sessions.ts";
 
 const ID_A = "11111111-1111-4111-8111-111111111111";
 const ID_B = "22222222-2222-4222-8222-222222222222";
@@ -38,6 +39,15 @@ describe("toPastSessions", () => {
   });
 });
 
+const roleOf = (id: string, resumeScope?: "main" | "worktree"): RoleConfig => ({
+  id,
+  labelKey: `role.${id}`,
+  command: ["/bin/sh"],
+  needsWorktree: false,
+  ...(resumeScope ? { resumeCommand: ["/bin/sh"], resumeScope } : {}),
+});
+const ROLES = [roleOf("shell"), roleOf("opus", "main"), roleOf("sonnet", "worktree")];
+
 describe("classifyCwd / withResumability", () => {
   const base = realpathSync(mkdtempSync(path.join(os.tmpdir(), "ac-past-")));
   const root = path.join(base, "root");
@@ -50,10 +60,10 @@ describe("classifyCwd / withResumability", () => {
   const worktrees = [root, wt];
 
   it("allows only a worktree of the main checkout", async () => {
-    expect(await classifyCwd(wt, root, worktrees)).toEqual({ block: null, real: wt });
+    expect(await classifyCwd(wt, root, worktrees)).toEqual({ block: null, scope: "worktree", real: wt });
   });
-  it("rejects the main checkout itself (Opus designer sessions run there; resuming them is out of scope)", async () => {
-    expect((await classifyCwd(root, root, worktrees)).block).toBe("main");
+  it("classifies the main checkout itself as scope main (resumable, not blocked)", async () => {
+    expect(await classifyCwd(root, root, worktrees)).toEqual({ block: null, scope: "main", real: root });
   });
   it("rejects a directory outside the worktree list and one that does not exist", async () => {
     expect((await classifyCwd(other, root, worktrees)).block).toBe("outside");
@@ -64,7 +74,7 @@ describe("classifyCwd / withResumability", () => {
       parseAgentsOutput(JSON.stringify([{ pid: 1, status: "idle", sessionId: ID_A, cwd: wt, startedAt: 1 }])) as NonNullable<ReturnType<typeof parseAgentsOutput>>,
       new Set(),
     );
-    const out = await withResumability(items, root, async () => Promise.reject(new Error("git failed")));
+    const out = await withResumability(items, root, ROLES, async () => Promise.reject(new Error("git failed")));
     expect(out[0].blocked).toBe("outside");
   });
   it("labels each row with its reason and keeps 'running' first", async () => {
@@ -75,11 +85,26 @@ describe("classifyCwd / withResumability", () => {
         { pid: 3, status: "idle", sessionId: ID_C, cwd: wt, startedAt: 2 },
       ]),
     ) as NonNullable<ReturnType<typeof parseAgentsOutput>>;
-    const out = await withResumability(toPastSessions(rows, new Set(), new Set([ID_C])), root, async () => worktrees);
-    expect(out.map((p) => [p.sessionId, p.blocked])).toEqual([
-      [ID_A, null],
-      [ID_B, "main"],
-      [ID_C, "running"],
+    const out = await withResumability(toPastSessions(rows, new Set(), new Set([ID_C])), root, ROLES, async () => worktrees);
+    expect(out.map((p) => [p.sessionId, p.blocked, p.resumeRoleId])).toEqual([
+      [ID_A, null, "sonnet"],
+      [ID_B, null, "opus"],
+      [ID_C, "running", null],
+    ]);
+  });
+  it("picks the role by resumeScope (not by order), and blocks with noRole when the scope has no role", async () => {
+    expect(roleForScope([roleOf("sonnet", "worktree"), roleOf("opus", "main")], "main")?.id).toBe("opus");
+    expect(roleForScope([roleOf("shell")], "main")).toBeUndefined();
+    const rows = parseAgentsOutput(
+      JSON.stringify([
+        { pid: 1, status: "idle", sessionId: ID_A, cwd: wt, startedAt: 2 },
+        { pid: 2, status: "idle", sessionId: ID_B, cwd: root, startedAt: 1 },
+      ]),
+    ) as NonNullable<ReturnType<typeof parseAgentsOutput>>;
+    const out = await withResumability(toPastSessions(rows, new Set()), root, [roleOf("sonnet", "worktree")], async () => worktrees);
+    expect(out.map((p) => [p.sessionId, p.blocked, p.resumeRoleId])).toEqual([
+      [ID_A, null, "sonnet"],
+      [ID_B, "noRole", null],
     ]);
   });
 });

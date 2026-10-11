@@ -97,6 +97,7 @@ export function prepareE2eEnv(): void {
         labelKey: "role.sonnetImpl",
         command: [process.execPath, roleScript, marker],
         needsWorktree: false,
+        resumeScope: "worktree",
         resumeCommand: ["/bin/sh", "-c", `echo RESUMED=$AC_RESUME_ID; exec "${process.execPath}" "${roleScript}" ${marker}`],
       },
       { id: "e2e-bracketed", labelKey: "role.shell", command: [process.execPath, bracketedScript, marker], needsWorktree: false },
