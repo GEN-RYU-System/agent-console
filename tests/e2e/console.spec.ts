@@ -325,3 +325,46 @@ test("/healthz は認証なしで ok を返す", async () => {
   expect(body.version).toBe(JSON.parse(readFileSync(path.join(process.cwd(), "package.json"), "utf8")).version);
   expect(body.commit).toMatch(/^[0-9a-f]{40}$/);
 });
+
+test("テーマ: フッターの切替で <html> が変わり、再読込でも保持され、端末の背景が --bg-surface のダーク値になる（Cookie は出さない）", async ({ page, context }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openPaired(page);
+  await createViaUi(page, "theme-session", "e2e-plain");
+  await expect(page.getByTestId("terminal")).toContainText("READY");
+  const html = page.locator("html");
+  const surface = (): Promise<string> =>
+    page.evaluate(() => {
+      const probe = document.createElement("div");
+      probe.style.backgroundColor = "var(--bg-surface)";
+      document.body.appendChild(probe);
+      const color = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return color;
+    });
+  const terminalBackground = (): Promise<string> =>
+    page.evaluate(() => getComputedStyle(document.querySelector(".xterm-scrollable-element") as Element).backgroundColor);
+
+  await expect(html).not.toHaveClass(/force-dark/);
+  const lightSurface = await surface();
+  await expect.poll(terminalBackground).toBe(lightSurface);
+  await page.screenshot({ path: "/tmp/CC報告ファイル/orca-selfbuilt/v021/light-1440x900.png" });
+
+  await page.getByRole("button", { name: "ダークモード", exact: true }).click();
+  await expect(html).toHaveClass(/force-dark/);
+  const darkSurface = await surface();
+  expect(darkSurface).not.toBe(lightSurface);
+  await expect.poll(terminalBackground).toBe(darkSurface);
+  expect(await page.evaluate(() => window.localStorage.getItem("theme"))).toBe("dark");
+  await page.screenshot({ path: "/tmp/CC報告ファイル/orca-selfbuilt/v021/dark-1440x900.png" });
+
+  await page.reload();
+  await expect(page.getByRole("button", { name: "ライトモード", exact: true })).toBeVisible();
+  await expect(html).toHaveClass(/force-dark/);
+
+  await page.getByRole("button", { name: "ライトモード", exact: true }).click();
+  await expect(html).not.toHaveClass(/force-dark/);
+  expect(await page.evaluate(() => window.localStorage.getItem("theme"))).toBe("light");
+
+  expect(await context.cookies()).toEqual([]);
+  expect(await page.evaluate(() => document.cookie)).toBe("");
+});
