@@ -3,11 +3,10 @@ import { stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { CHALLENGE_TTL_MS, PAIRING_TTL_MS, SESSION_MAX_MS, type Auth } from "./auth.ts";
-import { fetchAgents } from "./agents.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
 import type { MemoryCollector } from "./memory.ts";
-import { classifyCwd, listWorktreePaths, roleForScope, SESSION_ID_PATTERN, toPastSessions, withResumability } from "./past-sessions.ts";
+import { listResumeTargets, resolveResumeTarget } from "./resume-targets.ts";
 import type { QuickPromptStore } from "./quick-prompts.ts";
 import { SessionConflictError, SessionInputError, SessionNotFoundError, validateName, type SessionManager } from "./sessions.ts";
 import { WorktreeError } from "./worktree.ts";
@@ -107,7 +106,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
     const snap = await hub.snapshot();
     sendJson(res, 200, {
       ...snap,
-      roles: config.roles.map((r) => ({ id: r.id, labelKey: r.labelKey, needsWorktree: r.needsWorktree, canResume: r.resumeCommand !== undefined })),
+      roles: config.roles.map((r) => ({ id: r.id, labelKey: r.labelKey, needsWorktree: r.needsWorktree })),
       saSource: meta.saSource,
       claudeVersion: meta.claudeVersion,
       appVersion: meta.version,
@@ -149,17 +148,12 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   sendJson(res, 404, { error: "not found" });
 }
 
-const runningIdsOf = (rows: Array<{ sessionId?: string }> | null): Set<string> =>
-  new Set((rows ?? []).flatMap((r) => (r.sessionId === undefined ? [] : [r.sessionId])));
-
-/** `claude agents --json` の name を、セッション名として使える形（制御文字なし・40 字以内）にする。 */
-function sessionNameFrom(name: string | undefined, sessionId: string): string {
-  // eslint-disable-next-line no-control-regex
-  const cleaned = (name ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 40);
-  return cleaned === "" ? sessionId.slice(0, 8) : cleaned;
+/** 再開した端末のセッション名（アプリ側の表示名）。本店は固定、worktree はブランチ名（40 字以内）。 */
+function resumeSessionName(kind: string, branch: string | null, real: string): string {
+  return kind === "main" ? "resume: main" : `resume: ${branch ?? path.basename(real)}`.slice(0, 40);
 }
 
-/** 段階2: 区切りの既読・名前・よく使う指示・過去のセッション・メモリ。すべて認証の内側。処理したら true。 */
+/** 段階2: 区切りの既読・名前・よく使う指示・再開先・メモリ。すべて認証の内側。処理したら true。 */
 async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
   const { sessions, hub, config, quickPrompts } = deps;
   const method = req.method ?? "GET";
@@ -189,28 +183,15 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
     sendJson(res, 200, { removed: true });
     return true;
   }
-  if (method === "GET" && url.pathname === "/api/past-sessions") {
-    const [rows, running] = await Promise.all([fetchAgents(config.claudeBin, true), fetchAgents(config.claudeBin)]);
-    const items = rows === null ? [] : await withResumability(toPastSessions(rows, await hub.livePids(), runningIdsOf(running)), config.salesanchorRoot, config.roles);
-    sendJson(res, 200, { available: rows !== null, items });
+  if (method === "GET" && url.pathname === "/api/resume-targets") {
+    sendJson(res, 200, { items: await listResumeTargets(config.salesanchorRoot, config.roles) });
     return true;
   }
   if (method === "POST" && url.pathname === "/api/sessions/resume") {
-    const sessionId = str(jsonBody(await readJsonBody(req)).sessionId);
-    if (!SESSION_ID_PATTERN.test(sessionId)) throw new SessionInputError("invalid sessionId");
-    // 作業場所は画面から受け取らず、Claude の一覧（正本）から引く
-    const [rows, running] = await Promise.all([fetchAgents(config.claudeBin, true), fetchAgents(config.claudeBin)]);
-    // 今動いている一覧を取得できなければ、二重起動でないことを確認できないので再開しない
-    if (running === null) throw new SessionConflictError("cannot confirm the session is not running");
-    const target = rows === null ? undefined : toPastSessions(rows, await hub.livePids(), runningIdsOf(running)).find((p) => p.sessionId === sessionId);
-    if (!target) throw new SessionNotFoundError("session not found in claude agents --all");
-    if (target.blocked === "running") throw new SessionConflictError("session is already running");
-    const verdict = await classifyCwd(target.cwd, config.salesanchorRoot, await listWorktreePaths(config.salesanchorRoot).catch(() => []));
-    if (verdict.block !== null || verdict.real === null || verdict.scope === null) throw new SessionInputError(`cannot resume: working directory is ${verdict.block ?? "missing"}`);
-    // 作業場所の種類（本店 / ワークツリー）から、設定の resumeScope で役割を選ぶ
-    const role = roleForScope(config.roles, verdict.scope);
-    if (!role) throw new SessionInputError(`cannot resume: no role can resume ${verdict.scope} sessions`);
-    const session = sessions.resume({ roleId: role.id, name: sessionNameFrom(target.name, sessionId), sessionId, cwd: verdict.real });
+    const body = jsonBody(await readJsonBody(req));
+    // 作業場所は本店と git worktree list（正本）に照合し、通った実パスだけを使う。会話の選択は端末内の Claude 公式の選択リストで人が行う
+    const { role, real, kind, branch } = await resolveResumeTarget(body.kind, body.path, config.salesanchorRoot, config.roles);
+    const session = sessions.resume({ roleId: role.id, name: resumeSessionName(kind, branch, real), cwd: real });
     sendJson(res, 201, { id: session.id });
     return true;
   }

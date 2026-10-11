@@ -7,7 +7,7 @@ export interface RoleConfig {
   labelKey: string;
   command: string[];
   needsWorktree: boolean;
-  /** 過去のセッションを再開する起動コマンド。sessionId は環境変数 AC_RESUME_ID で渡す（コマンド文字列に連結しない）。 */
+  /** 再開用の起動コマンド（config 固定）。id なしの `--resume` で Claude 公式の会話選択リストが開く。画面の文字列はコマンドに入れない。 */
   resumeCommand?: string[];
   /** 再開できる作業場所: main=本店そのもの（Opus 設計役）/ worktree=本店のワークツリー（Sonnet 実装役）。resumeCommand と対で指定する。 */
   resumeScope?: ResumeScope;

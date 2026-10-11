@@ -99,9 +99,9 @@ export function stateForSession(session: SessionProcessInfo, rows: AgentRow[] | 
 }
 
 /** パイプの子プロセスとして実行する（pty 経由だと CRLF/エスケープが混ざる: recon §A）。 */
-export async function fetchAgents(claudeBin: string, all = false): Promise<AgentRow[] | null> {
+export async function fetchAgents(claudeBin: string): Promise<AgentRow[] | null> {
   try {
-    const args = all ? ["agents", "--all", "--json"] : ["agents", "--json"];
+    const args = ["agents", "--json"];
     const { stdout } = await execFileAsync(claudeBin, args, { maxBuffer: 8 * 1024 * 1024, timeout: 15000 });
     return parseAgentsOutput(stdout);
   } catch {

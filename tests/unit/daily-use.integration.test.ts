@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -12,25 +12,22 @@ const ID_C = "33333333-3333-4333-8333-333333333333";
 let h: Harness;
 /** `claude agents --json`（今動いている一覧）の中身 */
 let rowsFile: string;
-/** `claude agents --all --json`（過去を含む一覧）の中身 */
-let allFile: string;
 let worktree: string;
 const sent: string[] = [];
 
 beforeAll(async () => {
   const stubDir = mkdtempSync(path.join(os.tmpdir(), "ac-daily-stub-"));
   rowsFile = path.join(stubDir, "rows.json");
-  allFile = path.join(stubDir, "all.json");
   writeFileSync(rowsFile, "[]");
-  writeFileSync(allFile, "[]");
   const stub = path.join(stubDir, "claude-stub.sh");
-  writeFileSync(stub, `#!/bin/bash\ncase "$1" in agents) if [ "$2" = "--all" ]; then cat "${allFile}"; else cat "${rowsFile}"; fi;; --version) echo stub;; esac\n`);
+  writeFileSync(stub, `#!/bin/bash\ncase "$1" in agents) cat "${rowsFile}";; --version) echo stub;; esac\n`);
   chmodSync(stub, 0o755);
   h = await startHarness({
     claudeBin: stub,
     sendNotification: (body) => sent.push(body),
-    resumeCommand: ["/bin/sh", "-c", "echo RESUMED=$AC_RESUME_ID; cat"],
-    mainResumeCommand: ["/bin/sh", "-c", "echo RESUMED_MAIN=$AC_RESUME_ID; cat"],
+    // 実機の命令は `... --resume`（id なし）。ここでは作業場所と、AC_RESUME_ID が渡らないことを出力する
+    resumeCommand: ["/bin/sh", "-c", "echo RESUMED_WT cwd=$PWD id=[$AC_RESUME_ID]; cat"],
+    mainResumeCommand: ["/bin/sh", "-c", "echo RESUMED_MAIN cwd=$PWD id=[$AC_RESUME_ID]; cat"],
   });
   // 再開の試験用に、本店（コミット 1 つ）とそのワークツリーを作る
   const root = realpathSync(path.join(h.dir, "root"));
@@ -249,57 +246,59 @@ describe("quick prompts (K3)", () => {
   });
 });
 
-describe("past sessions (K4)", () => {
+describe("resume targets (K1-K4)", () => {
   const mainRoot = (): string => realpathSync(path.join(h.dir, "root"));
 
-  it("lists every row with its reason and role, and resumes a worktree session with the Sonnet role (id in AC_RESUME_ID)", async () => {
-    writeRows(allFile, [
-      { pid: 99991, status: "idle", name: "old work", sessionId: ID_A, cwd: worktree, startedAt: 300 },
-      { pid: 99992, status: "idle", name: "designer", sessionId: ID_B, cwd: mainRoot(), startedAt: 200 },
-      { pid: 99993, status: "idle", name: "elsewhere", sessionId: ID_C, cwd: "/", startedAt: 100 },
+  it("K1: lists the main checkout (Opus role) and each worktree except the main one (Sonnet role) with the branch name", async () => {
+    const list = await api("GET", "/api/resume-targets");
+    expect(list.status).toBe(200);
+    expect(list.json.items).toEqual([
+      { kind: "main", path: mainRoot(), branch: expect.any(String), roleId: "resumable-main" },
+      { kind: "worktree", path: worktree, branch: "release/one", roleId: "resumable" },
     ]);
-    setAgents([]);
-    const list = await api("GET", "/api/past-sessions");
-    expect((list.json.items as Array<{ sessionId: string; blocked: string | null; resumeRoleId: string | null }>).map((i) => [i.sessionId, i.blocked, i.resumeRoleId])).toEqual([
-      [ID_A, null, "resumable"],
-      [ID_B, null, "resumable-main"],
-      [ID_C, "outside", null],
-    ]);
+    expect((await fetch(`${h.base}/api/resume-targets`)).status).toBe(401);
+  });
 
-    const resumed = await api("POST", "/api/sessions/resume", { sessionId: ID_A });
+  it("K2: resuming the main row starts the Opus resume command in the main checkout (no session id passed)", async () => {
+    const resumed = await api("POST", "/api/sessions/resume", { kind: "main", path: mainRoot() });
     expect(resumed.status).toBe(201);
-    await vi.waitFor(() => expect(ringOf(resumed.json.id as string)).toContain(`RESUMED=${ID_A}`));
-    expect(h.sessions.get(resumed.json.id as string)?.cwd).toBe(worktree);
-    expect(h.sessions.get(resumed.json.id as string)?.roleId).toBe("resumable");
+    const id = resumed.json.id as string;
+    await vi.waitFor(() => expect(ringOf(id)).toContain(`RESUMED_MAIN cwd=${mainRoot()} id=[]`));
+    expect(h.sessions.get(id)?.cwd).toBe(mainRoot());
+    expect(h.sessions.get(id)?.roleId).toBe("resumable-main");
   });
 
-  it("resumes a main-checkout session with the Opus role (resumeScope main), in the main checkout", async () => {
-    const resumed = await api("POST", "/api/sessions/resume", { sessionId: ID_B });
+  it("K3: resuming a worktree row starts the Sonnet resume command in that worktree", async () => {
+    const resumed = await api("POST", "/api/sessions/resume", { kind: "worktree", path: worktree });
     expect(resumed.status).toBe(201);
-    await vi.waitFor(() => expect(ringOf(resumed.json.id as string)).toContain(`RESUMED_MAIN=${ID_B}`));
-    expect(h.sessions.get(resumed.json.id as string)?.cwd).toBe(mainRoot());
-    expect(h.sessions.get(resumed.json.id as string)?.roleId).toBe("resumable-main");
+    const id = resumed.json.id as string;
+    await vi.waitFor(() => expect(ringOf(id)).toContain(`RESUMED_WT cwd=${worktree} id=[]`));
+    expect(h.sessions.get(id)?.cwd).toBe(worktree);
+    expect(h.sessions.get(id)?.roleId).toBe("resumable");
+    expect(h.sessions.get(id)?.name).toBe("resume: release/one");
   });
 
-  it("rejects a directory outside, an invalid id and an unknown id", async () => {
-    expect((await api("POST", "/api/sessions/resume", { sessionId: ID_C })).status).toBe(400);
-    expect((await api("POST", "/api/sessions/resume", { sessionId: "x;id" })).status).toBe(400);
-    expect((await api("POST", "/api/sessions/resume", { sessionId: "44444444-4444-4444-8444-444444444444" })).status).toBe(404);
-  });
-
-  it("refuses with 409 when the sessionId is in the list of sessions running right now (any terminal), and marks it in the list", async () => {
-    setAgents([{ pid: 55555, status: "busy", name: "running elsewhere", sessionId: ID_A, cwd: worktree, startedAt: 1 }]);
-    const res = await api("POST", "/api/sessions/resume", { sessionId: ID_A });
-    expect(res.status).toBe(409);
-    const list = await api("GET", "/api/past-sessions");
-    expect((list.json.items as Array<{ sessionId: string; blocked: string | null }>).find((i) => i.sessionId === ID_A)?.blocked).toBe("running");
-    setAgents([]);
-  });
-
-  it("refuses when it cannot confirm the session is not running", async () => {
-    writeFileSync(rowsFile, "not json");
-    expect((await api("POST", "/api/sessions/resume", { sessionId: ID_A })).status).toBe(409);
-    setAgents([]);
+  it("K4: rejects a place that is neither the main checkout nor in git worktree list (outside, missing, relative, symlink, wrong kind, bad body)", async () => {
+    const outside = realpathSync(mkdtempSync(path.join(os.tmpdir(), "ac-outside-")));
+    const link = path.join(h.dir, "link-outside");
+    symlinkSync(outside, link);
+    const bad: Array<Record<string, unknown>> = [
+      { kind: "worktree", path: outside },
+      { kind: "worktree", path: "/" },
+      { kind: "worktree", path: path.join(h.dir, "missing") },
+      { kind: "worktree", path: "wt-one" },
+      { kind: "worktree", path: "../.." },
+      { kind: "worktree", path: link },
+      { kind: "main", path: worktree },
+      { kind: "worktree", path: mainRoot() },
+      { kind: "other", path: worktree },
+      { path: worktree },
+      { kind: "worktree" },
+      { sessionId: "11111111-1111-4111-8111-111111111111" },
+    ];
+    const before = h.sessions.list().length;
+    for (const body of bad) expect((await api("POST", "/api/sessions/resume", body)).status, JSON.stringify(body)).toBe(400);
+    expect(h.sessions.list().length).toBe(before);
   });
 });
 

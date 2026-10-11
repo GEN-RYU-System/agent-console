@@ -42,7 +42,9 @@ describe("parseConfig", () => {
       ["opus-designer", "main"],
       ["sonnet-impl", "worktree"],
     ]);
-    expect(shipped.roles.find((r) => r.id === "opus-designer")?.resumeCommand?.join(" ")).toContain('ccopusgo --resume "$AC_RESUME_ID"');
+    // K2/K3: 起動する命令は config 固定。id なしの --resume で Claude 公式の選択リストを開く（AC_RESUME_ID は使わない）
+    expect(shipped.roles.find((r) => r.id === "opus-designer")?.resumeCommand).toEqual(["/bin/zsh", "-ic", "ccopusgo --resume"]);
+    expect(shipped.roles.find((r) => r.id === "sonnet-impl")?.resumeCommand).toEqual(["/bin/zsh", "-ic", "claude --model sonnet --resume"]);
   });
 
   it("rejects a bad resumeScope, a resumeScope without resumeCommand, and two roles with the same scope", () => {

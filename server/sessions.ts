@@ -134,14 +134,14 @@ export class SessionManager {
   }
 
   /**
-   * 過去のセッションを再開する。起動コマンドは役割の resumeCommand、sessionId は環境変数 AC_RESUME_ID で渡す
-   * （コマンド文字列に連結しない）。cwd の検証は呼び出し側（past-sessions.ts）で済ませる。
+   * 再開用の端末を開く。起動コマンドは役割の resumeCommand（config 固定。id なしの `--resume` で Claude 公式の選択リストが開く）。
+   * cwd の検証は呼び出し側（resume-targets.ts）で済ませる。画面の文字列はコマンドに入れない。
    */
-  resume(input: { roleId: unknown; name: unknown; sessionId: string; cwd: string }): Session {
+  resume(input: { roleId: unknown; name: unknown; cwd: string }): Session {
     const role = this.findRole(input.roleId);
     if (!role.resumeCommand) throw new SessionInputError("role cannot resume sessions");
     if (this.sessions.size + this.pending >= this.maxSessions) throw new SessionInputError("too many sessions");
-    return this.spawnSession(validateName(input.name), role, null, input.cwd, role.resumeCommand, { AC_RESUME_ID: input.sessionId });
+    return this.spawnSession(validateName(input.name), role, null, input.cwd, role.resumeCommand);
   }
 
   /** アプリ側の名前を変える（Claude が動いていないセッション用。Claude 起動中は /rename を使う）。 */

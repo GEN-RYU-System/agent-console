@@ -71,7 +71,6 @@
       "unknownDate": "日付不明（開始日を読めず期間で判定できない）: {{count}} 件"
     },
     "notifyHelp": "「作業中」から「待ち」または「待機」に変わった時点を、このアプリが作業の区切りとみなして知らせます（Claude 公式の「ターン完了」の定義ではありません）。",
-    "pastSessions": "過去のセッション",
     "rename": {
       "open": "名前を変える",
       "title": "名前を変える",
@@ -105,25 +104,6 @@
       "sendError": "送信できませんでした",
       "switched": "確認している間に別のセッションへ切り替わったため、指示は入れませんでした。もう一度ボタンを押してください。"
     },
-    "past": {
-      "title": "過去のセッション",
-      "loading": "読み込み中",
-      "empty": "過去のセッションがありません",
-      "resume": "再開",
-      "resuming": "再開中",
-      "error": "再開できませんでした",
-      "unavailableTitle": "一覧を取得できません",
-      "unavailableBody": "claude agents --all の実行に失敗しました。",
-      "noRoleTitle": "再開できる役割がありません",
-      "noRoleBody": "設定で再開を許可した役割（Opus 設計・Sonnet 実装）だけが再開できます。",
-      "resumeAs": "再開する役割: {{role}}",
-      "blocked": {
-        "running": "再開不可（今動いています）",
-        "outside": "再開不可（本店のワークツリーではありません）",
-        "missing": "再開不可（作業場所が見つかりません）",
-        "noRole": "再開不可（この作業場所で再開できる役割が設定にありません）"
-      }
-    },
     "memory": {
       "open": "メモリ",
       "title": "メモリ",
@@ -138,6 +118,21 @@
       "sessions": "セッションごと（すべての子プロセスの合計）",
       "noSessions": "セッションがありません",
       "value": "{{mb}} MB（{{percent}} %）"
+    },
+    "resumeOpen": "過去の会話を再開",
+    "resume": {
+      "title": "過去の会話を再開",
+      "loading": "読み込み中",
+      "empty": "再開できる場所がありません",
+      "noMatch": "条件に合う worktree がありません",
+      "filter": "worktree を名前で絞り込む",
+      "mainRow": "Opus 設計役（本店）",
+      "worktreeRow": "Sonnet 実装役（{{name}}）",
+      "resume": "再開",
+      "resuming": "開いています",
+      "error": "開けませんでした",
+      "guideTitle": "会話は Claude の選択リストで選びます",
+      "guide": "「再開」を押すと、その場所で Claude の選択リストが端末に開きます。Ctrl+W で同じリポジトリの全 worktree、Ctrl+A でこの Mac の全プロジェクトの会話に広げられます。ターミナルなどで今動いている会話は選ばないでください。別の役割の会話を選ぶと、この行の役割のモデルで再開されます。"
     }
   },
   "role": {

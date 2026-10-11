@@ -65,8 +65,6 @@ export function prepareE2eEnv(): void {
   writeFileSync(nameFile, "");
   const slowFile = path.join(base, "agents-slow");
   writeFileSync(slowFile, "");
-  const allFile = path.join(base, "agents-all.json");
-  writeFileSync(allFile, "[]");
   const osascriptLog = path.join(base, "osascript.log");
   writeFileSync(osascriptLog, "");
   const osascriptBin = path.join(base, "osascript-stub.sh");
@@ -98,7 +96,15 @@ export function prepareE2eEnv(): void {
         command: [process.execPath, roleScript, marker],
         needsWorktree: false,
         resumeScope: "worktree",
-        resumeCommand: ["/bin/sh", "-c", `echo RESUMED=$AC_RESUME_ID; exec "${process.execPath}" "${roleScript}" ${marker}`],
+        resumeCommand: ["/bin/sh", "-c", `echo RESUMED_WT id=[$AC_RESUME_ID]; exec "${process.execPath}" "${roleScript}" ${marker}`],
+      },
+      {
+        id: "e2e-resume-main",
+        labelKey: "role.opusDesigner",
+        command: [process.execPath, roleScript, marker],
+        needsWorktree: false,
+        resumeScope: "main",
+        resumeCommand: ["/bin/sh", "-c", `echo RESUMED_MAIN id=[$AC_RESUME_ID]; exec "${process.execPath}" "${roleScript}" ${marker}`],
       },
       { id: "e2e-bracketed", labelKey: "role.shell", command: [process.execPath, bracketedScript, marker], needsWorktree: false },
       { id: "e2e-short", labelKey: "role.shell", command: [process.execPath, "-e", "console.log('bye')", marker], needsWorktree: false },
@@ -112,7 +118,6 @@ export function prepareE2eEnv(): void {
   process.env.AC_E2E_CONFIG = configFile;
   process.env.AC_E2E_STATUS_FILE = statusFile;
   process.env.AC_E2E_NAME_FILE = nameFile;
-  process.env.AC_E2E_ALL_FILE = allFile;
   process.env.AC_E2E_SLOW_FILE = slowFile;
   process.env.AC_E2E_OSASCRIPT_LOG = osascriptLog;
   process.env.AC_E2E_DATA_DIR = dataDir;

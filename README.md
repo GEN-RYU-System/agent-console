@@ -17,7 +17,7 @@ Local console for running parallel Claude Code sessions (Orca-inspired, lightwei
 - **作業の区切りの通知**: Claude の状態が「作業中」から「待ち」または「待機」に変わると、一覧の行に「未読」の印、窓のタイトルに未読数、macOS の通知が出ます。行を選ぶと未読が消えます。この「区切り」はこのアプリの定義で、Claude 公式の「ターン完了」ではありません。macOS 通知は設定 `notify.macos`（既定 true）で切り替えます。
 - **名前の変更**: 一覧の「名前を変える」。Claude 起動中は Claude に `/rename` を送ります（待ち・待機のときだけ）。10 秒たっても名前が変わらなければ画面に案内が出ます。Claude が動いていないセッションは、このアプリでの表示名を変えます。
 - **よく使う指示**: 端末の上のバーで「指示を編集」から登録・編集・削除します。ボタンを押すと、選択中の端末へ文章と改行を送ります（8KB まで）。保存先は `~/Library/Application Support/agent-console/quick-prompts.json`（設定 `dataDir` で変更、権限 600）の 1 ファイルだけです。
-- **過去のセッション**: 「過去のセッション」から一覧（`claude agents --all --json`）を開き、「再開」で同じ作業場所に `--resume` で戻ります。再開する役割は作業場所で決まります（設定 `resumeScope`）。本店そのもの＝Opus 設計役（`ccopusgo --resume <id>` で起動）、本店のワークツリー＝Sonnet 実装役。一覧の各行に「再開する役割」を表示します。本店・ワークツリーのどれでもない行は再開できません。ターミナルからは `ccopusgo --resume <UUID>` でも再開できます（依頼文とは併用不可）。
+- **過去の会話を再開**: 「過去の会話を再開」で、本店の行（Opus 設計役）と、本店の worktree ごとの行（Sonnet 実装役、名前で絞り込めます）が出ます。「再開」を押すと、その場所で Claude 公式の選択リスト（`ccopusgo --resume` / `claude --model sonnet --resume`、id なし）が端末に開くので、会話はそこで選びます。アプリは会話の一覧を持ちません。選択リストでは `Ctrl+W` で同じリポジトリの全 worktree、`Ctrl+A` でこの Mac の全プロジェクトの会話に広げられます（別の役割の会話を選ぶと、開いた行の役割のモデルで再開されます）。ターミナルなどで今動いている会話は選ばないでください（二重に書き込むおそれがあります）。再開先は本店と `git worktree list` にある場所だけで、サーバーが照合します。ターミナルからは `ccopusgo --resume`（id なしで選択リスト）、`ccopusgo --resume <UUID>`（id 指定）でも再開できます（どちらも依頼文とは併用不可）。
 - **台帳ボードの絞り込み**: 既定は「作業中・レビュー・WIP」かつ「開始日が直近 30 日」です。隠れた件数と、開始日を読めない行（日付不明）の件数が別に出ます。期間・状態・ブランチ名の検索を変えられます（この表示設定はブラウザの localStorage に保存されます）。
 - **メモリ**: フッターの「メモリ」で、セッションごと・このアプリのサーバー・Mac 全体を MB と % で見られます（開いている間だけ 10 秒ごとに更新）。
 
@@ -29,7 +29,7 @@ Local console for running parallel Claude Code sessions (Orca-inspired, lightwei
 | やること | 1 行コマンド | 何が起きるか |
 |---|---|---|
 | 初回導入 | `! bash scripts/ac-install.sh v0.2.0` | サーバー秘密をキーチェーンに保存 → 版を取得（**タグのコミットが origin/main に含まれることを確認**、`npm ci --ignore-scripts`、**コミット SHA を表示**）・ビルド → **別ポートで自己診断（/healthz の版・コミットが一致）** → ログイン時自動起動を登録 → Dock 用の `~/Applications/Agent Console.app` を生成（アイコン入り。更新・切戻しでも切替先の版の絵で作り直す。icns の無い版は標準の絵） → `/healthz` を確認して結果を表示 |
-| 更新 | `! bash scripts/ac-update.sh v0.3.2` | 新しい版を導入（上と同じ検証）→ 自己診断に通ったときだけ切替 → 再起動 → `/healthz` の版・コミットの一致を確認。失敗したら元の版に戻る |
+| 更新 | `! bash scripts/ac-update.sh v0.3.3` | 新しい版を導入（上と同じ検証）→ 自己診断に通ったときだけ切替 → 再起動 → `/healthz` の版・コミットの一致を確認。失敗したら元の版に戻る |
 | 切戻し | `! bash scripts/ac-rollback.sh` | 1 つ前の版（semver 順）に切替 → 再起動 → `/healthz` の版・コミットの一致を確認 |
 | 撤去 | `! bash scripts/ac-uninstall.sh` | 自動起動と起動アプリを外して **Trash へ移す**（削除しない）。導入済みの版とキーチェーンの秘密は残す |
 | 完全撤去 | `! bash scripts/ac-uninstall.sh --purge` | 上に加えて、導入済みの版・current・logs を Trash へ移し、キーチェーンの秘密を削除（秘密の削除だけは元に戻せない） |
