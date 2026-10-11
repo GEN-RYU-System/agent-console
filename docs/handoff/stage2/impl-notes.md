@@ -71,5 +71,5 @@
   - tests/unit/keychain.test.ts「fails when the secret is empty or malformed」5012ms: 1 つの it で bash スタブを 3 回起動。
 - 修正: どちらも 1 回の起動を 1 つの it にする（it.each など）。タイムアウト値は変えていない。design-governance は 5 つの it を 1 件ずつの it に分け、modern color functions は it.each にした。
 - 前回の別のタイムアウト: src/pages/ConsolePage.test.tsx の最初のテスト。`await import("./ConsolePage")`（SA の金型を含む画面全体の変換・読込）が最初のテストの 5 秒に含まれていた。ファイルの先頭で 1 回だけ読むようにした。
-- 別の遅いファイル（失敗はしていない）: tests/unit/scripts.test.ts は 1 つの it が最大 24 秒（導入・更新・切戻しの実スクリプトを複数回起動）。非同期の待ちが無い同期処理が中心で、vitest の 5 秒の判定にかからないまま通っている。実環境へ触れないスタブ構成。今回は変更していない。
+- 別の遅いファイル（失敗はしていない）: tests/unit/scripts.test.ts は 1 つの it が最大 24 秒（導入・更新・切戻しの実スクリプトを複数回起動）。通っている理由（5 秒の判定にかからない理由）は調べていない（未確認）。今回は変更していない。
 - 修正後の既定並列（load averages 約 23）: `Test Files 41 passed (41)` / `Tests 446 passed (446)`（Duration 186s）。
