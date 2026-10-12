@@ -1057,3 +1057,162 @@ test("v0.5.0 K1〜K6, K8: PR タブ -> PR・マージできるか・検査の集
     await fetch(`${BASE}/api/sessions/${id}/close`, { method: "POST", headers: BEARER });
   }
 });
+
+// ---- v0.7.0 端末の見やすさ ----
+const IS_MAC = process.platform === "darwin";
+const SETTLE_POLL_MS = 300;
+const SETTLE_DEADLINE_MS = 15000;
+const RIGHT_EDGE_TOLERANCE_PX = 1;
+
+/** 値が落ち着くまで（同じ値が 2 回続くまで）待って、その値を返す。落ち着かなければ失敗 */
+async function settled<T>(page: Page, read: () => Promise<T>): Promise<T> {
+  const started = Date.now();
+  let previous = JSON.stringify(await read());
+  for (;;) {
+    await page.waitForTimeout(SETTLE_POLL_MS);
+    const current = JSON.stringify(await read());
+    if (current === previous) return JSON.parse(current) as T;
+    if (Date.now() - started > SETTLE_DEADLINE_MS) throw new Error(`value did not settle within ${SETTLE_DEADLINE_MS}ms: ${previous} -> ${current}`);
+    previous = current;
+  }
+}
+
+async function openPunctSession(page: Page): Promise<void> {
+  await ensureRoom(1);
+  const id = await apiCreate("punct-target", "e2e-punct");
+  await openPaired(page);
+  await rowOf(page, id).click();
+  await expect(page.getByTestId("terminal")).toContainText("PUNCT-DONE", { timeout: 20000 });
+}
+
+interface RowEdge {
+  label: string;
+  overshootPx: number;
+}
+/** 各行の描画の右端 − .xterm-screen の右端（px）。行の頭の語（s1 / pu など）で行を見分ける */
+const measureEdges = (page: Page): Promise<RowEdge[]> =>
+  page.evaluate(() => {
+    const screenRight = (document.querySelector(".xterm-screen") as HTMLElement).getBoundingClientRect().right;
+    const rows = [...document.querySelectorAll(".xterm-rows > div")] as HTMLElement[];
+    return rows
+      .filter((r) => /^(ascii|s1|s2|pu|pj|ref|ja) /.test(r.textContent ?? ""))
+      .map((r) => {
+        const range = document.createRange();
+        range.selectNodeContents(r);
+        return { label: (r.textContent ?? "").split(" ")[0], overshootPx: Math.round((range.getBoundingClientRect().right - screenRight) * 100) / 100 };
+      });
+  });
+
+test("v0.7.0 K1: 全角の句読点・括弧を含む行の描画が、端末の右端を越えない（text-spacing-trim: space-all）", async ({ page }) => {
+  await openPunctSession(page);
+  // 描画の確認は macOS（CJK の書体がある環境）だけを正とする。Linux は書体の有無で意味が変わるので行わない
+  if (IS_MAC) {
+    const edges = await settled(page, () => measureEdges(page));
+    expect(edges.map((e) => e.label)).toEqual(["ascii", "s1", "s2", "pu", "pj", "ref", "ja"]);
+    for (const e of edges) expect(e.overshootPx, `${e.label} の右端`).toBeLessThanOrEqual(RIGHT_EDGE_TOLERANCE_PX);
+  }
+  // どの環境でも: 端末の行に space-all が掛かっている
+  expect(await page.evaluate(() => getComputedStyle(document.querySelector(".xterm-rows") as Element).getPropertyValue("text-spacing-trim"))).toBe("space-all");
+});
+
+test("v0.7.0 K3: 端末の書体の並びに明朝が入っている。日本語は明朝、英数字と罫線は Menlo、※ は Monaco で描かれる", async ({ page }) => {
+  await openPunctSession(page);
+  if (IS_MAC) {
+    // 書体の確認は macOS のジョブだけ（Linux は書体の有無で意味が変わる）
+    await settled(page, () => measureEdges(page));
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("DOM.enable");
+    await cdp.send("CSS.enable");
+    const doc = await cdp.send("DOM.getDocument", { depth: -1 });
+    const { nodeIds } = await cdp.send("DOM.querySelectorAll", { nodeId: doc.root.nodeId, selector: ".xterm-rows > div" });
+    const texts = await page.evaluate(() => [...document.querySelectorAll(".xterm-rows > div")].map((r) => r.textContent ?? ""));
+    const fontsOf = async (prefix: string): Promise<string[]> => {
+      const i = texts.findIndex((t) => t.startsWith(prefix));
+      expect(i, prefix).toBeGreaterThanOrEqual(0);
+      const { fonts } = await cdp.send("CSS.getPlatformFontsForNode", { nodeId: nodeIds[i] });
+      return fonts.map((f) => f.postScriptName);
+    };
+    expect((await fontsOf("ja ")).some((f) => f.startsWith("HiraMinProN"))).toBe(true);
+    expect(await fontsOf("ref ")).toContain("Monaco");
+    expect(await fontsOf("ascii ")).toEqual(["Menlo-Regular"]);
+    // 列の数は変わらない: ascii の行（列数−1 桁）が右端を越えない
+    const ascii = (await measureEdges(page)).find((e) => e.label === "ascii");
+    expect(ascii?.overshootPx ?? 99).toBeLessThanOrEqual(RIGHT_EDGE_TOLERANCE_PX);
+  }
+  expect(await page.evaluate(() => getComputedStyle(document.querySelector(".xterm-rows") as Element).fontFamily)).toBe('Menlo, Monaco, "Hiragino Mincho ProN", monospace');
+});
+
+const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
+const uploadedFiles = (): string[] => (existsSync(UPLOADS_DIR) ? readdirSync(UPLOADS_DIR).sort() : []);
+const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+/** ブラウザの中で、画像の File を持つ paste / drop を起こす（合成の DataTransfer）。defaultPrevented を返す */
+async function fireImageEvent(page: Page, kind: "paste" | "drop" | "dragover", opts: { text?: string; file?: "png" | "pdf" } = {}): Promise<boolean> {
+  return page.evaluate(
+    ([k, b64, o]) => {
+      const dt = new DataTransfer();
+      if (o.file === "png") {
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        dt.items.add(new File([bytes], "shot.png", { type: "image/png" }));
+      } else if (o.file === "pdf") {
+        dt.items.add(new File(["%PDF-1.4"], "doc.pdf", { type: "application/pdf" }));
+      }
+      if (o.text) dt.setData("text/plain", o.text);
+      if (k === "paste") {
+        const e = new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true });
+        (document.querySelector(".xterm-helper-textarea") as HTMLElement).dispatchEvent(e);
+        return e.defaultPrevented;
+      }
+      const e = new DragEvent(k, { dataTransfer: dt, bubbles: true, cancelable: true });
+      (document.querySelector(".xterm-screen") as HTMLElement).dispatchEvent(e);
+      return e.defaultPrevented;
+    },
+    [kind, PNG_B64, opts] as const,
+  );
+}
+
+test("v0.7.0 K4/K5/K6: 画像の貼り付け・ドロップで保存され、その絶対パスが端末に入る（Enter なし）。文字つきの貼り付け・画像以外のドロップでは保存されない", async ({ page }) => {
+  await ensureRoom(1);
+  const id = await apiCreate("upload-target", "e2e-plain");
+  await openPaired(page);
+  await rowOf(page, id).click();
+  const terminal = page.getByTestId("terminal");
+  await expect(terminal).toContainText("READY");
+  const before = uploadedFiles().length;
+
+  // dragover と drop は、画像でも画像以外でも既定の動き（ファイルをページとして開く）が止められる
+  expect(await fireImageEvent(page, "dragover", { file: "png" })).toBe(true);
+  expect(await fireImageEvent(page, "dragover", { file: "pdf" })).toBe(true);
+
+  // 画像以外のドロップ: 保存されず、案内が出て、ページは変わらない
+  const urlBefore = page.url();
+  expect(await fireImageEvent(page, "drop", { file: "pdf" })).toBe(true);
+  await expect(page.getByRole("alert").filter({ hasText: "貼れるのは PNG と JPEG の画像だけです" })).toBeVisible();
+  expect(page.url()).toBe(urlBefore);
+  expect(uploadedFiles().length).toBe(before);
+
+  // 文字つきの貼り付けは xterm に任せる（止めない・保存しない）
+  expect(await fireImageEvent(page, "paste", { file: "png", text: "with-text" })).toBe(false);
+  await page.waitForTimeout(500);
+  expect(uploadedFiles().length).toBe(before);
+
+  // 画像だけの貼り付け: 止められ、保存され、パスが端末に入る
+  expect(await fireImageEvent(page, "paste", { file: "png" })).toBe(true);
+  await expect.poll(() => uploadedFiles().length, { timeout: 10000 }).toBe(before + 1);
+  const saved = path.join(UPLOADS_DIR, uploadedFiles().filter((n) => /^[0-9a-f-]{36}\.png$/.test(n)).at(-1) as string);
+  expect(statSync(saved).mode & 0o777).toBe(0o600);
+  expect(statSync(UPLOADS_DIR).mode & 0o777).toBe(0o700);
+  expect(readFileSync(saved).subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+  // 端末の行の折り返しをまたぐので、空白と改行を除いて比べる。Enter は押されていない（行は確定していない）
+  const squash = async (): Promise<string> => (await terminal.innerText()).replace(/\s+/g, "");
+  await expect.poll(squash, { timeout: 10000 }).toContain(saved);
+
+  // 画像のドロップも同じ
+  expect(await fireImageEvent(page, "drop", { file: "png" })).toBe(true);
+  await expect.poll(() => uploadedFiles().length, { timeout: 10000 }).toBe(before + 2);
+});
+
+test("v0.7.0 K6: 画像の受け口は認証の内側にある（認証なしは 401）", async () => {
+  const res = await fetch(`${BASE}/api/uploads`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: PNG_B64 }) });
+  expect(res.status).toBe(401);
+});

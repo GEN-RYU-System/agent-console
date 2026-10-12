@@ -40,6 +40,10 @@ export const DEFAULT_PR_REFRESH_MIN_MS = 10000;
 export const DEFAULT_PICK_MAX_KEEP = 50;
 export const DEFAULT_PICK_SEND_MAX_BYTES = 16 * 1024;
 export const DEFAULT_PICK_HTML_IN_PROMPT_CHARS = 1500;
+/** VS Code の端末と同じ値。物理的なマウスのホイールのときだけ使う（画面が判定する） */
+export const DEFAULT_TERMINAL_SMOOTH_SCROLL_MS = 125;
+export const DEFAULT_UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
+export const DEFAULT_UPLOAD_MAX_KEEP = 100;
 /** git に渡す基準の名前。`-` で始まるものはオプションと読まれるので許さない。 */
 const DIFF_BASE_REF_PATTERN = /^[A-Za-z0-9_./][A-Za-z0-9_./-]*$/;
 
@@ -81,6 +85,12 @@ export interface Config {
   pickSendMaxBytes: number;
   /** 送る文章に入れる部品 1 件あたりの HTML の長さ（字）。保存は拡張が送った長さのまま */
   pickHtmlInPromptChars: number;
+  /** マウスのホイールでスクロールするときのなめらかさ（ms）。0 で無し */
+  terminalSmoothScrollMs: number;
+  /** 端末に貼る画像 1 枚の上限（byte） */
+  uploadMaxBytes: number;
+  /** 貼った画像を残す枚数。超えたら古い順に消す */
+  uploadMaxKeep: number;
 }
 
 const STRING_KEYS = ["salesanchorRoot", "newWorktreeScript", "ledgerLookupScript", "ledgerDir", "claudeBin"] as const;
@@ -156,6 +166,12 @@ function parseDiffBaseRef(raw: unknown): string {
 function parsePositive(raw: unknown, key: string, fallback: number): number {
   if (raw === undefined) return fallback;
   if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) throw new Error(`config: ${key} must be a positive number`);
+  return raw;
+}
+
+function parseSmoothScroll(raw: unknown): number {
+  if (raw === undefined) return DEFAULT_TERMINAL_SMOOTH_SCROLL_MS;
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) throw new Error("config: terminalSmoothScrollMs must be a non-negative number");
   return raw;
 }
 
@@ -241,6 +257,9 @@ export function parseConfig(raw: unknown): Config {
     pickMaxKeep: parsePositive(o.pickMaxKeep, "pickMaxKeep", DEFAULT_PICK_MAX_KEEP),
     pickSendMaxBytes: parsePositive(o.pickSendMaxBytes, "pickSendMaxBytes", DEFAULT_PICK_SEND_MAX_BYTES),
     pickHtmlInPromptChars: parsePositive(o.pickHtmlInPromptChars, "pickHtmlInPromptChars", DEFAULT_PICK_HTML_IN_PROMPT_CHARS),
+    terminalSmoothScrollMs: parseSmoothScroll(o.terminalSmoothScrollMs),
+    uploadMaxBytes: parsePositive(o.uploadMaxBytes, "uploadMaxBytes", DEFAULT_UPLOAD_MAX_BYTES),
+    uploadMaxKeep: parsePositive(o.uploadMaxKeep, "uploadMaxKeep", DEFAULT_UPLOAD_MAX_KEEP),
   };
 }
 

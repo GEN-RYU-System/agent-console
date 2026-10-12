@@ -182,3 +182,27 @@ describe("parseConfig: picker settings (§4)", () => {
     expect([shipped.pickMaxKeep, shipped.pickSendMaxBytes, shipped.pickHtmlInPromptChars]).toEqual([50, 16384, 1500]);
   });
 });
+
+describe("parseConfig: terminal and upload settings (v0.7.0)", () => {
+  it("K2/K5: fills the defaults when the three keys are omitted: 125ms, 5MiB, 100 kept", () => {
+    const c = parseConfig(valid);
+    expect([c.terminalSmoothScrollMs, c.uploadMaxBytes, c.uploadMaxKeep]).toEqual([125, 5 * 1024 * 1024, 100]);
+  });
+
+  it("accepts explicit values, and 0 for the smooth scroll (turns it off)", () => {
+    const c = parseConfig({ ...valid, terminalSmoothScrollMs: 0, uploadMaxBytes: 1000, uploadMaxKeep: 3 });
+    expect([c.terminalSmoothScrollMs, c.uploadMaxBytes, c.uploadMaxKeep]).toEqual([0, 1000, 3]);
+  });
+
+  it("refuses bad values naming the key", () => {
+    for (const bad of [-1, "125", null, Number.NaN]) expect(() => parseConfig({ ...valid, terminalSmoothScrollMs: bad }), String(bad)).toThrow(/terminalSmoothScrollMs/);
+    for (const key of ["uploadMaxBytes", "uploadMaxKeep"]) {
+      for (const bad of [0, -1, "5", null]) expect(() => parseConfig({ ...valid, [key]: bad }), `${key}=${String(bad)}`).toThrow(new RegExp(key));
+    }
+  });
+
+  it("the shipped config carries the same three values", () => {
+    const shipped = parseConfig(JSON.parse(readFileSync("agent-console.config.json", "utf8")));
+    expect([shipped.terminalSmoothScrollMs, shipped.uploadMaxBytes, shipped.uploadMaxKeep]).toEqual([125, 5242880, 100]);
+  });
+});

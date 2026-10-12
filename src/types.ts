@@ -43,6 +43,10 @@ export interface ConsoleState {
   claudeVersion: string;
   appVersion: string;
   commit: string;
+  /** マウスのホイールでスクロールするときのなめらかさ（ms。config の値） */
+  terminalSmoothScrollMs: number;
+  /** 端末に貼る画像 1 枚の上限（byte。config の値） */
+  uploadMaxBytes: number;
 }
 
 export type LookupResult = { kind: "found"; state: string; startedAt: number | null } | { kind: "unregistered" } | { kind: "conflict" };

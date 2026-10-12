@@ -15,6 +15,8 @@ const state: ConsoleState = {
   claudeVersion: "1.0.0",
   appVersion: "0.3.6",
   commit: "abcdef0123456789abcdef0123456789abcdef01",
+  terminalSmoothScrollMs: 125,
+  uploadMaxBytes: 5 * 1024 * 1024,
 };
 
 const removeSession = vi.fn();
@@ -75,8 +77,9 @@ vi.mock("../api", () => ({
 // xterm は jsdom で動かない（matchMedia が無い）。端末の描画は e2e で確認する
 vi.mock("../components/TerminalPane/TerminalPane", async () => {
   const { forwardRef, useImperativeHandle } = await import("react");
+  const { Button } = await import("@sa/components/Button");
   return {
-    TerminalPane: forwardRef(function TerminalStub(props: { sessionId: string }, ref) {
+    TerminalPane: forwardRef(function TerminalStub(props: { sessionId: string; smoothScrollMs?: number; uploadMaxBytes?: number; onUploadNotice?: (n: string) => void }, ref) {
       // 本物と同じく、確認したセッションと表示中のセッションが同じときだけ入れる
       useImperativeHandle(
         ref,
@@ -90,7 +93,11 @@ vi.mock("../components/TerminalPane/TerminalPane", async () => {
         }),
         [props.sessionId],
       );
-      return <div data-testid="terminal-stub" />;
+      return (
+        <div data-testid="terminal-stub" data-smooth={props.smoothScrollMs} data-max={props.uploadMaxBytes}>
+          <Button onClick={() => props.onUploadNotice?.("tooLarge")}>stub-notice</Button>
+        </div>
+      );
     }),
   };
 });
@@ -398,5 +405,17 @@ describe("ConsolePage 部品 tab (K3, §3-8)", () => {
     await waitFor(() => expect(screen.getByRole("tab", { name: /部品/ }).textContent).toBe("部品"));
     act(() => onmessage({ data: JSON.stringify({ sessions: state.sessions, agentsAvailable: true, picksUnsent: 7 }) }));
     await waitFor(() => expect(screen.getByRole("tab", { name: /部品/ }).textContent).toContain("7"));
+  });
+
+  it("hands the terminal the scroll time and the image limit from the state, and shows an upload notice from the terminal", async () => {
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    const stub = await screen.findByTestId("terminal-stub");
+    expect(stub.getAttribute("data-smooth")).toBe("125");
+    expect(stub.getAttribute("data-max")).toBe(String(5 * 1024 * 1024));
+    fireEvent.click(within(stub).getByText("stub-notice"));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("画像を貼れませんでした");
+    expect(alert.textContent).toContain("画像が大きすぎます（1枚 5 MB まで）");
   });
 });
