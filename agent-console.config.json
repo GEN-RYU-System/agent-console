@@ -21,6 +21,7 @@
   "pickMaxKeep": 50,
   "pickSendMaxBytes": 16384,
   "pickHtmlInPromptChars": 1500,
+  "activityKeepDays": 7,
   "roles": [
     {
       "id": "opus-designer",

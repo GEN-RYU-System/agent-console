@@ -3,6 +3,9 @@ import { stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { CHALLENGE_TTL_MS, PAIRING_TTL_MS, SESSION_MAX_MS, type Auth } from "./auth.ts";
+import type { ActivityStore } from "./activity.ts";
+import type { HookCheck } from "./activity-hooks.ts";
+import { handleActivity } from "./activity-routes.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
 import type { MemoryCollector } from "./memory.ts";
@@ -39,6 +42,10 @@ export interface AppDeps {
   diffComments: DiffCommentStore;
   picks: PickStore;
   picker: PickerAccess;
+  /** セッションの様子の記録（dataDir/activity）の写し */
+  activity: ActivityStore;
+  /** 記録の仕組み（hooks）が Claude の設定に入っているかの点検。設定ファイルを読むだけ（呼ぶたびに行う） */
+  checkHooks: () => HookCheck;
   memory: MemoryCollector;
   staticDir: string;
   meta: { saSource: string; claudeVersion: string; version: string; commit: string };
@@ -154,6 +161,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   if (await handleDiff(deps, req, res, url)) return;
   if (await handlePr(deps, req, res, url)) return;
   if (await handlePicks(deps, req, res, url)) return;
+  if (await handleActivity(deps, req, res, url)) return;
   if (await handleDailyUse(deps, req, res, url)) return;
   const removeMatch = /^\/api\/sessions\/([^/]+)$/.exec(url.pathname);
   if (req.method === "DELETE" && removeMatch) {

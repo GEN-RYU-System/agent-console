@@ -4,6 +4,7 @@ import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import path from "node:path";
 import { createAuth, DEV_PAIRING_TTL_MS } from "./auth.ts";
+import { startActivity } from "./activity-start.ts";
 import { fetchClaudeVersion } from "./agents.ts";
 import { loadConfig } from "./config.ts";
 import { DiffCommentStore } from "./diff-comments.ts";
@@ -67,8 +68,9 @@ async function main(): Promise<void> {
   const picker = await setupPicker({ env: process.env, dataDir: config.dataDir, port: config.port, sourceDir: path.join(process.cwd(), "extension") });
   const picks = new PickStore(config.dataDir, config.pickMaxKeep);
   hub.watchPicks(picks);
+  const activity = startActivity({ config, hub, env: process.env, hooksSourceDir: path.join(process.cwd(), "hooks") });
 
-  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, picker, memory: new MemoryCollector(), staticDir: path.join(process.cwd(), "dist"), meta }));
+  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, picker, activity: activity.store, checkHooks: activity.check, memory: new MemoryCollector(), staticDir: path.join(process.cwd(), "dist"), meta }));
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   // 期限切れ（12 時間）になったセッションの WebSocket を閉じる
   setInterval(() => controls.sweep(), SESSION_SWEEP_MS).unref();
@@ -90,6 +92,7 @@ async function main(): Promise<void> {
 
   const shutdown = (): void => {
     hub.stop();
+    activity.stop();
     // 停止で端末が終わっても、復元リストは書き換えない（再起動のあとに開き直すため）
     sessions.beginShutdown();
     sessions.killAll();

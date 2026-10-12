@@ -182,3 +182,22 @@ describe("parseConfig: picker settings (§4)", () => {
     expect([shipped.pickMaxKeep, shipped.pickSendMaxBytes, shipped.pickHtmlInPromptChars]).toEqual([50, 16384, 1500]);
   });
 });
+
+describe("parseConfig: activity settings (v0.8.0)", () => {
+  it("K4: activityKeepDays の既定は 7。明示した値も通る。0 以下・数でない値は項目名つきで断る", () => {
+    expect(parseConfig(valid).activityKeepDays).toBe(7);
+    expect(parseConfig({ ...valid, activityKeepDays: 3 }).activityKeepDays).toBe(3);
+    expect(() => parseConfig({ ...valid, activityKeepDays: 0 })).toThrow(/activityKeepDays/);
+    expect(() => parseConfig({ ...valid, activityKeepDays: "7" })).toThrow(/activityKeepDays/);
+  });
+
+  it("K8: claudeSettingsPath の既定は ~/.claude/settings.json（~ は展開）。明示した場所も通る。空文字は断る", () => {
+    expect(parseConfig(valid).claudeSettingsPath).toBe(`${os.homedir()}/.claude/settings.json`);
+    expect(parseConfig({ ...valid, claudeSettingsPath: "/tmp/x/settings.json" }).claudeSettingsPath).toBe("/tmp/x/settings.json");
+    expect(() => parseConfig({ ...valid, claudeSettingsPath: "" })).toThrow(/claudeSettingsPath/);
+  });
+
+  it("出荷時の config は activityKeepDays を 7 にしている", () => {
+    expect(parseConfig(JSON.parse(readFileSync("agent-console.config.json", "utf8"))).activityKeepDays).toBe(7);
+  });
+});

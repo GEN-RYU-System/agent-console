@@ -40,6 +40,8 @@ export const DEFAULT_PR_REFRESH_MIN_MS = 10000;
 export const DEFAULT_PICK_MAX_KEEP = 50;
 export const DEFAULT_PICK_SEND_MAX_BYTES = 16 * 1024;
 export const DEFAULT_PICK_HTML_IN_PROMPT_CHARS = 1500;
+export const DEFAULT_ACTIVITY_KEEP_DAYS = 7;
+export const DEFAULT_CLAUDE_SETTINGS_PATH = "~/.claude/settings.json";
 /** git に渡す基準の名前。`-` で始まるものはオプションと読まれるので許さない。 */
 const DIFF_BASE_REF_PATTERN = /^[A-Za-z0-9_./][A-Za-z0-9_./-]*$/;
 
@@ -81,6 +83,10 @@ export interface Config {
   pickSendMaxBytes: number;
   /** 送る文章に入れる部品 1 件あたりの HTML の長さ（字）。保存は拡張が送った長さのまま */
   pickHtmlInPromptChars: number;
+  /** セッションの様子の記録（dataDir/activity/events-YYYYMMDD.jsonl）を残す日数。これより古い日付のファイルは本番のポートのサーバーが消す */
+  activityKeepDays: number;
+  /** 記録の仕組み（hooks）が入っているかを点検するために読む Claude の設定ファイル。読むだけで書かない */
+  claudeSettingsPath: string;
 }
 
 const STRING_KEYS = ["salesanchorRoot", "newWorktreeScript", "ledgerLookupScript", "ledgerDir", "claudeBin"] as const;
@@ -171,6 +177,12 @@ function parseGhBin(raw: unknown): string {
   return raw;
 }
 
+function parseClaudeSettingsPath(raw: unknown): string {
+  if (raw === undefined) return expandHome(DEFAULT_CLAUDE_SETTINGS_PATH);
+  if (typeof raw !== "string" || raw === "") throw new Error("config: claudeSettingsPath must be a non-empty string");
+  return expandHome(raw);
+}
+
 const ENV_KEY = /^[A-Z_][A-Z0-9_]*$/;
 // eslint-disable-next-line no-control-regex
 const ENV_CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
@@ -241,6 +253,8 @@ export function parseConfig(raw: unknown): Config {
     pickMaxKeep: parsePositive(o.pickMaxKeep, "pickMaxKeep", DEFAULT_PICK_MAX_KEEP),
     pickSendMaxBytes: parsePositive(o.pickSendMaxBytes, "pickSendMaxBytes", DEFAULT_PICK_SEND_MAX_BYTES),
     pickHtmlInPromptChars: parsePositive(o.pickHtmlInPromptChars, "pickHtmlInPromptChars", DEFAULT_PICK_HTML_IN_PROMPT_CHARS),
+    activityKeepDays: parsePositive(o.activityKeepDays, "activityKeepDays", DEFAULT_ACTIVITY_KEEP_DAYS),
+    claudeSettingsPath: parseClaudeSettingsPath(o.claudeSettingsPath),
   };
 }
 

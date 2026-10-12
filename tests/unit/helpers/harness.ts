@@ -5,7 +5,10 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { createAuth } from "../../../server/auth.ts";
-import { DEFAULT_DIFF_MAX_FILE_BYTES, DEFAULT_GH_BIN, DEFAULT_PR_POLL_MS, DEFAULT_PR_REFRESH_MIN_MS, DEFAULT_PICK_HTML_IN_PROMPT_CHARS, DEFAULT_PICK_MAX_KEEP, DEFAULT_PICK_SEND_MAX_BYTES, DEFAULT_DIFF_SEND_MAX_BYTES, DEFAULT_PASTE_SUBMIT_DELAY_MS, type Config } from "../../../server/config.ts";
+import { DEFAULT_DIFF_MAX_FILE_BYTES, DEFAULT_GH_BIN, DEFAULT_PR_POLL_MS, DEFAULT_PR_REFRESH_MIN_MS, DEFAULT_PICK_HTML_IN_PROMPT_CHARS, DEFAULT_PICK_MAX_KEEP, DEFAULT_PICK_SEND_MAX_BYTES, DEFAULT_DIFF_SEND_MAX_BYTES, DEFAULT_PASTE_SUBMIT_DELAY_MS, DEFAULT_ACTIVITY_KEEP_DAYS, type Config } from "../../../server/config.ts";
+import { ActivityStore } from "../../../server/activity.ts";
+import { checkHooks } from "../../../server/activity-hooks.ts";
+import { hookPathIn } from "../../../server/activity-setup.ts";
 import { MemoryCollector } from "../../../server/memory.ts";
 import { PickStore } from "../../../server/picks.ts";
 import type { PickerAccess } from "../../../server/picker-extension.ts";
@@ -44,6 +47,7 @@ export interface Harness {
   /** 期限切れセッションの WebSocket を閉じる処理を、時計を進めた後に手動で実行する。 */
   sweep: () => void;
   picks: PickStore;
+  activity: ActivityStore;
   close: () => Promise<void>;
 }
 
@@ -107,6 +111,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   mkdirSync(path.join(root, "scripts"), { recursive: true });
   mkdirSync(path.join(root, "ledger"), { recursive: true });
   mkdirSync(staticDir);
+  mkdirSync(path.join(dir, "home", ".claude"), { recursive: true });
   writeFileSync(path.join(staticDir, "index.html"), "<html>index</html>");
   const secretPath = path.join(dir, "secret.txt");
   writeFileSync(secretPath, "TOP-SECRET");
@@ -142,6 +147,8 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     pickMaxKeep: options.pickMaxKeep ?? DEFAULT_PICK_MAX_KEEP,
     pickSendMaxBytes: options.pickSendMaxBytes ?? DEFAULT_PICK_SEND_MAX_BYTES,
     pickHtmlInPromptChars: options.pickHtmlInPromptChars ?? DEFAULT_PICK_HTML_IN_PROMPT_CHARS,
+    activityKeepDays: DEFAULT_ACTIVITY_KEEP_DAYS,
+    claudeSettingsPath: path.join(dir, "home", ".claude", "settings.json"),
     roles: [
       { id: "echo", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo READY; cat"], needsWorktree: false },
       { id: "short", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo bye"], needsWorktree: false },
@@ -166,9 +173,11 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const auth = createAuth(TOKEN, port, { now: () => clock.t });
   const picks = new PickStore(config.dataDir, config.pickMaxKeep);
   hub.watchPicks(picks);
+  const activity = new ActivityStore(config.dataDir, { keepDays: config.activityKeepDays });
+  hub.watchActivity(activity);
   const picker: PickerAccess = options.picker ?? { extensionOrigin: PICKER_ORIGIN, token: PICKER_TOKEN, extensionDir: path.join(config.dataDir, "chrome-extension") };
   const server = createServer(
-    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, picker, memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT } }),
+    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT } }),
   );
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
@@ -186,6 +195,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     clock,
     sweep: () => controls.sweep(),
     picks,
+    activity,
     close: async () => {
       sessions.killAll();
       server.closeAllConnections();
