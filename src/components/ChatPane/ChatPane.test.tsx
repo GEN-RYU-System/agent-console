@@ -309,6 +309,11 @@ describe("K6 送れるのは手すきのときだけ", () => {
 });
 
 describe("K7 よく使う指示", () => {
+  it("タブが開いていない（active: false）間は、バーを DOM に置かない（端末の上のバーと 2 本並ばない）", () => {
+    renderPane({ active: false });
+    expect(screen.queryByTestId("quick-prompt-bar")).toBeNull();
+  });
+
   it("常に表示の指示を並べる。押すと本文が入力欄に入る（すぐには送らない）", async () => {
     renderPane();
     const bar = screen.getByTestId("quick-prompt-bar");

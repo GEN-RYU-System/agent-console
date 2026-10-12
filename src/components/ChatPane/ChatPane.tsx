@@ -175,7 +175,8 @@ export function ChatPane({ sessionId, active, rev, state, canInput, paste, promp
         {items.map(bubble)}
       </div>
       <div className="ac-chat__composer">
-        <QuickPromptBar prompts={prompts} onPick={pickPrompt} onEdit={onEditPrompts} onChanged={onPromptsChanged} />
+        {/* バーは、このタブが開いているときだけ置く（端末の上のバーと同時に DOM に 2 本ある状態を作らない） */}
+        {active && <QuickPromptBar prompts={prompts} onPick={pickPrompt} onEdit={onEditPrompts} onChanged={onPromptsChanged} />}
         {blockedKey !== null && (
           <div className="ac-chat__blocked" data-testid="chat-blocked">
             <span>{t(blockedKey)}</span>
