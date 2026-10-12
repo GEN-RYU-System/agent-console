@@ -25,10 +25,10 @@ import {
   resumeSession,
 } from "../api";
 import { DiffPane } from "../components/DiffPane/DiffPane";
-import { LedgerBoard } from "../components/LedgerBoard/LedgerBoard";
 import { MemoryPanel } from "../components/MemoryPanel/MemoryPanel";
 import { PicksPane } from "../components/PicksPane/PicksPane";
 import { PrPane } from "../components/PrPane/PrPane";
+import { RightPane } from "../components/RightPane/RightPane";
 import { NewSessionForm, type NewSessionValues } from "../components/NewSessionForm/NewSessionForm";
 import { ResumePicker } from "../components/ResumePicker/ResumePicker";
 import { QuickPromptBar } from "../components/QuickPrompts/QuickPromptBar";
@@ -378,7 +378,7 @@ export function ConsolePage() {
         />
       </main>
       <aside className="ac-page__right">
-        <LedgerBoard snapshot={ledger} onRefresh={handleRefresh} />
+        <RightPane sessionId={activeId} rev={state.activityRev} state={activeSession?.state ?? "unknown"} ledger={ledger} onRefresh={handleRefresh} />
       </aside>
       <footer className="ac-page__footer" data-testid="footer">
         <span data-testid="sa-source">

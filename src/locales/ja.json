@@ -313,6 +313,48 @@
       "detailRect": "位置と大きさ",
       "receivedAt": "{{time}} に届きました",
       "noText": "文字なし"
+    },
+    "rightTabs": {
+      "session": "このセッション",
+      "ledger": "台帳"
+    },
+    "activity": {
+      "stateTitle": "今の状態",
+      "runningTitle": "動いている担当",
+      "finishedTitle": "終わった担当",
+      "tasksTitle": "やること",
+      "inputsTitle": "最近の入力",
+      "emptyRunning": "動いている担当はいません",
+      "emptyFinished": "終わった担当はまだありません",
+      "emptyTasks": "やることはありません",
+      "emptyInputs": "入力はまだありません",
+      "loading": "読み込み中",
+      "errorTitle": "様子を取得できません",
+      "errorBody": "アプリのサーバーから、このセッションの様子を取れませんでした。しばらくしてからもう一度ひらいてください。",
+      "noSessionTitle": "まだ会話が始まっていません",
+      "noSessionHint": "Claude に最初の指示を出すと、ここに担当ややることの様子が出ます",
+      "agentUnknown": "担当",
+      "noDescription": "（仕事の説明は記録されていません）",
+      "taskDone": "完了",
+      "taskOpen": "未完了",
+      "justNow": "たった今",
+      "ago": "{{time}}前",
+      "runningFor": "動き始めて{{time}}",
+      "took": "{{time}}かかった",
+      "unit": {
+        "second": "{{count}}秒",
+        "minute": "{{count}}分",
+        "hour": "{{count}}時間",
+        "day": "{{count}}日"
+      },
+      "models": {
+        "sonnet": "Sonnet（調査・実装）",
+        "opus": "Opus（設計・判断）",
+        "fable": "Fable（審査）",
+        "haiku": "Haiku（軽い作業）"
+      },
+      "hooksOffTitle": "記録の仕組みが外れています",
+      "hooksOffBody": "Claude の設定から、このアプリの記録用の仕組み（hook）が外れているため、担当ややることの様子が新しく記録されません。README の「セッションの様子の記録」の手順で、node scripts/ac-hooks.mjs install を実行してください。"
     }
   },
   "role": {

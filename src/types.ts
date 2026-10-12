@@ -16,6 +16,8 @@ export interface SessionView {
   pendingName?: string;
   /** そのセッションのブランチの PR の検査の要約（PR が無い・検査が無い・まだ取れていないときは項目ごと無い） */
   ci?: CiState;
+  /** 動いている Claude の sessionId（UUID の形のものだけ。まだ分からないときは項目ごと無い） */
+  claudeSessionId?: string;
 }
 
 export type CiState = "fail" | "pending" | "pass";
@@ -38,6 +40,8 @@ export interface ConsoleState {
   restoreNotices: RestoreNotice[];
   /** まだ Claude に送っていない部品の数（「部品」タブの件数） */
   picksUnsent: number;
+  /** セッションの様子の記録の版（進んだら、右の欄の「このセッション」を取り直す） */
+  activityRev: number;
   roles: RoleView[];
   saSource: string;
   claudeVersion: string;
@@ -168,3 +172,44 @@ export interface PickItem {
   note: string;
   sentAt?: number;
 }
+
+/** 右の欄「このセッション」の 1 つの担当（動いている担当・終わった担当）。説明は Claude が書いた文のまま */
+export interface ActivityAgent {
+  key: string;
+  subagentType: string;
+  model: string;
+  resolvedModel: string;
+  description: string;
+  startedAt: number | null;
+  endedAt: number | null;
+  durationMs: number | null;
+  summary: string;
+}
+export interface ActivityTask {
+  id: string;
+  subject: string;
+  done: boolean;
+}
+export interface ActivityInput {
+  ts: number;
+  text: string;
+}
+/** 記録の仕組み（hooks）の点検の結果。reason は ok でないときだけ */
+export interface HookCheck {
+  ok: boolean;
+  reason?: "noSettings" | "unreadable" | "missingHandler" | "nodeMissing" | "hookFileMissing";
+  missingEvents?: string[];
+}
+export type ActivityResponse =
+  | { status: "noSession" }
+  | {
+      status: "ok";
+      /** サーバーが答えた時刻。「3分前」はこれとの差で出す */
+      now: number;
+      running: ActivityAgent[];
+      finished: ActivityAgent[];
+      tasks: ActivityTask[];
+      inputs: ActivityInput[];
+      lastEventAt: number | null;
+      hooks: HookCheck;
+    };

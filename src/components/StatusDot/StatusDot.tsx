@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import type { SessionState } from "../../types";
 import "./StatusDot.css";
 
-const LABEL_KEY: Record<SessionState, string> = {
+export const STATE_LABEL_KEY: Record<SessionState, string> = {
   working: "ac.state.working",
   waiting: "ac.state.waiting",
   idle: "ac.state.idle",
@@ -16,7 +16,7 @@ export function StatusDot({ state }: { state: SessionState }) {
   return (
     <span className="ac-status" data-testid="status" data-state={state}>
       <span className={`ac-status__dot ac-status__dot--${state}`} aria-hidden="true" />
-      <span className="ac-status__label">{t(LABEL_KEY[state])}</span>
+      <span className="ac-status__label">{t(STATE_LABEL_KEY[state])}</span>
     </span>
   );
 }
