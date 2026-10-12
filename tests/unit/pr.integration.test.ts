@@ -373,6 +373,21 @@ describe("K5: 取り直し", () => {
     expect(res.json.pr.number).toBe(102);
   });
 
+  it("終了したセッションの写しは定期の掃除で消えず、その PR タブは直前の結果を返し続ける", async () => {
+    clearFx();
+    const { id } = newPlace("release/exited-keep");
+    setPr("release/exited-keep", 131, "OPEN", [check("pass", "a")]);
+    const before = await refreshPr(id);
+    expect(before.json.status).toBe("ok");
+    const session = h.sessions.get(id);
+    session?.term.kill();
+    for (let i = 0; i < 50 && !session?.exited; i++) await new Promise((r) => setTimeout(r, 100));
+    expect(session?.exited).toBe(true);
+    await h.hub.pollPrs();
+    const after = await getPr(id);
+    expect(after.json).toEqual(before.json);
+  });
+
   it("「更新」は前回から prRefreshMinMs 以内なら取り直さず、今の結果を返す", async () => {
     clearFx();
     const { id } = newPlace("release/refresh-min");

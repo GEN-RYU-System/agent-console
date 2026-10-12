@@ -130,7 +130,7 @@
   - mergeStateStatus の表示（ja.json）:
     - CLEAN「マージできます」
     - HAS_HOOKS「マージできます」
-    - UNSTABLE「検査に失敗がありますがマージは可能です」
+    - UNSTABLE「検査が終わっていないか、失敗がありますが、マージは可能です」（GitHub の UNSTABLE は実行中の検査だけでも出る。Fable のコード審査 LOW-1 で実測）
     - BLOCKED「条件を満たしていないためマージできません」
     - BEHIND「main より古いため更新が必要です」
     - DIRTY「競合があります」

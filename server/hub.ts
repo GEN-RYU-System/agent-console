@@ -280,8 +280,7 @@ export class Hub {
         const at = await this.locatePr(s.id);
         if (at.target && at.key !== null && !groups.has(at.key)) groups.set(at.key, { target: at.target, dir: at.dir });
       } catch (err) {
-        // 作業場所が対象外（409）やセッションの消失は、この回は見ないだけ
-        this.prKeyOfSession.delete(s.id);
+        // 作業場所が対象外（409）やセッションの消失は、この回は見ないだけ（前回の紐づけと写しは残す）
         if (!(err instanceof SessionConflictError) && !(err instanceof SessionNotFoundError)) this.onPollError("pr", err);
       }
     }
@@ -291,7 +290,13 @@ export class Hub {
       const result = await this.fetchPrOnce(key, group.target, group.dir);
       if (result.status === "rateLimited") break;
     }
-    for (const key of [...this.prByKey.keys()]) if (!groups.has(key)) this.prByKey.delete(key);
+    // 写しの掃除は、どのセッション（終了したものも含む）にも紐づかない key だけ
+    const referenced = new Set<string>();
+    for (const s of this.sessions.list()) {
+      const key = this.prKeyOfSession.get(s.id);
+      if (key) referenced.add(key);
+    }
+    for (const key of [...this.prByKey.keys()]) if (!referenced.has(key)) this.prByKey.delete(key);
     await this.publish();
   }
 
