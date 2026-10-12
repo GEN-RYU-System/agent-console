@@ -401,6 +401,47 @@ async function expectCompactRows(page: Page): Promise<void> {
   expect(cut).toEqual({ overflow: "ellipsis", ws: "nowrap", hidden: "hidden" });
 }
 
+/** v0.10.0 K1: 中央の上部タブは高さ 56px・文字 24px。件数の印（Badge）の文字は変わらず、右の欄のタブも変わらない。 */
+async function expectLargeCenterTabs(page: Page): Promise<void> {
+  // 値が落ち着いてから取る（描画直後の再計算を待つ）
+  const probe = (css: string) =>
+    page.evaluate((c) => {
+      const el = document.createElement("div");
+      el.style.cssText = `position:absolute;visibility:hidden;${c}`;
+      document.body.appendChild(el);
+      const cs = getComputedStyle(el);
+      const out = { height: cs.height, fontSize: cs.fontSize };
+      el.remove();
+      return out;
+    }, css);
+  const measure = async () =>
+    page.evaluate(() => {
+      const center = document.querySelector(".ac-center-tabs") as HTMLElement;
+      const tabs = [...center.querySelectorAll<HTMLElement>('[role="tab"]')];
+      const badge = center.querySelector<HTMLElement>(".comp-badge");
+      const right = [...document.querySelectorAll<HTMLElement>('[role="tablist"]')].find((n) => !n.classList.contains("ac-center-tabs"));
+      const rightTab = right?.querySelector<HTMLElement>('[role="tab"]');
+      return {
+        tabs: tabs.map((t) => ({ height: getComputedStyle(t).height, fontSize: getComputedStyle(t).fontSize })),
+        badgeFont: badge ? getComputedStyle(badge).fontSize : null,
+        rightHeight: rightTab ? getComputedStyle(rightTab).height : null,
+        rightFont: rightTab ? getComputedStyle(rightTab).fontSize : null,
+      };
+    });
+  await expect.poll(async () => (await measure()).tabs.length, { timeout: 5000 }).toBe(5);
+  let m = await measure();
+  await expect.poll(async () => (m = await measure()).tabs[0].height, { timeout: 5000 }).toBe("56px");
+  const large = await probe("font-size:var(--font-2xl)");
+  const small = await probe("font-size:var(--font-xs)");
+  const compact = await probe("height:var(--comp-tab-h-sm)");
+  console.log(`v0.10.0 K1 measured: ${JSON.stringify(m)} font-2xl=${large.fontSize} font-xs=${small.fontSize}`);
+  expect(large.fontSize).toBe("24px");
+  for (const t of m.tabs) expect(t).toEqual({ height: "56px", fontSize: "24px" });
+  expect(m.badgeFont).toBe(small.fontSize);
+  expect(m.rightHeight).toBe(compact.height);
+  expect(m.rightFont).toBe(small.fontSize);
+}
+
 test("段階2 K1: busy→idle で未読の印・窓タイトル・macOS 通知が出て、行を選ぶと未読が消える", async ({ page }) => {
   const id = await apiCreate("notify-target", "e2e-plain");
   await openPaired(page);
@@ -564,7 +605,7 @@ test("v0.3.4 K4: 「↑」「↓」で指示を並べ替えると、編集画面
   }
   await openPaired(page);
   const bar = page.getByTestId("quick-prompt-bar");
-  await expect(bar.getByRole("button")).toHaveText(["並び一", "並び二", "指示を編集"]);
+  await expect(bar.getByRole("button")).toHaveText(["よく使う指示", "並び一", "並び二", "指示を編集"]);
   await page.getByRole("button", { name: "指示を編集", exact: true }).click();
   const items = page.getByTestId("quick-prompt-item");
   await expect(items.first().getByRole("button", { name: "上へ", exact: true })).toBeDisabled();
@@ -572,7 +613,7 @@ test("v0.3.4 K4: 「↑」「↓」で指示を並べ替えると、編集画面
   await items.last().getByRole("button", { name: "上へ", exact: true }).click();
   await expect(items.first()).toContainText("並び二");
   await page.keyboard.press("Escape");
-  await expect(bar.getByRole("button")).toHaveText(["並び二", "並び一", "指示を編集"]);
+  await expect(bar.getByRole("button")).toHaveText(["よく使う指示", "並び二", "並び一", "指示を編集"]);
   const saved = JSON.parse(readFileSync(path.join(DATA_DIR, "quick-prompts.json"), "utf8")) as { items: Array<{ id: string; label: string }> };
   expect(saved.items.map((i) => i.label)).toEqual(["並び二", "並び一"]);
   for (const item of saved.items) await fetch(`${BASE}/api/quick-prompts/${item.id}`, { method: "DELETE", headers: BEARER });
@@ -823,6 +864,7 @@ test("v0.4.0 K1〜K6: 変更タブ -> 一覧と色つき diff -> 行コメント
     const rows = await pane.getByRole("navigation", { name: "変更されたファイル" }).getByRole("button").count();
     expect(rows).toBeGreaterThanOrEqual(3);
     await expect(changesTab).toContainText(String(rows));
+    await expectLargeCenterTabs(page);
     await expect(pane).toContainText("origin/main");
 
     // K2: 行番号つきの diff。追加行は success、削除行は error の背景（SA のトークン。透明ではない）
@@ -1217,4 +1259,162 @@ test("v0.7.0 K4/K5/K6: 画像の貼り付け・ドロップで保存され、そ
 test("v0.7.0 K6: 画像の受け口は認証の内側にある（認証なしは 401）", async () => {
   const res = await fetch(`${BASE}/api/uploads`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: PNG_B64 }) });
   expect(res.status).toBe(401);
+});
+
+/** セッション数の上限（16）に当たらないよう、これまでの試験が残したセッションを閉じてから始める（この試験用のサーバーだけ） */
+async function closeAllSessionsViaApi(): Promise<void> {
+  const res = await fetch(`${BASE}/api/state`, { headers: BEARER });
+  const { sessions } = (await res.json()) as { sessions: Array<{ id: string }> };
+  for (const s of sessions) await fetch(`${BASE}/api/sessions/${s.id}/close`, { method: "POST", headers: BEARER });
+}
+
+async function apiPrompt(label: string, text: string): Promise<string> {
+  const res = await fetch(`${BASE}/api/quick-prompts`, { method: "POST", headers: { ...BEARER, "Content-Type": "application/json" }, body: JSON.stringify({ label, text }) });
+  expect(res.status).toBe(201);
+  return ((await res.json()) as { id: string }).id;
+}
+
+test("v0.10.0 K3・K4: よく使う指示のバーは1行で折り返さず、「よく使う指示」の一覧から使える。「常に表示」の切り替えがバーと保存ファイル（version 1 のまま）に反映され、Esc で閉じる", async ({ page }) => {
+  await closeAllSessionsViaApi();
+  const id = await apiCreate("quick-list-target", "e2e-plain");
+  const labels = Array.from({ length: 12 }, (_, i) => `一行確認の長めの名前${String(i + 1).padStart(2, "0")}`);
+  const promptIds: string[] = [];
+  for (const label of labels) promptIds.push(await apiPrompt(label, `echo-${label}`));
+  const useId = await apiPrompt("一覧から使う", "echo-used-from-list");
+  const file = path.join(DATA_DIR, "quick-prompts.json");
+  try {
+    writeFileSync(STATUS_FILE, "idle");
+    await openPaired(page);
+    await rowOf(page, id).click();
+    await expect(page.getByTestId("terminal")).toContainText("READY");
+    await expect(rowOf(page, id).getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: SLOW_STATE_DEADLINE_MS });
+    const bar = page.getByTestId("quick-prompt-bar");
+    await expect(bar.getByRole("button", { name: labels[0], exact: true })).toBeVisible();
+
+    // K3: ボタンは折り返さず1行（上端がそろう）。入りきらない分は横に動かして見る。ボタンは縮まない
+    const geometry = await bar.evaluate((el) => {
+      const strip = el.querySelector(".ac-quick__buttons") as HTMLElement;
+      const buttons = [...strip.querySelectorAll<HTMLElement>("button")];
+      return {
+        tops: [...new Set(buttons.map((b) => Math.round(b.getBoundingClientRect().top)))],
+        wrap: getComputedStyle(strip).flexWrap,
+        overflowX: getComputedStyle(strip).overflowX,
+        scrollable: strip.scrollWidth > strip.clientWidth,
+        barHeight: el.getBoundingClientRect().height,
+        flex: [...new Set(buttons.map((b) => getComputedStyle(b).flexShrink))],
+      };
+    });
+    console.log(`v0.10.0 K3 bar geometry: ${JSON.stringify(geometry)}`);
+    expect(geometry.tops).toHaveLength(1);
+    expect(geometry.wrap).toBe("nowrap");
+    expect(geometry.overflowX).toBe("auto");
+    expect(geometry.scrollable).toBe(true);
+    expect(geometry.flex).toEqual(["0"]);
+    expect(geometry.barHeight).toBeLessThan(80);
+
+    // 一覧: 全件が出る。切り替えで「常に表示」を外すと、バーからその指示が消える
+    await bar.getByRole("button", { name: "よく使う指示", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByTestId("quick-prompt-list-item")).toHaveCount(labels.length + 1);
+    const first = dialog.getByTestId("quick-prompt-list-item").filter({ hasText: labels[0] });
+    const toggle = first.getByRole("button", { name: "常に表示", exact: true });
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await expect(bar.getByRole("button", { name: labels[0], exact: true })).toHaveCount(0);
+    type Saved = { version: number; items: Array<{ id: string; label: string; pinned?: boolean }> };
+    const saved = JSON.parse(readFileSync(file, "utf8")) as Saved;
+    expect(saved.version).toBe(1);
+    expect(saved.items.find((i) => i.id === promptIds[0])?.pinned).toBe(false);
+    expect(saved.items.find((i) => i.id === promptIds[1])?.pinned).toBe(true);
+    // 戻すとバーに戻る
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await expect(bar.getByRole("button", { name: labels[0], exact: true })).toHaveCount(1);
+
+    // 一覧から使う: バーのボタンと同じ動き（端末に入る）。使ったあと一覧は閉じる
+    const usable = dialog.getByTestId("quick-prompt-list-item").filter({ hasText: "一覧から使う" });
+    await usable.getByRole("button", { name: "使う", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByTestId("terminal")).toContainText("echo-used-from-list");
+
+    // Esc で閉じる
+    await bar.getByRole("button", { name: "よく使う指示", exact: true }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    // K4: 名前や本文だけを直しても、pinned は変わらない（サーバーの PUT）
+    await fetch(`${BASE}/api/quick-prompts/${promptIds[0]}`, { method: "PUT", headers: { ...BEARER, "Content-Type": "application/json" }, body: JSON.stringify({ pinned: false }) });
+    const renamed = await fetch(`${BASE}/api/quick-prompts/${promptIds[0]}`, { method: "PUT", headers: { ...BEARER, "Content-Type": "application/json" }, body: JSON.stringify({ label: "名前だけ直した", text: "echo-edited" }) });
+    expect(renamed.status).toBe(200);
+    expect(((await renamed.json()) as { pinned: boolean }).pinned).toBe(false);
+    expect((JSON.parse(readFileSync(file, "utf8")) as Saved).version).toBe(1);
+  } finally {
+    for (const pid of [...promptIds, useId]) await fetch(`${BASE}/api/quick-prompts/${pid}`, { method: "DELETE", headers: BEARER });
+  }
+});
+
+test("v0.10.0 K5: 行の1段目は丸と名前だけ（状態の文字なし）、2段目は役割・状態の印の順。行の高さは64px以下のまま", async ({ page }) => {
+  await closeAllSessionsViaApi();
+  const id = await apiCreate("row-layout-target", "e2e-plain");
+  writeFileSync(STATUS_FILE, "idle");
+  await openPaired(page);
+  const row = rowOf(page, id);
+  await expect(row.getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: SLOW_STATE_DEADLINE_MS });
+  const line1 = row.getByTestId("session-line-1");
+  const line2 = row.getByTestId("session-line-2");
+  await expect(line1.getByTestId("status")).toHaveText("");
+  await expect(line1.getByTestId("session-name")).toHaveText("row-layout-target");
+  await expect(line1).not.toContainText("待機");
+  await expect(line2.getByTestId("state-badge")).toHaveText("待機");
+  const order = await line2.evaluate((el) => [...el.children].map((c) => c.getAttribute("data-testid") ?? c.className));
+  console.log(`v0.10.0 K5 line2 children: ${JSON.stringify(order)}`);
+  expect(order[0]).toBe("ac-session__role");
+  expect(order[1]).toBe("state-badge");
+  await expectCompactRows(page);
+  await expect(page.getByRole("button", { name: "セッションを閉じる" }).first()).toBeVisible();
+});
+
+test("v0.10.0 K6・K7: 行をドラッグして離すと並び順が変わり（再読込後も同じ）、Alt+↑ と Alt+↓ でも1つずつ動く。ダブルクリックでの名前の変更は今までどおり", async ({ page }) => {
+  await closeAllSessionsViaApi();
+  const ids = [await apiCreate("drag-a", "e2e-plain"), await apiCreate("drag-b", "e2e-plain"), await apiCreate("drag-c", "e2e-plain")];
+  await openPaired(page);
+  const order = async (): Promise<string[]> => page.getByTestId("session-row").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-session-id") ?? ""));
+  const serverOrder = async (): Promise<string[]> => {
+    const res = await fetch(`${BASE}/api/state`, { headers: BEARER });
+    return ((await res.json()) as { sessions: Array<{ id: string }> }).sessions.map((s) => s.id);
+  };
+  await expect.poll(order).toEqual(await serverOrder());
+  const before = await order();
+  expect(before.length).toBeGreaterThanOrEqual(3);
+  const last = before[before.length - 1];
+  const firstId = before[0];
+
+  // K6: 最後の行を先頭の行の上へドラッグして離す
+  await rowOf(page, last).dragTo(rowOf(page, firstId));
+  const afterDrag = [last, ...before.slice(0, -1)];
+  await expect.poll(order, { timeout: 5000 }).toEqual(afterDrag);
+  expect(await serverOrder()).toEqual(afterDrag);
+  await page.reload();
+  await expect.poll(order, { timeout: 5000 }).toEqual(afterDrag);
+
+  // K7: 先頭の行（動かした行）を選んだ状態で Alt+↓ -> 2番目、Alt+↑ -> 先頭
+  const select = (id: string) => rowOf(page, id).locator(".ac-session__select");
+  await select(last).focus();
+  await page.keyboard.press("Alt+ArrowDown");
+  const afterDown = [afterDrag[1], last, ...afterDrag.slice(2)];
+  await expect.poll(order, { timeout: 5000 }).toEqual(afterDown);
+  await select(last).focus();
+  await page.keyboard.press("Alt+ArrowUp");
+  await expect.poll(order, { timeout: 5000 }).toEqual(afterDrag);
+  // 先頭で Alt+↑ をしても何も起きない
+  await select(last).focus();
+  await page.keyboard.press("Alt+ArrowUp");
+  expect(await serverOrder()).toEqual(afterDrag);
+
+  // ダブルクリックでの名前の変更と、ドラッグがぶつからない
+  await rowOf(page, ids[0]).locator(".ac-session__select").dblclick();
+  await expect(page.getByTestId("rename-form")).toBeVisible();
+  await page.keyboard.press("Escape");
 });
