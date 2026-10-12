@@ -1,4 +1,4 @@
-import type { ConsoleState, LedgerSnapshot, MemorySnapshot, QuickPrompt, ResumeTarget } from "./types";
+import type { ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, QuickPrompt, ResumeTarget } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -73,6 +73,22 @@ export const fetchResumeTargets = (): Promise<{ items: ResumeTarget[] }> => requ
 /** 再開用の端末を開く。会話の選択は端末内の Claude 公式の選択リストで人が行う（kind と path だけを送る）。 */
 export const resumeSession = (target: Pick<ResumeTarget, "kind" | "path">): Promise<{ id: string }> =>
   request("/api/sessions/resume", { method: "POST", body: JSON.stringify({ kind: target.kind, path: target.path }) });
+const diffBase = (sessionId: string): string => `/api/sessions/${encodeURIComponent(sessionId)}`;
+export const fetchDiff = (sessionId: string): Promise<DiffList> => request(`${diffBase(sessionId)}/diff`);
+export const fetchDiffFile = (sessionId: string, path: string): Promise<FileDiff> => request(`${diffBase(sessionId)}/diff/file?path=${encodeURIComponent(path)}`);
+export const fetchDiffComments = (sessionId: string): Promise<{ items: DiffComment[] }> => request(`${diffBase(sessionId)}/diff-comments`);
+export const createDiffComment = (sessionId: string, input: DiffCommentInput): Promise<DiffComment> =>
+  request(`${diffBase(sessionId)}/diff-comments`, { method: "POST", body: JSON.stringify(input) });
+export const updateDiffComment = (sessionId: string, commentId: string, input: DiffCommentInput): Promise<DiffComment> =>
+  request(`${diffBase(sessionId)}/diff-comments/${encodeURIComponent(commentId)}`, { method: "PUT", body: JSON.stringify(input) });
+export const deleteDiffComment = (sessionId: string, commentId: string): Promise<{ removed: boolean }> =>
+  request(`${diffBase(sessionId)}/diff-comments/${encodeURIComponent(commentId)}`, { method: "DELETE" });
+/** 未送信のコメントの文章を作らせる。入れてよい状態のときだけ返る（サーバーは端末へ書かない。画面が貼る）。 */
+export const checkDiffCommentsSend = (sessionId: string): Promise<{ text: string; ids: string[]; submitDelayMs: number }> =>
+  request(`${diffBase(sessionId)}/diff-comments/send-check`, { method: "POST", body: JSON.stringify({}) });
+/** 貼り付けが成功したあとに、送ったコメントを送信済みにする。 */
+export const markDiffCommentsSent = (sessionId: string, ids: string[]): Promise<{ marked: boolean }> =>
+  request(`${diffBase(sessionId)}/diff-comments/mark-sent`, { method: "POST", body: JSON.stringify({ ids }) });
 export const fetchMemory = (): Promise<MemorySnapshot> => request("/api/memory");
 
 /** ペアリングコードを引換えてセッショントークンを得る（認証前の API）。 */

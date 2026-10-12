@@ -21,6 +21,7 @@
 .ac-page__right { grid-area: right; border-left: 1px solid var(--border); }
 .ac-page__center { grid-area: center; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .ac-page__terminal { flex: 1; min-width: 0; min-height: 0; }
+.ac-page__terminal[hidden] { display: none; }
 
 .ac-page__bar {
   display: flex;

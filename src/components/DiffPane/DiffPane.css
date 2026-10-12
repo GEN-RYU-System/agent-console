@@ -1,0 +1,203 @@
+.ac-diff {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-surface);
+}
+
+.ac-diff[hidden] { display: none; }
+
+.ac-diff__toolbar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.ac-diff__base,
+.ac-diff__reason {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+}
+
+.ac-diff__body {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 28% 1fr;
+  min-height: 0;
+}
+
+.ac-diff__files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-2);
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.ac-diff__files .ac-diff__file {
+  flex: none;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: var(--space-1);
+  text-align: left;
+  white-space: normal;
+}
+
+.ac-diff__files .ac-diff__file[aria-current="true"] {
+  background: var(--bg-active);
+}
+
+.ac-diff__file-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--ac-font-mono);
+  font-size: var(--font-xs);
+}
+
+.ac-diff__file-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.ac-diff__file-comments {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+}
+
+.ac-diff__mark {
+  flex: none;
+  width: var(--font-sm);
+  height: var(--font-sm);
+  color: var(--text-muted);
+}
+
+.ac-diff__main {
+  min-width: 0;
+  overflow: auto;
+}
+
+.ac-diff__view {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ac-diff__fileHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.ac-diff__path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--ac-font-mono);
+  font-size: var(--font-sm);
+  font-weight: var(--font-weight-semi);
+}
+
+.ac-diff__note {
+  margin: 0;
+  padding: var(--space-3);
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+}
+
+.ac-diff__hunk {
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-family: var(--ac-font-mono);
+  font-size: var(--font-xs);
+}
+
+.ac-diff__line { min-width: 0; }
+.ac-diff__line--add { background: var(--color-success-bg); }
+.ac-diff__line--del { background: var(--color-error-bg); }
+
+.ac-diff__lines .ac-diff__line-btn {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: 0;
+  text-align: left;
+  white-space: pre-wrap;
+  font-family: var(--ac-font-mono);
+  font-size: var(--font-xs);
+  font-weight: var(--font-weight-normal);
+}
+
+.ac-diff__no {
+  flex: none;
+  min-width: var(--space-8);
+  text-align: right;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.ac-diff__text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ac-diff__form,
+.ac-diff__comment {
+  margin: var(--space-1) var(--space-3) var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.ac-diff__actions,
+.ac-diff__comment-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ac-diff__where {
+  margin-right: auto;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+}
+
+.ac-diff__comment-body {
+  margin: var(--space-2) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--font-sm);
+  color: var(--text-primary);
+}
+
+.ac-diff__orphans { padding-top: var(--space-3); }
+
+.ac-diff__orphan-title {
+  margin: 0 var(--space-3);
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+}
