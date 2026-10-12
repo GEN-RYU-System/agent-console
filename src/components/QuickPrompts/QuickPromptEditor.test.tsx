@@ -15,7 +15,7 @@ vi.mock("../../api", () => ({
   moveQuickPrompt: (id: string, d: string) => moveQuickPrompt(id, d),
 }));
 
-const prompts = [{ id: "p1", label: "テスト", text: "run tests" }];
+const prompts = [{ id: "p1", label: "テスト", text: "run tests", pinned: true }];
 
 beforeEach(() => {
   createQuickPrompt.mockReset().mockResolvedValue({});
@@ -63,9 +63,9 @@ describe("QuickPromptEditor", () => {
   it("K2 disables up on the first row and down on the last row; K1 calls move for the others", async () => {
     const onChanged = vi.fn();
     const three = [
-      { id: "p1", label: "一", text: "1" },
-      { id: "p2", label: "二", text: "2" },
-      { id: "p3", label: "三", text: "3" },
+      { id: "p1", label: "一", text: "1", pinned: true },
+      { id: "p2", label: "二", text: "2", pinned: true },
+      { id: "p3", label: "三", text: "3", pinned: true },
     ];
     render(<QuickPromptEditor prompts={three} onChanged={onChanged} />);
     const ups = screen.getAllByRole("button", { name: "上へ" }) as HTMLButtonElement[];
@@ -81,11 +81,11 @@ describe("QuickPromptEditor", () => {
 
   it("K4 renders rows in the order given by the props", () => {
     const { rerender } = render(
-      <QuickPromptEditor prompts={[{ id: "p1", label: "一", text: "1" }, { id: "p2", label: "二", text: "2" }]} onChanged={() => {}} />,
+      <QuickPromptEditor prompts={[{ id: "p1", label: "一", text: "1", pinned: true }, { id: "p2", label: "二", text: "2", pinned: true }]} onChanged={() => {}} />,
     );
     const order = (): string[] => screen.getAllByTestId("quick-prompt-item").map((n) => n.querySelector(".ac-quick-editor__label")?.textContent ?? "");
     expect(order()).toEqual(["一", "二"]);
-    rerender(<QuickPromptEditor prompts={[{ id: "p2", label: "二", text: "2" }, { id: "p1", label: "一", text: "1" }]} onChanged={() => {}} />);
+    rerender(<QuickPromptEditor prompts={[{ id: "p2", label: "二", text: "2", pinned: true }, { id: "p1", label: "一", text: "1", pinned: true }]} onChanged={() => {}} />);
     expect(order()).toEqual(["二", "一"]);
   });
 });

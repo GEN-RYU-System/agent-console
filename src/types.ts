@@ -78,6 +78,8 @@ export interface QuickPrompt {
   id: string;
   label: string;
   text: string;
+  /** 上のバーに常に表示するか */
+  pinned: boolean;
 }
 
 export interface RoutineEvent { at: number; slot: string; outcome: "sent" | "busy" | "waiting" | "unknown" | "stopped" | "missing" | "failed"; }

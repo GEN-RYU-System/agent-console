@@ -33,6 +33,7 @@ const resumeSession = vi.fn();
 const closeSession = vi.fn();
 const fetchDiff = vi.fn();
 const fetchPicks = vi.fn();
+const moveSession = vi.fn();
 
 vi.mock("../api", () => ({
   ApiError: class extends Error {
@@ -57,6 +58,8 @@ vi.mock("../api", () => ({
   fetchResumeTargets: () => fetchResumeTargets(),
   resumeSession: (t: { kind: string; path: string }) => resumeSession(t),
   closeSession: (id: string) => closeSession(id),
+  moveSession: (id: string, toIndex: number) => moveSession(id, toIndex),
+  updateQuickPrompt: vi.fn(),
   fetchActivity: vi.fn(async () => ({ status: "noSession" })),
   fetchMemory: vi.fn(async () => ({ sessions: [], serverRssMb: 1, system: null })),
   fetchDiff: () => fetchDiff(),
@@ -133,12 +136,14 @@ beforeEach(() => {
   fetchResumeTargets.mockResolvedValue({ items: [{ kind: "worktree", path: "/wt/release-a", branch: "release/a", roleId: "sonnet-impl" }] });
   resumeSession.mockReset();
   closeSession.mockReset();
+  moveSession.mockReset();
+  moveSession.mockResolvedValue({ moved: true });
   fetchDiff.mockReset();
   fetchDiff.mockResolvedValue({ baseRef: "origin/main", files: [{ path: "a.ts", added: 1, removed: 0, binary: false, untracked: false }] });
   closeSession.mockResolvedValue({ closed: true });
   resumeSession.mockResolvedValue({ id: "s1" });
   fetchQuickPrompts.mockReset();
-  fetchQuickPrompts.mockResolvedValue({ items: [{ id: "p1", label: "テスト実行", text: "run tests" }] });
+  fetchQuickPrompts.mockResolvedValue({ items: [{ id: "p1", label: "テスト実行", text: "run tests", pinned: true }] });
   logout.mockResolvedValue(undefined);
   fetchState.mockResolvedValue(state);
   vi.stubGlobal("WebSocket", FakeWebSocket);
@@ -342,6 +347,30 @@ describe("ConsolePage daily use", () => {
   it("explains that a break is the app's own definition", async () => {
     render(<ConsolePage />);
     expect((await screen.findByTestId("notify-help")).textContent).toContain("Claude 公式");
+  });
+});
+
+describe("ConsolePage center tabs (v0.10.0 K1)", () => {
+  it("puts ac-center-tabs on the center tablist only (all 5 tabs share it), not on the right pane", async () => {
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    const tab = await screen.findByRole("tab", { name: /変更/ });
+    const list = tab.closest('[role="tablist"]') as HTMLElement;
+    expect(list.className).toContain("ac-center-tabs");
+    expect(list.className).toContain("comp-tabs");
+    const labels = within(list).getAllByRole("tab").map((n) => n.textContent);
+    expect(labels).toHaveLength(5);
+    const others = screen.getAllByRole("tablist").filter((n) => n !== list);
+    for (const other of others) expect(other.className).not.toContain("ac-center-tabs");
+  });
+
+  it("reads the tab height from the token only: ConsolePage.css has no px/rem literal for it", () => {
+    const css = readFileSync("src/pages/ConsolePage.css", "utf8");
+    const rule = /\.ac-center-tabs\.comp-tabs\s+\.comp-tabs__tab\s*\{([^}]*)\}/.exec(css);
+    expect(rule).not.toBeNull();
+    expect(rule?.[1]).toContain("height: var(--ac-tab-h)");
+    expect(rule?.[1]).toContain("font-size: var(--font-2xl)");
+    expect(rule?.[1]).not.toMatch(/\d(px|rem)/);
   });
 });
 

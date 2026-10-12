@@ -15,4 +15,12 @@ describe("StatusDot", () => {
     render(<StatusDot state="stopped" />);
     expect(screen.getByText("停止")).toBeTruthy();
   });
+
+  it("v0.10.0 K5: with showLabel={false} it shows only the dot but keeps data-testid and data-state", () => {
+    render(<StatusDot state="idle" showLabel={false} />);
+    const el = screen.getByTestId("status");
+    expect(el.getAttribute("data-state")).toBe("idle");
+    expect(el.textContent).toBe("");
+    expect(el.querySelector(".ac-status__dot--idle")).toBeTruthy();
+  });
 });

@@ -10,6 +10,7 @@ import {
   ApiError,
   checkQuickPromptSend,
   closeSession,
+  moveSession,
   createSession,
   fetchLedger,
   fetchResumeTargets,
@@ -319,6 +320,7 @@ export function ConsolePage() {
           roles={state.roles}
           selectedId={activeId}
           onSelect={handleSelect}
+          onMove={(id, toIndex) => void moveSession(id, toIndex).catch(() => undefined)}
           onRemove={handleRemove}
           onClose={(id) => {
             setCloseError(null);
@@ -338,6 +340,7 @@ export function ConsolePage() {
         <Tabs
           variant="underline"
           size="sm"
+          className="ac-center-tabs"
           activeKey={centerTab}
           onChange={setCenterTab}
           items={[
@@ -354,6 +357,7 @@ export function ConsolePage() {
             canSend={activeSession?.canInput === true}
             onSend={handleSendPrompt}
             onEdit={() => setQuickEditorOpen(true)}
+            onChanged={loadQuickPrompts}
           />
         )}
         {quickError !== null && (

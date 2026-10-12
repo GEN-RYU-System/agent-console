@@ -40,6 +40,11 @@ function isFontStack(raw) {
   return items.every((item) => quoted.test(item) || (bare.test(item) && !NAMED_COLORS.has(item.toLowerCase())));
 }
 
+/** `56px` `1.5rem` のような単位付きの長さ1つだけを許可（単位なし・calc・複数値・var() は不可）。 */
+function isPlainLength(raw) {
+  return /^\d+(\.\d+)?(px|rem)$/.test(raw.trim());
+}
+
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
     const full = path.join(dir, name);
@@ -97,7 +102,9 @@ for (const file of cssFiles) {
     if (file === APP_TOKEN_FILE) {
       // アプリ固有トークンのファイルには --ac- で始まるカスタムプロパティだけを置ける（等幅フォント名の唯一の置き場）
       if (!prop.startsWith("--ac-")) report(file, lineNo, `${APP_TOKEN_FILE} には --ac- のカスタムプロパティ以外を置けない`, text);
-      else if (!isFontStack(rawValue)) report(file, lineNo, `${APP_TOKEN_FILE} の値は font stack（フォント名のカンマ区切り＋末尾に総称名）のみ`, text);
+      else if (!isFontStack(rawValue) && !isPlainLength(rawValue)) {
+        report(file, lineNo, `${APP_TOKEN_FILE} の値は font stack（フォント名のカンマ区切り＋末尾に総称名）か長さ（px・rem）のみ`, text);
+      }
       continue;
     }
     if ((prop === "font-family" || prop === "font") && !/^\s*(var\([^)]*\)|inherit|initial|unset|revert)\s*$/.test(rawValue)) {

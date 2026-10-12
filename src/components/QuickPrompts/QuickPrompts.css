@@ -7,19 +7,25 @@
   background: var(--bg-subtle);
 }
 
-.ac-quick__title {
+.ac-quick__list-button,
+.ac-quick__edit-button {
   flex: none;
-  font-size: var(--font-xs);
-  color: var(--text-muted);
 }
 
+/* 1 行に収める。入りきらない分は折り返さず横に動かして見る（全件は左のボタンの一覧） */
 .ac-quick__buttons {
   display: flex;
   flex: 1;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
+  overflow-x: auto;
+}
+
+/* ボタンが縮んで名前がつぶれないようにする */
+.ac-quick__buttons > * {
+  flex: none;
 }
 
 .ac-quick__empty {
@@ -27,7 +33,8 @@
   color: var(--text-muted);
 }
 
-.ac-quick-editor__item {
+.ac-quick-editor__item,
+.ac-quick-list__item {
   display: flex;
   align-items: center;
   justify-content: space-between;

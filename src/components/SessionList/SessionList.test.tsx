@@ -13,7 +13,7 @@ const sessions: SessionView[] = [
 
 describe("SessionList", () => {
   it("renders name, role label and state for each session", () => {
-    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} />);
+    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
     expect(screen.getAllByTestId("session-row").length).toBe(2);
     expect(screen.getByText("first")).toBeTruthy();
     expect(screen.getAllByText("シェル").length).toBe(2);
@@ -23,19 +23,19 @@ describe("SessionList", () => {
 
   it("calls onSelect with the clicked session id", () => {
     const onSelect = vi.fn();
-    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={onSelect} onRemove={() => {}} onRename={() => {}} onClose={() => {}} />);
+    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={onSelect} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
     fireEvent.click(screen.getByText("second"));
     expect(onSelect).toHaveBeenCalledWith("b");
   });
 
   it("shows the empty state when there are no sessions", () => {
-    render(<SessionList sessions={[]} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} />);
+    render(<SessionList sessions={[]} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
     expect(screen.getByText("セッションがありません")).toBeTruthy();
   });
 
   it("offers removal only for stopped sessions and reports the id", () => {
     const onRemove = vi.fn();
-    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={onRemove} onRename={() => {}} onClose={() => {}} />);
+    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={onRemove} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
     const buttons = screen.getAllByRole("button", { name: "一覧から外す" });
     expect(buttons.length).toBe(1);
     fireEvent.click(buttons[0]);
@@ -44,7 +44,7 @@ describe("SessionList", () => {
 
   it("offers 閉じる only for running sessions and reports the id (stopped rows keep 一覧から外す)", () => {
     const onClose = vi.fn();
-    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={onClose} />);
+    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={onClose} onMove={() => {}} />);
     const buttons = screen.getAllByRole("button", { name: "セッションを閉じる" });
     expect(buttons).toHaveLength(1);
     expect(buttons[0].getAttribute("title")).toBe("セッションを閉じる");
@@ -54,7 +54,7 @@ describe("SessionList", () => {
   });
 
   it("shows an unread badge only on rows with unread breaks", () => {
-    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} />);
+    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
     const badges = screen.getAllByTestId("unread-badge");
     expect(badges).toHaveLength(1);
     expect(badges[0].textContent).toContain("2");
@@ -62,13 +62,13 @@ describe("SessionList", () => {
   });
 
   it("K2: the rename pencil stays enabled while Claude is working (the name is queued)", () => {
-    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} />);
+    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
     expect((screen.getByRole("button", { name: "名前を変える" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("K1: double-clicking a row opens rename, but not for a stopped row", () => {
     const onRename = vi.fn();
-    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={onRename} onClose={() => {}} />);
+    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={onRename} onClose={() => {}} onMove={() => {}} />);
     fireEvent.doubleClick(screen.getByText("first"));
     expect(onRename).toHaveBeenCalledWith("a");
     onRename.mockClear();
@@ -77,7 +77,7 @@ describe("SessionList", () => {
   });
 
   it("K4: shows the queued name on the row only while a rename is pending", () => {
-    render(<SessionList sessions={[{ ...sessions[0], pendingName: "next-name" }, sessions[1]]} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} />);
+    render(<SessionList sessions={[{ ...sessions[0], pendingName: "next-name" }, sessions[1]]} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
     const pending = screen.getAllByTestId("pending-name");
     expect(pending).toHaveLength(1);
     expect(pending[0].textContent).toContain("予約: next-name");
@@ -85,27 +85,117 @@ describe("SessionList", () => {
 
   it("offers rename for sessions that are not stopped", () => {
     const onRename = vi.fn();
-    render(<SessionList sessions={[{ ...sessions[0], state: "idle", canInput: true }, sessions[1]]} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={onRename} onClose={() => {}} />);
+    render(<SessionList sessions={[{ ...sessions[0], state: "idle", canInput: true }, sessions[1]]} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={onRename} onClose={() => {}} onMove={() => {}} />);
     const buttons = screen.getAllByRole("button", { name: "名前を変える" });
     expect(buttons).toHaveLength(1);
     fireEvent.click(buttons[buttons.length - 1]);
     expect(onRename).toHaveBeenCalledWith("a");
   });
 
-  it("K2: line 1 has status dot, name and unread badge; line 2 has the role", () => {
-    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} />);
+  it("v0.10.0 K5: line 1 has only the status dot, the name and the unread badge (no state text, no role, no CI)", () => {
+    const withCi: SessionView[] = [sessions[0], { ...sessions[1], ci: "fail", pendingName: "next" }];
+    render(<SessionList sessions={withCi} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
     const row = screen.getAllByTestId("session-row")[1];
     const line1 = within(row).getByTestId("session-line-1");
-    const line2 = within(row).getByTestId("session-line-2");
-    expect(within(line1).getByTestId("status")).toBeTruthy();
+    expect(within(line1).getByTestId("status").getAttribute("data-state")).toBe("stopped");
+    expect(within(line1).getByTestId("status").textContent).toBe("");
     expect(within(line1).getByText("second")).toBeTruthy();
     expect(within(line1).getByTestId("unread-badge").textContent).toContain("2");
-    expect(line2.textContent).toBe("シェル");
+    expect(within(line1).queryByTestId("ci-badge")).toBeNull();
+    expect(within(line1).queryByTestId("state-badge")).toBeNull();
+    expect(line1.textContent).not.toContain("停止");
+    expect(line1.textContent).not.toContain("シェル");
+  });
+
+  it("v0.10.0 K5: line 2 has the role, the state badge, the CI badge and the pending name, in this order", () => {
+    const row0: SessionView = { ...sessions[0], ci: "pending", pendingName: "next" };
+    render(<SessionList sessions={[row0]} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
+    const line2 = within(screen.getByTestId("session-row")).getByTestId("session-line-2");
+    const role = within(line2).getByText("シェル");
+    const state = within(line2).getByTestId("state-badge");
+    const ci = within(line2).getByTestId("ci-badge");
+    const pending = within(line2).getByTestId("pending-name");
+    expect(state.textContent).toBe("作業中");
+    expect(state.querySelector(".comp-badge--neutral")).toBeTruthy();
+    const follows = (a: Node, b: Node): boolean => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    expect(follows(role, state)).toBe(true);
+    expect(follows(state, ci)).toBe(true);
+    expect(follows(ci, pending)).toBe(true);
+  });
+
+  it("v0.10.0 K5: the state text comes from the shared STATE_LABEL_KEY table for every state", () => {
+    const all: SessionView[] = (["working", "waiting", "idle", "no-claude", "stopped", "unknown"] as const).map((state) => ({ ...sessions[0], id: state, name: state, state }));
+    render(<SessionList sessions={all} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
+    const texts = screen.getAllByTestId("state-badge").map((n) => n.textContent);
+    expect(texts).toEqual(["作業中", "待ち", "待機", "Claude 未起動", "停止", "不明"]);
+  });
+
+  describe("v0.10.0 K6・K7 reordering", () => {
+    const three: SessionView[] = ["a", "b", "c"].map((id, i) => ({ ...sessions[0], id, name: id, createdAt: i }));
+    const renderThree = (onMove: (id: string, toIndex: number) => void) =>
+      render(<SessionList sessions={three} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={onMove} />);
+
+    it("K6: every row is draggable", () => {
+      renderThree(() => {});
+      for (const row of screen.getAllByTestId("session-row")) expect(row.getAttribute("draggable")).toBe("true");
+    });
+
+    it("K6: dropping row a on row c moves a to index 2", () => {
+      const onMove = vi.fn();
+      renderThree(onMove);
+      const rows = screen.getAllByTestId("session-row");
+      fireEvent.dragStart(rows[0]);
+      fireEvent.dragOver(rows[2]);
+      fireEvent.drop(rows[2]);
+      expect(onMove).toHaveBeenCalledWith("a", 2);
+    });
+
+    it("K6: dropping row c on row a moves c to index 0", () => {
+      const onMove = vi.fn();
+      renderThree(onMove);
+      const rows = screen.getAllByTestId("session-row");
+      fireEvent.dragStart(rows[2]);
+      fireEvent.drop(rows[0]);
+      expect(onMove).toHaveBeenCalledWith("c", 0);
+    });
+
+    it("K6: dropping a row on itself, or dropping without a drag in progress, does nothing", () => {
+      const onMove = vi.fn();
+      renderThree(onMove);
+      const rows = screen.getAllByTestId("session-row");
+      fireEvent.dragStart(rows[1]);
+      fireEvent.drop(rows[1]);
+      fireEvent.dragEnd(rows[1]);
+      fireEvent.drop(rows[0]);
+      expect(onMove).not.toHaveBeenCalled();
+    });
+
+    it("K7: Alt+ArrowUp / Alt+ArrowDown on the select button moves the row by one", () => {
+      const onMove = vi.fn();
+      renderThree(onMove);
+      const select = (i: number) => within(screen.getAllByTestId("session-row")[i]).getByRole("button", { name: /^(?!.*(閉じる|名前を変える))/ });
+      fireEvent.keyDown(select(1), { key: "ArrowUp", altKey: true });
+      expect(onMove).toHaveBeenLastCalledWith("b", 0);
+      fireEvent.keyDown(select(1), { key: "ArrowDown", altKey: true });
+      expect(onMove).toHaveBeenLastCalledWith("b", 2);
+    });
+
+    it("K7: does nothing at the ends and without Alt, and stops the default action when it moves", () => {
+      const onMove = vi.fn();
+      renderThree(onMove);
+      const select = (i: number) => within(screen.getAllByTestId("session-row")[i]).getByRole("button", { name: /^(?!.*(閉じる|名前を変える))/ });
+      fireEvent.keyDown(select(0), { key: "ArrowUp", altKey: true });
+      fireEvent.keyDown(select(2), { key: "ArrowDown", altKey: true });
+      fireEvent.keyDown(select(1), { key: "ArrowUp" });
+      expect(onMove).not.toHaveBeenCalled();
+      const notPrevented = fireEvent.keyDown(select(1), { key: "ArrowUp", altKey: true });
+      expect(notPrevented).toBe(false);
+    });
   });
 
   it("K3: rename / remove are small right-edge buttons with aria-label and title", () => {
     const withIdle = [{ ...sessions[0], state: "idle" as const, canInput: true }, sessions[1]];
-    render(<SessionList sessions={withIdle} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} />);
+    render(<SessionList sessions={withIdle} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
     const rows = screen.getAllByTestId("session-row");
     const rename = within(rows[0]).getByRole("button", { name: "名前を変える" });
     const remove = within(rows[1]).getByRole("button", { name: "一覧から外す" });
@@ -124,7 +214,7 @@ describe("SessionList", () => {
 
   it("K4: selected row is marked by aria-current and the selected class; clicking the row selects it", () => {
     const onSelect = vi.fn();
-    render(<SessionList sessions={sessions} roles={roles} selectedId="a" onSelect={onSelect} onRemove={() => {}} onRename={() => {}} onClose={() => {}} />);
+    render(<SessionList sessions={sessions} roles={roles} selectedId="a" onSelect={onSelect} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
     const rows = screen.getAllByTestId("session-row");
     expect(rows[0].className).toContain("ac-session--selected");
     expect(rows[1].className).not.toContain("ac-session--selected");
@@ -140,7 +230,7 @@ describe("SessionList", () => {
       { ...sessions[0], id: "o", name: "o", ci: "pass" },
       { ...sessions[0], id: "n", name: "n" },
     ];
-    render(<SessionList sessions={withCi} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} />);
+    render(<SessionList sessions={withCi} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
     const rows = screen.getAllByTestId("session-row");
     const badge = (i: number) => within(rows[i]).queryByTestId("ci-badge");
     expect(badge(0)?.textContent).toBe("CI 失敗");

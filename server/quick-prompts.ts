@@ -17,6 +17,15 @@ export interface QuickPrompt {
   id: string;
   label: string;
   text: string;
+  /** バーに常に表示するか。保存ファイルでは任意の項目（無ければ true と読む）。 */
+  pinned: boolean;
+}
+
+/** PUT の入力。pinned だけを送る場合、label と text は今の値を引き継ぐ。 */
+export interface QuickPromptUpdate {
+  label?: unknown;
+  text?: unknown;
+  pinned?: unknown;
 }
 
 // eslint-disable-next-line no-control-regex
@@ -40,6 +49,12 @@ export function validateText(raw: unknown): string {
   return raw;
 }
 
+function parsePinned(raw: unknown): boolean {
+  if (raw === undefined) return true;
+  if (typeof raw !== "boolean") throw new Error("quick-prompts.json: item.pinned must be a boolean");
+  return raw;
+}
+
 function parseFile(content: string): QuickPrompt[] {
   const parsed = JSON.parse(content) as unknown;
   if (typeof parsed !== "object" || parsed === null) throw new Error("quick-prompts.json: object required");
@@ -48,7 +63,7 @@ function parseFile(content: string): QuickPrompt[] {
   return items.map((item) => {
     const r = (item ?? {}) as Record<string, unknown>;
     if (typeof r.id !== "string") throw new Error("quick-prompts.json: item.id required");
-    return { id: r.id, label: validateLabel(r.label), text: validateText(r.text) };
+    return { id: r.id, label: validateLabel(r.label), text: validateText(r.text), pinned: parsePinned(r.pinned) };
   });
 }
 
@@ -102,7 +117,7 @@ export class QuickPromptStore {
 
   create(input: { label: unknown; text: unknown }): Promise<QuickPrompt> {
     return this.serial(async () => {
-      const item: QuickPrompt = { id: randomUUID(), label: validateLabel(input.label), text: validateText(input.text) };
+      const item: QuickPrompt = { id: randomUUID(), label: validateLabel(input.label), text: validateText(input.text), pinned: true };
       const items = await this.load();
       if (items.length >= MAX_ITEMS) throw new SessionInputError("too many quick prompts");
       await this.save([...items, item]);
@@ -110,11 +125,20 @@ export class QuickPromptStore {
     });
   }
 
-  update(id: string, input: { label: unknown; text: unknown }): Promise<QuickPrompt> {
+  update(id: string, input: QuickPromptUpdate): Promise<QuickPrompt> {
     return this.serial(async () => {
       const items = await this.load();
-      if (!items.some((p) => p.id === id)) throw new SessionNotFoundError("quick prompt not found");
-      const next: QuickPrompt = { id, label: validateLabel(input.label), text: validateText(input.text) };
+      const current = items.find((p) => p.id === id);
+      if (!current) throw new SessionNotFoundError("quick prompt not found");
+      if (input.pinned !== undefined && typeof input.pinned !== "boolean") throw new SessionInputError("pinned must be a boolean");
+      // pinned だけを送る更新では label と text を引き継ぐ。送られない pinned は今の値を引き継ぐ
+      const keepText = input.pinned !== undefined && input.label === undefined && input.text === undefined;
+      const next: QuickPrompt = {
+        id,
+        label: keepText ? current.label : validateLabel(input.label),
+        text: keepText ? current.text : validateText(input.text),
+        pinned: input.pinned ?? current.pinned,
+      };
       await this.save(items.map((p) => (p.id === id ? next : p)));
       return next;
     });

@@ -113,7 +113,8 @@ async function waitUntil(done: () => boolean, timeoutMs: number): Promise<boolea
 }
 
 export class SessionManager {
-  private readonly sessions = new Map<string, Session>();
+  /** 並び順の正本（Map の入れた順）。move() だけが新しい Map に差し替える。 */
+  private sessions = new Map<string, Session>();
   private changeListeners = new Set<() => void>();
   private removedListeners = new Set<(id: string) => void>();
   private readonly maxSessions: number;
@@ -216,6 +217,24 @@ export class SessionManager {
     const session = this.sessions.get(id);
     if (!session || session.exited || !isClaudeSessionId(claudeSessionId) || session.claudeSessionId === claudeSessionId) return;
     session.claudeSessionId = claudeSessionId;
+    this.notify();
+  }
+
+  /**
+   * 並び順を変える。toIndex は動かしたあとの位置（0 始まり。止まったセッションも数える）。
+   * 新しい Map を作って差し替える（clear して入れ直さない）。同じ位置なら何もしない。
+   */
+  move(id: string, toIndex: unknown): void {
+    const ids = [...this.sessions.keys()];
+    if (typeof toIndex !== "number" || !Number.isInteger(toIndex) || toIndex < 0 || toIndex >= ids.length) {
+      throw new SessionInputError("toIndex must be an integer within the session count");
+    }
+    const from = ids.indexOf(id);
+    if (from < 0) throw new SessionNotFoundError("session not found");
+    if (from === toIndex) return;
+    const order = ids.filter((x) => x !== id);
+    order.splice(toIndex, 0, id);
+    this.sessions = new Map(order.map((x) => [x, this.sessions.get(x) as Session] as const));
     this.notify();
   }
 
