@@ -86,6 +86,12 @@ export function prepareE2eEnv(): void {
   const ghLog = path.join(base, "gh.log");
   writeFileSync(ghLog, "");
   const dataDir = path.join(base, "data");
+  // 右の欄の「記録の仕組み」の点検が読む Claude の設定（一時の場所。実際の ~/.claude には触れない）
+  const claudeSettingsPath = path.join(base, "claude-home", ".claude", "settings.json");
+  mkdirSync(path.dirname(claudeSettingsPath), { recursive: true });
+  // 空でなければ、スタブの claude agents の sessionId が UUID の形になる
+  const uuidFile = path.join(base, "agents-uuid");
+  writeFileSync(uuidFile, "");
 
   const roleScript = path.join(here, "role.mjs");
   const bracketedScript = path.join(here, "bracketed-role.mjs");
@@ -109,6 +115,8 @@ export function prepareE2eEnv(): void {
     pickMaxKeep: 50,
     pickSendMaxBytes: 16384,
     pickHtmlInPromptChars: 1500,
+    activityKeepDays: 7,
+    claudeSettingsPath,
     roles: [
       { id: "e2e-plain", labelKey: "role.shell", command: [process.execPath, roleScript, marker], needsWorktree: false },
       { id: "e2e-wt", labelKey: "role.sonnetImpl", command: [process.execPath, roleScript, marker], needsWorktree: true },
@@ -144,6 +152,8 @@ export function prepareE2eEnv(): void {
   process.env.AC_E2E_SLOW_FILE = slowFile;
   process.env.AC_E2E_OSASCRIPT_LOG = osascriptLog;
   process.env.AC_E2E_DATA_DIR = dataDir;
+  process.env.AC_E2E_CLAUDE_SETTINGS = claudeSettingsPath;
+  process.env.AC_E2E_UUID_FILE = uuidFile;
   process.env.AC_E2E_GH_DIR = ghDir;
   process.env.AC_E2E_GH_LOG = ghLog;
 }
