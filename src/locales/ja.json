@@ -159,7 +159,8 @@
     "tabs": {
       "terminal": "端末",
       "changes": "変更",
-      "pr": "PR"
+      "pr": "PR",
+      "picks": "部品"
     },
     "diff": {
       "loading": "読み込み中",
@@ -268,6 +269,50 @@
         "cancel": "取り消し",
         "pending": "実行中"
       }
+    },
+    "picks": {
+      "loading": "読み込み中",
+      "loadError": "部品を取得できませんでした",
+      "emptyTitle": "まだ部品が届いていません",
+      "emptyBody": "Chrome に拡張機能を読み込み、画面の部品を選ぶと、ここに並びます。",
+      "setupTitle": "拡張機能の読み込み手順（最初の1回だけ）",
+      "setupStep1": "Chrome で chrome://extensions を開き、右上の「デベロッパー モード」をオンにします。",
+      "setupStep2": "「パッケージ化されていない拡張機能を読み込む」を押し、次のフォルダを選びます。",
+      "setupStep3": "参考にしたいページで、Chrome の拡張機能のボタン（パズルのアイコンの中）を押し、部品をクリックします。やめるときは Esc です。",
+      "setupUpdate": "アプリを更新したあとは、chrome://extensions で、この拡張機能の「更新」を押してください。",
+      "send": "Claude に送る（{{count}}件）",
+      "sending": "送信中",
+      "nothingSelected": "送る部品を選んでください",
+      "noSession": "送り先のセッションを選んでください",
+      "blocked": {
+        "working": "Claude が作業中のため送れません",
+        "waiting": "Claude が許可の確認を待っているため送れません",
+        "stopped": "このセッションは止まっているため送れません",
+        "unknown": "Claude の状態を確認できないため送れません",
+        "other": "いまは送れません"
+      },
+      "sendNoticeTitle": "送信を確認してください",
+      "pastedNotSent": "依頼文は端末に入りましたが、確認している間にセッションが切り替わったため、Enter は送っていません。",
+      "sendErrorTitle": "送信できませんでした",
+      "deleteError": "削除できませんでした",
+      "noteError": "ひとことを保存できませんでした",
+      "sent": "送信済み",
+      "select": "選ぶ",
+      "selected": "選んでいる",
+      "delete": "削除",
+      "noteLabel": "ひとこと（Claude への指示）",
+      "imageAlt": "選んだ部品の画像",
+      "noImage": "画像なし（{{reason}}）",
+      "noImageUnknown": "取得できませんでした",
+      "showDetail": "内容を見る",
+      "hideDetail": "内容を閉じる",
+      "detailSelector": "セレクタ",
+      "detailAttrs": "属性",
+      "detailStyle": "見た目の値",
+      "detailHtml": "HTML",
+      "detailRect": "位置と大きさ",
+      "receivedAt": "{{time}} に届きました",
+      "noText": "文字なし"
     }
   },
   "role": {

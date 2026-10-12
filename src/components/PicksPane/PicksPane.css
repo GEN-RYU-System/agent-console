@@ -1,0 +1,134 @@
+.ac-picks {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-surface);
+}
+
+.ac-picks[hidden] { display: none; }
+
+.ac-picks__toolbar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.ac-picks__reason,
+.ac-picks__time,
+.ac-picks__setup-note {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+}
+
+.ac-picks__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--space-3);
+  overflow-y: auto;
+}
+
+.ac-picks__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ac-picks__item {
+  display: grid;
+  grid-template-columns: 30% 1fr;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.ac-picks__media {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 0;
+}
+
+.ac-picks__img {
+  max-width: 100%;
+  max-height: 30vh;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+.ac-picks__noimage {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.ac-picks__head,
+.ac-picks__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ac-picks__host {
+  font-family: var(--ac-font-mono);
+  font-size: var(--font-sm);
+  font-weight: var(--font-weight-semi);
+}
+
+.ac-picks__text {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-sm);
+  color: var(--text-primary);
+}
+
+.ac-picks__detail {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  font-size: var(--font-xs);
+}
+
+.ac-picks__detail dt { color: var(--text-muted); }
+.ac-picks__detail dd { margin: 0; min-width: 0; }
+
+.ac-picks__mono,
+.ac-picks__pre,
+.ac-picks__dir {
+  font-family: var(--ac-font-mono);
+  overflow-wrap: anywhere;
+}
+
+.ac-picks__pre {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.ac-picks__dir {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--font-xs);
+}
+
+.ac-picks__setup-title {
+  margin: 0;
+  font-size: var(--font-sm);
+}
+
+.ac-picks__setup {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+  text-align: left;
+  font-size: var(--font-sm);
+}
