@@ -108,3 +108,34 @@ describe("parseConfig", () => {
     }
   });
 });
+
+describe("parseConfig: diff settings (K8, K12, K14)", () => {
+  it("fills the defaults: origin/main, 1MiB, 16KiB, 2000ms", () => {
+    const c = parseConfig(valid);
+    expect([c.diffBaseRef, c.diffMaxFileBytes, c.diffSendMaxBytes, c.pasteSubmitDelayMs]).toEqual(["origin/main", 1024 * 1024, 16 * 1024, 2000]);
+  });
+
+  it("accepts explicit values", () => {
+    const c = parseConfig({ ...valid, diffBaseRef: "refs/remotes/origin/develop", diffMaxFileBytes: 5000, diffSendMaxBytes: 6000, pasteSubmitDelayMs: 1500 });
+    expect([c.diffBaseRef, c.diffMaxFileBytes, c.diffSendMaxBytes, c.pasteSubmitDelayMs]).toEqual(["refs/remotes/origin/develop", 5000, 6000, 1500]);
+  });
+
+  it("refuses to start with a diffBaseRef that could be read as an option or contains odd characters", () => {
+    for (const bad of ["--output=/tmp/x", "-p", "", "origin main", "a;b", "$(x)", "a\nb", 5]) {
+      expect(() => parseConfig({ ...valid, diffBaseRef: bad }), String(bad)).toThrow(/diffBaseRef/);
+    }
+  });
+
+  it("refuses non-positive numbers", () => {
+    for (const key of ["diffMaxFileBytes", "diffSendMaxBytes"]) {
+      expect(() => parseConfig({ ...valid, [key]: 0 })).toThrow(new RegExp(key));
+      expect(() => parseConfig({ ...valid, [key]: "1" })).toThrow(new RegExp(key));
+    }
+    expect(() => parseConfig({ ...valid, pasteSubmitDelayMs: -1 })).toThrow(/pasteSubmitDelayMs/);
+  });
+
+  it("the shipped config carries the same four values", () => {
+    const shipped = parseConfig(JSON.parse(readFileSync("agent-console.config.json", "utf8")));
+    expect([shipped.diffBaseRef, shipped.diffMaxFileBytes, shipped.diffSendMaxBytes, shipped.pasteSubmitDelayMs]).toEqual(["origin/main", 1048576, 16384, 2000]);
+  });
+});

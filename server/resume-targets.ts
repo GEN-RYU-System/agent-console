@@ -55,7 +55,7 @@ export function roleForScope(roles: readonly RoleConfig[], scope: ResumeScope): 
   return roles.find((r) => r.resumeScope === scope && r.resumeCommand !== undefined);
 }
 
-const branchName = (ref: string | null): string | null => (ref === null ? null : ref.startsWith(BRANCH_REF_PREFIX) ? ref.slice(BRANCH_REF_PREFIX.length) : ref);
+export const branchName = (ref: string | null): string | null => (ref === null ? null : ref.startsWith(BRANCH_REF_PREFIX) ? ref.slice(BRANCH_REF_PREFIX.length) : ref);
 
 /** 本店（Opus 役）と、本店を除く実在する worktree（Sonnet 役）。該当する役割が設定に無い種類は出さない。 */
 export async function listResumeTargets(root: string, roles: readonly RoleConfig[], listWorktrees: ListWorktrees = listWorktreeEntries): Promise<ResumeTarget[]> {
