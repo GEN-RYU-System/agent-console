@@ -214,16 +214,7 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
   // 端末へ入れる操作は、要求を受けた時点で claude agents を取り直して判定する（定期取得の値は使わない）
   if (action === "rename") {
     const name = validateName(jsonBody(await readJsonBody(req)).name);
-    const verdict = await hub.checkInput(id);
-    if (!verdict.ok) throw new SessionConflictError(verdict.reason ?? "cannot input now");
-    if (verdict.hasClaude) {
-      // Claude の名前が正本。人が押したときだけ /rename を送る
-      sessions.write(session, `/rename ${name}\r`);
-      sendJson(res, 200, { mode: "claude" });
-    } else {
-      sessions.rename(id, name);
-      sendJson(res, 200, { mode: "app" });
-    }
+    sendJson(res, 200, { mode: await hub.requestRename(id, name) });
     return true;
   }
   // send-check: サーバーは端末へ書かない。入れてよい状態なら本文を返し、画面が xterm の paste() で入れてから Enter を送る

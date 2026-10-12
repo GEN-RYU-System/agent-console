@@ -173,6 +173,7 @@ export function ConsolePage() {
           if (sessionsRef.current.find((s) => s.id === targetId)?.name === before) setRenameNotice(targetId);
         }, RENAME_CONFIRM_MS);
       }
+      // queued は予約しただけ。行に「予約: 名前」が出るので、10 秒の未反映の案内は付けない
     } catch (err) {
       setRenameError(err instanceof Error ? err.message : String(err));
     } finally {

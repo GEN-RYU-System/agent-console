@@ -5,7 +5,7 @@ import { loadLedger, type LedgerSnapshot } from "./ledger.ts";
 import { BreakTracker, breakBody, osascriptSender, type NotificationSender } from "./notify.ts";
 import { startPolling } from "./poll.ts";
 import { descendantPids, readProcessTable } from "./process-tree.ts";
-import type { SessionManager } from "./sessions.ts";
+import { SessionConflictError, type SessionManager } from "./sessions.ts";
 
 export interface SessionView {
   id: string;
@@ -21,7 +21,12 @@ export interface SessionView {
   hasClaude: boolean;
   /** 今、人の指示（名前の変更・よく使う指示）を入れてよい状態か（要求時にサーバーが取り直して再判定する） */
   canInput: boolean;
+  /** 名前の変更を予約中のとき、その名前（待機になったら自動で送る）。予約が無ければ項目ごと無い */
+  pendingName?: string;
 }
+
+/** 名前の変更の結果。queued は端末へ何も書かず予約した */
+export type RenameMode = "claude" | "app" | "queued";
 
 export interface Snapshot {
   sessions: SessionView[];
@@ -40,6 +45,8 @@ export class Hub {
   /** 直近の snapshot の表示名（ps を走らせずに名前だけ欲しい呼び出し用） */
   private lastNames = new Map<string, string>();
   private readonly sendNotification: NotificationSender | null;
+  /** 名前の変更の予約（セッション id → 名前）。メモリだけ。送るか捨てるまでの正本はここ */
+  private readonly pendingRenames = new Map<string, string>();
 
   constructor(
     private readonly config: Config,
@@ -49,7 +56,10 @@ export class Hub {
     this.sendNotification = sendNotification !== undefined ? sendNotification : config.notify.macos ? osascriptSender(config.notify.osascriptBin) : null;
     sessions.onChange(() => void this.publish().catch((err) => this.onPollError("publish", err)));
     // 一覧から外したセッションの前回の status・未読は持ち続けない
-    sessions.onRemoved((id) => this.tracker.forget(id));
+    sessions.onRemoved((id) => {
+      this.tracker.forget(id);
+      this.pendingRenames.delete(id);
+    });
   }
 
   start(): void {
@@ -82,7 +92,54 @@ export class Hub {
     // 不正な出力・実行失敗は null（=状態「不明」）。前回値は保持しない。
     this.agents = await fetchAgents(this.config.claudeBin);
     await this.detectBreaks();
+    await this.flushPendingRenames();
     await this.publish();
+  }
+
+  /** 名前の変更の要求。待機中ならすぐ反映し、作業中・許可待ち・状態不明なら端末に書かず予約する。 */
+  async requestRename(sessionId: string, name: string): Promise<RenameMode> {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new SessionConflictError("session not found");
+    const verdict = await this.checkInput(sessionId);
+    if (session.exited) throw new SessionConflictError(verdict.reason ?? "session is stopped");
+    if (verdict.ok) return this.applyRename(sessionId, name, verdict.hasClaude);
+    this.pendingRenames.set(sessionId, name);
+    await this.publish();
+    return "queued";
+  }
+
+  /** 判定が ok のときの反映。Claude 起動中は /rename を送り、いなければアプリの名前を変える。予約は消す。 */
+  private applyRename(sessionId: string, name: string, hasClaude: boolean): "claude" | "app" {
+    this.pendingRenames.delete(sessionId);
+    if (hasClaude) {
+      const session = this.sessions.get(sessionId);
+      if (session) this.sessions.write(session, `/rename ${name}\r`);
+      return "claude";
+    }
+    this.sessions.rename(sessionId, name);
+    return "app";
+  }
+
+  /** 定期取得のたびに予約を見る。待機になっていたら、要求時と同じ取り直し判定を通ったときだけ 1 回送る。 */
+  private async flushPendingRenames(): Promise<void> {
+    if (this.pendingRenames.size === 0) return;
+    const table = await readProcessTable().catch(() => []);
+    for (const [id, name] of [...this.pendingRenames]) {
+      try {
+        const session = this.sessions.get(id);
+        if (!session || session.exited) {
+          this.pendingRenames.delete(id);
+          continue;
+        }
+        const polled = inputVerdict({ exited: false, pids: descendantPids(session.term.pid, table) }, this.agents);
+        if (!polled.ok) continue;
+        const verdict = await this.checkInput(id);
+        // 取り直している間に予約が消えた・差し替わった場合は、その予約を尊重する
+        if (verdict.ok && this.pendingRenames.get(id) === name) this.applyRename(id, name, verdict.hasClaude);
+      } catch (err) {
+        this.onPollError("rename", err);
+      }
+    }
   }
 
   /** 前回の status と比べ、区切りがあれば未読を増やして macOS 通知を出す。取得失敗の間は何も判定しない。 */
@@ -149,6 +206,7 @@ export class Hub {
         unread: this.tracker.unreadOf(s.id),
         hasClaude: agent !== undefined,
         canInput: inputVerdict(info, this.agents).ok,
+        ...(this.pendingRenames.has(s.id) ? { pendingName: this.pendingRenames.get(s.id) } : {}),
       };
     });
     this.lastNames = new Map(views.map((v) => [v.id, v.name]));

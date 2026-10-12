@@ -24,6 +24,7 @@ beforeAll(async () => {
   chmodSync(stub, 0o755);
   h = await startHarness({
     claudeBin: stub,
+    maxSessions: 40,
     sendNotification: (body) => sent.push(body),
     // 実機の命令は `... --resume`（id なし）。ここでは作業場所と、AC_RESUME_ID が渡らないことを出力する
     resumeCommand: ["/bin/sh", "-c", "echo RESUMED_WT cwd=$PWD id=[$AC_RESUME_ID]; cat"],
@@ -146,25 +147,120 @@ describe("input safety: /rename and quick prompts only when Claude is idle (M1/L
     expect(await viewOf(id)).toMatchObject({ canInput: true });
   });
 
-  it("sends /rename only when idle, and answers 409 with a reason for busy, waiting and waitingFor", async () => {
+  it("K3/K4: sends /rename at once when idle; queues without writing to the terminal when busy, waiting, waitingFor or unknown", async () => {
     const id = await newSession("echo", "rename-me");
     const pid = pidOf(id);
-    for (const [rows, reason] of [
-      [[row(pid, "busy")], "claude is busy"],
-      [[row(pid, "waiting", { waitingFor: "permission prompt" })], "claude is waiting"],
-      [[row(pid, "idle", { waitingFor: "input needed" })], "waiting for input"],
-    ] as const) {
-      setAgents([...rows]);
+    for (const rows of [
+      [row(pid, "busy")],
+      [row(pid, "waiting", { waitingFor: "permission prompt" })],
+      [row(pid, "idle", { waitingFor: "input needed" })],
+    ]) {
+      setAgents(rows);
       const res = await api("POST", `/api/sessions/${id}/rename`, { name: "next" });
-      expect(res.status).toBe(409);
-      expect(String(res.json.error)).toContain(reason);
+      expect(res).toMatchObject({ status: 200, json: { mode: "queued" } });
+      expect((await viewOf(id)).pendingName).toBe("next");
     }
+    writeFileSync(rowsFile, "not json");
+    expect((await api("POST", `/api/sessions/${id}/rename`, { name: "next" })).json).toEqual({ mode: "queued" });
     await settle();
     expect(ringOf(id)).not.toContain("/rename");
 
     setAgents([row(pid, "idle")]);
     expect((await api("POST", `/api/sessions/${id}/rename`, { name: "next-name" })).json).toEqual({ mode: "claude" });
     await vi.waitFor(() => expect(ringOf(id)).toContain("/rename next-name"));
+    // K6: 待機中にすぐ変えたので、予約は消えている
+    expect((await viewOf(id)).pendingName).toBeUndefined();
+  });
+
+  it("K5: sends the queued /rename once, only after idle (busy -> waiting -> idle)", async () => {
+    const id = await newSession("echo", "queue-flow");
+    const pid = pidOf(id);
+    setAgents([row(pid, "busy")]);
+    await h.hub.pollAgents();
+    expect((await api("POST", `/api/sessions/${id}/rename`, { name: "after-work" })).json).toEqual({ mode: "queued" });
+    setAgents([row(pid, "waiting", { waitingFor: "permission prompt" })]);
+    await h.hub.pollAgents();
+    await settle();
+    expect(ringOf(id)).not.toContain("/rename");
+    expect((await viewOf(id)).pendingName).toBe("after-work");
+    setAgents([row(pid, "idle")]);
+    const write = vi.spyOn(h.sessions, "write");
+    await h.hub.pollAgents();
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledWith(expect.anything(), "/rename after-work\r");
+    await vi.waitFor(() => expect(ringOf(id)).toContain("/rename after-work"));
+    write.mockClear();
+    await h.hub.pollAgents();
+    await settle();
+    expect(write).not.toHaveBeenCalled();
+    write.mockRestore();
+    expect((await viewOf(id)).pendingName).toBeUndefined();
+  });
+
+  it("K5: does not send when the poll says idle but the fresh check says busy; the reservation stays", async () => {
+    const id = await newSession("echo", "recheck");
+    const pid = pidOf(id);
+    setAgents([row(pid, "busy")]);
+    await api("POST", `/api/sessions/${id}/rename`, { name: "still-queued" });
+    const hub = h.hub as unknown as { agents: unknown };
+    setAgents([row(pid, "idle")]);
+    const check = vi.spyOn(h.hub, "checkInput").mockResolvedValueOnce({ ok: false, reason: "claude is busy", hasClaude: true });
+    await h.hub.pollAgents();
+    expect(check).toHaveBeenCalled();
+    check.mockRestore();
+    expect(hub.agents).not.toBeNull();
+    await settle();
+    expect(ringOf(id)).not.toContain("/rename");
+    expect((await viewOf(id)).pendingName).toBe("still-queued");
+  });
+
+  it("K6: a second reservation overwrites the first; only the last name is sent", async () => {
+    const id = await newSession("echo", "overwrite");
+    const pid = pidOf(id);
+    setAgents([row(pid, "busy")]);
+    await api("POST", `/api/sessions/${id}/rename`, { name: "first-name" });
+    await api("POST", `/api/sessions/${id}/rename`, { name: "second-name" });
+    expect((await viewOf(id)).pendingName).toBe("second-name");
+    setAgents([row(pid, "idle")]);
+    await h.hub.pollAgents();
+    await vi.waitFor(() => expect(ringOf(id)).toContain("/rename second-name"));
+    expect(ringOf(id)).not.toContain("first-name");
+  });
+
+  it("K6: drops the reservation when the session stops or is removed from the list", async () => {
+    const id = await newSession("echo", "drop-removed");
+    setAgents([row(pidOf(id), "busy")]);
+    await api("POST", `/api/sessions/${id}/rename`, { name: "gone" });
+    const pending = (h.hub as unknown as { pendingRenames: Map<string, string> }).pendingRenames;
+    expect(pending.has(id)).toBe(true);
+    h.sessions.get(id)?.term.kill();
+    await vi.waitFor(async () => expect((await viewOf(id)).state).toBe("stopped"));
+    setAgents([]);
+    await h.hub.pollAgents();
+    expect(pending.has(id)).toBe(false);
+    expect((await viewOf(id)).pendingName).toBeUndefined();
+
+    const removed = await newSession("echo", "drop-removed-2");
+    setAgents([row(pidOf(removed), "busy")]);
+    await api("POST", `/api/sessions/${removed}/rename`, { name: "gone2" });
+    expect(pending.has(removed)).toBe(true);
+    h.sessions.get(removed)?.term.kill();
+    await vi.waitFor(async () => expect((await viewOf(removed)).state).toBe("stopped"));
+    expect((await api("DELETE", `/api/sessions/${removed}`)).status).toBe(200);
+    expect(pending.has(removed)).toBe(false);
+  });
+
+  it("K5: a reservation made while the state was unknown becomes an app-side rename once Claude is known to be absent", async () => {
+    setAgents([]);
+    const id = await newSession("echo", "unknown-then-none");
+    writeFileSync(rowsFile, "not json");
+    expect((await api("POST", `/api/sessions/${id}/rename`, { name: "app-renamed" })).json).toEqual({ mode: "queued" });
+    setAgents([]);
+    await h.hub.pollAgents();
+    await settle();
+    expect(ringOf(id)).not.toContain("/rename");
+    expect(await viewOf(id)).toMatchObject({ name: "app-renamed", hasClaude: false });
+    expect((await viewOf(id)).pendingName).toBeUndefined();
   });
 
   it("uses the status at request time, not the one polled a few seconds ago", async () => {
@@ -174,7 +270,7 @@ describe("input safety: /rename and quick prompts only when Claude is idle (M1/L
     await h.hub.pollAgents();
     expect((await viewOf(id)).canInput).toBe(true);
     setAgents([row(pid, "busy")]); // 取得の後に busy になった。ポーリングはまだ古い idle を持っている
-    expect((await api("POST", `/api/sessions/${id}/rename`, { name: "late" })).status).toBe(409);
+    expect((await api("POST", `/api/sessions/${id}/rename`, { name: "late" })).json).toEqual({ mode: "queued" });
     expect((await api("POST", `/api/sessions/${id}/send-check`, { promptId: "x" })).status).toBe(404);
     const created = await api("POST", "/api/quick-prompts", { label: "p", text: "late-text" });
     expect((await api("POST", `/api/sessions/${id}/send-check`, { promptId: created.json.id })).status).toBe(409);
@@ -193,14 +289,17 @@ describe("input safety: /rename and quick prompts only when Claude is idle (M1/L
     expect((await api("POST", `/api/sessions/${id}/rename`, { name: "a\nb" })).status).toBe(400);
   });
 
-  it("refuses everything when the Claude state cannot be read, and for stopped sessions", async () => {
+  it("K7: refuses the quick-prompt check when the state cannot be read, and answers 409 to rename for stopped sessions", async () => {
     const id = await newSession("echo", "unknown-state");
     writeFileSync(rowsFile, "not json");
-    expect((await api("POST", `/api/sessions/${id}/rename`, { name: "x" })).status).toBe(409);
+    const created = await api("POST", "/api/quick-prompts", { label: "u", text: "unknown-text" });
+    expect((await api("POST", `/api/sessions/${id}/send-check`, { promptId: created.json.id })).status).toBe(409);
+    await api("DELETE", `/api/quick-prompts/${created.json.id as string}`);
     setAgents([]);
     const stopped = await newSession("short", "stopped");
     await vi.waitFor(async () => expect((await viewOf(stopped)).state).toBe("stopped"));
     expect((await api("POST", `/api/sessions/${stopped}/rename`, { name: "x" })).status).toBe(409);
+    expect((await viewOf(stopped)).pendingName).toBeUndefined();
   });
 });
 

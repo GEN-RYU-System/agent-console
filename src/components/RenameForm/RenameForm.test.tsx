@@ -17,10 +17,19 @@ describe("RenameForm", () => {
     expect(screen.getByText(/\/rename を送って/)).toBeTruthy();
   });
 
-  it("is disabled unless Claude is idle (working, waiting for a permission prompt, ...)", () => {
-    render(<RenameForm session={{ ...session, state: "working", canInput: false }} busy={false} error={null} onSubmit={() => {}} />);
+  it("K8: can submit while Claude is working or waiting, and explains that the name is queued", () => {
+    const onSubmit = vi.fn();
+    render(<RenameForm session={{ ...session, state: "working", canInput: false }} busy={false} error={null} onSubmit={onSubmit} />);
+    expect((screen.getByRole("button", { name: "変更" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByText("いまは予約になります")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "変更" }));
+    expect(onSubmit).toHaveBeenCalledWith("old");
+  });
+
+  it("cannot be submitted for a stopped session", () => {
+    render(<RenameForm session={{ ...session, state: "stopped", canInput: false }} busy={false} error={null} onSubmit={() => {}} />);
     expect((screen.getByRole("button", { name: "変更" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText("作業中は変えられません")).toBeTruthy();
+    expect(screen.queryByText("いまは予約になります")).toBeNull();
   });
 
   it("renames the app-side name when Claude is not running, even though no claude is attached", () => {

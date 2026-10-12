@@ -50,9 +50,26 @@ describe("SessionList", () => {
     expect(screen.getAllByTestId("session-row")[1].getAttribute("data-unread")).toBe("2");
   });
 
-  it("disables rename while input is not allowed (Claude working / waiting)", () => {
+  it("K2: the rename pencil stays enabled while Claude is working (the name is queued)", () => {
     render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} />);
-    expect((screen.getByRole("button", { name: "名前を変える" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "名前を変える" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("K1: double-clicking a row opens rename, but not for a stopped row", () => {
+    const onRename = vi.fn();
+    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={onRename} />);
+    fireEvent.doubleClick(screen.getByText("first"));
+    expect(onRename).toHaveBeenCalledWith("a");
+    onRename.mockClear();
+    fireEvent.doubleClick(screen.getByText("second"));
+    expect(onRename).not.toHaveBeenCalled();
+  });
+
+  it("K4: shows the queued name on the row only while a rename is pending", () => {
+    render(<SessionList sessions={[{ ...sessions[0], pendingName: "next-name" }, sessions[1]]} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} />);
+    const pending = screen.getAllByTestId("pending-name");
+    expect(pending).toHaveLength(1);
+    expect(pending[0].textContent).toContain("予約: next-name");
   });
 
   it("offers rename for sessions that are not stopped", () => {

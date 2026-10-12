@@ -43,6 +43,9 @@ export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, o
             layoutClassName="ac-session__select"
             aria-current={s.id === selectedId ? "true" : undefined}
             onClick={() => onSelect(s.id)}
+            onDoubleClick={() => {
+              if (s.state !== "stopped") onRename(s.id);
+            }}
           >
             <span className="ac-session__line" data-testid="session-line-1">
               <StatusDot state={s.state} />
@@ -55,7 +58,15 @@ export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, o
                 </span>
               )}
             </span>
-            <span className="ac-session__role" data-testid="session-line-2">{roleLabel(s.roleId)}</span>
+            <span className="ac-session__role" data-testid="session-line-2">
+              {roleLabel(s.roleId)}
+              {s.pendingName !== undefined && (
+                <span className="ac-session__pending" data-testid="pending-name">
+                  {" "}
+                  {t("ac.rename.pendingLine", { name: s.pendingName })}
+                </span>
+              )}
+            </span>
           </Button>
           {s.state !== "stopped" && (
             <Button
@@ -64,7 +75,6 @@ export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, o
               iconOnly
               aria-label={t("ac.rename.open")}
               title={t("ac.rename.open")}
-              disabled={!s.canInput}
               onClick={() => onRename(s.id)}
             >
               <Pencil size={14} aria-hidden="true" />
