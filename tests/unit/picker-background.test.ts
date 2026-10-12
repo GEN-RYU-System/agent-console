@@ -45,6 +45,9 @@ function load(opts: { png?: Uint8Array; captureFails?: boolean } = {}): Harness 
     },
     createImageBitmap: async () => ({ width: 1000, height: 800 }),
     OffscreenCanvas: class {
+      constructor(w: number, h: number) {
+        canvases.push({ w, h });
+      }
       getContext() {
         return { drawImage: () => undefined };
       }
@@ -63,6 +66,7 @@ function load(opts: { png?: Uint8Array; captureFails?: boolean } = {}): Harness 
   return { onClicked: clicked, onMessage: messaged, fetchMock, chrome };
 }
 
+const canvases: Array<{ w: number; h: number }> = [];
 const sender = { tab: { id: 7, windowId: 3 } };
 const payload = { url: "https://example.com/", rect: { x: 10, y: 20, w: 100, h: 50 }, vw: 1000 };
 const send = (h: Harness, msg: unknown = { type: "pick", payload }, from: unknown = sender): Promise<unknown> =>
@@ -147,6 +151,15 @@ describe("service worker: sending a pick (§3-1, K6)", () => {
     const body = JSON.parse(postCall(h)[1].body) as Record<string, unknown>;
     expect(body.imageBase64).toBeUndefined();
     expect(String(body.imageError)).toMatch(/outside/);
+  });
+
+  it("crops only the part's own area when it sticks out of the visible area on the left or top", async () => {
+    canvases.length = 0;
+    await send(h, { type: "pick", payload: { ...payload, rect: { x: -100, y: -10, w: 300, h: 50 } } });
+    expect(canvases).toEqual([{ w: 200, h: 40 }]);
+    canvases.length = 0;
+    await send(h, { type: "pick", payload: { ...payload, rect: { x: 900, y: 780, w: 300, h: 50 } } });
+    expect(canvases).toEqual([{ w: 100, h: 20 }]);
   });
 
   it("ignores messages that are not a pick or do not come from a tab", () => {

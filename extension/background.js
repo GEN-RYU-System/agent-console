@@ -39,10 +39,11 @@ async function cropImage(tab, rect, vw) {
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
     const bmp = await createImageBitmap(await (await fetch(dataUrl)).blob());
     const scale = bmp.width / vw;
+    // 画面からはみ出した部分は切り落とす。右端・下端は元の枠の端で打ち切る（左・上にはみ出しても隣の領域まで写さない）
     const x = Math.max(0, Math.round(rect.x * scale));
     const y = Math.max(0, Math.round(rect.y * scale));
-    const w = Math.min(bmp.width - x, Math.round(rect.w * scale));
-    const h = Math.min(bmp.height - y, Math.round(rect.h * scale));
+    const w = Math.min(bmp.width, Math.round((rect.x + rect.w) * scale)) - x;
+    const h = Math.min(bmp.height, Math.round((rect.y + rect.h) * scale)) - y;
     if (w < 1 || h < 1) return { imageError: "the part is outside the visible area" };
     const canvas = new OffscreenCanvas(w, h);
     canvas.getContext("2d").drawImage(bmp, x, y, w, h, 0, 0, w, h);

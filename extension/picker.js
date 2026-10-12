@@ -122,7 +122,9 @@
       guide.textContent = t(messageKey);
     };
 
+    let resultTimer;
     const stop = () => {
+      clearTimeout(resultTimer);
       for (const [type, handler] of listeners) document.removeEventListener(type, handler, true);
       host.remove();
       active = null;
@@ -133,9 +135,11 @@
     };
     // ページのスクリプトが作った偽のクリック（isTrusted でないもの）では選ばない
     const onClick = async (e) => {
-      if (busy || !e.isTrusted || inHost(e)) return;
+      if (!e.isTrusted || inHost(e)) return;
+      // 送っている間の 2 回目のクリックも、ページには渡さない（押す・離すは swallow が止めている）
       e.preventDefault();
       e.stopImmediatePropagation();
+      if (busy) return;
       busy = true;
       const target = e.target;
       setState("sending", "guideSending");
@@ -153,7 +157,7 @@
       host.style.visibility = "";
       frame.hidden = true;
       setState(REPLY_TO_STATE[status] ?? "error", REPLY_TO_MESSAGE[status]);
-      setTimeout(stop, RESULT_SHOW_MS);
+      resultTimer = setTimeout(stop, RESULT_SHOW_MS);
     };
     // 選んでいる間は、ページがクリックの途中（押す・離す）に反応しないようにする
     const swallow = (e) => {

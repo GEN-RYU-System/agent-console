@@ -82,8 +82,8 @@ describe("picker.js: a click the page made itself is not a pick (K1)", () => {
     expect(fake.defaultPrevented).toBe(false);
   });
 
-  it("reads isTrusted before doing anything else in the click handler", () => {
-    const click = /const onClick = async \(e\) => \{\n\s*if \(busy \|\| !e\.isTrusted/.exec(SOURCE);
+  it("reads isTrusted before doing anything else in the click handler, and swallows trusted clicks even while sending", () => {
+    const click = /const onClick = async \(e\) => \{\n\s*if \(!e\.isTrusted/.exec(SOURCE);
     expect(click).not.toBeNull();
   });
 });

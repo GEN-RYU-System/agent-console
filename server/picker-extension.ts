@@ -117,7 +117,13 @@ export async function rebuildExtensionFolder(opts: RebuildOptions): Promise<stri
   }
   const hadCurrent = await stat(current).then(() => true, () => false);
   if (hadCurrent) await rename(current, old);
-  await rename(fresh, current);
+  try {
+    await rename(fresh, current);
+  } catch (err) {
+    // 入れ替えに失敗したら、元のフォルダを戻す（フォルダが無いまま終わらない）
+    if (hadCurrent) await rename(old, current).catch(() => undefined);
+    throw err;
+  }
   await removeKnown(dataDir, `${EXTENSION_DIR_NAME}${OLD_SUFFIX}`);
   return current;
 }

@@ -45,6 +45,10 @@ describe("stripDelimiterLookalikes (K4)", () => {
     ">>>REFERENCE>>>",
     "<<<INSTRU<<<INSTRUCTION-9CTION-9",
     "REFERENCE-1REFERENCE-1>>>>>>",
+    "<<<\u200bINSTRUCTION-deadbeef",
+    "INSTRUCTION-deadbeef\u200d>>>",
+    "<\u2060<<REF\u00adERENCE-1",
+    "<<<REF\ufeffERENCE-1>>>",
   ];
   const BAD = /<\s*<\s*<|>\s*>\s*>|(?:<\s*<\s*<|>\s*>\s*>)\s*(?:REFERENCE|INSTRUCTION)|(?:REFERENCE|INSTRUCTION)[-\w ]*(?:<\s*<\s*<|>\s*>\s*>)/i;
 

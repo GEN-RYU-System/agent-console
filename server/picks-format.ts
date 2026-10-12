@@ -19,13 +19,15 @@ const SUFFIX = "(?:\\s*-\\s*[0-9a-z]*)?";
 const OPEN_LIKE = new RegExp(`<\\s*<\\s*<\\s*${KEYWORD}${SUFFIX}`, "gi");
 const CLOSE_LIKE = new RegExp(`${KEYWORD}${SUFFIX}\\s*>\\s*>\\s*>`, "gi");
 const BRACKETS = /<\s*<\s*<|>\s*>\s*>/g;
+// 幅の無い文字（ゼロ幅スペースなど）は空白に数えられないので、先に取り除く（区切りの間に挟んで取り除きを逃れるのを防ぐ）
+const INVISIBLE = /[\u00ad\u200b-\u200d\u2060\ufeff]/g;
 
 /**
  * 区切りに似た文字列を、大文字小文字と空白の違いを無視して、無くなるまで繰り返し取り除く。
  * 1 回で取り除くと、残りがつながって区切りになる（`<<<REF<<<REFERENCEERENCE` など）ため、変化が無くなるまで続ける。
  */
 export function stripDelimiterLookalikes(input: string): string {
-  let current = input;
+  let current = input.replace(INVISIBLE, "");
   for (;;) {
     const next = current.replace(OPEN_LIKE, "").replace(CLOSE_LIKE, "").replace(BRACKETS, "");
     if (next === current) return current;
