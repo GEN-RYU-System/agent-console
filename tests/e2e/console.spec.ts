@@ -916,9 +916,23 @@ test("v0.4.0 K12: 変更タブを開いてから端末タブに戻っても、�
     const text = await terminal.innerText();
     return [...text.matchAll(/SIZE (\d+x\d+)/g)].map((m) => m[1]).pop() ?? "";
   };
-  // 画面の大きさに合わせた最終の大きさに落ち着くまで待つ（初期の 80x24 のままではない）
-  await expect.poll(lastSize, { timeout: 10000 }).not.toBe("80x24");
-  const before = await lastSize();
+  // 基準値: 端末が表示されてから、最後の SIZE が 2 秒間変わらなくなった値（pty 起動時の既定 120x30 は server/sessions.ts:11-12。
+  // 画面の大きさ合わせの resize が届く前の値を拾わない）。上限 20 秒で、落ち着かなければ失敗
+  const STABLE_MS = 2000;
+  const POLL_MS = 200;
+  const BASELINE_DEADLINE_MS = 20000;
+  const started = Date.now();
+  let before = await lastSize();
+  let stableSince = Date.now();
+  while (Date.now() - stableSince < STABLE_MS) {
+    if (Date.now() - started > BASELINE_DEADLINE_MS) throw new Error(`terminal size did not settle within ${BASELINE_DEADLINE_MS}ms (last: ${before})`);
+    await page.waitForTimeout(POLL_MS);
+    const now = await lastSize();
+    if (now !== before) {
+      before = now;
+      stableSince = Date.now();
+    }
+  }
   expect(before).not.toBe("");
 
   await page.getByRole("tab", { name: /変更/ }).click();
