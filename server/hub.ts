@@ -2,11 +2,13 @@ import type { WebSocket } from "ws";
 import { agentForSession, fetchAgents, inputVerdict, stateForSession, type AgentRow, type InputVerdict, type SessionState } from "./agents.ts";
 import type { Config } from "./config.ts";
 import { loadLedger, type LedgerSnapshot } from "./ledger.ts";
+import { ciOf as ciFromCounts, fetchPr, isSettled, resolveTarget, type CiState, type PrResponse, type PrTarget } from "./pr-status.ts";
 import { BreakTracker, breakBody, osascriptSender, type NotificationSender } from "./notify.ts";
 import { startPolling } from "./poll.ts";
 import { descendantPids, readProcessTable } from "./process-tree.ts";
 import type { RestoreNotice } from "./restore.ts";
-import { SessionConflictError, type SessionManager } from "./sessions.ts";
+import { SessionConflictError, SessionNotFoundError, type SessionManager } from "./sessions.ts";
+import { resolveWorkplace } from "./workplace.ts";
 
 export interface SessionView {
   id: string;
@@ -24,6 +26,8 @@ export interface SessionView {
   canInput: boolean;
   /** 名前の変更を予約中のとき、その名前（待機になったら自動で送る）。予約が無ければ項目ごと無い */
   pendingName?: string;
+  /** そのセッションのブランチの PR の検査の要約（PR が無い・検査が 0 件・まだ取れていないときは項目ごと無い） */
+  ci?: CiState;
 }
 
 /** 名前の変更の結果。queued は端末へ何も書かず予約した */
@@ -52,18 +56,27 @@ export class Hub {
   private readonly pendingRenames = new Map<string, string>();
   private restoreNotices: RestoreNotice[] = [];
   private readonly nameListeners = new Set<() => void>();
+  /** PR と検査の写し（(repo, branch) ごと）。メモリだけ。正本は GitHub */
+  private readonly prByKey = new Map<string, PrResponse>();
+  /** セッションが今どの (repo, branch) を見ているか。GitHub のリポジトリでない・ブランチにいないときは null */
+  private readonly prKeyOfSession = new Map<string, string | null>();
+  private readonly prInFlight = new Map<string, Promise<PrResponse>>();
+  private readonly ghTimeoutMs: number | undefined;
 
   constructor(
     private readonly config: Config,
     private readonly sessions: SessionManager,
     sendNotification?: NotificationSender | null,
+    options: { ghTimeoutMs?: number } = {},
   ) {
+    this.ghTimeoutMs = options.ghTimeoutMs;
     this.sendNotification = sendNotification !== undefined ? sendNotification : config.notify.macos ? osascriptSender(config.notify.osascriptBin) : null;
     sessions.onChange(() => void this.publish().catch((err) => this.onPollError("publish", err)));
     // 一覧から外したセッションの前回の status・未読は持ち続けない
     sessions.onRemoved((id) => {
       this.tracker.forget(id);
       this.pendingRenames.delete(id);
+      this.prKeyOfSession.delete(id);
     });
   }
 
@@ -75,6 +88,7 @@ export class Hub {
         this.config.ledgerPollMs,
         (err) => this.onPollError("ledger", err),
       ),
+      startPolling(() => this.pollPrs(), this.config.prPollMs, (err) => this.onPollError("pr", err)),
     );
   }
 
@@ -208,11 +222,91 @@ export class Hub {
     return this.ledger;
   }
 
+  /** 作業場所を照合して (repo, branch) を決める。外れたら 409（git も gh も実行しない）、無いセッションは 404。 */
+  private async locatePr(sessionId: string): Promise<{ dir: string; key: string | null; target?: PrTarget; immediate?: PrResponse }> {
+    const wp = await resolveWorkplace({ sessions: this.sessions, config: this.config }, sessionId);
+    const found = await resolveTarget(wp.dir);
+    if (found.kind === "immediate") {
+      this.prKeyOfSession.set(sessionId, null);
+      return { dir: wp.dir, key: null, immediate: found.response };
+    }
+    const key = `${found.target.repo}#${found.target.branch}`;
+    this.prKeyOfSession.set(sessionId, key);
+    return { dir: wp.dir, key, target: found.target };
+  }
+
+  /** メモリの写しを返すだけ（gh は呼ばない）。写しが無ければ loading。 */
+  async getPr(sessionId: string): Promise<PrResponse> {
+    const at = await this.locatePr(sessionId);
+    if (at.immediate) return at.immediate;
+    return this.prByKey.get(at.key as string) ?? { status: "loading" };
+  }
+
+  /** そのセッションの分だけ、すぐに取り直す。前回から prRefreshMinMs 以内なら取り直さず、今の結果を返す。 */
+  async refreshPr(sessionId: string): Promise<PrResponse> {
+    const at = await this.locatePr(sessionId);
+    if (at.immediate) return at.immediate;
+    const key = at.key as string;
+    const previous = this.prByKey.get(key);
+    if (!this.prInFlight.has(key) && previous?.fetchedAt !== undefined && Date.now() - previous.fetchedAt < this.config.prRefreshMinMs) return previous;
+    const result = await this.fetchPrOnce(key, at.target as PrTarget, at.dir);
+    await this.publish().catch((err) => this.onPollError("publish", err));
+    return result;
+  }
+
+  /** 同じ (repo, branch) の取得が同時に走るときは 1 本にまとめる（refreshLedger と同じ作法）。 */
+  private fetchPrOnce(key: string, target: PrTarget, dir: string): Promise<PrResponse> {
+    const running = this.prInFlight.get(key);
+    if (running) return running;
+    const run = fetchPr(target, { ghBin: this.config.ghBin, cwd: dir, timeoutMs: this.ghTimeoutMs })
+      .then((result) => {
+        this.prByKey.set(key, result);
+        return result;
+      })
+      .finally(() => this.prInFlight.delete(key));
+    this.prInFlight.set(key, run);
+    return run;
+  }
+
+  /**
+   * PR と検査の定期の取り直し（テストからも呼べる）。動いているセッションの作業場所を照合し、(repo, branch) ごとに 1 回だけ gh を呼ぶ。
+   * マージ済みかクローズで実行中の検査が無いものは取り直さない。利用の上限に当たったら、その回の残りはやめる。
+   */
+  async pollPrs(): Promise<void> {
+    const groups = new Map<string, { target: PrTarget; dir: string }>();
+    for (const s of this.sessions.list()) {
+      if (s.exited) continue;
+      try {
+        const at = await this.locatePr(s.id);
+        if (at.target && at.key !== null && !groups.has(at.key)) groups.set(at.key, { target: at.target, dir: at.dir });
+      } catch (err) {
+        // 作業場所が対象外（409）やセッションの消失は、この回は見ないだけ
+        this.prKeyOfSession.delete(s.id);
+        if (!(err instanceof SessionConflictError) && !(err instanceof SessionNotFoundError)) this.onPollError("pr", err);
+      }
+    }
+    for (const [key, group] of groups) {
+      const previous = this.prByKey.get(key);
+      if (previous && isSettled(previous)) continue;
+      const result = await this.fetchPrOnce(key, group.target, group.dir);
+      if (result.status === "rateLimited") break;
+    }
+    for (const key of [...this.prByKey.keys()]) if (!groups.has(key)) this.prByKey.delete(key);
+    await this.publish();
+  }
+
+  private ciOfSession(sessionId: string): CiState | undefined {
+    const key = this.prKeyOfSession.get(sessionId);
+    const cached = key === undefined || key === null ? undefined : this.prByKey.get(key);
+    return cached?.status === "ok" ? (ciFromCounts(cached.checks.counts) ?? undefined) : undefined;
+  }
+
   async snapshot(): Promise<Snapshot> {
     const table = await readProcessTable().catch(() => []);
     const views = this.sessions.list().map((s): SessionView => {
       const info = { exited: s.exited, pids: descendantPids(s.term.pid, table) };
       const agent = agentForSession(info, this.agents);
+      const ci = this.ciOfSession(s.id);
       return {
         id: s.id,
         // Claude 起動中は Claude 側の名前が正本。無ければアプリが付けた名前
@@ -226,6 +320,7 @@ export class Hub {
         hasClaude: agent !== undefined,
         canInput: inputVerdict(info, this.agents).ok,
         ...(this.pendingRenames.has(s.id) ? { pendingName: this.pendingRenames.get(s.id) } : {}),
+        ...(ci !== undefined ? { ci } : {}),
       };
     });
     const previous = this.lastNames;

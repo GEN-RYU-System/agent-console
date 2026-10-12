@@ -15,6 +15,9 @@
   "diffMaxFileBytes": 1048576,
   "diffSendMaxBytes": 16384,
   "pasteSubmitDelayMs": 2000,
+  "ghBin": "gh",
+  "prPollMs": 120000,
+  "prRefreshMinMs": 10000,
   "roles": [
     {
       "id": "opus-designer",
