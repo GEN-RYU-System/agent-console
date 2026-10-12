@@ -412,3 +412,24 @@ describe("AGENT_CONSOLE_RESTORE=off (self-diagnosis server must not touch the re
     await h.close();
   });
 });
+
+describe("routine dedicated sessions are excluded from open-sessions.json", () => {
+  let h: Harness;
+  beforeAll(async () => {
+    h = await startHarness({ recorder: true, closeGraceMs: CLOSE_GRACE_MS, extraRoles: EXTRA_ROLES });
+  });
+  afterAll(async () => {
+    await closeAllSessions(h);
+    await h.close();
+  });
+
+  it("records an ordinary session but not a routine session", async () => {
+    const role = h.config.roles.find((r) => r.id === "restorable") as RoleConfig;
+    const ordinary = await newSession(h, "restorable", "ordinary");
+    h.sessions.restore({ role, name: "routine", cwd: h.config.salesanchorRoot, branch: null, routineId: "r1" });
+    await h.recorder.sync();
+    const names = readList(h).items.map((i) => i.name);
+    expect(names).toEqual(["ordinary"]);
+    expect(h.sessions.get(ordinary)).toBeDefined();
+  });
+});

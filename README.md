@@ -2,6 +2,10 @@
 
 Local console for running parallel Claude Code sessions (Orca-inspired, lightweight).
 
+## v0.7.0 Routine tasks
+
+「定期実行」タブは、専用 Claude Code セッションに Asia/Tokyo の曜日・時刻で指示を一度だけ送ります。定義と実行履歴は `dataDir/routines.json` のみへ保存され、通常の復元リストには混ぜません。詳細は [routine design](docs/handoff/v0.7.0-routines/design.md) を参照してください。
+
 - 設計・調査・実装メモ: `docs/handoff/stage1/`（段階1）、`docs/handoff/stage1-5/`（段階1.5: 起動・版管理・セキュリティ）
 - 版の履歴: `docs/CHANGELOG.md`（版の正本は git タグ `vX.Y.Z`）
 - テスト: `npm test`（単体・統合）/ `npm run test:e2e`（要 `npm run build`）
