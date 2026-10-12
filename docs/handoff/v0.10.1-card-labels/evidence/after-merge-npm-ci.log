@@ -1,0 +1,12 @@
+npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+
+> agent-console@0.11.1 postinstall
+> node scripts/postinstall.mjs
+
+
+added 216 packages, and audited 217 packages in 11s
+
+107 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities

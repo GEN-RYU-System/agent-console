@@ -1,0 +1,75 @@
+
+> agent-console@0.11.1 test:e2e
+> playwright test
+
+[WebServer] agent-console: 警告: AGENT_CONSOLE_TOKEN で固定したトークンを使用中です（テスト用途のみ）
+[WebServer] activity: 記録の仕組みが外れています（noSettings）。README の手順で node scripts/ac-hooks.mjs install を実行してください
+
+Running 55 tests using 1 worker
+
+  ✓   1 [app] › tests/e2e/activity.spec.ts:57:1 › K1: セッションを選ぶ前は右の欄に「台帳」だけ。選ぶと「このセッション」が先に開く (2.0s)
+  ✓   2 [app] › tests/e2e/activity.spec.ts:101:1 › K8: 記録の仕組みが外れているとき（settings.json に handler が無い）は、案内を出す。足すと消える (5.8s)
+  ✓   3 [app] › tests/e2e/activity.spec.ts:117:1 › K2/K3/K7: 本物の hook に流した記録が、選んだセッションの分だけ、非エンジニアに分かる言葉で出る (3.2s)
+  ✓   4 [app] › tests/e2e/activity.spec.ts:168:1 › 実際の ~/.claude/settings.json は変わらない (1ms)
+  ✓   5 [app] › tests/e2e/chat.spec.ts:81:1 › K1: 最初に開くタブはチャット。端末は隠れた状態で開いていて、端末タブを押すと見える（大きさが見えたときに合う） (3.6s)
+  ✓   6 [app] › tests/e2e/chat.spec.ts:124:1 › K2/K3/K4: 本物の hook に流した記録が、右に自分・左に Claude の吹き出しで出る。包み・担当の報告の戻りは出ず、HTML は描画されない (1.1s)
+  ✓   7 [app] › tests/e2e/chat.spec.ts:208:1 › K2/K8: 新しいものが来たら一番下まで動く。上を読んでいるときは動かさない。64KiB を超える返事は切り詰めて「（以下略）」 (9.2s)
+  ✓   8 [app] › tests/e2e/chat.spec.ts:246:1 › K5/K6/K7: 入力欄から送る。Enter で送り、Shift+Enter は改行、変換中は送らない。作業中は押せず、確認の待ちでは端末タブへ移る。よく使う指示は入力欄に入る (15.7s)
+  ✓   9 [app] › tests/e2e/console.spec.ts:72:1 › K2: 新しいセッション -> ワークツリー作成 -> 役割コマンドが端末に出て入力できる (1.1s)
+  ✓  10 [app] › tests/e2e/console.spec.ts:86:1 › K2: 不正なブランチ名は作成されずエラーが画面に出る (669ms)
+  ✓  11 [app] › tests/e2e/console.spec.ts:97:1 › K3: タブを開き直しても同じセッションの直近出力が戻る (1.2s)
+  ✓  12 [app] › tests/e2e/console.spec.ts:109:1 › K1: 一覧の状態が claude agents --json の status と 5 秒以内に一致する (2.3s)
+  ✓  13 [app] › tests/e2e/console.spec.ts:120:1 › K4: 台帳ボードの件数が ledger-lookup.sh で引いた値と一致する (820ms)
+  ✓  14 [app] › tests/e2e/console.spec.ts:146:1 › 停止したセッションは「停止」と表示され、一覧から外せる (482ms)
+  ✓  15 [app] › tests/e2e/console.spec.ts:158:1 › 端末の文字間隔が正常（xterm の letter-spacing が 1px 未満） (646ms)
+  ✓  16 [app] › tests/e2e/console.spec.ts:168:1 › K8: 不正トークンは 401、不正 Origin の WebSocket は 403、待受は 127.0.0.1 のみ (135ms)
+K7 server_rss_mb=66.0 (limit 150) js_heap_used_mb=7.2 (limit 80)
+  ✓  17 [app] › tests/e2e/console.spec.ts:201:1 › K7: ダミーセッション 3 本で サーバー RSS <= 150MB かつ ブラウザ JS ヒープ <= 80MB (3.7s)
+  ✓  18 [app] › tests/e2e/console.spec.ts:224:1 › K5: テスト前後で ~/.claude/settings.json と ~/.claude.json のハッシュが変わらない (1ms)
+  ✓  19 [app] › tests/e2e/console.spec.ts:232:1 › フッターに Sales Anchor 展開元 SHA と claude --version が出る (266ms)
+  ✓  20 [app] › tests/e2e/console.spec.ts:244:1 › ペアリング: /pair?code で一覧が開き、URL に秘密もコードも残らず、トークンは sessionStorage のみ（Cookie 無し） (147ms)
+  ✓  21 [app] › tests/e2e/console.spec.ts:262:1 › ペアリング: 使用済みコードは案内画面（Callout）になり、トークンは保存されない (391ms)
+  ✓  22 [app] › tests/e2e/console.spec.ts:275:1 › 未ログインで開くとログインが必要の案内（Callout）が出る (148ms)
+  ✓  23 [app] › tests/e2e/console.spec.ts:280:1 › ログアウト: サーバー側でセッションが失効し、画面はログインが必要になる (833ms)
+  ✓  24 [app] › tests/e2e/console.spec.ts:290:1 › 別のタブ（別の sessionStorage）にはセッションが共有されない (365ms)
+  ✓  25 [app] › tests/e2e/console.spec.ts:297:1 › CSP: 画面・端末・モーダルの操作で CSP 違反が 1 件も出ない（応答にも CSP ヘッダがある） (1.1s)
+  ✓  26 [app] › tests/e2e/console.spec.ts:323:1 › /healthz は認証なしで ok を返す (3ms)
+  ✓  27 [app] › tests/e2e/console.spec.ts:332:1 › テーマ: フッターの切替で <html> が変わり、再読込でも保持され、端末の背景が --bg-surface のダーク値になる（Cookie は出さない） (1.4s)
+K1 heights(px): light/unread=62 light/unread=62 light/unread=62 light/unread=62 light/unread=62 light/unread=62 dark/unread=62 dark/unread=62 dark/unread=62 dark/unread=62 dark/unread=62 dark/unread=62
+  ✓  28 [app] › tests/e2e/console.spec.ts:454:1 › 段階2 K1: busy→idle で未読の印・窓タイトル・macOS 通知が出て、行を選ぶと未読が消える (4.4s)
+  ✓  29 [app] › tests/e2e/console.spec.ts:497:1 › 段階2 K2: 名前を変えると /rename が端末に送られ、Claude 側の名前が変われば表示も変わる。作業中は予約され、待機になってから送られる (6.3s)
+  ✓  30 [app] › tests/e2e/console.spec.ts:547:1 › 段階2 K2: /rename を送っても Claude 側の名前が 10 秒変わらなければ案内が出る (12.7s)
+  ✓  31 [app] › tests/e2e/console.spec.ts:560:1 › 段階2 K3: よく使う指示を登録・編集・削除でき、ボタン 1 回で選択中の端末に送られ、再読込後も残る（保存は 1 ファイル・権限 600） (9.8s)
+  ✓  32 [app] › tests/e2e/console.spec.ts:612:1 › v0.3.4 K4: 「↑」「↓」で指示を並べ替えると、編集画面と上部のボタン列が新しい順になり、保存ファイルの順も変わる (1.0s)
+  ✓  33 [app] › tests/e2e/console.spec.ts:636:1 › 段階2 K3: 複数行の指示は、括弧付き貼付モードの端末へ ESC[200~ ... ESC[201~ で包まれて入り、その直後に Enter が届く (1.1s)
+  ✓  34 [app] › tests/e2e/console.spec.ts:657:1 › 段階2 K3: 状態確認中に別のセッションへ切り替えると、どちらの端末にも入らず案内が出る (5.1s)
+  ✓  35 [app] › tests/e2e/console.spec.ts:691:1 › v0.3.3 K1-K4・K6: 過去の会話を再開は、本店の行と worktree の行を出し、押した場所で再開用の端末を開く (7.0s)
+  ✓  36 [app] › tests/e2e/console.spec.ts:731:1 › 段階2 K5: 台帳は既定で作業中・レビュー・WIP かつ直近 30 日だけを表示し、隠れた件数と日付不明を別に数え、絞り込みは再読込後も残る (7.2s)
+  ✓  37 [app] › tests/e2e/console.spec.ts:770:1 › 段階2 K6: メモリ画面にセッションごと・サーバー・Mac 全体が MB と % で出て、10 秒ごとに更新される（値は OS の実出力と一致） (25.3s)
+  ✓  38 [app] › tests/e2e/console.spec.ts:808:1 › v0.3.8 K1: 閉じるボタン -> 確認画面 -> 「やめる」では何も起きず、「閉じる」で行が消えて端末のプロセスも終わる (3.3s)
+v0.10.0 K1 measured: {"tabs":[{"height":"56px","fontSize":"24px"},{"height":"56px","fontSize":"24px"},{"height":"56px","fontSize":"24px"},{"height":"56px","fontSize":"24px"},{"height":"56px","fontSize":"24px"},{"height":"56px","fontSize":"24px"}],"badgeFont":"12px","rightHeight":"28px","rightFont":"12px"} font-2xl=24px font-xs=12px
+  ✓  39 [app] › tests/e2e/console.spec.ts:856:1 › v0.4.0 K1〜K6: 変更タブ -> 一覧と色つき diff -> 行コメントの追加・編集・削除 -> Claude に送る（貼って2秒待って Enter）-> 送信済み、作業中は押せず理由が見える (7.3s)
+  ✓  40 [app] › tests/e2e/console.spec.ts:950:1 › v0.4.0 K12: 変更タブを開いてから端末タブに戻っても、端末の列数と行数は変わらない（隠している間に 2x1 などが pty に送られない） (10.4s)
+  ✓  41 [app] › tests/e2e/console.spec.ts:1034:1 › v0.5.0 K1〜K6, K8: PR タブ -> PR・マージできるか・検査の集計と失敗の一覧 -> 一覧の CI の印 -> 更新で変わる -> PR なし・認証切れ (8.0s)
+  ✓  42 [app] › tests/e2e/console.spec.ts:1164:1 › v0.7.0 K1: 全角の句読点・括弧を含む行の描画が、端末の右端を越えない（text-spacing-trim: space-all） (5.6s)
+  ✓  43 [app] › tests/e2e/console.spec.ts:1176:1 › v0.7.0 K3: 端末の書体の並びに明朝が入っている。日本語は明朝、英数字と罫線は Menlo、※ は Monaco で描かれる (6.3s)
+  ✓  44 [app] › tests/e2e/console.spec.ts:1232:1 › v0.7.0 K4/K5/K6: 画像の貼り付け・ドロップで保存され、その絶対パスが端末に入る（Enter なし）。文字つきの貼り付け・画像以外のドロップでは保存されない (7.9s)
+  ✓  45 [app] › tests/e2e/console.spec.ts:1273:1 › v0.7.0 K6: 画像の受け口は認証の内側にある（認証なしは 401） (17ms)
+v0.10.0 K3 bar geometry: {"tops":[64],"wrap":"nowrap","overflowX":"auto","scrollable":true,"barHeight":45,"flex":["0"]}
+  ✓  46 [app] › tests/e2e/console.spec.ts:1291:1 › v0.10.0 K3・K4: よく使う指示のバーは1行で折り返さず、「よく使う指示」の一覧から使える。「常に表示」の切り替えがバーと保存ファイル（version 1 のまま）に反映され、Esc で閉じる (21.8s)
+v0.10.0 K5 line2 children: ["ac-session__role","state-badge"]
+K1 heights(px): light/read=62 dark/read=62
+  ✓  47 [app] › tests/e2e/console.spec.ts:1372:1 › v0.10.0 K5: 行の1段目は丸と名前だけ（状態の文字なし）、2段目は役割・状態の印の順。行の高さは64px以下のまま (3.0s)
+  ✓  48 [app] › tests/e2e/console.spec.ts:1393:1 › v0.10.0 K6・K7: 行をドラッグして離すと並び順が変わり（再読込後も同じ）、Alt+↑ と Alt+↓ でも1つずつ動く。ダブルクリックでの名前の変更は今までどおり (2.7s)
+ROW_HEIGHTS [62,62,62,62,62,62]
+  ✓  49 [app] › tests/e2e/shots-console.spec.ts:8:1 › shots: fake session list (1.6s)
+  ✓  50 [app] › tests/e2e/widthcheck-console.spec.ts:11:1 › width check (4.3s)
+  ✓  51 [picker] › tests/e2e/picker.spec.ts:108:1 › K10: 本番の起動がつくる dataDir/chrome-extension は、ポートの host 権限だけで、試験用の足し物が無く、合言葉は 600 (19ms)
+STEP0-C style: got=["font-family","font-size","font-weight","line-height","color","background-color","border","border-radius","padding","margin","display","gap","width","height"] empty=[] values={"font-family":"Georgia, serif","font-size":"20px","font-weight":"700","line-height":"30px","color":"rgb(10, 20, 30)","background-color":"rgb(250, 240, 200)","border":"3px solid rgb(1, 2, 3)","border-radius":"8px","padding":"10px 14px","margin":"6px","display":"inline-block","gap":"normal","width":"300px","height":"80px"}
+STEP0-C image: png=334x106 rect=334x106 dpr=1
+  ✓  52 [picker] › tests/e2e/picker.spec.ts:120:1 › K1・K2: ほかのサイトの部品を選ぶ。ページの偽のクリックでは選ばれず、本物のクリックで選ばれ、内容と切り抜き画像がアプリに届く。Esc でやめられる (5.1s)
+  ✓  53 [picker] › tests/e2e/picker.spec.ts:191:1 › K1: アプリの画面の部品も選べる。選んでいる間、そのクリックでアプリの操作は起きない (2.5s)
+  ✓  54 [picker] › tests/e2e/picker.spec.ts:207:1 › K3・K4・K5: 「部品」タブに画像と内容が並び、ひとことを書いて「Claude に送る」と、1つの依頼として端末に入り（括弧付きで貼って2秒待って Enter）、送信済みの印が付く (5.6s)
+  ✓  55 [picker] › tests/e2e/picker.spec.ts:266:1 › K7: Claude が作業中の間は送れず、理由が見える。削除で一覧から消える (2.2s)
+
+  55 passed (4.1m)

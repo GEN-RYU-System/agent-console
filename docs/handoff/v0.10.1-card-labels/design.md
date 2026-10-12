@@ -17,6 +17,8 @@ PO 原文（2026-10-12T17:38Z・17:39Z、本セッション）:
 - 未マージの作業は release/chat（agent-console-wt/chat）だけ。SessionList.tsx・StatusDot.tsx は触っていない。src/locales/ja.json と src/types.ts は触っている。
 
 ## 変更（v0.10.1）
+
+（追記）main が v0.11.0 に進んだため、この変更は 0.11.1 として出す（フォルダ名 v0.10.1-card-labels と本文中の「v0.10.1」はそのまま）。
 1. 状態の文言を、PO が見分けたい3つに合わせる（判定のしくみは変えない。公式の定義どおり）。
    - working: 「作業中」（変更なし）／ en "Working"
    - waiting: 「待ち」→「回答待ち」／ en "Waiting" → "Needs your reply"
