@@ -315,7 +315,8 @@ ac_diagnose() {
   umask 077
   cd "$dir" || return 1
   # 診断用の使い捨て秘密は環境変数で渡す（引数に出さない）。本番のキーチェーン秘密は使わない
-  AGENT_CONSOLE_TOKEN="$(ac_random_hex)" AGENT_CONSOLE_PORT="$AC_DIAG_PORT" AGENT_CONSOLE_AUTH="" \
+  # AGENT_CONSOLE_RESTORE=off: 本番と同じ dataDir を読むので、前回のセッションの復元と復元リストの書込をさせない
+  AGENT_CONSOLE_TOKEN="$(ac_random_hex)" AGENT_CONSOLE_PORT="$AC_DIAG_PORT" AGENT_CONSOLE_AUTH="" AGENT_CONSOLE_RESTORE=off \
     "$node_bin" dist-server/server/index.js >"$log_file" 2>&1 &
   diag_pid=$!
   cd "$old_pwd" || return 1

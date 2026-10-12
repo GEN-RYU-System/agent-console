@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { RoleConfig } from "../../server/config.ts";
 import { OPEN_SESSIONS_FILE } from "../../server/session-store.ts";
-import { restoreOnStartup, type RestoreNotice } from "../../server/restore.ts";
+import { isRestoreEnabled, restoreOnStartup, startOpenSessionRestore, type RestoreNotice } from "../../server/restore.ts";
 import { descendantPids, readProcessTable } from "../../server/process-tree.ts";
 import { startHarness, TOKEN, type Harness } from "./helpers/harness.ts";
 
@@ -346,3 +346,39 @@ describe("restore on startup (K4, K5, K6, K8)", () => {
 function realOs(): string {
   return mkdtempSync(path.join(os.tmpdir(), "ac-outside-"));
 }
+
+describe("AGENT_CONSOLE_RESTORE=off (self-diagnosis server must not touch the restore list)", () => {
+  it("is disabled only for the exact string off", () => {
+    expect(isRestoreEnabled({ AGENT_CONSOLE_RESTORE: "off" })).toBe(false);
+    for (const v of [undefined, "", "OFF", "0", "false", "on", " off"]) expect(isRestoreEnabled({ AGENT_CONSOLE_RESTORE: v })).toBe(true);
+    expect(isRestoreEnabled({})).toBe(true);
+  });
+
+  it("with off: never loads or saves the store, starts no session, and the recorder stays inactive", async () => {
+    const h = await startHarness({ closeGraceMs: 300 });
+    const load = vi.spyOn(h.store, "load");
+    const save = vi.spyOn(h.store, "save");
+    putFile(h, JSON.stringify({ version: 1, items: [{ roleId: "echo", name: "must-not-open", cwd: h.config.salesanchorRoot }] }));
+    const before = readFileSync(fileOf(h), "utf8");
+    const result = await startOpenSessionRestore({ AGENT_CONSOLE_RESTORE: "off" }, { config: h.config, sessions: h.sessions, hub: h.hub, store: h.store, recorder: h.recorder });
+    expect(result).toBeNull();
+    await newSession(h, "echo", "created-after");
+    await h.recorder.sync();
+    await sleep(200);
+    expect(load).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(h.sessions.list().map((s) => s.name)).toEqual(["created-after"]);
+    expect(readFileSync(fileOf(h), "utf8")).toBe(before);
+    await h.close();
+  });
+
+  it("without the variable: restores as usual (loads the store)", async () => {
+    const h = await startHarness({ closeGraceMs: 300 });
+    const load = vi.spyOn(h.store, "load");
+    putFile(h, JSON.stringify({ version: 1, items: [{ roleId: "echo", name: "reopened", cwd: h.config.salesanchorRoot }] }));
+    expect(await startOpenSessionRestore({}, { config: h.config, sessions: h.sessions, hub: h.hub, store: h.store, recorder: h.recorder })).toEqual([]);
+    expect(load).toHaveBeenCalled();
+    expect(h.sessions.list().map((s) => s.name)).toEqual(["reopened"]);
+    await h.close();
+  });
+});

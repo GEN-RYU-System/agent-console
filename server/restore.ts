@@ -150,3 +150,15 @@ export async function restoreOnStartup(deps: RestoreDeps): Promise<RestoreNotice
     await recorder.release();
   }
 }
+
+/** 自己診断用の一時サーバー（別ポート・本番と同じ dataDir）は AGENT_CONSOLE_RESTORE=off で起動し、復元と記録を一切しない。完全一致の "off" のときだけ無効。 */
+export const isRestoreEnabled = (env: Readonly<Record<string, string | undefined>>): boolean => env.AGENT_CONSOLE_RESTORE !== "off";
+
+/**
+ * 起動時の復元と記録をまとめて始める（index.ts から呼ぶ）。無効のときは復元リストを読み書きしない（null を返す）。
+ */
+export async function startOpenSessionRestore(env: Readonly<Record<string, string | undefined>>, deps: RestoreDeps): Promise<RestoreNotice[] | null> {
+  if (!isRestoreEnabled(env)) return null;
+  deps.recorder.start();
+  return restoreOnStartup(deps);
+}

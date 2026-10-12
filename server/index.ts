@@ -10,7 +10,7 @@ import { Hub } from "./hub.ts";
 import { createRequestHandler } from "./http.ts";
 import { MemoryCollector } from "./memory.ts";
 import { QuickPromptStore } from "./quick-prompts.ts";
-import { OpenSessionRecorder, restoreOnStartup } from "./restore.ts";
+import { OpenSessionRecorder, startOpenSessionRestore } from "./restore.ts";
 import { OpenSessionStore } from "./session-store.ts";
 import { resolveSecret } from "./secret.ts";
 import { SessionManager } from "./sessions.ts";
@@ -58,7 +58,6 @@ async function main(): Promise<void> {
   const hub = new Hub(config, sessions);
   const openSessions = new OpenSessionStore(config.dataDir);
   const recorder = new OpenSessionRecorder(sessions, hub, openSessions);
-  recorder.start();
   const meta = { saSource: await readSaSource(), claudeVersion: await fetchClaudeVersion(config.claudeBin), version: readVersion(), commit: await readCommit() };
 
   const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), memory: new MemoryCollector(), staticDir: path.join(process.cwd(), "dist"), meta }));
@@ -78,7 +77,7 @@ async function main(): Promise<void> {
       console.log(`agent-console: http://${LISTEN_HOST}:${config.port}/pair?code=${code}`);
     }
     // 前回開いていたセッションを開き直す（失敗してもサーバーは止めない）
-    void restoreOnStartup({ config, sessions, hub, store: openSessions, recorder }).catch((err) => console.error("restore failed:", err));
+    void startOpenSessionRestore(process.env, { config, sessions, hub, store: openSessions, recorder }).catch((err) => console.error("restore failed:", err));
   });
 
   const shutdown = (): void => {
