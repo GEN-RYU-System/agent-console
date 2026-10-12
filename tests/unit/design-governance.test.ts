@@ -199,15 +199,33 @@ describe("check-design-governance", () => {
       });
     });
 
-    describe("rejects color names, lengths and other values", () => {
+    describe("accepts lengths (px / rem) as --ac- values (K2)", () => {
+      it("56px", () => {
+        expect(run(tok("--ac-tab-h: 56px;")).status).toBe(0);
+      });
+      it("17px", () => {
+        expect(run(tok("--ac-gap: 17px;")).status).toBe(0);
+      });
+      it("1.5rem", () => {
+        expect(run(tok("--ac-gap: 1.5rem;")).status).toBe(0);
+      });
+    });
+
+    describe("rejects color names, unitless values, calc and other values", () => {
       it("case 1", () => {
         expect(run(tok("--ac-bg: red;")).status).toBe(1);
       });
       it("case 2", () => {
-        expect(run(tok("--ac-gap: 17px;")).status).toBe(1);
+        expect(run(tok("--ac-gap: calc(1px + 2px);")).status).toBe(1);
       });
       it("case 3", () => {
         expect(run(tok("--ac-gap: 0;")).status).toBe(1);
+      });
+      it("case 8", () => {
+        expect(run(tok("--ac-gap: 56px 12px;")).status).toBe(1);
+      });
+      it("case 9", () => {
+        expect(run(tok("--ac-gap: 56em;")).status).toBe(1);
       });
       it("case 4", () => {
         expect(run(tok("--ac-font-mono: red, monospace;")).status).toBe(1);

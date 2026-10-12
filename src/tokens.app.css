@@ -7,4 +7,6 @@
  */
 :root {
   --ac-font-mono: Menlo, Monaco, "Hiragino Mincho ProN", monospace;
+  /* 中央の上部タブの高さ。SA に 56px のタブ用トークンが無いための置き場（ConsolePage.css が var() で参照する）。 */
+  --ac-tab-h: 56px;
 }
