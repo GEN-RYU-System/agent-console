@@ -51,9 +51,13 @@ export function prepareE2eEnv(): void {
       `branch: ${branch}\n\n| ブランチ名 | 担当機能エリア | 開始日時 | 状態 | PR# | main | 備考 |\n|---|---|---|---|---|---|---|\n${row}`,
     );
   }
+  // 変更タブの試験用の追跡ファイル（基準に入れておき、試験が書き換えて削除行と追加行を作る）
+  writeFileSync(path.join(root, "e2e-diff-seed.txt"), "keep1\nold line\nkeep2\n");
   git(root, "init", "-q", "-b", "main");
   git(root, "-c", "user.name=e2e", "-c", "user.email=e2e@example.invalid", "add", "-A");
   git(root, "-c", "user.name=e2e", "-c", "user.email=e2e@example.invalid", "commit", "-q", "-m", "seed");
+  // 変更タブの基準（origin/main）。一時リポジトリには remote が無いので、参照だけ作る
+  git(root, "update-ref", "refs/remotes/origin/main", "HEAD");
 
   const statusFile = path.join(base, "agent-status");
   writeFileSync(statusFile, "busy");
@@ -74,6 +78,7 @@ export function prepareE2eEnv(): void {
 
   const roleScript = path.join(here, "role.mjs");
   const bracketedScript = path.join(here, "bracketed-role.mjs");
+  const sizeScript = path.join(here, "size-role.mjs");
   const marker = "agent-console-e2e-role";
   const config = {
     port: E2E_PORT,
@@ -107,6 +112,7 @@ export function prepareE2eEnv(): void {
         resumeCommand: ["/bin/sh", "-c", `echo RESUMED_MAIN id=[$AC_RESUME_ID]; exec "${process.execPath}" "${roleScript}" ${marker}`],
       },
       { id: "e2e-bracketed", labelKey: "role.shell", command: [process.execPath, bracketedScript, marker], needsWorktree: false },
+      { id: "e2e-size", labelKey: "role.shell", command: [process.execPath, sizeScript, marker], needsWorktree: false },
       { id: "e2e-short", labelKey: "role.shell", command: [process.execPath, "-e", "console.log('bye')", marker], needsWorktree: false },
     ],
   };

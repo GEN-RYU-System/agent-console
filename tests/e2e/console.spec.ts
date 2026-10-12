@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -41,6 +41,8 @@ const SHOT_DIR = process.env.AC_SHOT_DIR;
 const MAX_SERVER_RSS_MB = 150;
 const MAX_JS_HEAP_MB = 80;
 const STATE_DEADLINE_MS = 5000;
+/** 機械が混んでいても状態の判定（claude agents の取得）が間に合うよう、v0.4.0 の試験だけ長く待つ */
+const SLOW_STATE_DEADLINE_MS = 20000;
 
 function sha256OrNull(file: string): string | null {
   return existsSync(file) ? createHash("sha256").update(readFileSync(file)).digest("hex") : null;
@@ -783,4 +785,150 @@ test("v0.3.8 K1: 閉じるボタン -> 確認画面 -> 「やめる」では何�
   const state = await fetch(`${BASE}/api/state`, { headers: BEARER });
   const sessions = ((await state.json()) as { sessions: Array<{ id: string }> }).sessions;
   expect(sessions.some((s) => s.id === id)).toBe(false);
+});
+
+/** セッション数の上限（16）に空きが無ければ、先頭から閉じて need 件の枠を作る。 */
+async function ensureRoom(need: number): Promise<void> {
+  const { sessions } = (await (await fetch(`${BASE}/api/state`, { headers: BEARER })).json()) as { sessions: Array<{ id: string }> };
+  const surplus = sessions.length + need - 16;
+  for (const s of sessions.slice(0, Math.max(0, surplus))) await fetch(`${BASE}/api/sessions/${s.id}/close`, { method: "POST", headers: BEARER });
+}
+
+const gitRoot = (...args: string[]): void => void execFileSync("git", args, { cwd: ROOT, stdio: "ignore" });
+const SEED_FILE = path.join(ROOT, "e2e-diff-seed.txt");
+const DIFF_DIR = path.join(ROOT, "e2e-diff");
+
+/** 変更タブの試験用の変更を作る: 追跡ファイルの書き換え（削除行＋追加行）、ステージ済みの新規、未追加。後で必ず戻す。 */
+function makeChanges(): void {
+  writeFileSync(SEED_FILE, "keep1\nnew line\nkeep2\n");
+  mkdirSync(DIFF_DIR, { recursive: true });
+  writeFileSync(path.join(DIFF_DIR, "staged.txt"), "s1\ns2\ns3\n");
+  gitRoot("add", "e2e-diff/staged.txt");
+  writeFileSync(path.join(DIFF_DIR, "untracked.txt"), "u\n");
+}
+function restoreChanges(): void {
+  gitRoot("rm", "-f", "-q", "--cached", "--ignore-unmatch", "e2e-diff/staged.txt");
+  gitRoot("checkout", "--", "e2e-diff-seed.txt");
+  rmSync(DIFF_DIR, { recursive: true, force: true });
+}
+
+test("v0.4.0 K1〜K6: 変更タブ -> 一覧と色つき diff -> 行コメントの追加・編集・削除 -> Claude に送る（貼って2秒待って Enter）-> 送信済み、作業中は押せず理由が見える", async ({ page }) => {
+  test.setTimeout(90000);
+  page.setDefaultTimeout(15000);
+  await ensureRoom(1);
+  const id = await apiCreate("diff-target", "e2e-bracketed");
+  writeFileSync(STATUS_FILE, "idle");
+  makeChanges();
+  try {
+    await openPaired(page);
+    await rowOf(page, id).click();
+    await expect(page.getByTestId("terminal")).toContainText("READY");
+    await expect(rowOf(page, id).getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: SLOW_STATE_DEADLINE_MS });
+
+    // K1: 件数つきのタブと、変わったファイルの一覧（未追加は「新しいファイル（未追加）」）
+    const changesTab = page.getByRole("tab", { name: /変更/ });
+    await changesTab.click();
+    const pane = page.getByTestId("diff-pane");
+    await expect(pane).toBeVisible();
+    await expect(pane.getByRole("button", { name: /e2e-diff\/staged\.txt/ })).toContainText("+3");
+    await expect(pane.getByRole("button", { name: /e2e-diff\/untracked\.txt/ })).toContainText("新しいファイル（未追加）");
+    await expect(pane.getByRole("button", { name: /e2e-diff-seed\.txt/ })).toBeVisible();
+    // タブの件数は一覧の行数と同じ（他の試験が残した変更があっても、数はずれない）
+    const rows = await pane.getByRole("navigation", { name: "変更されたファイル" }).getByRole("button").count();
+    expect(rows).toBeGreaterThanOrEqual(3);
+    await expect(changesTab).toContainText(String(rows));
+    await expect(pane).toContainText("origin/main");
+
+    // K2: 行番号つきの diff。追加行は success、削除行は error の背景（SA のトークン。透明ではない）
+    await pane.getByRole("button", { name: /e2e-diff-seed\.txt/ }).click();
+    const added = pane.getByTestId("diff-line-add").first();
+    const deleted = pane.getByTestId("diff-line-del").first();
+    await expect(added).toContainText("new line");
+    await expect(deleted).toContainText("old line");
+    const bg = (el: typeof added) => el.evaluate((node) => getComputedStyle((node.parentElement as HTMLElement)).backgroundColor);
+    const addBg = await bg(added);
+    const delBg = await bg(deleted);
+    expect(addBg).not.toBe("rgba(0, 0, 0, 0)");
+    expect(delBg).not.toBe("rgba(0, 0, 0, 0)");
+    expect(addBg).not.toBe(delBg);
+    expect(await bg(pane.getByTestId("diff-line-ctx").first())).toBe("rgba(0, 0, 0, 0)");
+
+    // K3: 追加行を押して書き、保存 -> 印がつく。編集 -> 削除
+    await added.click();
+    await pane.getByLabel("コメント").fill("ここを直してください");
+    await pane.getByRole("button", { name: "保存", exact: true }).click();
+    const box = pane.getByTestId("diff-comment");
+    await expect(box).toContainText("ここを直してください");
+    await expect(box).toContainText("2 行目（新しい側）");
+    await box.getByRole("button", { name: "編集", exact: true }).click();
+    await pane.getByLabel("コメント").fill("ここに close も入れてください");
+    await pane.getByRole("button", { name: "保存", exact: true }).click();
+    await expect(pane.getByTestId("diff-comment")).toContainText("close も入れてください");
+    await pane.getByTestId("diff-comment").getByRole("button", { name: "削除", exact: true }).click();
+    await expect(pane.getByTestId("diff-comment")).toHaveCount(0);
+    await added.click();
+    await pane.getByLabel("コメント").fill("ここに close も入れてください");
+    await pane.getByRole("button", { name: "保存", exact: true }).click();
+    await expect(pane.getByTestId("diff-comment")).toHaveCount(1);
+
+    // K5: 「Claude に送る（1件）」-> 端末に括弧付きで貼られ、その後に Enter。送信済みの印がつく
+    const send = pane.getByRole("button", { name: /Claude に送る/ });
+    await expect(send).toContainText("1件");
+    await expect(send).toBeEnabled();
+    await send.click();
+    await page.getByRole("tab", { name: /端末/ }).click();
+    const terminal = page.getByTestId("terminal");
+    await expect(terminal).toContainText('ALL:"\\u001b[200~差分へのレビューコメントです。');
+    await expect(terminal).toContainText("File: e2e-diff-seed.txt");
+    await expect(terminal).toContainText("Comment: ここに close も入れてください");
+    // 閉じ括弧のすぐ後に Enter（待ち時間のあと）。間に他の入力は無い
+    await expect(terminal).toContainText('\\u001b[201~\\r"', { timeout: 10000 });
+    await changesTab.click();
+    await expect(pane.getByTestId("diff-comment")).toContainText("送信済み");
+    await expect(pane.getByText("送るコメントがありません")).toBeVisible();
+
+    // K6: Claude が作業中の間は押せず、理由が（マウスを乗せなくても）見える
+    await pane.getByTestId("diff-line-add").first().click();
+    await pane.getByLabel("コメント").fill("二つ目");
+    await pane.getByRole("button", { name: "保存", exact: true }).click();
+    await expect(pane.getByTestId("diff-comment")).toHaveCount(2);
+    writeFileSync(STATUS_FILE, "busy");
+    await expect(rowOf(page, id).getByTestId("status")).toHaveAttribute("data-state", "working", { timeout: SLOW_STATE_DEADLINE_MS });
+    await expect(send).toBeDisabled();
+    await expect(pane.getByTestId("send-reason")).toBeVisible();
+    await expect(pane.getByTestId("send-reason")).toHaveText("Claude が作業中のため送れません");
+  } finally {
+    writeFileSync(STATUS_FILE, "idle");
+    const list = (await (await fetch(`${BASE}/api/sessions/${id}/diff-comments`, { headers: BEARER })).json()) as { items?: Array<{ id: string }> };
+    for (const c of list.items ?? []) await fetch(`${BASE}/api/sessions/${id}/diff-comments/${c.id}`, { method: "DELETE", headers: BEARER });
+    restoreChanges();
+  }
+});
+
+test("v0.4.0 K12: 変更タブを開いてから端末タブに戻っても、端末の列数と行数は変わらない（隠している間に 2x1 などが pty に送られない）", async ({ page }) => {
+  await ensureRoom(1);
+  const id = await apiCreate("size-target", "e2e-size");
+  await openPaired(page);
+  await rowOf(page, id).click();
+  const terminal = page.getByTestId("terminal");
+  await expect(terminal).toContainText("SIZE");
+  const lastSize = async (): Promise<string> => {
+    const text = await terminal.innerText();
+    return [...text.matchAll(/SIZE (\d+x\d+)/g)].map((m) => m[1]).pop() ?? "";
+  };
+  // 画面の大きさに合わせた最終の大きさに落ち着くまで待つ（初期の 80x24 のままではない）
+  await expect.poll(lastSize, { timeout: 10000 }).not.toBe("80x24");
+  const before = await lastSize();
+  expect(before).not.toBe("");
+
+  await page.getByRole("tab", { name: /変更/ }).click();
+  await expect(page.getByTestId("diff-pane")).toBeVisible();
+  // 端末の包みは hidden 属性で隠れているだけ（外れていない）
+  await expect(terminal).toBeHidden();
+  await page.waitForTimeout(1500);
+  await page.getByRole("tab", { name: /端末/ }).click();
+  await expect(terminal).toBeVisible();
+  await page.waitForTimeout(1500);
+  expect(await lastSize()).toBe(before);
+  expect(await terminal.innerText()).not.toMatch(/SIZE 2x1\b/);
 });
