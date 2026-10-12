@@ -27,6 +27,7 @@ import {
 import { DiffPane } from "../components/DiffPane/DiffPane";
 import { LedgerBoard } from "../components/LedgerBoard/LedgerBoard";
 import { MemoryPanel } from "../components/MemoryPanel/MemoryPanel";
+import { PrPane } from "../components/PrPane/PrPane";
 import { NewSessionForm, type NewSessionValues } from "../components/NewSessionForm/NewSessionForm";
 import { ResumePicker } from "../components/ResumePicker/ResumePicker";
 import { QuickPromptBar } from "../components/QuickPrompts/QuickPromptBar";
@@ -42,7 +43,7 @@ const LEDGER_POLL_MS = 60000;
 const RECONNECT_MS = 1000;
 const RENAME_CONFIRM_MS = 10000;
 
-type CenterTab = "terminal" | "changes";
+type CenterTab = "terminal" | "changes" | "pr";
 
 function useConsoleState() {
   const [state, setState] = useState<ConsoleState | null>(null);
@@ -331,6 +332,7 @@ export function ConsolePage() {
           items={[
             { key: "terminal", label: t("ac.tabs.terminal") },
             { key: "changes", label: t("ac.tabs.changes"), ...(activeId !== null && diffCount !== null ? { count: diffCount } : {}) },
+            { key: "pr", label: t("ac.tabs.pr") },
           ]}
         />
         {centerTab === "terminal" && (
@@ -362,6 +364,7 @@ export function ConsolePage() {
         ) : (
           centerTab === "changes" && <EmptyState title={t("ac.selectSession")} />
         )}
+        {activeId ? <PrPane sessionId={activeId} active={centerTab === "pr"} /> : centerTab === "pr" && <EmptyState title={t("ac.selectSession")} />}
       </main>
       <aside className="ac-page__right">
         <LedgerBoard snapshot={ledger} onRefresh={handleRefresh} />

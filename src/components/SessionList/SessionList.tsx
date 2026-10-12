@@ -8,6 +8,12 @@ import type { RoleView, SessionView } from "../../types";
 import { StatusDot } from "../StatusDot/StatusDot";
 import "./SessionList.css";
 
+const CI_BADGES = {
+  fail: { variant: "danger", labelKey: "ac.ci.fail" },
+  pending: { variant: "info", labelKey: "ac.ci.pending" },
+  pass: { variant: "success", labelKey: "ac.ci.pass" },
+} as const;
+
 interface Props {
   sessions: SessionView[];
   roles: RoleView[];
@@ -52,6 +58,13 @@ export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, o
             <span className="ac-session__line" data-testid="session-line-1">
               <StatusDot state={s.state} />
               <span className="ac-session__name" data-testid="session-name">{s.name}</span>
+              {s.ci !== undefined && (
+                <span data-testid="ci-badge" data-ci={s.ci}>
+                  <Badge variant={CI_BADGES[s.ci].variant} size="sm">
+                    {t(CI_BADGES[s.ci].labelKey)}
+                  </Badge>
+                </span>
+              )}
               {s.unread > 0 && (
                 <span data-testid="unread-badge">
                   <Badge variant="info" appearance="solid" size="sm">

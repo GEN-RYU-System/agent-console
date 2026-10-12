@@ -1,4 +1,4 @@
-import type { ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, QuickPrompt, ResumeTarget } from "./types";
+import type { ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PrResponse, QuickPrompt, ResumeTarget } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -89,6 +89,10 @@ export const checkDiffCommentsSend = (sessionId: string): Promise<{ text: string
 /** 貼り付けが成功したあとに、送ったコメントを送信済みにする。 */
 export const markDiffCommentsSent = (sessionId: string, ids: string[]): Promise<{ marked: boolean }> =>
   request(`${diffBase(sessionId)}/diff-comments/mark-sent`, { method: "POST", body: JSON.stringify({ ids }) });
+/** 保存済みの写しを返す（GitHub は呼ばない）。 */
+export const fetchPr = (sessionId: string): Promise<PrResponse> => request(`${diffBase(sessionId)}/pr`);
+/** そのセッションの分をすぐ取り直す（前回から短い間隔以内なら、今の結果が返る）。 */
+export const refreshPr = (sessionId: string): Promise<PrResponse> => request(`${diffBase(sessionId)}/pr/refresh`, { method: "POST", body: JSON.stringify({}) });
 export const fetchMemory = (): Promise<MemorySnapshot> => request("/api/memory");
 
 /** ペアリングコードを引換えてセッショントークンを得る（認証前の API）。 */

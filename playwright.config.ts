@@ -28,6 +28,8 @@ export default defineConfig({
       STUB_NAME_FILE: process.env.AC_E2E_NAME_FILE as string,
       STUB_SLOW_FILE: process.env.AC_E2E_SLOW_FILE as string,
       STUB_OSASCRIPT_LOG: process.env.AC_E2E_OSASCRIPT_LOG as string,
+      STUB_GH_DIR: process.env.AC_E2E_GH_DIR as string,
+      STUB_GH_LOG: process.env.AC_E2E_GH_LOG as string,
     },
   },
 });
