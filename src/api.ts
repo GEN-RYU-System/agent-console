@@ -55,6 +55,8 @@ export const createSession = (input: { name: string; roleId: string; branch?: st
 export const markRead = (id: string): Promise<{ read: boolean }> => request(`/api/sessions/${encodeURIComponent(id)}/read`, { method: "POST" });
 export const renameSession = (id: string, name: string): Promise<{ mode: "claude" | "app" | "queued" }> =>
   request(`/api/sessions/${encodeURIComponent(id)}/rename`, { method: "POST", body: JSON.stringify({ name }) });
+/** 動いているセッションを閉じる（止まっているものは一覧から外す）。確認は画面側で行ってから呼ぶ。 */
+export const closeSession = (id: string): Promise<{ closed: boolean }> => request(`/api/sessions/${encodeURIComponent(id)}/close`, { method: "POST" });
 export const fetchQuickPrompts = (): Promise<{ items: QuickPrompt[] }> => request("/api/quick-prompts");
 export const createQuickPrompt = (input: { label: string; text: string }): Promise<QuickPrompt> =>
   request("/api/quick-prompts", { method: "POST", body: JSON.stringify(input) });

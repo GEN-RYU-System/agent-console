@@ -47,6 +47,30 @@ describe("parseConfig", () => {
     expect(shipped.roles.find((r) => r.id === "sonnet-impl")?.resumeCommand).toEqual(["/bin/zsh", "-ic", "claude --model sonnet --resume"]);
   });
 
+  it("accepts restoreCommand, and rejects an empty or non-string one", () => {
+    const role = { ...valid.roles[0], restoreCommand: ["/bin/zsh", "-ic", "x"] };
+    expect(parseConfig({ ...valid, roles: [role] }).roles[0].restoreCommand).toEqual(["/bin/zsh", "-ic", "x"]);
+    expect(parseConfig(valid).roles[0].restoreCommand).toBeUndefined();
+    expect(() => parseConfig({ ...valid, roles: [{ ...valid.roles[0], restoreCommand: [] }] })).toThrow(/restoreCommand/);
+    expect(() => parseConfig({ ...valid, roles: [{ ...valid.roles[0], restoreCommand: [1] }] })).toThrow(/restoreCommand/);
+  });
+
+  it("restoreStaggerMs defaults to 3000, accepts 0, and rejects negatives and non-numbers", () => {
+    expect(parseConfig(valid).restoreStaggerMs).toBe(3000);
+    expect(parseConfig({ ...valid, restoreStaggerMs: 0 }).restoreStaggerMs).toBe(0);
+    expect(parseConfig({ ...valid, restoreStaggerMs: 1500 }).restoreStaggerMs).toBe(1500);
+    expect(() => parseConfig({ ...valid, restoreStaggerMs: -1 })).toThrow(/restoreStaggerMs/);
+    expect(() => parseConfig({ ...valid, restoreStaggerMs: "3000" })).toThrow(/restoreStaggerMs/);
+  });
+
+  it("the shipped config passes the id as AC_RESUME_ID (quoted, never concatenated) for Opus and Sonnet, none for the shell, with a 3000 ms interval", () => {
+    const shipped = parseConfig(JSON.parse(readFileSync("agent-console.config.json", "utf8")));
+    expect(shipped.restoreStaggerMs).toBe(3000);
+    expect(shipped.roles.find((r) => r.id === "opus-designer")?.restoreCommand).toEqual(["/bin/zsh", "-ic", 'ccopusgo --resume "$AC_RESUME_ID"']);
+    expect(shipped.roles.find((r) => r.id === "sonnet-impl")?.restoreCommand).toEqual(["/bin/zsh", "-ic", 'claude --model sonnet --resume "$AC_RESUME_ID"']);
+    expect(shipped.roles.find((r) => r.id === "shell")?.restoreCommand).toBeUndefined();
+  });
+
   it("rejects a bad resumeScope, a resumeScope without resumeCommand, and two roles with the same scope", () => {
     const role = { ...valid.roles[0], resumeCommand: ["/bin/zsh", "-ic", "x"] };
     expect(() => parseConfig({ ...valid, roles: [{ ...role, resumeScope: "other" }] })).toThrow(/resumeScope/);

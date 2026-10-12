@@ -45,6 +45,23 @@
     "ledgerErrorTitle": "台帳を読めません",
     "ledgerErrorBody": "{{count}} 件で台帳の取得に失敗しました。最初のエラー: {{first}}",
     "removeError": "一覧から外せませんでした",
+    "close": {
+      "open": "セッションを閉じる",
+      "title": "セッションを閉じる",
+      "body": "{{name}} を閉じますか？ 動いている作業は止まります。会話は「過去の会話を再開」から戻せます。",
+      "confirm": "閉じる",
+      "cancel": "やめる",
+      "error": "閉じられませんでした"
+    },
+    "restoreNotice": {
+      "title": "前回のセッションを開き直せませんでした",
+      "dismiss": "案内を閉じる",
+      "missingCwd": "開き直せなかったセッション：{{name}}（作業場所がありません）",
+      "unknownRole": "開き直せなかったセッション：{{name}}（役割が設定にありません）",
+      "startFailed": "開き直せなかったセッション：{{name}}（起動に失敗しました）",
+      "overLimit": "開き直せなかったセッション：{{name}}（セッション数の上限を超えます）",
+      "unreadable": "復元リストを読めませんでした"
+    },
     "pairing": {
       "failedTitle": "ペアリングできませんでした",
       "failedBody": "コードが無効・使用済み・期限切れです。Dock の Agent Console アプリからもう一度開いてください。"

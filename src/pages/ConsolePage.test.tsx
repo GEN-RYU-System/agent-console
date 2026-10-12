@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "../i18n";
 import type { ConsoleState } from "../types";
@@ -7,6 +7,7 @@ import type { ConsoleState } from "../types";
 const state: ConsoleState = {
   sessions: [{ id: "s1", name: "dead", roleId: "shell", branch: null, cwd: "/", state: "stopped", createdAt: 1, unread: 0, hasClaude: false, canInput: false }],
   agentsAvailable: true,
+  restoreNotices: [],
   roles: [{ id: "shell", labelKey: "role.shell", needsWorktree: false }],
   saSource: "abcdef0123456789",
   claudeVersion: "1.0.0",
@@ -24,6 +25,7 @@ const fetchQuickPrompts = vi.fn();
 const renameSession = vi.fn();
 const fetchResumeTargets = vi.fn();
 const resumeSession = vi.fn();
+const closeSession = vi.fn();
 
 vi.mock("../api", () => ({
   ApiError: class extends Error {
@@ -47,6 +49,7 @@ vi.mock("../api", () => ({
   renameSession: (id: string, name: string) => renameSession(id, name),
   fetchResumeTargets: () => fetchResumeTargets(),
   resumeSession: (t: { kind: string; path: string }) => resumeSession(t),
+  closeSession: (id: string) => closeSession(id),
   fetchMemory: vi.fn(async () => ({ sessions: [], serverRssMb: 1, system: null })),
   openSocket: () => new FakeWebSocket(),
 }));
@@ -97,6 +100,8 @@ beforeEach(() => {
   fetchResumeTargets.mockReset();
   fetchResumeTargets.mockResolvedValue({ items: [{ kind: "worktree", path: "/wt/release-a", branch: "release/a", roleId: "sonnet-impl" }] });
   resumeSession.mockReset();
+  closeSession.mockReset();
+  closeSession.mockResolvedValue({ closed: true });
   resumeSession.mockResolvedValue({ id: "s1" });
   fetchQuickPrompts.mockReset();
   fetchQuickPrompts.mockResolvedValue({ items: [{ id: "p1", label: "テスト実行", text: "run tests" }] });
@@ -123,6 +128,73 @@ describe("ConsolePage removing a stopped session", () => {
     await screen.findByRole("alert");
     fireEvent.click(screen.getByRole("button", { name: "一覧から外す" }));
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+});
+
+// 確認画面の「閉じる」（danger）。Modal 自身の右上の × も同じ名前なので、danger の方を選ぶ
+const confirmButton = async (): Promise<HTMLElement> => {
+  const buttons = within(await screen.findByRole("dialog")).getAllByRole("button", { name: "閉じる" });
+  return buttons.find((b) => b.className.includes("comp-btn--danger")) as HTMLElement;
+};
+
+describe("ConsolePage closing a running session (K1 screen side)", () => {
+  const running = { ...state.sessions[0], name: "busy-one", state: "working" as const, hasClaude: true };
+
+  it("asks for confirmation first and does nothing when やめる is chosen", async () => {
+    fetchState.mockResolvedValue({ ...state, sessions: [running] });
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByRole("button", { name: "セッションを閉じる" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("busy-one を閉じますか？");
+    expect(dialog.textContent).toContain("会話は「過去の会話を再開」から戻せます");
+    expect(closeSession).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "やめる" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(closeSession).not.toHaveBeenCalled();
+  });
+
+  it("closes the session when 閉じる is confirmed", async () => {
+    fetchState.mockResolvedValue({ ...state, sessions: [running] });
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByRole("button", { name: "セッションを閉じる" }));
+    fireEvent.click(await confirmButton());
+    await waitFor(() => expect(closeSession).toHaveBeenCalledWith("s1"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("shows an error callout when closing fails", async () => {
+    closeSession.mockRejectedValue(new Error("session did not stop"));
+    fetchState.mockResolvedValue({ ...state, sessions: [running] });
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByRole("button", { name: "セッションを閉じる" }));
+    fireEvent.click(await confirmButton());
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("閉じられませんでした");
+    expect(alert.textContent).toContain("session did not stop");
+  });
+});
+
+describe("ConsolePage restore notices (K5, K8 screen side)", () => {
+  it("shows what could not be reopened once, and hides it after it is dismissed", async () => {
+    fetchState.mockResolvedValue({
+      ...state,
+      restoreNotices: [
+        { reason: "missingCwd", name: "old-work" },
+        { reason: "unreadable" },
+      ],
+    });
+    render(<ConsolePage />);
+    const box = await screen.findByTestId("restore-notices");
+    expect(box.textContent).toContain("開き直せなかったセッション：old-work（作業場所がありません）");
+    expect(box.textContent).toContain("復元リストを読めませんでした");
+    fireEvent.click(screen.getByRole("button", { name: "案内を閉じる" }));
+    await waitFor(() => expect(screen.queryByTestId("restore-notices")).toBeNull());
+  });
+
+  it("shows nothing when everything was reopened", async () => {
+    render(<ConsolePage />);
+    await screen.findAllByTestId("session-row");
+    expect(screen.queryByTestId("restore-notices")).toBeNull();
   });
 });
 

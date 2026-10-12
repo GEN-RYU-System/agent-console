@@ -15,9 +15,11 @@ interface Props {
   onSelect: (id: string) => void;
   onRemove: (id: string) => void;
   onRename: (id: string) => void;
+  /** 動いているセッションを閉じる（確認画面は呼び出し側） */
+  onClose: (id: string) => void;
 }
 
-export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, onRename }: Props) {
+export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, onRename, onClose }: Props) {
   const { t } = useTranslation();
   if (sessions.length === 0) {
     return <EmptyState size="compact" title={t("ac.noSessions")} description={t("ac.noSessionsHint")} />;
@@ -78,6 +80,19 @@ export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, o
               onClick={() => onRename(s.id)}
             >
               <Pencil size={14} aria-hidden="true" />
+            </Button>
+          )}
+          {s.state !== "stopped" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              aria-label={t("ac.close.open")}
+              title={t("ac.close.open")}
+              data-testid="close-session"
+              onClick={() => onClose(s.id)}
+            >
+              <X size={14} aria-hidden="true" />
             </Button>
           )}
           {s.state === "stopped" && (

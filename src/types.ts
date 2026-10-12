@@ -22,9 +22,16 @@ export interface RoleView {
   needsWorktree: boolean;
 }
 
+/** 起動時に前回のセッションを開き直せなかった理由（文言は画面の i18n）。name は保存してあった名前 */
+export interface RestoreNotice {
+  reason: "missingCwd" | "unknownRole" | "startFailed" | "overLimit" | "unreadable";
+  name?: string;
+}
+
 export interface ConsoleState {
   sessions: SessionView[];
   agentsAvailable: boolean;
+  restoreNotices: RestoreNotice[];
   roles: RoleView[];
   saSource: string;
   claudeVersion: string;

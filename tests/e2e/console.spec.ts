@@ -553,7 +553,8 @@ test("段階2 K3: よく使う指示を登録・編集・削除でき、ボタ�
   await expect(page.getByTestId("terminal")).toContainText("echo-quick-prompt-v2");
 
   const file = path.join(DATA_DIR, "quick-prompts.json");
-  expect(readdirSync(DATA_DIR)).toEqual(["quick-prompts.json"]);
+  // 保存先は 2 ファイルだけ（よく使う指示と、v0.3.8 の復元リスト）
+  expect(readdirSync(DATA_DIR).sort()).toEqual(["open-sessions.json", "quick-prompts.json"]);
   expect(statSync(file).mode & 0o777).toBe(0o600);
   await page.reload();
   await expect(page.getByTestId("quick-prompt-bar").getByRole("button", { name: "テスト実行", exact: true })).toBeVisible();
@@ -759,4 +760,27 @@ test("段階2 K6: メモリ画面にセッションごと・サーバー・Mac �
   const second = await page.waitForResponse((r) => r.url().endsWith("/api/memory"), { timeout: 15000 });
   expect(first.status()).toBe(200);
   expect(second.status()).toBe(200);
+});
+
+test("v0.3.8 K1: 閉じるボタン -> 確認画面 -> 「やめる」では何も起きず、「閉じる」で行が消えて端末のプロセスも終わる", async ({ page }) => {
+  // これまでの試験でセッション数の上限（16）に達しているので、先頭の1件を閉じて枠を空ける
+  const before = (await (await fetch(`${BASE}/api/state`, { headers: BEARER })).json()) as { sessions: Array<{ id: string }> };
+  if (before.sessions.length >= 16) expect((await fetch(`${BASE}/api/sessions/${before.sessions[0].id}/close`, { method: "POST", headers: BEARER })).status).toBe(200);
+  const id = await apiCreate("close-target", "e2e-plain");
+  await openPaired(page);
+  const row = rowOf(page, id);
+  await expect(row).toBeVisible();
+  await row.getByRole("button", { name: "セッションを閉じる", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("close-target を閉じますか？");
+  await dialog.getByRole("button", { name: "やめる", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(row).toBeVisible();
+
+  await row.getByRole("button", { name: "セッションを閉じる", exact: true }).click();
+  await page.getByRole("dialog").locator("button.comp-btn--danger").click();
+  await expect(row).toHaveCount(0);
+  const state = await fetch(`${BASE}/api/state`, { headers: BEARER });
+  const sessions = ((await state.json()) as { sessions: Array<{ id: string }> }).sessions;
+  expect(sessions.some((s) => s.id === id)).toBe(false);
 });

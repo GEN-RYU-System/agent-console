@@ -10,6 +10,8 @@ import { Hub } from "./hub.ts";
 import { createRequestHandler } from "./http.ts";
 import { MemoryCollector } from "./memory.ts";
 import { QuickPromptStore } from "./quick-prompts.ts";
+import { OpenSessionRecorder, restoreOnStartup } from "./restore.ts";
+import { OpenSessionStore } from "./session-store.ts";
 import { resolveSecret } from "./secret.ts";
 import { SessionManager } from "./sessions.ts";
 import { readSaSource } from "./tokens.ts";
@@ -54,6 +56,9 @@ async function main(): Promise<void> {
   const auth = createAuth(token, config.port);
   const sessions = new SessionManager(config);
   const hub = new Hub(config, sessions);
+  const openSessions = new OpenSessionStore(config.dataDir);
+  const recorder = new OpenSessionRecorder(sessions, hub, openSessions);
+  recorder.start();
   const meta = { saSource: await readSaSource(), claudeVersion: await fetchClaudeVersion(config.claudeBin), version: readVersion(), commit: await readCommit() };
 
   const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), memory: new MemoryCollector(), staticDir: path.join(process.cwd(), "dist"), meta }));
@@ -72,10 +77,14 @@ async function main(): Promise<void> {
       const code = auth.issuePairingCode(DEV_PAIRING_TTL_MS);
       console.log(`agent-console: http://${LISTEN_HOST}:${config.port}/pair?code=${code}`);
     }
+    // 前回開いていたセッションを開き直す（失敗してもサーバーは止めない）
+    void restoreOnStartup({ config, sessions, hub, store: openSessions, recorder }).catch((err) => console.error("restore failed:", err));
   });
 
   const shutdown = (): void => {
     hub.stop();
+    // 停止で端末が終わっても、復元リストは書き換えない（再起動のあとに開き直すため）
+    sessions.beginShutdown();
     sessions.killAll();
     server.close();
     process.exit(0);

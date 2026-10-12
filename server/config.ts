@@ -11,6 +11,11 @@ export interface RoleConfig {
   resumeCommand?: string[];
   /** 再開できる作業場所: main=本店そのもの（Opus 設計役）/ worktree=本店のワークツリー（Sonnet 実装役）。resumeCommand と対で指定する。 */
   resumeScope?: ResumeScope;
+  /**
+   * 前回の続きとして開き直す命令（config 固定）。環境変数 AC_RESUME_ID に Claude の sessionId（UUID）が入る。
+   * 無い役割は、通常の command で開き直す。
+   */
+  restoreCommand?: string[];
 }
 
 export type ResumeScope = "main" | "worktree";
@@ -23,6 +28,7 @@ export interface NotifyConfig {
 }
 
 export const DEFAULT_OSASCRIPT_BIN = "/usr/bin/osascript";
+export const DEFAULT_RESTORE_STAGGER_MS = 3000;
 export const DEFAULT_DATA_DIR = "~/Library/Application Support/agent-console";
 
 export interface Config {
@@ -41,6 +47,8 @@ export interface Config {
   notify: NotifyConfig;
   /** 端末の子プロセスの環境へ重ねる変数（例 LANG）。TERM と BLOCKLIST のキーは指定できない。 */
   terminalEnv: Record<string, string>;
+  /** 起動時の復元で、1 件ずつ開く間隔（ms） */
+  restoreStaggerMs: number;
 }
 
 const STRING_KEYS = ["salesanchorRoot", "newWorktreeScript", "ledgerLookupScript", "ledgerDir", "claudeBin"] as const;
@@ -61,19 +69,25 @@ function parseRole(raw: unknown, index: number): RoleConfig {
     throw new Error(`config: roles[${index}].command must be a non-empty string array`);
   }
   if (typeof r.needsWorktree !== "boolean") throw new Error(`config: roles[${index}].needsWorktree must be boolean`);
-  const role: RoleConfig = { id: r.id, labelKey: r.labelKey, command: r.command as string[], needsWorktree: r.needsWorktree };
+  const base: RoleConfig = { id: r.id, labelKey: r.labelKey, command: r.command as string[], needsWorktree: r.needsWorktree };
+  const role = r.restoreCommand === undefined ? base : { ...base, restoreCommand: parseCommand(r.restoreCommand, `roles[${index}].restoreCommand`) };
   if (r.resumeCommand === undefined) {
     if (r.resumeScope !== undefined) throw new Error(`config: roles[${index}].resumeScope requires resumeCommand`);
     return role;
   }
-  if (!Array.isArray(r.resumeCommand) || r.resumeCommand.length === 0 || !r.resumeCommand.every((c) => typeof c === "string")) {
-    throw new Error(`config: roles[${index}].resumeCommand must be a non-empty string array`);
-  }
-  if (r.resumeScope === undefined) return { ...role, resumeCommand: r.resumeCommand as string[] };
+  const resumeCommand = parseCommand(r.resumeCommand, `roles[${index}].resumeCommand`);
+  if (r.resumeScope === undefined) return { ...role, resumeCommand };
   if (typeof r.resumeScope !== "string" || !RESUME_SCOPES.includes(r.resumeScope)) {
     throw new Error(`config: roles[${index}].resumeScope must be "main" or "worktree"`);
   }
-  return { ...role, resumeCommand: r.resumeCommand as string[], resumeScope: r.resumeScope as ResumeScope };
+  return { ...role, resumeCommand, resumeScope: r.resumeScope as ResumeScope };
+}
+
+function parseCommand(raw: unknown, key: string): string[] {
+  if (!Array.isArray(raw) || raw.length === 0 || !raw.every((c) => typeof c === "string")) {
+    throw new Error(`config: ${key} must be a non-empty string array`);
+  }
+  return raw as string[];
 }
 
 function parseNotify(raw: unknown): NotifyConfig {
@@ -91,6 +105,12 @@ function parseDataDir(raw: unknown): string {
   if (raw === undefined) return expandHome(DEFAULT_DATA_DIR);
   if (typeof raw !== "string" || raw === "") throw new Error("config: dataDir must be a non-empty string");
   return expandHome(raw);
+}
+
+function parseStagger(raw: unknown): number {
+  if (raw === undefined) return DEFAULT_RESTORE_STAGGER_MS;
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) throw new Error("config: restoreStaggerMs must be a non-negative number");
+  return raw;
 }
 
 const ENV_KEY = /^[A-Z_][A-Z0-9_]*$/;
@@ -152,6 +172,7 @@ export function parseConfig(raw: unknown): Config {
     dataDir: parseDataDir(o.dataDir),
     notify: parseNotify(o.notify),
     terminalEnv: parseTerminalEnv(o.terminalEnv),
+    restoreStaggerMs: parseStagger(o.restoreStaggerMs),
   };
 }
 
