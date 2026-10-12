@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -101,5 +101,78 @@ describe("QuickPromptStore", () => {
     await store.create({ label: "b", text: "2" });
     await Promise.all([store.move(a.id, "down"), store.create({ label: "c", text: "3" }), store.create({ label: "d", text: "4" })]);
     expect((await store.list()).map((p) => p.label).sort()).toEqual(["a", "b", "c", "d"]);
+  });
+});
+
+describe("QuickPromptStore pinned (v0.10.0 K4)", () => {
+  const write = (dir: string, items: unknown[], version = 1): void => {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, QUICK_PROMPTS_FILE), JSON.stringify({ version, items }));
+  };
+
+  it("reads an item without pinned as pinned: true", async () => {
+    const dir = newDir();
+    write(dir, [{ id: "a", label: "a", text: "1" }]);
+    expect(await new QuickPromptStore(dir).list()).toEqual([{ id: "a", label: "a", text: "1", pinned: true }]);
+  });
+
+  it("creates a new prompt as pinned: true and writes it to the file with version 1", async () => {
+    const dir = newDir();
+    const created = await new QuickPromptStore(dir).create({ label: "x", text: "y" });
+    expect(created.pinned).toBe(true);
+    const saved = JSON.parse(readFileSync(path.join(dir, QUICK_PROMPTS_FILE), "utf8")) as { version: number; items: Array<{ pinned: boolean }> };
+    expect(saved.version).toBe(1);
+    expect(saved.items[0].pinned).toBe(true);
+  });
+
+  it("keeps pinned when only label or text is updated", async () => {
+    const dir = newDir();
+    write(dir, [{ id: "a", label: "a", text: "1", pinned: false }]);
+    const store = new QuickPromptStore(dir);
+    const updated = await store.update("a", { label: "a2", text: "2" });
+    expect(updated).toEqual({ id: "a", label: "a2", text: "2", pinned: false });
+    expect((await store.list())[0].pinned).toBe(false);
+  });
+
+  it("changes pinned when pinned is sent, without touching label and text", async () => {
+    const dir = newDir();
+    const store = new QuickPromptStore(dir);
+    const a = await store.create({ label: "a", text: "1" });
+    expect(await store.update(a.id, { pinned: false })).toEqual({ id: a.id, label: "a", text: "1", pinned: false });
+    expect((await store.update(a.id, { pinned: true })).pinned).toBe(true);
+  });
+
+  it("rejects a pinned that is not a boolean in update", async () => {
+    const store = new QuickPromptStore(newDir());
+    const a = await store.create({ label: "a", text: "1" });
+    await expect(store.update(a.id, { pinned: "no" })).rejects.toThrow(/pinned/);
+  });
+
+  it("treats a file whose pinned is not a boolean as broken and does not overwrite it", async () => {
+    const dir = newDir();
+    write(dir, [{ id: "a", label: "a", text: "1", pinned: "yes" }]);
+    const before = readFileSync(path.join(dir, QUICK_PROMPTS_FILE), "utf8");
+    const store = new QuickPromptStore(dir);
+    await expect(store.list()).rejects.toThrow(/pinned/);
+    await expect(store.create({ label: "z", text: "z" })).rejects.toThrow();
+    expect(readFileSync(path.join(dir, QUICK_PROMPTS_FILE), "utf8")).toBe(before);
+  });
+
+  it("still rejects a file whose version is not 1", async () => {
+    const dir = newDir();
+    write(dir, [], 2);
+    await expect(new QuickPromptStore(dir).list()).rejects.toThrow(/unsupported/);
+  });
+
+  it("copies pinned as-is on move", async () => {
+    const store = new QuickPromptStore(newDir());
+    const a = await store.create({ label: "a", text: "1" });
+    const b = await store.create({ label: "b", text: "2" });
+    await store.update(a.id, { pinned: false });
+    await store.move(a.id, "down");
+    expect(await store.list()).toEqual([
+      { id: b.id, label: "b", text: "2", pinned: true },
+      { id: a.id, label: "a", text: "1", pinned: false },
+    ]);
   });
 });

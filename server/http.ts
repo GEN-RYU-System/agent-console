@@ -219,7 +219,7 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
   }
   if (promptMatch && method === "PUT") {
     const body = jsonBody(await readJsonBody(req));
-    sendJson(res, 200, await quickPrompts.update(promptMatch[1], { label: body.label, text: body.text }));
+    sendJson(res, 200, await quickPrompts.update(promptMatch[1], { label: body.label, text: body.text, pinned: body.pinned }));
     return true;
   }
   if (promptMatch && method === "DELETE") {
@@ -239,7 +239,7 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
     sendJson(res, 201, { id: session.id });
     return true;
   }
-  const sessionMatch = /^\/api\/sessions\/([^/]+)\/(read|rename|send-check|close)$/.exec(url.pathname);
+  const sessionMatch = /^\/api\/sessions\/([^/]+)\/(read|rename|send-check|close|move)$/.exec(url.pathname);
   if (method !== "POST" || !sessionMatch) return false;
   const [, id, action] = sessionMatch;
   const session = sessions.get(id);
@@ -248,6 +248,12 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
     // 止まっているものは一覧から外し、動いているものは端末（と子孫）を終わらせてから外す。確認は画面で行う
     await sessions.close(id);
     sendJson(res, 200, { closed: true });
+    return true;
+  }
+  if (action === "move") {
+    // 並び順の正本は SessionManager の Map。復元リスト（open-sessions.json）は記録係が変更の合図で書き直す
+    sessions.move(id, jsonBody(await readJsonBody(req)).toIndex);
+    sendJson(res, 200, { moved: true });
     return true;
   }
   if (action === "read") {
