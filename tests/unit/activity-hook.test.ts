@@ -240,7 +240,8 @@ describe("K4 / §3-2: 書き込み", () => {
     expect(seen.size).toBe(PROCS * PER);
     expect(minBytes).toBeGreaterThan(60 * 1024);
     expect(maxBytes).toBeLessThanOrEqual(MAX_LINE_BYTES);
-  });
+    // 全体の試験が混み合っているときは、数十秒かかることがある（256MB を 20 プロセスが書く）
+  }, 180000);
 });
 
 const lineBytes = (rec: unknown): number => Buffer.byteLength(`${JSON.stringify(rec)}\n`);

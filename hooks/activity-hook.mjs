@@ -38,6 +38,20 @@ function fullText(value) {
   return typeof value === "string" ? value.replace(TEXT_CONTROL_CHARS, "") : "";
 }
 
+/**
+ * 1 つのコードポイントが、JSON 文字列の中で占める byte 数（UTF-8）。JSON.stringify の結果と同じ数になる:
+ * 引用符・バックスラッシュ・改行・タブは 2、そのほかの制御文字は \u00XX で 6、孤立したサロゲートは \udXXX で 6、
+ * それ以外は UTF-8 の長さ（1〜4）。1 文字ごとに文字列を作らないので、長い本文でも速い。
+ */
+function jsonBytesOf(codePoint) {
+  if (codePoint === 0x22 || codePoint === 0x5c || codePoint === 0x0a || codePoint === 0x09) return 2;
+  if (codePoint < 0x20) return 6;
+  if (codePoint < 0x80) return 1;
+  if (codePoint < 0x800) return 2;
+  if (codePoint >= 0xd800 && codePoint <= 0xdfff) return 6;
+  return codePoint < 0x10000 ? 3 : 4;
+}
+
 /** 1 行（JSON ＋ 改行）の byte 数 */
 const lineBytes = (record) => Buffer.byteLength(`${JSON.stringify(record)}\n`, "utf8");
 
@@ -51,15 +65,14 @@ function withFullText(base, key, text) {
   if (lineBytes(whole) <= MAX_LINE_BYTES) return whole;
   const frame = { ...base, [key]: "", truncated: true };
   let budget = MAX_LINE_BYTES - lineBytes(frame);
-  let kept = "";
+  let keptUnits = 0;
   for (const ch of text) {
-    // 孤立したサロゲートは JSON.stringify が \udXXX に直すので、その長さで数える
-    const cost = Buffer.byteLength(JSON.stringify(ch).slice(1, -1), "utf8");
+    const cost = jsonBytesOf(ch.codePointAt(0));
     if (cost > budget) break;
     budget -= cost;
-    kept += ch;
+    keptUnits += ch.length;
   }
-  return { ...frame, [key]: kept };
+  return { ...frame, [key]: text.slice(0, keptUnits) };
 }
 
 /** 項目が空でなければ足した新しいオブジェクトを返す */
