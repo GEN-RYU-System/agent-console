@@ -6,6 +6,9 @@ import { CHALLENGE_TTL_MS, PAIRING_TTL_MS, SESSION_MAX_MS, type Auth } from "./a
 import type { Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
 import type { MemoryCollector } from "./memory.ts";
+import { DiffCommentsUnreadableError, type DiffCommentStore } from "./diff-comments.ts";
+import { DiffGitError } from "./diff.ts";
+import { handleDiff } from "./diff-routes.ts";
 import { listResumeTargets, resolveResumeTarget } from "./resume-targets.ts";
 import type { QuickPromptStore } from "./quick-prompts.ts";
 import { SessionConflictError, SessionInputError, SessionNotFoundError, validateName, type SessionManager } from "./sessions.ts";
@@ -29,18 +32,19 @@ export interface AppDeps {
   sessions: SessionManager;
   hub: Hub;
   quickPrompts: QuickPromptStore;
+  diffComments: DiffCommentStore;
   memory: MemoryCollector;
   staticDir: string;
   meta: { saSource: string; claudeVersion: string; version: string; commit: string };
 }
 
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
+export function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   res.end(payload);
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+export async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const chunk of req) {
@@ -55,7 +59,7 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   }
 }
 
-class BadRequestError extends Error {}
+export class BadRequestError extends Error {}
 
 async function serveStatic(staticDir: string, pathname: string, res: ServerResponse, csp: string, status = 200): Promise<void> {
   const root = path.resolve(staticDir);
@@ -138,6 +142,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
     sendJson(res, 201, { id: session.id });
     return;
   }
+  if (await handleDiff(deps, req, res, url)) return;
   if (await handleDailyUse(deps, req, res, url)) return;
   const removeMatch = /^\/api\/sessions\/([^/]+)$/.exec(url.pathname);
   if (req.method === "DELETE" && removeMatch) {
@@ -234,7 +239,7 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
 const PAIRING_PATHS: ReadonlySet<string> = new Set(["/api/pair/challenge", "/api/pair", "/api/pair/redeem"]);
 const NO_STORE = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
 
-function jsonBody(body: unknown): Record<string, unknown> {
+export function jsonBody(body: unknown): Record<string, unknown> {
   if (typeof body !== "object" || body === null || Array.isArray(body)) throw new BadRequestError("JSON object required");
   return body as Record<string, unknown>;
 }
@@ -356,6 +361,16 @@ export function createRequestHandler(deps: AppDeps) {
       }
       if (err instanceof SessionConflictError) {
         sendJson(res, 409, { error: err.message });
+        return;
+      }
+      if (err instanceof DiffCommentsUnreadableError) {
+        console.error("diff comments unreadable:", err.message);
+        sendJson(res, 500, { error: "comments unreadable" });
+        return;
+      }
+      if (err instanceof DiffGitError) {
+        console.error("diff failed:", err.message);
+        sendJson(res, 500, { error: "diff failed" });
         return;
       }
       console.error("request failed:", err);

@@ -5,9 +5,10 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { createAuth } from "../../../server/auth.ts";
-import type { Config } from "../../../server/config.ts";
+import { DEFAULT_DIFF_MAX_FILE_BYTES, DEFAULT_DIFF_SEND_MAX_BYTES, DEFAULT_PASTE_SUBMIT_DELAY_MS, type Config } from "../../../server/config.ts";
 import { MemoryCollector } from "../../../server/memory.ts";
 import { QuickPromptStore } from "../../../server/quick-prompts.ts";
+import { DiffCommentStore } from "../../../server/diff-comments.ts";
 import { Hub } from "../../../server/hub.ts";
 import { createRequestHandler } from "../../../server/http.ts";
 import { OpenSessionStore } from "../../../server/session-store.ts";
@@ -75,6 +76,10 @@ export interface HarnessOptions {
   closeGraceMs?: number;
   /** 試験用に足す役割 */
   extraRoles?: RoleConfig[];
+  /** 1 ファイルの変更の表示上限（byte）。既定は config の既定値 */
+  diffMaxFileBytes?: number;
+  /** 送る文章の上限（byte）。既定は config の既定値 */
+  diffSendMaxBytes?: number;
 }
 
 /** 実 HTTP/WS/PTY（ダミー役割 sh）を 127.0.0.1 の空きポートで起動する。 */
@@ -110,6 +115,10 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     notify: { macos: false, osascriptBin: "/nonexistent/osascript" },
     terminalEnv: options.terminalEnv ?? { LANG: "ja_JP.UTF-8" },
     restoreStaggerMs: options.restoreStaggerMs ?? 0,
+    diffBaseRef: "origin/main",
+    diffMaxFileBytes: options.diffMaxFileBytes ?? DEFAULT_DIFF_MAX_FILE_BYTES,
+    diffSendMaxBytes: options.diffSendMaxBytes ?? DEFAULT_DIFF_SEND_MAX_BYTES,
+    pasteSubmitDelayMs: DEFAULT_PASTE_SUBMIT_DELAY_MS,
     roles: [
       { id: "echo", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo READY; cat"], needsWorktree: false },
       { id: "short", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo bye"], needsWorktree: false },
@@ -133,7 +142,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const clock: Clock = { t: Date.now(), advance(ms) { this.t += ms; } };
   const auth = createAuth(TOKEN, port, { now: () => clock.t });
   const server = createServer(
-    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT } }),
+    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT } }),
   );
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));

@@ -30,6 +30,12 @@ export interface NotifyConfig {
 export const DEFAULT_OSASCRIPT_BIN = "/usr/bin/osascript";
 export const DEFAULT_RESTORE_STAGGER_MS = 3000;
 export const DEFAULT_DATA_DIR = "~/Library/Application Support/agent-console";
+export const DEFAULT_DIFF_BASE_REF = "origin/main";
+export const DEFAULT_DIFF_MAX_FILE_BYTES = 1024 * 1024;
+export const DEFAULT_DIFF_SEND_MAX_BYTES = 16 * 1024;
+export const DEFAULT_PASTE_SUBMIT_DELAY_MS = 2000;
+/** git に渡す基準の名前。`-` で始まるものはオプションと読まれるので許さない。 */
+const DIFF_BASE_REF_PATTERN = /^[A-Za-z0-9_./][A-Za-z0-9_./-]*$/;
 
 export interface Config {
   port: number;
@@ -49,6 +55,14 @@ export interface Config {
   terminalEnv: Record<string, string>;
   /** 起動時の復元で、1 件ずつ開く間隔（ms） */
   restoreStaggerMs: number;
+  /** 変更の基準にする git の参照（既定 origin/main。最後に取得した値で、アプリは fetch しない） */
+  diffBaseRef: string;
+  /** 1 ファイルの変更をこの大きさ（byte）まで表示する */
+  diffMaxFileBytes: number;
+  /** 「Claude に送る」文章の上限（byte） */
+  diffSendMaxBytes: number;
+  /** 文章を貼ってから Enter を送るまでの待ち（ms）。本物の claude で 1 つの依頼になると実測した値が既定 */
+  pasteSubmitDelayMs: number;
 }
 
 const STRING_KEYS = ["salesanchorRoot", "newWorktreeScript", "ledgerLookupScript", "ledgerDir", "claudeBin"] as const;
@@ -113,6 +127,26 @@ function parseStagger(raw: unknown): number {
   return raw;
 }
 
+function parseDiffBaseRef(raw: unknown): string {
+  if (raw === undefined) return DEFAULT_DIFF_BASE_REF;
+  if (typeof raw !== "string" || !DIFF_BASE_REF_PATTERN.test(raw)) {
+    throw new Error("config: diffBaseRef must match ^[A-Za-z0-9_./][A-Za-z0-9_./-]*$ (no leading '-')");
+  }
+  return raw;
+}
+
+function parsePositive(raw: unknown, key: string, fallback: number): number {
+  if (raw === undefined) return fallback;
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) throw new Error(`config: ${key} must be a positive number`);
+  return raw;
+}
+
+function parsePasteDelay(raw: unknown): number {
+  if (raw === undefined) return DEFAULT_PASTE_SUBMIT_DELAY_MS;
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) throw new Error("config: pasteSubmitDelayMs must be a non-negative number");
+  return raw;
+}
+
 const ENV_KEY = /^[A-Z_][A-Z0-9_]*$/;
 // eslint-disable-next-line no-control-regex
 const ENV_CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
@@ -173,6 +207,10 @@ export function parseConfig(raw: unknown): Config {
     notify: parseNotify(o.notify),
     terminalEnv: parseTerminalEnv(o.terminalEnv),
     restoreStaggerMs: parseStagger(o.restoreStaggerMs),
+    diffBaseRef: parseDiffBaseRef(o.diffBaseRef),
+    diffMaxFileBytes: parsePositive(o.diffMaxFileBytes, "diffMaxFileBytes", DEFAULT_DIFF_MAX_FILE_BYTES),
+    diffSendMaxBytes: parsePositive(o.diffSendMaxBytes, "diffSendMaxBytes", DEFAULT_DIFF_SEND_MAX_BYTES),
+    pasteSubmitDelayMs: parsePasteDelay(o.pasteSubmitDelayMs),
   };
 }
 

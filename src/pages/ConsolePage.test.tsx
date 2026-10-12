@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "../i18n";
 import type { ConsoleState } from "../types";
@@ -26,6 +27,7 @@ const renameSession = vi.fn();
 const fetchResumeTargets = vi.fn();
 const resumeSession = vi.fn();
 const closeSession = vi.fn();
+const fetchDiff = vi.fn();
 
 vi.mock("../api", () => ({
   ApiError: class extends Error {
@@ -51,6 +53,14 @@ vi.mock("../api", () => ({
   resumeSession: (t: { kind: string; path: string }) => resumeSession(t),
   closeSession: (id: string) => closeSession(id),
   fetchMemory: vi.fn(async () => ({ sessions: [], serverRssMb: 1, system: null })),
+  fetchDiff: () => fetchDiff(),
+  fetchDiffFile: vi.fn(async () => ({ lines: [] })),
+  fetchDiffComments: vi.fn(async () => ({ items: [] })),
+  createDiffComment: vi.fn(),
+  updateDiffComment: vi.fn(),
+  deleteDiffComment: vi.fn(),
+  checkDiffCommentsSend: vi.fn(),
+  markDiffCommentsSent: vi.fn(),
   openSocket: () => new FakeWebSocket(),
 }));
 
@@ -68,6 +78,7 @@ vi.mock("../components/TerminalPane/TerminalPane", async () => {
             pasteAndEnter(t);
             return true;
           },
+          pasteSubmitAfter: async () => "notPasted" as const,
         }),
         [props.sessionId],
       );
@@ -79,7 +90,11 @@ vi.mock("../components/TerminalPane/TerminalPane", async () => {
 // 画面全体（SA の金型を含む）の読み込みは負荷時に数秒かかる。テストの 5 秒の制限に含めないよう、最初に 1 回だけ読む
 const { ConsolePage } = await import("./ConsolePage");
 
+let lastSocket: FakeWebSocket | null = null;
 class FakeWebSocket {
+  constructor() {
+    lastSocket = this;
+  }
   static OPEN = 1;
   readyState = 0;
   onmessage: unknown = null;
@@ -101,6 +116,8 @@ beforeEach(() => {
   fetchResumeTargets.mockResolvedValue({ items: [{ kind: "worktree", path: "/wt/release-a", branch: "release/a", roleId: "sonnet-impl" }] });
   resumeSession.mockReset();
   closeSession.mockReset();
+  fetchDiff.mockReset();
+  fetchDiff.mockResolvedValue({ baseRef: "origin/main", files: [{ path: "a.ts", added: 1, removed: 0, binary: false, untracked: false }] });
   closeSession.mockResolvedValue({ closed: true });
   resumeSession.mockResolvedValue({ id: "s1" });
   fetchQuickPrompts.mockReset();
@@ -308,5 +325,41 @@ describe("ConsolePage daily use", () => {
   it("explains that a break is the app's own definition", async () => {
     render(<ConsolePage />);
     expect((await screen.findByTestId("notify-help")).textContent).toContain("Claude 公式");
+  });
+});
+
+describe("ConsolePage terminal / changes tabs (K1, K12)", () => {
+  it("shows the 端末 and 変更 tabs with the changed-file count, and hides (not removes) the terminal when 変更 is chosen", async () => {
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    const changes = await screen.findByRole("tab", { name: /変更/ });
+    expect(screen.getByRole("tab", { name: /端末/ })).toBeTruthy();
+    await waitFor(() => expect(changes.textContent).toContain("1"));
+    const terminal = screen.getByTestId("terminal-stub");
+    const wrapper = terminal.parentElement as HTMLElement;
+    expect(wrapper.hasAttribute("hidden")).toBe(false);
+    fireEvent.click(changes);
+    // 端末の部品は DOM に残り（xterm の接続を保つ）、包みが hidden 属性で隠れる
+    expect(screen.getByTestId("terminal-stub").parentElement).toBe(wrapper);
+    expect(wrapper.hasAttribute("hidden")).toBe(true);
+    expect(screen.getByTestId("diff-pane").hasAttribute("hidden")).toBe(false);
+    fireEvent.click(screen.getByRole("tab", { name: /端末/ }));
+    expect(wrapper.hasAttribute("hidden")).toBe(false);
+    expect(screen.getByTestId("diff-pane").hasAttribute("hidden")).toBe(true);
+  });
+
+  it("hides the terminal only with the hidden attribute: the stylesheet pins [hidden] to display:none and never uses visibility or zero height", () => {
+    const css = readFileSync("src/pages/ConsolePage.css", "utf8");
+    expect(css).toMatch(/\.ac-page__terminal\[hidden\]\s*\{\s*display:\s*none;?\s*\}/);
+    expect(css).not.toMatch(/visibility\s*:/);
+  });
+
+  it("drops the count from the 変更 tab when the selected session disappears", async () => {
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    await waitFor(() => expect(screen.getByRole("tab", { name: /変更/ }).textContent).toContain("1"));
+    const onmessage = lastSocket?.onmessage as (e: { data: string }) => void;
+    act(() => onmessage({ data: JSON.stringify({ sessions: [], agentsAvailable: true }) }));
+    await waitFor(() => expect(screen.getByRole("tab", { name: /変更/ }).textContent).toBe("変更"));
   });
 });

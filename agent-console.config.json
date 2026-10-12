@@ -11,6 +11,10 @@
   "notify": { "macos": true },
   "terminalEnv": { "LANG": "ja_JP.UTF-8" },
   "restoreStaggerMs": 3000,
+  "diffBaseRef": "origin/main",
+  "diffMaxFileBytes": 1048576,
+  "diffSendMaxBytes": 16384,
+  "pasteSubmitDelayMs": 2000,
   "roles": [
     {
       "id": "opus-designer",

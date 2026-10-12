@@ -80,3 +80,39 @@ export interface MemorySnapshot {
   serverRssMb: number;
   system: { totalMb: number; freePercent: number; usedPercent: number } | null;
 }
+
+/** 基準から変わったファイルの 1 行。untracked は git にまだ追加されていないファイル。 */
+export interface ChangedFile {
+  path: string;
+  added: number;
+  removed: number;
+  binary: boolean;
+  untracked: boolean;
+}
+
+export type DiffList = { baseRef: string; files: ChangedFile[] } | { error: "noBase"; baseRef: string };
+
+export interface DiffLine {
+  kind: "hunk" | "add" | "del" | "ctx";
+  oldLine?: number;
+  newLine?: number;
+  text: string;
+}
+
+export type FileDiff = { lines: DiffLine[] } | { tooLarge: true } | { binary: true } | { untracked: true };
+
+export type CommentSide = "new" | "old" | "file";
+
+export interface DiffComment {
+  id: string;
+  path: string;
+  side: CommentSide;
+  line?: number;
+  lineText?: string;
+  body: string;
+  createdAt: number;
+  sentAt?: number;
+}
+
+/** コメントの追加・編集で送る内容（id・時刻はサーバーが付ける）。 */
+export type DiffCommentInput = Pick<DiffComment, "path" | "side" | "body"> & Partial<Pick<DiffComment, "line" | "lineText">>;

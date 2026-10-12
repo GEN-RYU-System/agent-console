@@ -6,6 +6,7 @@ import path from "node:path";
 import { createAuth, DEV_PAIRING_TTL_MS } from "./auth.ts";
 import { fetchClaudeVersion } from "./agents.ts";
 import { loadConfig } from "./config.ts";
+import { DiffCommentStore } from "./diff-comments.ts";
 import { Hub } from "./hub.ts";
 import { createRequestHandler } from "./http.ts";
 import { MemoryCollector } from "./memory.ts";
@@ -60,7 +61,7 @@ async function main(): Promise<void> {
   const recorder = new OpenSessionRecorder(sessions, hub, openSessions);
   const meta = { saSource: await readSaSource(), claudeVersion: await fetchClaudeVersion(config.claudeBin), version: readVersion(), commit: await readCommit() };
 
-  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), memory: new MemoryCollector(), staticDir: path.join(process.cwd(), "dist"), meta }));
+  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), memory: new MemoryCollector(), staticDir: path.join(process.cwd(), "dist"), meta }));
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   // 期限切れ（12 時間）になったセッションの WebSocket を閉じる
   setInterval(() => controls.sweep(), SESSION_SWEEP_MS).unref();

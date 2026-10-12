@@ -5,6 +5,7 @@ import { Callout } from "@sa/components/Callout";
 import { EmptyState } from "@sa/components/EmptyState";
 import ConfirmModal from "@sa/components/ConfirmModal";
 import { Modal } from "@sa/components/Modal";
+import { Tabs } from "@sa/components/Tabs";
 import {
   ApiError,
   checkQuickPromptSend,
@@ -23,6 +24,7 @@ import {
   renameSession,
   resumeSession,
 } from "../api";
+import { DiffPane } from "../components/DiffPane/DiffPane";
 import { LedgerBoard } from "../components/LedgerBoard/LedgerBoard";
 import { MemoryPanel } from "../components/MemoryPanel/MemoryPanel";
 import { NewSessionForm, type NewSessionValues } from "../components/NewSessionForm/NewSessionForm";
@@ -32,13 +34,15 @@ import { QuickPromptEditor } from "../components/QuickPrompts/QuickPromptEditor"
 import { RenameForm } from "../components/RenameForm/RenameForm";
 import { SessionList } from "../components/SessionList/SessionList";
 import { ThemeToggle } from "../components/ThemeToggle/ThemeToggle";
-import { TerminalPane, type TerminalHandle } from "../components/TerminalPane/TerminalPane";
+import { TerminalPane, type PasteResult, type TerminalHandle } from "../components/TerminalPane/TerminalPane";
 import type { ConsoleState, LedgerSnapshot, QuickPrompt, ResumeTarget, SessionView } from "../types";
 import "./ConsolePage.css";
 
 const LEDGER_POLL_MS = 60000;
 const RECONNECT_MS = 1000;
 const RENAME_CONFIRM_MS = 10000;
+
+type CenterTab = "terminal" | "changes";
 
 function useConsoleState() {
   const [state, setState] = useState<ConsoleState | null>(null);
@@ -93,6 +97,8 @@ export function ConsolePage() {
   const [resumeBusyPath, setResumeBusyPath] = useState<string | null>(null);
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [centerTab, setCenterTab] = useState<CenterTab>("terminal");
+  const [diffCount, setDiffCount] = useState<number | null>(null);
   const [closeTargetId, setCloseTargetId] = useState<string | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
   // 復元の案内は、閉じた内容を覚えておく（メモリだけ。同じ内容は出し直さない）
@@ -171,6 +177,12 @@ export function ConsolePage() {
       (err: unknown) => setQuickError(err instanceof Error ? err.message : String(err)),
     );
   };
+
+  // 変更タブから送る文章を、表示中の端末へ貼って Enter を送る（端末の部品が、確認したセッションの端末だけに入れる）
+  const pasteToTerminal = useCallback(
+    (id: string, text: string, delayMs: number): Promise<PasteResult> => terminalRef.current?.pasteSubmitAfter(id, text, delayMs) ?? Promise.resolve("notPasted"),
+    [],
+  );
 
   const handleRename = async (name: string): Promise<void> => {
     if (renameTargetId === null) return;
@@ -311,18 +323,45 @@ export function ConsolePage() {
         </p>
       </aside>
       <main className="ac-page__center">
-        <QuickPromptBar
-          prompts={quickPrompts}
-          canSend={activeSession?.canInput === true}
-          onSend={handleSendPrompt}
-          onEdit={() => setQuickEditorOpen(true)}
+        <Tabs
+          variant="underline"
+          size="sm"
+          activeKey={centerTab}
+          onChange={setCenterTab}
+          items={[
+            { key: "terminal", label: t("ac.tabs.terminal") },
+            { key: "changes", label: t("ac.tabs.changes"), ...(activeId !== null && diffCount !== null ? { count: diffCount } : {}) },
+          ]}
         />
+        {centerTab === "terminal" && (
+          <QuickPromptBar
+            prompts={quickPrompts}
+            canSend={activeSession?.canInput === true}
+            onSend={handleSendPrompt}
+            onEdit={() => setQuickEditorOpen(true)}
+          />
+        )}
         {quickError !== null && (
           <Callout variant="warning" title={t("ac.quick.sendError")}>
             {quickError}
           </Callout>
         )}
-        <div className="ac-page__terminal">{activeId ? <TerminalPane ref={terminalRef} sessionId={activeId} /> : <EmptyState title={t("ac.selectSession")} />}</div>
+        {/* 端末は隠すだけで外さない（xterm の接続を保つ）。隠し方は hidden 属性（display:none）だけ。高さ 0 などで隠すと 2 列×1 行が pty に送られる */}
+        <div className="ac-page__terminal" hidden={centerTab !== "terminal"}>
+          {activeId ? <TerminalPane ref={terminalRef} sessionId={activeId} /> : <EmptyState title={t("ac.selectSession")} />}
+        </div>
+        {activeId ? (
+          <DiffPane
+            sessionId={activeId}
+            active={centerTab === "changes"}
+            state={activeSession?.state ?? "unknown"}
+            canInput={activeSession?.canInput === true}
+            paste={pasteToTerminal}
+            onCountChange={setDiffCount}
+          />
+        ) : (
+          centerTab === "changes" && <EmptyState title={t("ac.selectSession")} />
+        )}
       </main>
       <aside className="ac-page__right">
         <LedgerBoard snapshot={ledger} onRefresh={handleRefresh} />
