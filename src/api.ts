@@ -57,10 +57,13 @@ export const renameSession = (id: string, name: string): Promise<{ mode: "claude
   request(`/api/sessions/${encodeURIComponent(id)}/rename`, { method: "POST", body: JSON.stringify({ name }) });
 /** 動いているセッションを閉じる（止まっているものは一覧から外す）。確認は画面側で行ってから呼ぶ。 */
 export const closeSession = (id: string): Promise<{ closed: boolean }> => request(`/api/sessions/${encodeURIComponent(id)}/close`, { method: "POST" });
+/** セッションの並び順を変える（toIndex は動かしたあとの位置）。画面はサーバーの合図（snapshot）で並び直る。 */
+export const moveSession = (id: string, toIndex: number): Promise<{ moved: boolean }> =>
+  request(`/api/sessions/${encodeURIComponent(id)}/move`, { method: "POST", body: JSON.stringify({ toIndex }) });
 export const fetchQuickPrompts = (): Promise<{ items: QuickPrompt[] }> => request("/api/quick-prompts");
 export const createQuickPrompt = (input: { label: string; text: string }): Promise<QuickPrompt> =>
   request("/api/quick-prompts", { method: "POST", body: JSON.stringify(input) });
-export const updateQuickPrompt = (id: string, input: { label: string; text: string }): Promise<QuickPrompt> =>
+export const updateQuickPrompt = (id: string, input: { label: string; text: string } | { pinned: boolean }): Promise<QuickPrompt> =>
   request(`/api/quick-prompts/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(input) });
 export const deleteQuickPrompt = (id: string): Promise<{ removed: boolean }> =>
   request(`/api/quick-prompts/${encodeURIComponent(id)}`, { method: "DELETE" });
