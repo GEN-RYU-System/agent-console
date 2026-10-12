@@ -106,6 +106,9 @@ export function prepareE2eEnv(): void {
     ghBin,
     prPollMs: 1000,
     prRefreshMinMs: 1,
+    pickMaxKeep: 50,
+    pickSendMaxBytes: 16384,
+    pickHtmlInPromptChars: 1500,
     roles: [
       { id: "e2e-plain", labelKey: "role.shell", command: [process.execPath, roleScript, marker], needsWorktree: false },
       { id: "e2e-wt", labelKey: "role.sonnetImpl", command: [process.execPath, roleScript, marker], needsWorktree: true },

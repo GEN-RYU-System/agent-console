@@ -1,4 +1,4 @@
-import type { ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PrResponse, QuickPrompt, ResumeTarget } from "./types";
+import type { ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, ResumeTarget } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -93,6 +93,30 @@ export const markDiffCommentsSent = (sessionId: string, ids: string[]): Promise<
 export const fetchPr = (sessionId: string): Promise<PrResponse> => request(`${diffBase(sessionId)}/pr`);
 /** そのセッションの分をすぐ取り直す（前回から短い間隔以内なら、今の結果が返る）。 */
 export const refreshPr = (sessionId: string): Promise<PrResponse> => request(`${diffBase(sessionId)}/pr/refresh`, { method: "POST", body: JSON.stringify({}) });
+/** 届いた部品の一覧と、Chrome に読み込む拡張のフォルダの場所。 */
+export const fetchPicks = (): Promise<{ items: PickItem[]; extensionDir: string }> => request("/api/picks");
+export const updatePickNote = (id: string, note: string): Promise<PickItem> =>
+  request(`/api/picks/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify({ note }) });
+export const deletePick = (id: string): Promise<{ removed: boolean }> => request(`/api/picks/${encodeURIComponent(id)}`, { method: "DELETE" });
+/** 選んだ部品の依頼文を作らせる。入れてよい状態のときだけ返る（サーバーは端末へ書かない。画面が貼る）。 */
+export const checkPicksSend = (sessionId: string, ids: string[]): Promise<{ text: string; ids: string[]; submitDelayMs: number }> =>
+  request(`${diffBase(sessionId)}/picks/send-check`, { method: "POST", body: JSON.stringify({ ids }) });
+/** 貼り付けが成功したあとに、送った部品を送信済みにする。 */
+export const markPicksSent = (ids: string[]): Promise<{ marked: boolean }> => request("/api/picks/mark-sent", { method: "POST", body: JSON.stringify({ ids }) });
+
+/** 部品の画像を data: URL にして返す。画面の CSP は blob: を許さず data: だけ許すので、取得して data: に直す。 */
+export async function fetchPickImage(id: string): Promise<string> {
+  const token = getSessionToken();
+  const res = await fetch(`/api/picks/${encodeURIComponent(id)}/image`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) throw new ApiError(`HTTP ${res.status}`, res.status);
+  const blob = await res.blob();
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("image read failed"));
+    reader.readAsDataURL(blob);
+  });
+}
 export const fetchMemory = (): Promise<MemorySnapshot> => request("/api/memory");
 
 /** ペアリングコードを引換えてセッショントークンを得る（認証前の API）。 */

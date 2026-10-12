@@ -38,6 +38,8 @@ export interface Snapshot {
   agentsAvailable: boolean;
   /** 起動時に前回のセッションを開き直せなかった理由（メモリだけ。画面の案内） */
   restoreNotices: RestoreNotice[];
+  /** 部品タブの件数: まだ Claude に送っていない部品の数 */
+  picksUnsent: number;
 }
 
 /** claude agents の定期取得と台帳の定期取得をまとめ、変化があれば購読者へ配信する。 */
@@ -55,6 +57,7 @@ export class Hub {
   /** 名前の変更の予約（セッション id → 名前）。メモリだけ。送るか捨てるまでの正本はここ */
   private readonly pendingRenames = new Map<string, string>();
   private restoreNotices: RestoreNotice[] = [];
+  private picksUnsent = 0;
   private readonly nameListeners = new Set<() => void>();
   /** PR と検査の写し（(repo, branch) ごと）。メモリだけ。正本は GitHub */
   private readonly prByKey = new Map<string, PrResponse>();
@@ -119,6 +122,18 @@ export class Hub {
   onDisplayNameChanged(listener: () => void): () => void {
     this.nameListeners.add(listener);
     return () => this.nameListeners.delete(listener);
+  }
+
+  /** 部品の未送信の件数を配信に載せる。今の件数を読んでから、変更のたびに追従する。 */
+  watchPicks(store: { onChange: (listener: (unsent: number) => void) => unknown; unsentCount: () => Promise<number> }): void {
+    store.onChange((unsent) => this.setPicksUnsent(unsent));
+    void store.unsentCount().then((n) => this.setPicksUnsent(n), (err) => this.onPollError("picks", err));
+  }
+
+  private setPicksUnsent(unsent: number): void {
+    if (unsent === this.picksUnsent) return;
+    this.picksUnsent = unsent;
+    void this.publish().catch((err) => this.onPollError("publish", err));
   }
 
   /** 起動時の復元の結果（開き直せなかった項目）を画面の案内として載せる。 */
@@ -331,7 +346,7 @@ export class Hub {
     const previous = this.lastNames;
     this.lastNames = new Map(views.map((v) => [v.id, v.name]));
     if (views.some((v) => previous.has(v.id) && previous.get(v.id) !== v.name)) for (const l of this.nameListeners) l();
-    return { sessions: views, agentsAvailable: this.agents !== null, restoreNotices: this.restoreNotices };
+    return { sessions: views, agentsAvailable: this.agents !== null, restoreNotices: this.restoreNotices, picksUnsent: this.picksUnsent };
   }
 
   subscribe(ws: WebSocket): void {

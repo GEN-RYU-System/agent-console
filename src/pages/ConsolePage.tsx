@@ -27,6 +27,7 @@ import {
 import { DiffPane } from "../components/DiffPane/DiffPane";
 import { LedgerBoard } from "../components/LedgerBoard/LedgerBoard";
 import { MemoryPanel } from "../components/MemoryPanel/MemoryPanel";
+import { PicksPane } from "../components/PicksPane/PicksPane";
 import { PrPane } from "../components/PrPane/PrPane";
 import { NewSessionForm, type NewSessionValues } from "../components/NewSessionForm/NewSessionForm";
 import { ResumePicker } from "../components/ResumePicker/ResumePicker";
@@ -43,7 +44,7 @@ const LEDGER_POLL_MS = 60000;
 const RECONNECT_MS = 1000;
 const RENAME_CONFIRM_MS = 10000;
 
-type CenterTab = "terminal" | "changes" | "pr";
+type CenterTab = "terminal" | "changes" | "pr" | "picks";
 
 function useConsoleState() {
   const [state, setState] = useState<ConsoleState | null>(null);
@@ -333,6 +334,7 @@ export function ConsolePage() {
             { key: "terminal", label: t("ac.tabs.terminal") },
             { key: "changes", label: t("ac.tabs.changes"), ...(activeId !== null && diffCount !== null ? { count: diffCount } : {}) },
             { key: "pr", label: t("ac.tabs.pr") },
+            { key: "picks", label: t("ac.tabs.picks"), ...(state.picksUnsent > 0 ? { count: state.picksUnsent } : {}) },
           ]}
         />
         {centerTab === "terminal" && (
@@ -365,6 +367,15 @@ export function ConsolePage() {
           centerTab === "changes" && <EmptyState title={t("ac.selectSession")} />
         )}
         {activeId ? <PrPane sessionId={activeId} active={centerTab === "pr"} /> : centerTab === "pr" && <EmptyState title={t("ac.selectSession")} />}
+        {/* 部品は、セッションを選んでいなくても見られる（送るときだけ送り先が要る） */}
+        <PicksPane
+          sessionId={activeId}
+          active={centerTab === "picks"}
+          unsent={state.picksUnsent}
+          state={activeSession?.state ?? "unknown"}
+          canInput={activeSession?.canInput === true}
+          paste={pasteToTerminal}
+        />
       </main>
       <aside className="ac-page__right">
         <LedgerBoard snapshot={ledger} onRefresh={handleRefresh} />

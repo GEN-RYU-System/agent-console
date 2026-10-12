@@ -2,7 +2,7 @@
 // 許可する例外は ADR-067 の「許可される例外」（%・@media・calc 内の var・opacity 0/1・min-width 0）と、
 // Sales Anchor の金型 CSS が実際に使っている 1px の枠線（border/outline のみ）に限る。
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
@@ -50,6 +50,14 @@ function walk(dir, out = []) {
 }
 
 const srcFiles = walk(path.join(root, "src")).map((f) => path.relative(root, f));
+// Chrome 拡張（extension/）の .js と .css も同じ約束で検査する。対象外はビルドが作る picker-tokens.css だけ（SA のトークンから解決した値の置き場）
+const GENERATED_EXTENSION_CSS = "extension/picker-tokens.css";
+const extensionDir = path.join(root, "extension");
+const extensionFiles = existsSync(extensionDir)
+  ? walk(extensionDir)
+      .map((f) => path.relative(root, f))
+      .filter((f) => /\.(js|css)$/.test(f) && f !== GENERATED_EXTENSION_CSS)
+  : [];
 const read = (file) => readFileSync(path.join(root, file), "utf8");
 const isTest = (f) => /\.test\.(ts|tsx)$/.test(f);
 const report = (file, line, message, text) => violations.push(`${file}:${line}: ${message}: ${text.trim()}`);
@@ -66,13 +74,15 @@ function lineOf(content, index) {
   return content.slice(0, index).split("\n").length;
 }
 
+const JA = /[぀-ヿ㐀-鿿]/;
+
 // ① 色の直値（hex / rgb / hsl / 現代的な色関数）
-const styleFiles = srcFiles.filter((f) => /\.(css|tsx|ts)$/.test(f));
+const styleFiles = [...srcFiles.filter((f) => /\.(css|tsx|ts)$/.test(f)), ...extensionFiles.filter((f) => f.endsWith(".css"))];
 scanLines(styleFiles, /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/, "色の直値");
 scanLines(styleFiles, /\b(oklch|oklab|lab|lch|hwb)\(|(?<![\w-])color\(/, "色関数の直値");
 
 // ①' CSS の named color / px・rem・em 直書き（宣言の値だけを見る）
-const cssFiles = srcFiles.filter((f) => f.endsWith(".css"));
+const cssFiles = [...srcFiles, ...extensionFiles].filter((f) => f.endsWith(".css"));
 const LENGTH = /(?<![\w.-])(-?(?:\d+\.?\d*|\.\d+))(px|rem|em)\b/g;
 for (const file of cssFiles) {
   const content = read(file).replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
@@ -131,13 +141,25 @@ for (const file of codeFiles) {
 scanLines(codeFiles, /\bfontFamily\s*:\s*["'`]/, "fontFamily の直書き（トークンを使う）");
 scanLines(codeFiles, /\b(fontSize|lineHeight|letterSpacing)\s*:\s*-?\d/, "数値の文字サイズ・行間の直書き");
 
+// 拡張の JS: 色と px/rem/em の直書きを禁じる。位置や大きさは、ページから計算した値に単位だけを足して作る
+const extensionJs = extensionFiles.filter((f) => f.endsWith(".js"));
+scanLines(extensionJs, /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/, "拡張の JS の色の直値（picker-tokens.css の --pick-… を使う）");
+scanLines(extensionJs, /\b(oklch|oklab|lab|lch|hwb)\(|(?<![\w-])color\(/, "拡張の JS の色関数の直値");
+for (const file of extensionJs) {
+  read(file).split("\n").forEach((line, i) => {
+    if (/^\s*(\*|\/\*)/.test(line)) return;
+    const code = line.replace(/\/\/.*$/, "");
+    if ([...code.matchAll(LENGTH)].some((m) => Number(m[1]) !== 0)) report(file, i + 1, "拡張の JS の px/rem/em の直書き（--pick-… を使う）", line);
+    if (JA.test(code)) report(file, i + 1, "拡張の JS の日本語の直書き（_locales/ja/messages.json に置く）", line);
+  });
+}
+
 // ② pages 配下の生要素
 const pageFiles = srcFiles.filter((f) => f.startsWith("src/pages/") && f.endsWith(".tsx"));
 scanLines(pageFiles, /<(button|input|select|textarea|a)[\s>]/, "生の要素（金型を使う）");
 
 // ③ JSX テキストの日本語直書き（テストファイルは対象外）
 const tsxFiles = srcFiles.filter((f) => f.endsWith(".tsx") && !isTest(f));
-const JA = /[぀-ヿ㐀-鿿]/;
 for (const file of tsxFiles) {
   read(file).split("\n").forEach((line, i) => {
     const code = line.replace(/\/\/.*$/, "").replace(/\{\/\*.*?\*\/\}/g, "");

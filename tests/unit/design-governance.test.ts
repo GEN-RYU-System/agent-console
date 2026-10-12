@@ -223,4 +223,46 @@ describe("check-design-governance", () => {
       });
     });
   });
+  describe("extension/ is checked too (K9)", () => {
+    const ext = (files: Record<string, string>) => makeProject({ "src/a.css": "", ...files });
+
+    it("passes a picker that only uses var(--pick-…) and computes geometry from the page", () => {
+      const dir = ext({
+        "extension/picker.css": ".frame { position: fixed; border: var(--pick-frame-width) solid var(--pick-frame-color); padding: var(--pick-space); margin: 0; }\n",
+        "extension/picker.js": "const UNIT = 'px';\nel.style.left = r.x + UNIT;\nel.style.width = `${r.width}px`;\n",
+        "extension/_locales/ja/messages.json": '{ "guide": { "message": "クリックで選ぶ" } }\n',
+      });
+      expect(run(dir).status).toBe(0);
+    });
+
+    it("reports a color literal in extension JS with file:line", () => {
+      const dir = ext({ "extension/picker.js": "const a = 1;\nframe.style.border = '2px solid #e11d48';\n" });
+      const r = run(dir);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("extension/picker.js:2:");
+    });
+
+    it.each(["rgba(0, 0, 0, .5)", "hsl(10 10% 10%)", "14px", "0.5rem", "12px"])("reports %s written in extension JS", (v) => {
+      expect(run(ext({ "extension/picker.js": `el.style.x = "${v}";\n` })).status, v).toBe(1);
+    });
+
+    it("reports a direct value in extension CSS", () => {
+      expect(run(ext({ "extension/picker.css": ".a { color: red; }\n" })).status).toBe(1);
+      expect(run(ext({ "extension/picker.css": ".a { padding: 8px; }\n" })).status).toBe(1);
+      expect(run(ext({ "extension/picker.css": ".a { background: #fff; }\n" })).status).toBe(1);
+    });
+
+    it("exempts only the generated picker-tokens.css", () => {
+      const generated = ":host {\n  --pick-frame-color: #1e3a8a;\n  --pick-space: 8px;\n}\n";
+      expect(run(ext({ "extension/picker-tokens.css": generated })).status).toBe(0);
+      expect(run(ext({ "extension/other.css": generated })).status).toBe(1);
+    });
+
+    it("reports hard-coded Japanese in extension JS but allows it in comments", () => {
+      const bad = run(ext({ "extension/picker.js": "const m = 'クリックで選ぶ';\n" }));
+      expect(bad.status).toBe(1);
+      expect(bad.stderr).toContain("extension/picker.js:1:");
+      expect(run(ext({ "extension/picker.js": "// 案内の文は _locales に置く\nconst m = chrome.i18n.getMessage('guide');\n" })).status).toBe(0);
+    });
+  });
 });

@@ -158,3 +158,27 @@ describe("parseConfig: diff settings (K8, K12, K14)", () => {
     expect([shipped.ghBin, shipped.prPollMs, shipped.prRefreshMinMs]).toEqual(["gh", 120000, 10000]);
   });
 });
+
+describe("parseConfig: picker settings (§4)", () => {
+  it("K8: fills the defaults when the three keys are omitted: 50 kept, 16KiB, 1500 chars", () => {
+    const c = parseConfig(valid);
+    expect([c.pickMaxKeep, c.pickSendMaxBytes, c.pickHtmlInPromptChars]).toEqual([50, 16 * 1024, 1500]);
+  });
+
+  it("accepts explicit values", () => {
+    const c = parseConfig({ ...valid, pickMaxKeep: 3, pickSendMaxBytes: 4000, pickHtmlInPromptChars: 200 });
+    expect([c.pickMaxKeep, c.pickSendMaxBytes, c.pickHtmlInPromptChars]).toEqual([3, 4000, 200]);
+  });
+
+  it("refuses non-positive or non-number values naming the key", () => {
+    for (const key of ["pickMaxKeep", "pickSendMaxBytes", "pickHtmlInPromptChars"]) {
+      expect(() => parseConfig({ ...valid, [key]: 0 })).toThrow(new RegExp(key));
+      expect(() => parseConfig({ ...valid, [key]: "5" })).toThrow(new RegExp(key));
+    }
+  });
+
+  it("the shipped config carries the same three values", () => {
+    const shipped = parseConfig(JSON.parse(readFileSync("agent-console.config.json", "utf8")));
+    expect([shipped.pickMaxKeep, shipped.pickSendMaxBytes, shipped.pickHtmlInPromptChars]).toEqual([50, 16384, 1500]);
+  });
+});

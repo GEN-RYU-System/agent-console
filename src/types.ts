@@ -36,6 +36,8 @@ export interface ConsoleState {
   sessions: SessionView[];
   agentsAvailable: boolean;
   restoreNotices: RestoreNotice[];
+  /** まだ Claude に送っていない部品の数（「部品」タブの件数） */
+  picksUnsent: number;
   roles: RoleView[];
   saSource: string;
   claudeVersion: string;
@@ -143,3 +145,26 @@ export type PrMessageStatus = "loading" | "noPr" | "notGitHub" | "detached" | "g
 export type PrResponse =
   | { status: "ok"; pr: PrInfo; checks: { counts: CheckCounts; items: CheckItem[] }; fetchedAt: number }
   | { status: PrMessageStatus; fetchedAt?: number };
+
+/** Chrome の拡張から届いた部品（ブラウザで選んだ画面の一部）。正本はサーバーの dataDir/picks/ */
+export interface PickItem {
+  id: string;
+  createdAt: number;
+  url: string;
+  title: string;
+  selector: string;
+  tag: string;
+  attrs: Record<string, string>;
+  text: string;
+  html: string;
+  style: Record<string, string>;
+  rect: { x: number; y: number; w: number; h: number };
+  dpr: number;
+  vw: number;
+  hasImage: boolean;
+  /** 画像が無いときの理由（拡張・サーバーが付ける） */
+  imageError: string;
+  /** PO のひとこと */
+  note: string;
+  sentAt?: number;
+}

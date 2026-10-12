@@ -7,3 +7,4 @@ playwright-report/
 .pr-body-*.md
 .npm-cache/
 dist-server/
+extension/picker-tokens.css

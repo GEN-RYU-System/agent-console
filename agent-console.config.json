@@ -18,6 +18,9 @@
   "ghBin": "gh",
   "prPollMs": 120000,
   "prRefreshMinMs": 10000,
+  "pickMaxKeep": 50,
+  "pickSendMaxBytes": 16384,
+  "pickHtmlInPromptChars": 1500,
   "roles": [
     {
       "id": "opus-designer",

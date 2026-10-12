@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_extName__",
+  "version": "0.6.0",
+  "description": "__MSG_extDescription__",
+  "default_locale": "ja",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "__MSG_actionTitle__"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu/nF+Zy0D0kK6W+8wxcwPsuauxR9ptnLqQW9a6Ckux88cngQWs0Sc1FTALIt2k+sloMJPuMGlYh0SsW/LyBDyKFFbxdkoT7sFRiNCpLW66gk4/XBV1QbgDOOFQAiD7cs8zNvexLMRZYmzgfrKYazlwOA4YWs11TVpfIGTLppdqt7vTz1zF6QnyXlDuL6PtdM8SJ566qUjYe6ijnuznVKNDgl3k+/qPGiUy9d5kFlwRM0iL3ow8gfh2iASeXvucThCvDY93t+aclqY7bzrumgBX1tu3Eh6iTrJXXbjL1C7VPW1jtDl5GeVic7vjwr16iqraAV2z8auKYMFhwu70K/CwIDAQAB"
+}

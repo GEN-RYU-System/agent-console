@@ -9,6 +9,7 @@ const state: ConsoleState = {
   sessions: [{ id: "s1", name: "dead", roleId: "shell", branch: null, cwd: "/", state: "stopped", createdAt: 1, unread: 0, hasClaude: false, canInput: false }],
   agentsAvailable: true,
   restoreNotices: [],
+  picksUnsent: 3,
   roles: [{ id: "shell", labelKey: "role.shell", needsWorktree: false }],
   saSource: "abcdef0123456789",
   claudeVersion: "1.0.0",
@@ -28,6 +29,7 @@ const fetchResumeTargets = vi.fn();
 const resumeSession = vi.fn();
 const closeSession = vi.fn();
 const fetchDiff = vi.fn();
+const fetchPicks = vi.fn();
 
 vi.mock("../api", () => ({
   ApiError: class extends Error {
@@ -61,6 +63,12 @@ vi.mock("../api", () => ({
   deleteDiffComment: vi.fn(),
   checkDiffCommentsSend: vi.fn(),
   markDiffCommentsSent: vi.fn(),
+  fetchPicks: () => fetchPicks(),
+  fetchPickImage: vi.fn(),
+  updatePickNote: vi.fn(),
+  deletePick: vi.fn(),
+  checkPicksSend: vi.fn(),
+  markPicksSent: vi.fn(),
   openSocket: () => new FakeWebSocket(),
 }));
 
@@ -361,5 +369,34 @@ describe("ConsolePage terminal / changes tabs (K1, K12)", () => {
     const onmessage = lastSocket?.onmessage as (e: { data: string }) => void;
     act(() => onmessage({ data: JSON.stringify({ sessions: [], agentsAvailable: true }) }));
     await waitFor(() => expect(screen.getByRole("tab", { name: /変更/ }).textContent).toBe("変更"));
+  });
+});
+
+describe("ConsolePage 部品 tab (K3, §3-8)", () => {
+  it("shows 部品 with the unsent count from the state and hides the other panes (not removing the terminal) when chosen", async () => {
+    fetchPicks.mockResolvedValue({ items: [], extensionDir: "/data/chrome-extension" });
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    const picks = await screen.findByRole("tab", { name: /部品/ });
+    expect(picks.textContent).toContain("3");
+    const wrapper = screen.getByTestId("terminal-stub").parentElement as HTMLElement;
+    expect(screen.getByTestId("picks-pane").hasAttribute("hidden")).toBe(true);
+    expect(fetchPicks).not.toHaveBeenCalled();
+    fireEvent.click(picks);
+    expect(screen.getByTestId("picks-pane").hasAttribute("hidden")).toBe(false);
+    expect(screen.getByTestId("terminal-stub").parentElement).toBe(wrapper);
+    expect(wrapper.hasAttribute("hidden")).toBe(true);
+    expect(screen.getByTestId("diff-pane").hasAttribute("hidden")).toBe(true);
+    expect(await screen.findByText("/data/chrome-extension")).toBeTruthy();
+  });
+
+  it("drops the count when nothing is unsent, and follows the count the server pushes", async () => {
+    render(<ConsolePage />);
+    await screen.findByText("dead");
+    const onmessage = lastSocket?.onmessage as (e: { data: string }) => void;
+    act(() => onmessage({ data: JSON.stringify({ sessions: state.sessions, agentsAvailable: true, picksUnsent: 0 }) }));
+    await waitFor(() => expect(screen.getByRole("tab", { name: /部品/ }).textContent).toBe("部品"));
+    act(() => onmessage({ data: JSON.stringify({ sessions: state.sessions, agentsAvailable: true, picksUnsent: 7 }) }));
+    await waitFor(() => expect(screen.getByRole("tab", { name: /部品/ }).textContent).toContain("7"));
   });
 });

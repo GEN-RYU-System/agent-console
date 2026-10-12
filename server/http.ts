@@ -10,6 +10,9 @@ import { DiffCommentsUnreadableError, type DiffCommentStore } from "./diff-comme
 import { DiffGitError } from "./diff.ts";
 import { handleDiff } from "./diff-routes.ts";
 import { handlePr } from "./pr-routes.ts";
+import type { PickerAccess } from "./picker-extension.ts";
+import { handlePickIngest, handlePicks } from "./picks-routes.ts";
+import type { PickStore } from "./picks.ts";
 import { listResumeTargets, resolveResumeTarget } from "./resume-targets.ts";
 import type { QuickPromptStore } from "./quick-prompts.ts";
 import { SessionConflictError, SessionInputError, SessionNotFoundError, validateName, type SessionManager } from "./sessions.ts";
@@ -34,6 +37,8 @@ export interface AppDeps {
   hub: Hub;
   quickPrompts: QuickPromptStore;
   diffComments: DiffCommentStore;
+  picks: PickStore;
+  picker: PickerAccess;
   memory: MemoryCollector;
   staticDir: string;
   meta: { saSource: string; claudeVersion: string; version: string; commit: string };
@@ -45,12 +50,15 @@ export function sendJson(res: ServerResponse, status: number, body: unknown): vo
   res.end(payload);
 }
 
-export async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+/** 本文が上限を超えた。受け取り口では 403、それ以外では 400。 */
+export class BodyTooLargeError extends SessionInputError {}
+
+export async function readJsonBody(req: IncomingMessage, maxBytes: number = MAX_BODY_BYTES): Promise<unknown> {
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const chunk of req) {
     total += (chunk as Buffer).length;
-    if (total > MAX_BODY_BYTES) throw new SessionInputError("body too large");
+    if (total > maxBytes) throw new BodyTooLargeError("body too large");
     chunks.push(chunk as Buffer);
   }
   try {
@@ -145,6 +153,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   }
   if (await handleDiff(deps, req, res, url)) return;
   if (await handlePr(deps, req, res, url)) return;
+  if (await handlePicks(deps, req, res, url)) return;
   if (await handleDailyUse(deps, req, res, url)) return;
   const removeMatch = /^\/api\/sessions\/([^/]+)$/.exec(url.pathname);
   if (req.method === "DELETE" && removeMatch) {
@@ -238,6 +247,7 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
   return true;
 }
 
+const PICK_INGEST_PATH = "/api/picks";
 const PAIRING_PATHS: ReadonlySet<string> = new Set(["/api/pair/challenge", "/api/pair", "/api/pair/redeem"]);
 const NO_STORE = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
 
@@ -333,6 +343,11 @@ export function createRequestHandler(deps: AppDeps) {
         return;
       }
       if (url.pathname.startsWith("/api/pair") && (await handlePairing(deps, req, res, url.pathname))) return;
+      // 拡張からの部品の受け取り口。認証の前に通すのはこの完全一致の 1 本だけ（Origin と合言葉で守る）
+      if (req.method === "POST" && url.pathname === PICK_INGEST_PATH) {
+        await handlePickIngest(deps, req, res);
+        return;
+      }
       if (url.pathname.startsWith("/api/")) {
         const method = deps.auth.authenticate({ authorization: req.headers.authorization });
         if (method === null) {
