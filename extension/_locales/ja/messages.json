@@ -1,0 +1,12 @@
+{
+  "extName": { "message": "Agent Console 部品ピッカー" },
+  "extDescription": { "message": "画面の部品をクリックで選び、Agent Console のアプリへ送ります。" },
+  "actionTitle": { "message": "部品を選ぶ" },
+  "guideSelecting": { "message": "クリックで選ぶ／Esc でやめる" },
+  "guideSending": { "message": "送っています" },
+  "resultSent": { "message": "アプリに送りました" },
+  "resultForbidden": { "message": "アプリの拡張機能を更新してください（chrome://extensions の更新ボタン）" },
+  "resultNotRunning": { "message": "アプリが起動していません" },
+  "resultError": { "message": "送れませんでした" },
+  "badgeError": { "message": "×" }
+}
