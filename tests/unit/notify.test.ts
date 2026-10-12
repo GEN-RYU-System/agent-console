@@ -33,8 +33,8 @@ describe("escapeAppleScript", () => {
 
 describe("breakBody", () => {
   it("contains only the session name and the state", () => {
-    expect(breakBody("api-fix", "idle")).toBe("api-fix: 待機");
-    expect(breakBody("api-fix", "waiting")).toBe("api-fix: 待ち");
+    expect(breakBody("api-fix", "idle")).toBe("api-fix: 指示待ち");
+    expect(breakBody("api-fix", "waiting")).toBe("api-fix: 回答待ち");
   });
 });
 

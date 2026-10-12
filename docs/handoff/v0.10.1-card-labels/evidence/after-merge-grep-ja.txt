@@ -1,0 +1,7 @@
+src/locales/ja.json:24:      "waiting": "回答待ち",
+src/locales/ja.json:25:      "idle": "指示待ち",
+src/locales/ja.json:90:    "notifyHelp": "「作業中」から「回答待ち」または「指示待ち」に変わった時点を、このアプリが作業の区切りとみなして知らせます（Claude 公式の「ターン完了」の定義ではありません）。",
+src/locales/ja.json:94:      "hintClaude": "Claude に /rename を送って名前を変えます。作業中や許可待ちのときは予約して、指示待ちになったら送ります。",
+src/locales/ja.json:97:      "queueBody": "Claude が作業中か許可待ちです。名前は予約しておき、指示待ちになったら自動で変えます。",
+src/locales/ja.json:201:        "waiting": "待機中",
+src/locales/ja.json:278:        "rateLimited": "GitHub の利用上限に達しました。次の取り直しまで待ちます",

@@ -1,0 +1,13 @@
+
+ RUN  v5.0.3 /Users/tanizawashingo/agent-console-wt/card-labels
+
+.: replacing existing signature
+
+ Test Files  77 passed (77)
+      Tests  1111 passed (1111)
+   Start at  05:05:17
+   Duration  240.50s (tests 87%, environment 7%, import 5%, transform 1%)
+
+    Isolate  77 workers spawned · ~734ms startup each (spawn + environment, per file)
+             at least ~18.11s faster with isolate: false — reuses workers across files instead of one per file
+

@@ -1,0 +1,110 @@
+README.md:55:- **作業の区切りの通知**: Claude の状態が「作業中」から「回答待ち」または「指示待ち」に変わると、一覧の行に「未読」の印、窓のタイトルに未読数、macOS の通知が出ます。行を選ぶと未読が消えます。この「区切り」はこのアプリの定義で、Claude 公式の「ターン完了」ではありません。macOS 通知は設定 `notify.macos`（既定 true）で切り替えます。
+README.md:56:- **名前の変更**: 一覧の名前をダブルクリック、または行を選んだ状態で F2 キー（Mac では Fn+F2 のことがあります）。Claude 起動中は Claude に `/rename` を送ります。指示待ちのときはすぐ、作業中・許可待ち・状態不明のときは端末に何も書かずに予約し（行に「予約: 名前」が出ます）、指示待ちになったら自動で1回送ります（許可待ちの間には送りません。予約はメモリだけで、サーバーを再起動すると消えます）。指示待ちのときに送って10 秒たっても名前が変わらなければ画面に案内が出ます。Claude が動いていないセッションは、このアプリでの表示名を変えます。
+README.md:59:- **変更内容の表示と、行ごとのコメント**: 端末の上の「変更」タブで、選んでいるセッションの作業場所（本店か worktree）の、基準 `origin/main`（設定 `diffBaseRef`。最後に取得した状態で、アプリは fetch しません）から変わったファイルを一覧できます（コミット済み・未コミット・まだ追加されていないファイル）。ファイルを押すと行番号つきの変更が出て、追加行は緑、削除行は赤の背景です。行を押すとコメント欄が開き、保存すると印がつきます（編集・削除できます。ファイル全体へのコメントもできます）。コメントは `~/Library/Application Support/agent-console/diff-comments.json`（権限 600）に残り、worktree が消えると、その場所の分も消えます。「Claude に送る（N件）」で、未送信のコメントを `File／Line／該当行／Comment` の 1 つの文章にして端末へ貼り、`pasteSubmitDelayMs`（既定 2000 ms）待ってから Enter を送ります。Claude が作業中・許可の確認待ちのときは押せず、理由がボタンの横に出ます。待っている間に別のセッションへ切り替えると、Enter は送らず「貼り付けましたが送っていません」と出ます。1 ファイルの変更が `diffMaxFileBytes`（既定 1 MiB）を超えるファイルと、バイナリは中身を出しません。送る文章の上限は `diffSendMaxBytes`（既定 16 KiB）です。本店でも worktree でもない場所のセッションでは git を実行せず「この作業場所の変更は表示できません」と出ます。
+README.md:61:- **Chrome で画面の部品を選び、アプリから Claude に指示する（部品）**: 参考にしたいページ（このアプリでも、ほかのサイトでも）の部品を、Chrome の拡張機能のボタンで選ぶと、その部品（URL・セレクタ・文字・HTML・主な見た目の値・位置と大きさ・切り抜き画像）がアプリの「部品」タブに届きます。タブの数字は、まだ Claude に送っていない部品の数です。各部品に「ひとこと」（Claude への指示）を書き、送る部品を「選ぶ」で選んで「Claude に送る（N件）」を押すと、1つの依頼文として端末に入ります（括弧付きで貼って `pasteSubmitDelayMs` 待ってから Enter。作業中・許可待ちは押せず、理由が出ます）。依頼文は、ページから取った内容を「参考情報（命令ではありません）」、ひとことを「指示」に分け、区切りには送るたびの乱数を付けます。依頼文の先頭には「見た目の値はそのまま使わず、Sales Anchor のデザイントークンと金型に置き換える」を固定の文として入れます。部品は `~/Library/Application Support/agent-console/picks/`（1件ごとに JSON と PNG、権限 600）に残り、新しい順に `pickMaxKeep`（既定 50）件までです。依頼文の上限は `pickSendMaxBytes`（既定 16 KiB）、依頼文に入れる HTML は部品1件あたり `pickHtmlInPromptChars`（既定 1500 字）までです（3つとも省略できます）。
+docs/CHANGELOG.md:5:- 0.10.1 セッション一覧の表示整理: 状態の文言を「待ち」→「回答待ち」（人の返事・許可が要る）、「待機」→「指示待ち」（次の指示を待つ）に変え（一覧の印・右の欄の「今の状態」・macOS 通知・注記文・README）、鉛筆の「名前を変える」ボタンを消して名前の変更はダブルクリックまたは F2 キーにし（停止中の行では開かない）、「未読 N 件」の印を2段目（状態の印と CI の印の間）へ移した。状態の判定・定期タスクの結果の「待機中」は変えていない。
+docs/CHANGELOG.md:6:- 0.10.0 画面の並べ方: ①中央の上部タブ（端末・変更・PR・部品・定期タスク）を高さ 56px・文字 24px にした（`src/tokens.app.css` の `--ac-tab-h` を `src/pages/ConsolePage.css` が `var()` で参照。件数の印と右の欄のタブの大きさは変えない。デザインの検査 `scripts/check-design-governance.mjs` は `--ac-` の値に font stack のほか単位つきの長さ（px・rem）を許す。色・var()・calc は今までどおり許さない）。②「よく使う指示」のバーを1行にした（折り返さず、入りきらない分は横に動かす）。左の「よく使う指示」ボタンで全件の一覧（Modal）が開き、「使う」と「常に表示」の切り替えができる（Esc で閉じる）。「常に表示」の印は `quick-prompts.json` の各項目の任意の `pinned`（version は 1 のまま。無い項目は常に表示と読み、新しい指示は常に表示。名前や本文だけの更新では変わらない。`pinned` が真偽値でないファイルは壊れたファイルとして上書きしない）。③左のセッション一覧の行を、1段目＝状態の丸・名前・未読の印、2段目＝役割・状態の印（作業中・待機など）・CI の印・予約の名前の順にした（行の高さは 64px 以下のまま）。④行をドラッグして並び順を変えられる（Alt+↑・Alt+↓ でも1つずつ動く）。並び順の正本は `server/sessions.ts` の `SessionManager.move`（`POST /api/sessions/:id/move` の `{toIndex}`）で、復元のリスト（open-sessions.json）がその順に書き直されるので再起動のあとも残る。設計の正本は docs/handoff/layout/design.md、調査は同 recon.md。
+docs/CHANGELOG.md:10:- 0.7.0 Routine タブで専用 Claude Code セッションを使う平日・JST 時刻の定期指示を登録・編集・有効/無効化できる。正本は `dataDir/routines.json` だけで、通常セッションの復元リストには混ぜない。fresh guard で idle かつ待機理由無しの場合だけ一回送信し、すべてのスロット結果を履歴に残して再試行しない。設計の正本は docs/handoff/v0.7.0-routines/design.md。
+docs/CHANGELOG.md:14:- 0.4.0 変更内容（diff）の表示と、行ごとのコメントを Claude に渡す: 端末の上に「端末」と「変更」のタブ（SA の Tabs）。「変更」は、選んだセッションの作業場所（本店か worktree だけ。それ以外は git を実行せず「この作業場所の変更は表示できません」）で、基準 `origin/main`（設定 `diffBaseRef`、最後に取得した状態でアプリは fetch しない）から変わったファイルの一覧（コミット済み・ステージ済み・未ステージは `git diff --merge-base <基準> --no-renames --numstat -z`、未追加は `git ls-files --others --exclude-standard -z`）と、1 ファイルずつの行番号つき diff（追加行は `--color-success-bg`、削除行は `--color-error-bg`）を出す。1 ファイルの変更が `diffMaxFileBytes`（既定 1MiB）を超えるときは本文を出さず、バイナリも出さない。行を押すとコメント欄が開き（1 行ずつ・ファイル全体にも 1 つ）、編集・削除でき、`dataDir/diff-comments.json`（権限 600、作業場所ごと。worktree が消えた・別ブランチで作り直された場所の分は読むたびに捨てる）に残る。「Claude に送る（N件）」で未送信のコメントを `File／Line／該当行／Comment` の 1 つの文章にし（`diffSendMaxBytes` 既定 16KiB まで）、画面が端末へ括弧付きで貼り、`pasteSubmitDelayMs`（既定 2000ms。本物の claude で 1 つの依頼になると実測した値）待ってから Enter を送る。Claude が作業中・許可の確認待ちのときは押せず、理由をボタンの横に常に表示する。待っている間にセッションを切り替えたら Enter は送らず送信済みにもしない。画面から渡すファイル名は、サーバーがその時点で作った一覧に完全一致するものだけ受け付ける（取得・コメントの追加と編集）。端末の大きさ合わせは、隠れている（幅か高さが 0）間は pty へ送らない。API: `GET /api/sessions/:id/diff`・`/diff/file?path=`・`/diff-comments`、`POST|PUT|DELETE …/diff-comments[/:cid]`、`POST …/diff-comments/send-check`・`/mark-sent`。設計の正本は docs/handoff/v0.4.0-diff-comments/design.md、貼り付け経路の実測は同 step0.md。
+docs/CHANGELOG.md:18:- 0.3.7 名前の変更をダブルクリックでできるようにし、作業中の名前変更を予約にした: 行の名前をダブルクリックすると「名前を変える」画面が開く（1回のクリックは選択のまま、止まった行は対象外）。鉛筆は止まった行を除いて常に押せる。Claude が作業中・許可待ち・状態不明のとき、名前は端末に書かずにサーバーのメモリへ予約し（`POST /api/sessions/:id/rename` は `{mode: "queued"}` を返し、一覧の行に「予約: 名前」が出る）、定期取得で待機（idle かつ waitingFor 無し）になり、要求時と同じ取り直し判定を通ったときだけ `/rename` を1回送る。許可待ちの間には送らない。予約は上書きでき、待機中にすぐ変えた場合・セッションが止まった場合・一覧から外した場合・サーバー再起動で消える。状態不明のまま予約し、その後 Claude がいないと分かればアプリの名前を変える。設計上の変更: stage2/design.md:37 の「人が押したときのみ送る」は「人が押した予約を、条件を満たしたときに1回だけ送る」に変わった（正本は docs/handoff/v0.3.7-rename-queue/design.md）。
+docs/handoff/layout/design.md:8:  - セッションの行「表示場所を Opus 設計の右側に」「作業中や待機などのバッジと CI 失敗のバッジは2段目に移動」。
+docs/handoff/layout/design.md:43:|K5 セッションの行の1段目は、状態の丸と名前（と未読の印）だけ。2段目は、役割（「Opus 設計」など）、状態の文字の印（作業中・待機など）、CI の印、予約の名前の順。行の高さは今と同じ 64px 以下|単体試験＋e2e|
+docs/handoff/layout/recon.md:79:- 【事実】`StatusDot`（`src/components/StatusDot/StatusDot.tsx:14-22`）は**丸い印と状態の文字（label）を 1 つの `.ac-status` に持つ**（`data-testid="status"`、丸 `.ac-status__dot--{state}`、文字 `.ac-status__label` に `t("ac.state.*")`）。すなわち今の 1 段目は「丸＋状態の文字＋名前＋CI＋未読」で、状態の文字が名前の幅を食う。状態の文字列は `src/locales/ja.json:23-28`（working「作業中」/ waiting「待ち」/ idle「待機」/ noClaude「Claude 未起動」/ stopped「停止」/ unknown「不明」）。丸の色は `src/components/StatusDot/StatusDot.css:16-19`（working=success、waiting=warning、idle=text-secondary、stopped=error。no-claude と unknown は既定の text-muted、:13）。CI の文言 `src/locales/ja.json:218-220`（「CI 失敗」「CI 実行中」「CI 成功」）。
+docs/handoff/layout/recon.md:95:- 【事実】`restoreOnStartup`（`server/restore.ts:105-152`）は `for (const item of items)`（:123）で items の順に 1 件ずつ `sessions.restore(...)`（:140）、間に `restoreStaggerMs` の待ち（:138）。したがって復元後の Map 順＝ items の順（開けなかった項目は飛ばされ、外れる。:126, 132, 136, 144）。
+docs/handoff/stage1-5/design.md:108:| 4319 を先に待ち受けた偽サーバーへの秘密の送出 | 相互認証（HMAC チャレンジ）。launcher は偽サーバーの proof を検証できなければ中止し、秘密も proof も送らない |
+docs/handoff/stage1-5/impl-notes.md:108:- launcher テストの不安定: 原因は vitest 既定のテスト時間 5 秒に対し、全体並列実行時の起動待ち（1 秒単位の待ち）が長引いたこと。各テストに 40 秒の明示タイムアウトと 20 秒の起動待ちを設定。偽サーバーではなく本物のサーバーを使うように変更。
+docs/handoff/stage1/card.md:17:- 最終報告の 1 行目は DONE / BLOCKED: / NEEDS_DECISION:。CI の完了待ちはしない（push と PR 作成まで）。
+docs/handoff/stage1/card.md:84:4. 状態（K1）: agentsPollMs ごとに `execFile(claudeBin, ['agents','--json'])`。出力から ANSI エスケープを除去し `\r\n`→`\n`、JSON 配列を解析（不正なら前回値を保持し状態「不明」）。各セッションの pty pid の子孫 pid 集合（process-tree）に含まれる `pid` の行を当該セッションの状態とする（busy→作業中、waiting→待ち、idle→待機、該当なし→「Claude 未起動」、pty 終了→停止）。未知キーは無視。
+docs/handoff/stage1/design.md:15:| K1 | 左の一覧に、アプリから起動したセッションが「名前・役割・状態（作業中/待ち/停止）」で並び、状態が 5 秒以内に `claude agents --json` の `status` と一致する | e2e: ダミー役割で起動→一覧の表示と `claude agents --json` 相当の取得値を比較（単体: 解析関数のテスト） |
+docs/handoff/stage1/design.md:24:閾値 K7 の根拠: node-pty で zsh を 1 本動かした node プロセスの実測 RSS 46.5MB（recon §B-2）。Orca の公開実測は待機時 1.07GB（Discussion #16993）。
+docs/handoff/stage1/design.md:100:| Orca をそのまま使う | settings.json へ既定で書込（#20691 未マージ）、ブランチ削除（#20875）、待機 1.07GB |
+docs/handoff/stage1/design.md:126:- Orca（stablyai/orca）: 公開実測 待機 1.07GB（Discussion #16993, 2026-08-28, OS 不明）、端末 daemon 3 本で private 計 1.08GB（#12728, Windows 14.8GB 機）。採用しない要因の根拠として使用。成功の証明には使わない。
+docs/handoff/stage1/impl-notes.md:92:総称名 `monospace` だと、xterm（DOM レンダラ）が計算する行の letter-spacing が 5.5px になり、文字間が広がる。実フォント名では 0px。`lang="en"` を端末に付けても直らなかった（試して戻した）。SA のトークンに等幅フォントは無い。設計者判断（2026-10-11）: アプリ固有トークン `--ac-font-mono`（Menlo, Monaco, "Courier New", monospace）を `src/tokens.app.css` に 1 か所だけ登録し、TerminalPane は他のトークンと同じく getComputedStyle で読む。`check-design-governance` は font-family の直書きを `src/tokens.app.css` 以外で禁止し、このファイルには `--ac-` のカスタムプロパティ以外を置けないようにした（テスト付き）。SA に `--font-mono` が追加されたら置換する（PO 判断待ち）。e2e の回帰テスト（letter-spacing < 1px）は有効化済み。
+docs/handoff/stage1/recon.md:16:| 公開実測: 待機 1.07GB RSS（Discussion #16993）／daemon 3 本 private 計 1.08GB（#12728, Windows 14.8GB）／10 タブで GPU 約4GB→修正後約1.5GB（#19116）／main 17GB 膨張は不具合（#19768） | 各 issue 本文 | 担当報告 |
+docs/handoff/stage2/design.md:14:| K1 | Claude の状態が「作業中（busy）」から「待ち（waiting）」または「待機（idle）」に変わったら、6 秒以内に ①一覧の該当行に未読の印 ②窓のタイトルに未読数 ③macOS の通知（設定で切替、既定オン）が出る。行を選ぶと未読が消える | 単体（遷移判定）＋e2e（スタブの status を busy→idle）＋通知はコマンド呼び出しをスタブで記録 |
+docs/handoff/stage2/design.md:38:  - 修正ラウンド1（review-stage2 M1/L1）: waiting は許可プロンプトの応答待ちを含む可能性があり（未確認）、そこへ Enter を送ると既定の選択肢を押す恐れがあるため、idle のときだけに絞った。
+docs/handoff/v0.3.1-icon/design.md:23:- 対象外: 画面内のロゴ表示、ファビコン、ccopusgo の再開（別件・PO 回答待ち）、段階2の LOW 修正（変更は一度に1つ）。Dock の強制再起動（`killall Dock`）は自動で行わない。
+docs/handoff/v0.3.7-rename-queue/design.md:7:  - 作業中・許可待ちのときは、名前を予約して、待機になったら自動で変える案に「y」
+docs/handoff/v0.3.7-rename-queue/design.md:17:- 許可待ち（waiting、waitingFor "permission prompt"）に `/rename x\r` を書き込んだ。
+docs/handoff/v0.3.7-rename-queue/design.md:26:|K2 鉛筆は止まったセッションを除いて常に押せる（作業中・許可待ち・状態不明でも押せる）|単体試験＋e2e（working で enabled）|
+docs/handoff/v0.3.7-rename-queue/design.md:27:|K3 Claude が待機中（idle かつ waitingFor 無し）なら、今までどおりすぐ `/rename` を送り `{mode:"claude"}` を返す。Claude のいないシェルは今までどおりアプリの名前を変えて `{mode:"app"}` を返す|統合試験（既存のケースを維持）|
+docs/handoff/v0.3.7-rename-queue/design.md:28:|K4 作業中・許可待ち・状態不明のときは、端末に何も書かずに予約し、`{mode:"queued"}` を返す。一覧のその行には予約中の名前が出る|統合試験（ring に /rename が無い、view.pendingName が入る）＋ e2e|
+docs/handoff/v0.3.7-rename-queue/design.md:29:|K5 予約は、定期取得のたびに要求時と同じ取り直し判定（checkInput）をしてから送る。ok かつ hasClaude なら `/rename <名前>\r` を送り、ok かつ Claude が無ければアプリの名前を変え、予約を消す。ok でなければ予約を残す。許可待ちの間には絶対に送らない|統合試験（busy → waiting → idle の順に取得させて、idle になった後にだけ ring に /rename が1回入る）|
+docs/handoff/v0.3.7-rename-queue/design.md:30:|K6 予約中にもう一度名前を変えた場合は、新しい名前で上書きする（送るのは最後の1回だけ）。待機中にすぐ変えた場合は予約を消す。セッションが止まったら、または一覧から外したら予約を捨てる|統合試験|
+docs/handoff/v0.3.7-rename-queue/design.md:32:|K8 文言は i18n（ja.json）で書く。「作業中は変えられません」の文言は、「予約して、待機になったら変わります」の内容に置き換える|単体試験|
+docs/handoff/v0.3.7-rename-queue/design.md:86:- hintClaude: 「Claude に /rename を送って名前を変えます。作業中や許可待ちのときは予約して、待機になったら送ります。」
+docs/handoff/v0.3.7-rename-queue/design.md:89:  - queueBody: 「Claude が作業中か許可待ちです。名前は予約しておき、待機になったら自動で変えます。」
+docs/handoff/v0.3.7-rename-queue/design.md:98:- 自動で送るときも、人が押したときと同じ判定（要求時に取り直した idle、かつ waitingFor 無し）を通してから送る。許可待ちのときは送らない。
+docs/handoff/v0.3.7-rename-queue/design.md:109:- 待機にならないまま止まる、あるいは外される: 予約を捨てる（K6）。
+docs/handoff/v0.3.7-rename-queue/design.md:114:- Claude Code の公式文書 commands（https://code.claude.com/docs/en/commands、Context7 /websites/code_claude、2026-10-12 取得）: 「If you send a command while Claude is responding, Claude Code queues it and runs it after the current turn finishes.」Claude の本体も、作業中のコマンドを待たせる設計になっている。我々はこれをアプリ側で、許可待ちを避ける形で行う。
+docs/handoff/v0.3.7-rename-queue/design.md:120:- K5 の統合試験（busy → waiting → idle で、idle の後に1回だけ送る）で「許可待ちには送らない」を固定する。
+docs/handoff/v0.3.7-rename-queue/recon.md:6:PO 承認（2026-10-12）: (1) 名前をダブルクリックで変えられる・鉛筆も残す (2) Claude が作業中・許可待ち・状態不明のときは名前を予約し、待機になったら自動で /rename を送る。
+docs/handoff/v0.3.7-rename-queue/recon.md:228:  "hintClaude": "Claude に /rename を送って名前を変えます（待機のときだけ）。",
+docs/handoff/v0.3.7-rename-queue/recon.md:231:  "busyBody": "Claude が idle（待機）のときだけ変えられます。作業中・許可待ちなどの間は、終わってからやり直してください。",
+docs/handoff/v0.3.7-rename-queue/recon.md:240:【事実】`hintClaude`（「待機のときだけ」）と `busyTitle/busyBody`（「作業中は変えられません」）は、予約を許すと文言が事実と食い違う。
+docs/handoff/v0.3.7-rename-queue/recon.md:294:- `:38` 修正ラウンド1: 「waiting は許可プロンプトの応答待ちを含む可能性があり（未確認）、そこへ Enter を送ると既定の選択肢を押す恐れがあるため、idle のときだけに絞った。」
+docs/handoff/v0.3.9-test-flake/design.md:37:- 待ち時間は WAIT と SLOW_TEST_MS の定数に集約。新しい待ちはこの定数を使う。
+docs/handoff/v0.3.9-test-flake/recon.md:9:- K7 の FRESH 待ち（waitFor 既定 1000ms）、K1 の READY 待ち（既定 1000ms）、K1 の `toBeLessThan(600)`（猶予 closeGraceMs=600 と同値で、負荷の遅れ 6ms で超える）、K2 の試験全体 5000ms。いずれも負荷で時間切れ。
+docs/handoff/v0.4.0-diff-comments/design.md:20:  - 【未確認】待たずに Enter を送る今の pasteAndEnter（TerminalPane.tsx:39-40）で同じ結果になるか。Orca は貼り付けの後に待ち時間を置いてから Enter を送る（recon-orca.md:60）。
+docs/handoff/v0.4.0-diff-comments/design.md:44:|K14 2秒待っている間に別のセッションへ切り替えたら、Enter は送らず、送信済みにもしない。「貼り付けましたが送っていません。そのセッションの端末で Enter を押してください」と出す。送っている間は「Claude に送る」を押せない|単体試験（待ちの間に sessionId を変える）|
+docs/handoff/v0.4.0-diff-comments/design.md:53:  - src/components/TerminalPane/TerminalPane.tsx（待ち時間つきの貼り付けの関数を足す。大きさが 0 のときは送らない）
+docs/handoff/v0.4.0-diff-comments/design.md:121:  - TerminalPane に、待ち時間を受け取る貼り付けの関数を足す。既存の pasteAndEnter（よく使う指示）の動きは変えない。
+docs/handoff/v0.4.0-diff-comments/design.md:124:- 待ちの間にセッションが切り替わった場合（TerminalPane は sessionId が変わると xterm を片付ける：TerminalPane.tsx:92-100）:
+docs/handoff/v0.4.0-diff-comments/design.md:125:  - 待ちの後、端末の sessionId が確認した id と違えば、Enter を送らずに false を返す。mark-sent は呼ばない。
+docs/handoff/v0.4.0-diff-comments/design.md:128:- 実装の最初の工程（工程0）: 本物の claude を捨てディレクトリで起動し、この経路（2秒待ち）で3行の文章が `[Pasted text #N]` の1つの依頼として届くことを実測して、結果を docs/handoff/v0.4.0-diff-comments/ に記録する。届かなければ、実装を止めて設計者に戻す。
+docs/handoff/v0.4.0-diff-comments/design.md:170:  - 行ごとのコメントを書いて、まとめて「File／Line／コメント」の形で、入力待ちを待ってから端末に貼る。
+docs/handoff/v0.4.0-diff-comments/design.md:173:- 過去事例 v0.3.7（rename の予約）：許可の確認待ちに Enter を入れない判定を、そのまま使う。
+docs/handoff/v0.4.0-diff-comments/design.md:199:  - MEDIUM-A 待ちの間にセッションを切り替えた場合：§3-6 と K14 に書いた。
+docs/handoff/v0.4.0-diff-comments/recon.md:152:- O:55-62: 送信は `terminal.wait` で入力待ち（`tui-idle`）を待ち（active-agent-note-send.ts:112-117）、`BRACKETED_PASTE_BEGIN + sanitize(prompt) + END` を `terminal.send`（active-agent-note-send-delivery.ts:70-82、`requireAgentStatus: 'sendable'`）、遅延後に Enter（:105）。
+docs/handoff/v0.4.0-diff-comments/step0.md:26:- 残る差: 今の e2e は待ち時間なしで Enter を送る。2000ms の待ちを入れた形の本物の claude への貼り付けは、上の実測（node-pty 直接）で確認。アプリ内セッション経由の最終確認は K11（導入後、PO の目視）。
+docs/handoff/v0.6.0-picker/design.md:52:|K7 Claude が作業中か許可の確認を待っている間は送れない。2秒待ちの間に切り替えたら送らない（v0.4.0 と同じ）|単体試験（v0.4.0 の仕組みを使い回す）|
+docs/handoff/v0.6.0-picker/design.md:191:- (a) tools ありの本物の claude（`claude --model sonnet`、捨てディレクトリ）に、dataDir の外にある PNG のパスを含む依頼文を、2秒待ちの形で貼る。観測するのは、Read を使うか、許可の確認が出るか、の2つ。
+docs/handoff/v0.6.0-picker/design.md:195:- (b) 上限いっぱい（16KiB）の依頼文を、2秒待ちで貼ったときに、1つの依頼になるかを測る。ならなければ止まって設計者に戻す。
+docs/handoff/v0.6.0-picker/recon.md:16:- 【事実】画像: 送信直前に host を visibility:hidden にして 80ms 待ち（picker.js:66-67）、background で `chrome.tabs.captureVisibleTab(windowId,{format:"png"})` → createImageBitmap → rect×(bmp.width/vw) で OffscreenCanvas に切り抜き → PNG → base64（background.js:32-44）。画面に見えている範囲だけ撮れる（スクロール外の部分は撮れない。captureVisibleTab の性質。【未確認】実測はしていない）。
+docs/handoff/v0.6.0-picker/recon.md:78:- 【事実】よく使う指示の経路は同型で、`POST /api/sessions/:id/send-check`（http.ts:231-236）→ `terminalRef.current.pasteAndEnter`（ConsolePage.tsx:171-176）。こちらは待ち無しで paste 直後に Enter（TerminalPane.tsx:44-49）。選択が切り替わったら入れない（ConsolePage.tsx:175）。
+docs/handoff/v0.6.0-picker/recon.md:81:- 【事実】checkInput（server/hub.ts:185-190）: 要求時に `claude agents --json` と ps を取り直し（定期取得の値を使わない）、`inputVerdict`（server/agents.ts:80-88）で判定。stopped→不可 / agents 取得不能(null)→不可("claude state is unknown") / claude 無し→可(hasClaude=false) / status!=idle→不可("claude is <status>") / waitingFor あり→不可("claude is waiting for input") / それ以外 可。許可確認待ちに入れると Enter が許可になるのを避けるため（design.md:§5「端末に入れるのは、入力してよい時だけ（K6）」）。
+docs/handoff/v0.6.0-picker/step0.md:9:- 【事実】やり方: 捨てディレクトリで `claude --model sonnet`（claude 2.1.296、表示は Sonnet 5.5）を node-pty で起動した（probe-a.mjs）。信頼の確認に上矢印と Enter を1回。ready の表示を待ち、依頼文（prompt-a.txt、956 bytes）を括弧付き貼付で貼り、2秒待って Enter を送った。PNG は試作の inbox/1.png（352x22）を、捨てディレクトリの外の img/1.png に写して使った。
+docs/handoff/v0.6.0-picker/step0.md:22:## (b) 上限いっぱい（16KiB）の依頼文を、2秒待ちで貼ると、1つの依頼になるか
+docs/handoff/v0.7.0-terminal-ux/recon.md:128:- 【事実】`src/tokens.app.css:8` `--ac-font-mono: Menlo, Monaco, "Courier New", monospace;`（同:1-6 にコメント。SA に --font-mono が来たら置き換える【PO 判断待ち】）。
+docs/handoff/v0.7.0-terminal-ux/recon.md:189:- 【事実】`tests/unit/daily-use.integration.test.ts`: `/api/quick-prompts` の POST/GET/PUT/DELETE（:306-326）、move の 200/400/404/401（:329-343）、本文 8KB 超で 400・認証なしで 401（:359-361）、送信確認の待機状態（:275-297）。
+docs/handoff/v0.7.0-terminal-ux/step0.md:28:- 【事実】やり方: 捨てディレクトリの cwd（git init 済み）で `claude --model sonnet`（node-pty、zsh -ic、LANG=ja_JP.UTF-8、160x50）を起動。信頼の確認に上矢印と Enter を1回。ready を待ち、`ESC[200~` ＋ 空白 ＋ パス ＋ 空白 ＋ `ESC[201~` を書いた（xterm の paste と同じ括弧付き。Enter は送っていない）。
+docs/handoff/v0.8.0-activity/design.md:33:  - 状態の表示（作業中・待ち・許可待ち）は、すでに agents.ts:85-93 と ja.json の ac.state にある。
+docs/handoff/v0.8.0-activity/design.md:39:|K2 「このセッション」には、上から次を出す: (1) 今の状態（作業中／返事待ち／許可の確認待ち。今ある表示を使う）、(2) 今動いている担当（呼び名・頼んだ仕事の説明・動き始めてからの時間）、(3) 終わった担当（新しい順に10件。呼び名・仕事の説明・結果のひとこと（報告の先頭 120 字）・かかった時間）、(4) やることの一覧（作った順。終わったものには印）、(5) 最近の入力（新しい順に3件、先頭 80 字。工程0で人の入力を見分けられたときだけ「しんごさんの指示」と書く）|統合試験（偽の hook の入力を流す）＋e2e|
+docs/handoff/v0.8.0-activity/recon.md:25:- Notification（L2466-2479）: message, title, notification_type。種類は permission_prompt（許可待ち約6秒後）, idle_prompt（応答後約60秒）, agent_needs_input, agent_completed など（L2398-2411）
+ops/launcher/launch.sh:5:# 偽のサーバーが 4319 を先に待ち受けていても、サーバーの証明を検証できなければ何も送らずに中止する。
+server/agents.ts:12:  /** status が waiting のときだけ付く（許可プロンプト・質問などの待ち理由） */
+server/agents.ts:76: * Claude が動いているときは status が idle で waitingFor が無いときだけ（waiting は許可プロンプトの応答待ちを含み得て、
+server/config.ts:76:  /** 文章を貼ってから Enter を送るまでの待ち（ms）。本物の claude で 1 つの依頼になると実測した値が既定 */
+server/hub.ts:27:  /** 名前の変更を予約中のとき、その名前（待機になったら自動で送る）。予約が無ければ項目ごと無い */
+server/hub.ts:159:  /** 名前の変更の要求。待機中ならすぐ反映し、作業中・許可待ち・状態不明なら端末に書かず予約する。 */
+server/hub.ts:183:  /** 定期取得のたびに予約を見る。待機になっていたら、要求時と同じ取り直し判定を通ったときだけ 1 回送る。 */
+server/notify.ts:24:const STATE_LABEL: Record<"waiting" | "idle", string> = { waiting: "回答待ち", idle: "指示待ち" };
+src/components/RenameForm/RenameForm.tsx:16:/** 名前の変更。Claude 起動中は Claude の /rename（待機のときはすぐ、作業中・許可待ちはサーバーが予約して待機になったら送る）、Claude が動いていなければアプリ側の名前。 */
+src/components/SessionList/SessionList.test.tsx:139:    expect(texts).toEqual(["作業中", "回答待ち", "指示待ち", "Claude 未起動", "停止", "不明"]);
+src/components/TerminalPane/TerminalPane.tsx:27:   * 文章を貼ってから delayMs 待ち、その後に Enter を送る（複数行を 1 つの依頼として受け取らせるため。本物の claude で 2 秒待つと
+src/locales/ja.json:24:      "waiting": "回答待ち",
+src/locales/ja.json:25:      "idle": "指示待ち",
+src/locales/ja.json:90:    "notifyHelp": "「作業中」から「回答待ち」または「指示待ち」に変わった時点を、このアプリが作業の区切りとみなして知らせます（Claude 公式の「ターン完了」の定義ではありません）。",
+src/locales/ja.json:94:      "hintClaude": "Claude に /rename を送って名前を変えます。作業中や許可待ちのときは予約して、指示待ちになったら送ります。",
+src/locales/ja.json:97:      "queueBody": "Claude が作業中か許可待ちです。名前は予約しておき、指示待ちになったら自動で変えます。",
+src/locales/ja.json:200:        "waiting": "待機中",
+src/locales/ja.json:277:        "rateLimited": "GitHub の利用上限に達しました。次の取り直しまで待ちます",
+src/tokens.app.css:3: * SA に --font-mono が追加されたら --ac-font-mono を置き換える（PO 判断待ち）。
+src/types.ts:15:  /** 名前の変更を予約中のとき、その名前（待機になったら自動で変わる） */
+tests/e2e/console.spec.ts:464:  expect(line).toContain('display notification "notify-target: 指示待ち" with title "Agent Console"');
+tests/e2e/console.spec.ts:488:test("段階2 K2: 名前を変えると /rename が端末に送られ、Claude 側の名前が変われば表示も変わる。作業中は予約され、待機になってから送られる", async ({ page }) => {
+tests/e2e/console.spec.ts:521:  // 待機になったら、予約した名前が 1 回送られ、予約表示が消える
+tests/e2e/console.spec.ts:526:  // 待機中は今までどおりすぐ送る
+tests/e2e/console.spec.ts:570:  // Claude が作業中・許可待ちの間は送れない（ボタンは無効、サーバーも 409）。idle になってから送る
+tests/e2e/console.spec.ts:916:    // 閉じ括弧のすぐ後に Enter（待ち時間のあと）。間に他の入力は無い
+tests/e2e/console.spec.ts:1373:  await expect(line1).not.toContainText("指示待ち");
+tests/e2e/console.spec.ts:1374:  await expect(line2.getByTestId("state-badge")).toHaveText("指示待ち");
+tests/e2e/picker.spec.ts:255:  // 閉じ括弧のすぐ後に Enter（待ち時間のあと）。間に他の入力は無い
+tests/fixtures/ext-variant.ts:16:  /** アプリの待ち受けポート（拡張が部品を送る先） */
+tests/fixtures/gh-stub.sh:34:# 待ちは出力先を持たない子で行う（時間切れで bash が殺されても、受け手のパイプが開いたままにならない）
+tests/unit/daily-use.integration.test.ts:98:    expect(sent).toEqual(["claude-name: 指示待ち"]);
+tests/unit/daily-use.integration.test.ts:171:    // K6: 待機中にすぐ変えたので、予約は消えている
+tests/unit/helpers/harness.ts:70:  /** 指定すると、そのポートで待ち受ける（launchctl kickstart による起動の再現用）。 */
+tests/unit/launcher.test.ts:89:/** 4319 を先に待ち受けた偽サーバー。/healthz には 200 を返し、チャレンジに対する証明は proofSecret で作る。 */
+tests/unit/notify.test.ts:36:    expect(breakBody("api-fix", "idle")).toBe("api-fix: 指示待ち");
+tests/unit/notify.test.ts:37:    expect(breakBody("api-fix", "waiting")).toBe("api-fix: 回答待ち");
