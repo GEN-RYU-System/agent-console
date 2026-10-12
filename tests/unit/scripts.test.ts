@@ -93,7 +93,7 @@ describe("ac-install.sh", () => {
     expect(r.stdout).toContain(`コミット: ${sha}`);
     expect(r.stderr).toContain(sha);
     // 取得 → 到達性確認（gh api compare）の順
-    expect(log).toMatch(/gh repo clone[\s\S]*gh api repos\/shingo-cc\/agent-console\/compare\/main\.\.\.[0-9a-f]{40} --jq \.status/);
+    expect(log).toMatch(/gh repo clone[\s\S]*gh api repos\/GEN-RYU-System\/agent-console\/compare\/main\.\.\.[0-9a-f]{40} --jq \.status/);
   }, 60000);
 
   it("aborts when the tag's commit is not reachable from origin/main (ahead / diverged)", async () => {
@@ -446,7 +446,7 @@ describe("AC_* overrides are ignored outside test mode", () => {
 
   it("falls back to the real defaults when AC_STUB_LOG is not set", () => {
     const out = probe({ AC_GH: "/evil/gh", AC_SECURITY: "/evil/security", AC_CURL: "/evil/curl", AC_LAUNCHCTL: "/evil/launchctl", AC_NPM: "/evil/npm", AC_REPO: "evil/repo", AC_PORT: "1", AC_HOME: "/evil/home" });
-    expect(out).toBe("gh|security|curl|launchctl|npm|shingo-cc/agent-console|4319|/home/probe/Library/Application Support/agent-console");
+    expect(out).toBe("gh|security|curl|launchctl|npm|GEN-RYU-System/agent-console|4319|/home/probe/Library/Application Support/agent-console");
   });
 
   it("honors the overrides in test mode", () => {
