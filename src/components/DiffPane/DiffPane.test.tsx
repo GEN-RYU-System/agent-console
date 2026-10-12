@@ -203,6 +203,13 @@ describe("DiffPane: comments (K3)", () => {
     expect(await screen.findByText("コメントを読めませんでした")).toBeTruthy();
   });
 
+  it("uses the generic message, not 'unreadable', for other failures of the comments request", async () => {
+    fetchDiffComments.mockRejectedValue(new FakeApiError("boom", 500));
+    renderPane();
+    expect(await screen.findByText("コメントを取得できませんでした")).toBeTruthy();
+    expect(screen.queryByText("コメントを読めませんでした")).toBeNull();
+  });
+
   it("shows the server's message when saving fails and keeps the typed text", async () => {
     createDiffComment.mockRejectedValue(new Error("body must be at most 2000 characters"));
     renderPane();

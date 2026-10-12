@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -141,7 +141,7 @@ describe("comments (K3, K4, K9)", () => {
     expect(items((await comments(sessionId)).json)[0].body).toBe("直しました？");
     const file = path.join(h.config.dataDir, "diff-comments.json");
     expect(readFileSync(file, "utf8")).toContain("直しました？");
-    expect(execFileSync("stat", ["-f", "%Lp", file], { encoding: "utf8" }).trim()).toBe("600");
+    expect(statSync(file).mode & 0o777).toBe(0o600);
     expect((await api("DELETE", `/api/sessions/${sessionId}/diff-comments/${id}`)).status).toBe(200);
     expect(items((await comments(sessionId)).json)).toEqual([]);
     expect((await api("DELETE", `/api/sessions/${sessionId}/diff-comments/${id}`)).status).toBe(404);

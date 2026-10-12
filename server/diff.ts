@@ -63,7 +63,7 @@ export async function listChanges(dir: string, baseRef: string): Promise<ChangeL
   }
   try {
     const [tracked, others] = await Promise.all([
-      git(dir, ["diff", "--merge-base", baseRef, "--no-renames", "--numstat", "-z"], LIST_MAX_BUFFER),
+      git(dir, ["diff", "--merge-base", baseRef, "--no-renames", "--no-ext-diff", "--no-textconv", "--numstat", "-z"], LIST_MAX_BUFFER),
       git(dir, ["ls-files", "--others", "--exclude-standard", "-z"], LIST_MAX_BUFFER),
     ]);
     const known = new Set<string>();

@@ -43,7 +43,7 @@ type ListState =
   | { kind: "outside" }
   | { kind: "error" };
 type FileState = { path: string; diff: FileDiff | "loading" | "error" };
-type Comments = DiffComment[] | "unreadable";
+type Comments = DiffComment[] | "unreadable" | "failed";
 
 const BLOCKED_KEY: Partial<Record<SessionState, string>> = {
   working: "ac.diff.blocked.working",
@@ -101,7 +101,8 @@ export function DiffPane({ sessionId, active, state, canInput, paste, onCountCha
       if (commentsResult.status === "fulfilled") setComments(commentsResult.value.items);
       else {
         const reason = commentsResult.reason as unknown;
-        setComments(reason instanceof ApiError && reason.status === 409 ? [] : "unreadable");
+        if (reason instanceof ApiError && reason.status === 409) setComments([]);
+        else setComments(reason instanceof ApiError && reason.status === 500 && reason.message === "comments unreadable" ? "unreadable" : "failed");
       }
     },
     [openFile],
@@ -263,6 +264,7 @@ export function DiffPane({ sessionId, active, state, canInput, paste, onCountCha
           {t("ac.diff.commentsUnreadableHint")}
         </Callout>
       )}
+      {comments === "failed" && <Callout variant="warning" title={t("ac.diff.commentsLoadError")} />}
       {notice !== null && (
         <Callout variant="warning" title={t("ac.diff.sendNoticeTitle")}>
           {notice}

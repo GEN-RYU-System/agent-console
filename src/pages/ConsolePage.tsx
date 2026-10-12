@@ -330,7 +330,7 @@ export function ConsolePage() {
           onChange={setCenterTab}
           items={[
             { key: "terminal", label: t("ac.tabs.terminal") },
-            { key: "changes", label: t("ac.tabs.changes"), ...(diffCount !== null ? { count: diffCount } : {}) },
+            { key: "changes", label: t("ac.tabs.changes"), ...(activeId !== null && diffCount !== null ? { count: diffCount } : {}) },
           ]}
         />
         {centerTab === "terminal" && (

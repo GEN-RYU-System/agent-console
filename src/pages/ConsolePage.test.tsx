@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { readFileSync } from "node:fs";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "../i18n";
 import type { ConsoleState } from "../types";
@@ -90,7 +90,11 @@ vi.mock("../components/TerminalPane/TerminalPane", async () => {
 // 画面全体（SA の金型を含む）の読み込みは負荷時に数秒かかる。テストの 5 秒の制限に含めないよう、最初に 1 回だけ読む
 const { ConsolePage } = await import("./ConsolePage");
 
+let lastSocket: FakeWebSocket | null = null;
 class FakeWebSocket {
+  constructor() {
+    lastSocket = this;
+  }
   static OPEN = 1;
   readyState = 0;
   onmessage: unknown = null;
@@ -348,5 +352,14 @@ describe("ConsolePage terminal / changes tabs (K1, K12)", () => {
     const css = readFileSync("src/pages/ConsolePage.css", "utf8");
     expect(css).toMatch(/\.ac-page__terminal\[hidden\]\s*\{\s*display:\s*none;?\s*\}/);
     expect(css).not.toMatch(/visibility\s*:/);
+  });
+
+  it("drops the count from the 変更 tab when the selected session disappears", async () => {
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    await waitFor(() => expect(screen.getByRole("tab", { name: /変更/ }).textContent).toContain("1"));
+    const onmessage = lastSocket?.onmessage as (e: { data: string }) => void;
+    act(() => onmessage({ data: JSON.stringify({ sessions: [], agentsAvailable: true }) }));
+    await waitFor(() => expect(screen.getByRole("tab", { name: /変更/ }).textContent).toBe("変更"));
   });
 });
