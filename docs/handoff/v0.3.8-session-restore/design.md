@@ -50,7 +50,7 @@
 
 ## 3. 仕組み
 ### 3-1 復元リスト（正本）
-- 場所は `config.dataDir/open-sessions.json`。
+- 場所は config.dataDir 配下の open-sessions.json。
 - 形は `{version:1, items:[{roleId, name, cwd, branch?, claudeSessionId?}]}`。
 - 書き込みは quick-prompts.ts と同じにする: serial、一時ファイル（600）、chmod、rename。
 - 読み込みのとき、version が違う、または壊れている場合は例外にして、上書きしない（K8）。

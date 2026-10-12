@@ -29,7 +29,7 @@ commit 767d9af (v0.3.2)。server/past-sessions.ts(現在は削除済み):
 - 同 sessions: "Claude Code leaves sessions created with `claude -p` or the Agent SDK out of the session picker" (対話セッションは対象)
 ### 1-5 会話開始前のセッションに id が出るか【事実】実測
 手順: scratchpad/restore-probe/work(空フォルダ)で expect が `claude --model sonnet` 起動(env -u CLAUDECODE 等で親の変数を外す)→ 信頼確認画面で ↑+Enter → 本画面("Claude Code v2.1.296 Sonnet 5.5")表示 → 何も入力せず約4秒後に `claude agents --json`。
-結果(3回, agents-ready*.json): 行数は常に 10 のまま(自分以外の既存セッション分)。cwd に restore-probe を含む行 = 0。~/.claude/sessions/ には `<pid>.<hash>.key` のみ存在し `<pid>.json` は無い(sessfile.txt: `95165.9243b8ac...key`)。
+結果(3回, agents-ready*.json): 行数は常に 10 のまま(自分以外の既存セッション分)。cwd に restore-probe を含む行 = 0。~/.claude/sessions/ には `<pid>.<hash>.key` のみ存在し <pid>.json（プロセスごとのファイル） は無い(sessfile.txt: `95165.9243b8ac...key`)。
 => 一言も入力していない新規セッションは `claude agents --json` に出ない=sessionId を取れない。【未確認】最初の入力後にいつ出るか(今回は入力していないため)。
 注: 信頼確認画面は既定選択が "No, exit" で、Enter のみだと claude が終了する(2回再現: GOT_EOF)。↑ を押してから Enter で進む。
 後始末: 各 claude は ^C×2+kill で終了。最後の pid 95165 は `ps -p` で不在を確認。pgrep -fl "claude --model sonnet" は他エージェントの zsh -c 行(コマンド文字列に含むだけ)にヒットしたため、pid 指定で確認した。
