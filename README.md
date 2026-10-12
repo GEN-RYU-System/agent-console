@@ -6,6 +6,35 @@ Local console for running parallel Claude Code sessions (Orca-inspired, lightwei
 
 「定期実行」タブは、専用 Claude Code セッションに Asia/Tokyo の曜日・時刻で指示を一度だけ送ります。定義と実行履歴は `dataDir/routines.json` のみへ保存され、通常の復元リストには混ぜません。詳細は [routine design](docs/handoff/v0.7.0-routines/design.md) を参照してください。
 
+## v0.9.0 セッションの様子の記録
+
+左でセッションを選ぶと、右の欄の「このセッション」に、今の状態・動いている担当・終わった担当（結果のひとこと）・やること・最近の入力が出ます（台帳は隣の「台帳」タブ）。Claude Code の hook が `dataDir/activity/events-YYYYMMDD.jsonl`（UTC の日付、権限 600）に 1 行ずつ追記した記録を、アプリが読んでまとめます。設計は [design](docs/handoff/v0.8.0-activity/design.md)、工程0の実測は [step0](docs/handoff/v0.8.0-activity/step0.md)。
+
+### 入れる（1 回だけ・実行する人が自分で）
+
+アプリは Claude の設定を書き換えません。次を実行すると、`~/.claude/settings.json` に記録用の hook（6 つのイベント）を足します。足す前に控え `settings.json.ac-backup-<日時>` を作り（新しい 3 つだけ残します）、足すのは自分の hook だけです。2 回実行しても増えません。
+
+```
+node scripts/ac-hooks.mjs install      # 足す（hook の本体を dataDir/hooks/ に置いてから、設定に足す）
+node scripts/ac-hooks.mjs check        # 入っているか点検する（入っていれば終了コード 0、外れていれば 1）
+node scripts/ac-hooks.mjs uninstall    # 自分の hook だけを外す（ほかの設定には触れない）
+```
+
+`--settings <settings.json>` と `--data-dir <dataDir>` で場所を変えられます。書き直した設定は JSON として整形し直されます（1 行の配列が複数行になることがあります。元の中身は控えにあります）。hook は Claude を待たせず（async）、失敗しても Claude を止めません。残すのは担当の説明・結果の先頭 120 字・やることの題名・入力の先頭 80 字などの決めた項目だけで、手元のファイルから外へは送りません。
+
+### 「記録の仕組みが外れています」と出たとき（直し方）
+
+settings.json に hook が無い、または node や hook のファイルが無いときに、右の欄にこの案内が出ます（API を呼ぶたびに点検します）。`node scripts/ac-hooks.mjs check` で理由が分かります。`node scripts/ac-hooks.mjs install` を実行し直せば直ります（node の版が変わってパスが消えたときも同じ）。サーバーの起動のとき（本番のポートのみ）に hook の本体が `dataDir/hooks/` に写され、起動のときと 1 時間ごとに点検結果がログに出ます。
+
+### 割り切り
+
+- アプリが読むのは今日と昨日（UTC）の記録だけです。そのため、2 日以上前に呼んだ担当は、アプリを再起動したあとには出ません。
+- 古い記録（`activityKeepDays`、既定 7 日より前の日付のファイル）は、本番のポートのサーバーだけが消します。
+- 担当がさらに呼んだ担当（孫）は記録しますが、画面には出しません。担当の会話の中身（transcript）は読みません。
+- 人の入力かどうかは見分けられないため、見出しは「最近の入力」です（担当の報告の戻りだけは除きます）。
+
+## 設計メモ
+
 - 設計・調査・実装メモ: `docs/handoff/stage1/`（段階1）、`docs/handoff/stage1-5/`（段階1.5: 起動・版管理・セキュリティ）
 - 版の履歴: `docs/CHANGELOG.md`（版の正本は git タグ `vX.Y.Z`）
 - テスト: `npm test`（単体・統合）/ `npm run test:e2e`（要 `npm run build`）

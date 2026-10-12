@@ -23,7 +23,7 @@
   - `async: true` の command の hook は Claude を待たせない（L3995）。timeout は効かない（L4022）。終了コード 0 と 2 以外の失敗は、Claude の動きを止めない（L856-858）。
   - `args` を付けると、各要素が1つの引数として渡され、引用符は要らない（exec の形、L464-470）。付けないと shell で分割される。
   - スクリプトが見つからないと、Claude の画面に毎回失敗の通知が出る（L862）。
-- 既定の dataDir は `~/Library/Application Support/agent-console/` で、空白を含む（README.md:19、server/config.ts:58）。
+- 既定の dataDir は ~/Library/Application Support/agent-console/（本リポジトリ外） で、空白を含む（README.md:19、server/config.ts:58）。
 - PO の今の hooks:
   - Stop 2、PreToolUse 13、PostToolUse 1、UserPromptSubmit 1。Agent 専用の matcher group は0件（recon B）。
   - 既存の agent-start-hook.sh は、別の目的で ~/.claude/logs/agent-events.jsonl に書いている。session_id では記録していない。

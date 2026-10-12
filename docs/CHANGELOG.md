@@ -2,6 +2,7 @@
 
 版を出すたびに 1 行追記する（版の正本は git タグ `vX.Y.Z`）。
 
+- 0.9.0 右の欄に「このセッション」タブ: 左で選んだセッションの、今の状態・動いている担当（呼び名・仕事の説明・経過）・終わった担当（結果のひとこと・かかった時間）・やること・最近の入力を、非エンジニアに分かる言葉で出す。記録は Claude Code の hook（`hooks/activity-hook.mjs`、async、終了コード常に 0、node の標準の部品だけ、決めた項目と長さだけ）が `dataDir/activity/events-YYYYMMDD.jsonl`（UTC の日付、600/700）に 1 行ずつ追記し、サーバーが今日と昨日の分を読み足して session_id ごとにまとめる（`GET /api/sessions/:id/activity`。担当は tool_use_id と agent_id で結び、孫の担当は出さない）。hook の本体はサーバー起動時（本番のポートのみ）に `dataDir/hooks/` へ写し、`activityKeepDays`（既定 7）より古い記録を消す。設定の足し込みは `scripts/ac-hooks.mjs install|uninstall|check`（控えを取り、自分の handler だけを exec の形で足す・外す）で、アプリは設定を書き換えない。外れているときは右の欄に案内（`claudeSettingsPath` の設定を読むだけ）。SessionView に `claudeSessionId`、配信に `activityRev` を足した。設計の正本は docs/handoff/v0.8.0-activity/design.md、実測は同 step0.md（書類の名前は v0.8.0 のまま。端末の改善が v0.8.0 のため版は 0.9.0）。
 - 0.7.0 Routine タブで専用 Claude Code セッションを使う平日・JST 時刻の定期指示を登録・編集・有効/無効化できる。正本は `dataDir/routines.json` だけで、通常セッションの復元リストには混ぜない。fresh guard で idle かつ待機理由無しの場合だけ一回送信し、すべてのスロット結果を履歴に残して再試行しない。設計の正本は docs/handoff/v0.7.0-routines/design.md。
 
 - 0.6.1 リポジトリが GEN-RYU-System/agent-console に移管されたので、アプリの更新が取りに行く既定の先（scripts/lib/ac-common.sh の AC_REPO）をそちらに変える。環境変数 AC_REPO で上書きする仕組みはそのまま。画面の変更は無い。設計の正本は docs/handoff/v0.6.1-org-move/design.md。

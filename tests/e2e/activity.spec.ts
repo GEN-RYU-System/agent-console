@@ -85,7 +85,7 @@ test("K1: セッションを選ぶ前は右の欄に「台帳」だけ。選ぶ�
   // 「台帳」に替えると台帳が出る。別のセッションの行を選ぶと、また「このセッション」が先に開く
   await rightTab(page, "台帳").click();
   await expect(page.getByTestId("ledger-filters")).toBeVisible();
-  const otherName = `${sessionName}-b`;
+  const otherName = `other-${Date.now().toString(36)}`;
   const other = await fetch(`${BASE}/api/sessions`, { method: "POST", headers: { ...BEARER, "Content-Type": "application/json" }, body: JSON.stringify({ name: otherName, roleId: "e2e-plain" }) });
   expect(other.status).toBe(201);
   await page.getByTestId("session-row").filter({ hasText: otherName }).click();

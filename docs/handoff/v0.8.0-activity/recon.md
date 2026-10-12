@@ -54,8 +54,8 @@
 ## C. agent-console の現在
 
 ### C-1 右の欄
-- `src/pages/ConsolePage.tsx:380-382`: `<aside className="ac-page__right">` の中身は `<LedgerBoard snapshot={ledger} onRefresh={handleRefresh} />` のみ。左 aside は `src/pages/ConsolePage.tsx:266`
-- `src/components/LedgerBoard/LedgerBoard.tsx:22-27` Props は snapshot, onRefresh, now。`LedgerBoard.tsx:42-49` section.ac-ledger と見出し・更新ボタン、`LedgerBoard.tsx:50-74` に期間・状態・検索のフィルタ
+- `src/pages/ConsolePage.tsx:380-382`: `<aside className="ac-page__right">` の中身は LedgerBoard（snapshot と onRefresh を渡す） のみ。左 aside は `src/pages/ConsolePage.tsx:266`
+- `src/components/LedgerBoard/LedgerBoard.tsx:22-27` Props は snapshot, onRefresh, now。`src/components/LedgerBoard/LedgerBoard.tsx:42-49` section.ac-ledger と見出し・更新ボタン、`src/components/LedgerBoard/LedgerBoard.tsx:50-74` に期間・状態・検索のフィルタ
 - 現在の右の欄は台帳（ledger）専用で、選択中セッションの情報を受け取る口は無い【事実】。選択中セッションは ConsolePage 側に activeSession がある（`src/pages/ConsolePage.tsx:376`）
 
 ### C-2 Claude の sessionId の把握
@@ -70,19 +70,19 @@
 - 項目名（全行共通）: pid, cwd, kind, startedAt, sessionId, name, status。kind の値は 11 行とも interactive。status の値は busy / idle（11行中 busy 4、idle 7）
 - waitingFor は status が waiting のときだけ付く（`server/agents.ts:12-13` の記述。今回の実測行には無し）
 - サブエージェント・タスクに関する項目は無い【事実】
-- 11 行の sessionId はすべて、`/Users/tanizawashingo/.claude/projects/<プロジェクト>/<sessionId>.jsonl` というファイル名と一致した（11/11）。hook の session_id と同一かは hook を実際に動かして比べるまで【未確認】
+- 11 行の sessionId はすべて、/Users/tanizawashingo/.claude/projects/<プロジェクト>/<sessionId>.jsonl（本リポジトリ外） というファイル名と一致した（11/11）。hook の session_id と同一かは hook を実際に動かして比べるまで【未確認】
 
 ### C-4 dataDir の作法
-- 既定の保存先は `~/Library/Application Support/agent-console/`（README.md:19、設定 dataDir で変更）。`server/config.ts:58, 136-138, 230`
+- 既定の保存先は ~/Library/Application Support/agent-console/（本リポジトリ外）（README.md:19、設定 dataDir で変更）。`server/config.ts:58, 136-138, 230`
 - 書き込み: 一時ファイルに書いて rename。ファイル権限 600、フォルダ 700。例 `server/quick-prompts.ts:10-11, 83-89`、`server/diff-comments.ts:10-11, 169-173`、`server/picks.ts:10-11, 211-219`、`server/picker-extension.ts:14-15, 56-61`
 - 読み書きの直列化: `server/quick-prompts.ts:58-69`（Promise のキュー）。壊れたファイルは上書きせず例外（`server/quick-prompts.ts:79-80`）
-- 追記型（appendFile）の先例: `server/*.ts` を grep して appendFile は 0 件【事実】。追記型の先例は無い
+- 追記型（appendFile）の先例: server 配下の .ts を grep して appendFile は 0 件【事実】。追記型の先例は無い
 - 構築: `server/index.ts:62-71` で各 Store に config.dataDir を渡す
 
 ## D. 実物の観測（このMac、/Users/tanizawashingo/.claude/projects/、ファイル名と件数のみ）
-- プロジェクトフォルダ 28。親セッションの transcript（`<プロジェクト>/<sessionId>.jsonl`）は深さ2で 91 件
-- subagents フォルダは 71。配置は `<プロジェクト>/<親sessionId>/subagents/`。中のファイルは 12535
-- 名前の形: `agent-<英数16桁>.jsonl` 6357 件（うち `agent-acompact-<16桁>.jsonl` 170 件）、`agent-<16桁>.meta.json` 6178 件
+- プロジェクトフォルダ 28。親セッションの transcript（<プロジェクト>/<sessionId>.jsonl）は深さ2で 91 件
+- subagents フォルダは 71。配置は <プロジェクト>/<親sessionId>/subagents/。中のファイルは 12535
+- 名前の形: `agent-<英数16桁>.jsonl` 6357 件（うち `agent-acompact-<16桁>.jsonl` 170 件）、agent-<16桁>.meta.json 6178 件
 - 公式の「agent_transcript_path は nested subagents/ フォルダ」（hooks.md L2528, L2548）の形と一致
 - 【申告】.meta.json のうち agentType と model の2項目だけは値を数えるために読んだ（jsonl の中身は読んでいない）。meta.json は公式文書に記載のない形式【事実】（hooks.md を grep、該当記述なし）。使う前提にするかは設計側の判断
 
