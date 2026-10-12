@@ -16,6 +16,7 @@ import { Hub } from "../../../server/hub.ts";
 import { createRequestHandler } from "../../../server/http.ts";
 import { OpenSessionStore } from "../../../server/session-store.ts";
 import { OpenSessionRecorder } from "../../../server/restore.ts";
+import { RoutineService, RoutineStore } from "../../../server/routines.ts";
 import type { RoleConfig } from "../../../server/config.ts";
 import { SessionManager } from "../../../server/sessions.ts";
 import { attachWebSockets } from "../../../server/ws.ts";
@@ -171,6 +172,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const hub = new Hub(config, sessions, options.sendNotification ?? null, { ghTimeoutMs: options.ghTimeoutMs });
   const store = new OpenSessionStore(config.dataDir);
   const recorder = new OpenSessionRecorder(sessions, hub, store);
+  const routines = new RoutineService(config, sessions, hub, new RoutineStore(config.dataDir));
   if (options.recorder === true) recorder.start();
   const clock: Clock = { t: Date.now(), advance(ms) { this.t += ms; } };
   const auth = createAuth(TOKEN, port, { now: () => clock.t });
@@ -179,7 +181,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const uploads = new UploadStore(config.dataDir, config.uploadMaxBytes, config.uploadMaxKeep);
   const picker: PickerAccess = options.picker ?? { extensionOrigin: PICKER_ORIGIN, token: PICKER_TOKEN, extensionDir: path.join(config.dataDir, "chrome-extension") };
   const server = createServer(
-    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT } }),
+    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines }),
   );
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));

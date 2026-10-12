@@ -36,6 +36,7 @@ import { QuickPromptEditor } from "../components/QuickPrompts/QuickPromptEditor"
 import { RenameForm } from "../components/RenameForm/RenameForm";
 import { SessionList } from "../components/SessionList/SessionList";
 import { ThemeToggle } from "../components/ThemeToggle/ThemeToggle";
+import { RoutinesPane } from "../components/Routines/RoutinesPane";
 import { TerminalPane, type PasteResult, type TerminalHandle, type UploadNotice } from "../components/TerminalPane/TerminalPane";
 import type { ConsoleState, LedgerSnapshot, QuickPrompt, ResumeTarget, SessionView } from "../types";
 import "./ConsolePage.css";
@@ -46,7 +47,7 @@ const RENAME_CONFIRM_MS = 10000;
 const UPLOAD_NOTICE_MS = 8000;
 const BYTES_PER_MB = 1024 * 1024;
 
-type CenterTab = "terminal" | "changes" | "pr" | "picks";
+type CenterTab = "terminal" | "changes" | "pr" | "picks" | "routines";
 
 function useConsoleState() {
   const [state, setState] = useState<ConsoleState | null>(null);
@@ -344,6 +345,7 @@ export function ConsolePage() {
             { key: "changes", label: t("ac.tabs.changes"), ...(activeId !== null && diffCount !== null ? { count: diffCount } : {}) },
             { key: "pr", label: t("ac.tabs.pr") },
             { key: "picks", label: t("ac.tabs.picks"), ...(state.picksUnsent > 0 ? { count: state.picksUnsent } : {}) },
+            { key: "routines", label: t("ac.tabs.routines") },
           ]}
         />
         {centerTab === "terminal" && (
@@ -390,6 +392,7 @@ export function ConsolePage() {
           canInput={activeSession?.canInput === true}
           paste={pasteToTerminal}
         />
+        <RoutinesPane roles={state.roles} active={centerTab === "routines"} />
       </main>
       <aside className="ac-page__right">
         <LedgerBoard snapshot={ledger} onRefresh={handleRefresh} />

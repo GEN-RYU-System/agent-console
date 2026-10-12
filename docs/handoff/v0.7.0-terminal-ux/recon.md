@@ -1,5 +1,7 @@
 # v0.7.0 端末の画面の改善 recon
 
+> 版の番号は 0.8.0 に変更（main の v0.7.0 は別の機能が使用）。
+
 調査日 2026-10-12。基準は origin/main cee6737（v0.6.1）。製品コードは変更していない。
 再現の道具（本リポジトリ外）: /private/tmp/claude-501/-Users-tanizawashingo-salesanchor/f16867bb-0f82-4b6a-8e6f-be39adca12b1/scratchpad/probe/（probe-role.mjs、run.sh、repro2.mjs、scan.mjs、width.mjs、paste.mjs、mincho.mjs）。
 スクリーンショット（本リポジトリ外）: /tmp/CC報告ファイル/shot-before-gothic.png、/tmp/CC報告ファイル/shot-after-mincho.png。
