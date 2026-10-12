@@ -1,0 +1,121 @@
+
+ RUN  v5.0.3 /Users/tanizawashingo/agent-console-wt/card-labels
+
+ ❯ tests/unit/daily-use.integration.test.ts (27 tests | 5 failed) 57456ms
+   ❯ input safety: /rename and quick prompts only when Claude is idle (M1/L1) (10)
+     × K5: sends the queued /rename once, only after idle (busy -> waiting -> idle) 5078ms
+     × K6: a second reservation overwrites the first; only the last name is sent 5233ms
+     × K6: drops the reservation when the session stops or is removed from the list 5072ms
+     × K5: a reservation made while the state was unknown becomes an app-side rename once Claude is known to be absent 5045ms
+     × uses the status at request time, not the one polled a few seconds ago 5112ms
+ ❯ tests/unit/design-governance.test.ts (65 tests | 2 failed) 113764ms
+   ❯ check-design-governance (65)
+     ❯ values in src/tokens.app.css (14)
+       ❯ accepts font stacks (quoted or bare names, ending with a generic family) (2)
+         × case 2 9123ms
+     ❯ extension/ is checked too (K9) (10)
+       × reports a direct value in extension CSS 7304ms
+.: replacing existing signature
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/daily-use.integration.test.ts > input safety: /rename and quick prompts only when Claude is idle (M1/L1) > K5: sends the queued /rename once, only after idle (busy -> waiting -> idle)
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/daily-use.integration.test.ts:175:3
+    173|   });
+    174|
+    175|   it("K5: sends the queued /rename once, only after idle (busy -> wait…
+       |   ^
+    176|     const id = await newSession("echo", "queue-flow");
+    177|     const pid = pidOf(id);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  tests/unit/daily-use.integration.test.ts > input safety: /rename and quick prompts only when Claude is idle (M1/L1) > K6: a second reservation overwrites the first; only the last name is sent
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/daily-use.integration.test.ts:217:3
+    215|   });
+    216|
+    217|   it("K6: a second reservation overwrites the first; only the last nam…
+       |   ^
+    218|     const id = await newSession("echo", "overwrite");
+    219|     const pid = pidOf(id);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  tests/unit/daily-use.integration.test.ts > input safety: /rename and quick prompts only when Claude is idle (M1/L1) > K6: drops the reservation when the session stops or is removed from the list
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/daily-use.integration.test.ts:230:3
+    228|   });
+    229|
+    230|   it("K6: drops the reservation when the session stops or is removed f…
+       |   ^
+    231|     const id = await newSession("echo", "drop-removed");
+    232|     setAgents([row(pidOf(id), "busy")]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  tests/unit/daily-use.integration.test.ts > input safety: /rename and quick prompts only when Claude is idle (M1/L1) > K5: a reservation made while the state was unknown becomes an app-side rename once Claude is known to be absent
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/daily-use.integration.test.ts:253:3
+    251|   });
+    252|
+    253|   it("K5: a reservation made while the state was unknown becomes an ap…
+       |   ^
+    254|     setAgents([]);
+    255|     const id = await newSession("echo", "unknown-then-none");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  tests/unit/daily-use.integration.test.ts > input safety: /rename and quick prompts only when Claude is idle (M1/L1) > uses the status at request time, not the one polled a few seconds ago
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/daily-use.integration.test.ts:266:3
+    264|   });
+    265|
+    266|   it("uses the status at request time, not the one polled a few second…
+       |   ^
+    267|     const id = await newSession("echo", "stale");
+    268|     const pid = pidOf(id);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+ FAIL  tests/unit/design-governance.test.ts > check-design-governance > values in src/tokens.app.css > accepts font stacks (quoted or bare names, ending with a generic family) > case 2
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/design-governance.test.ts:197:7
+    195|         expect(run(tok('--ac-font-mono: Menlo, Monaco, "Courier New", …
+    196|       });
+    197|       it("case 2", () => {
+       |       ^
+    198|         expect(run(tok("--ac-font-mono: 'SF Mono', ui-monospace, monos…
+    199|       });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯
+
+ FAIL  tests/unit/design-governance.test.ts > check-design-governance > extension/ is checked too (K9) > reports a direct value in extension CSS
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/design-governance.test.ts:267:5
+    265|     });
+    266|
+    267|     it("reports a direct value in extension CSS", () => {
+       |     ^
+    268|       expect(run(ext({ "extension/picker.css": ".a { color: red; }\n" …
+    269|       expect(run(ext({ "extension/picker.css": ".a { padding: 8px; }\n…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯
+
+
+ Test Files  2 failed | 71 passed (73)
+      Tests  7 failed | 1011 passed (1018)
+   Start at  04:27:03
+   Duration  377.92s (tests 72%, environment 14%, import 10%, transform 4%)
+
+    Isolate  73 workers spawned · ~4.54s startup each (spawn + environment, per file)
+             at least ~42.82s faster with isolate: false — reuses workers across files instead of one per file
+

@@ -21,7 +21,7 @@ export function buildNotificationScript(body: string): string {
   return `display notification "${escapeAppleScript(clipped)}" with title "${escapeAppleScript(NOTIFY_TITLE)}"`;
 }
 
-const STATE_LABEL: Record<"waiting" | "idle", string> = { waiting: "待ち", idle: "待機" };
+const STATE_LABEL: Record<"waiting" | "idle", string> = { waiting: "回答待ち", idle: "指示待ち" };
 
 export function breakBody(name: string, status: "waiting" | "idle"): string {
   return `${name}: ${STATE_LABEL[status]}`;

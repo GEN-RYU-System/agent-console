@@ -61,9 +61,12 @@ describe("SessionList", () => {
     expect(screen.getAllByTestId("session-row")[1].getAttribute("data-unread")).toBe("2");
   });
 
-  it("K2: the rename pencil stays enabled while Claude is working (the name is queued)", () => {
+  it("K2: there is no rename button on any row; the select button advertises F2", () => {
     render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
-    expect((screen.getByRole("button", { name: "名前を変える" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByRole("button", { name: "名前を変える" })).toBeNull();
+    for (const row of screen.getAllByTestId("session-row")) {
+      expect(row.querySelector('[aria-keyshortcuts="F2"]')).toBeTruthy();
+    }
   });
 
   it("K1: double-clicking a row opens rename, but not for a stopped row", () => {
@@ -83,16 +86,19 @@ describe("SessionList", () => {
     expect(pending[0].textContent).toContain("予約: next-name");
   });
 
-  it("offers rename for sessions that are not stopped", () => {
+  it("N1: F2 on the select button opens rename for a running row, but not for a stopped row", () => {
     const onRename = vi.fn();
-    render(<SessionList sessions={[{ ...sessions[0], state: "idle", canInput: true }, sessions[1]]} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={onRename} onClose={() => {}} onMove={() => {}} />);
-    const buttons = screen.getAllByRole("button", { name: "名前を変える" });
-    expect(buttons).toHaveLength(1);
-    fireEvent.click(buttons[buttons.length - 1]);
+    render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={onRename} onClose={() => {}} onMove={() => {}} />);
+    const select = (i: number) => within(screen.getAllByTestId("session-row")[i]).getByRole("button", { name: /^(?!.*(閉じる|一覧から外す))/ });
+    const notPrevented = fireEvent.keyDown(select(0), { key: "F2" });
     expect(onRename).toHaveBeenCalledWith("a");
+    expect(notPrevented).toBe(false);
+    onRename.mockClear();
+    fireEvent.keyDown(select(1), { key: "F2" });
+    expect(onRename).not.toHaveBeenCalled();
   });
 
-  it("v0.10.0 K5: line 1 has only the status dot, the name and the unread badge (no state text, no role, no CI)", () => {
+  it("v0.10.1: line 1 has only the status dot and the name (no unread badge, no state text, no role, no CI)", () => {
     const withCi: SessionView[] = [sessions[0], { ...sessions[1], ci: "fail", pendingName: "next" }];
     render(<SessionList sessions={withCi} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
     const row = screen.getAllByTestId("session-row")[1];
@@ -100,26 +106,29 @@ describe("SessionList", () => {
     expect(within(line1).getByTestId("status").getAttribute("data-state")).toBe("stopped");
     expect(within(line1).getByTestId("status").textContent).toBe("");
     expect(within(line1).getByText("second")).toBeTruthy();
-    expect(within(line1).getByTestId("unread-badge").textContent).toContain("2");
+    expect(within(line1).queryByTestId("unread-badge")).toBeNull();
     expect(within(line1).queryByTestId("ci-badge")).toBeNull();
     expect(within(line1).queryByTestId("state-badge")).toBeNull();
     expect(line1.textContent).not.toContain("停止");
     expect(line1.textContent).not.toContain("シェル");
   });
 
-  it("v0.10.0 K5: line 2 has the role, the state badge, the CI badge and the pending name, in this order", () => {
-    const row0: SessionView = { ...sessions[0], ci: "pending", pendingName: "next" };
+  it("v0.10.1: line 2 has the role, the state badge, the unread badge, the CI badge and the pending name, in this order", () => {
+    const row0: SessionView = { ...sessions[0], unread: 3, ci: "pending", pendingName: "next" };
     render(<SessionList sessions={[row0]} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
     const line2 = within(screen.getByTestId("session-row")).getByTestId("session-line-2");
     const role = within(line2).getByText("シェル");
     const state = within(line2).getByTestId("state-badge");
+    const unread = within(line2).getByTestId("unread-badge");
+    expect(unread.textContent).toContain("3");
     const ci = within(line2).getByTestId("ci-badge");
     const pending = within(line2).getByTestId("pending-name");
     expect(state.textContent).toBe("作業中");
     expect(state.querySelector(".comp-badge--neutral")).toBeTruthy();
     const follows = (a: Node, b: Node): boolean => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
     expect(follows(role, state)).toBe(true);
-    expect(follows(state, ci)).toBe(true);
+    expect(follows(state, unread)).toBe(true);
+    expect(follows(unread, ci)).toBe(true);
     expect(follows(ci, pending)).toBe(true);
   });
 
@@ -127,7 +136,7 @@ describe("SessionList", () => {
     const all: SessionView[] = (["working", "waiting", "idle", "no-claude", "stopped", "unknown"] as const).map((state) => ({ ...sessions[0], id: state, name: state, state }));
     render(<SessionList sessions={all} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
     const texts = screen.getAllByTestId("state-badge").map((n) => n.textContent);
-    expect(texts).toEqual(["作業中", "待ち", "待機", "Claude 未起動", "停止", "不明"]);
+    expect(texts).toEqual(["作業中", "回答待ち", "指示待ち", "Claude 未起動", "停止", "不明"]);
   });
 
   describe("v0.10.0 K6・K7 reordering", () => {
@@ -193,22 +202,22 @@ describe("SessionList", () => {
     });
   });
 
-  it("K3: rename / remove are small right-edge buttons with aria-label and title", () => {
+  it("K3: close (running row) / remove (stopped row) are small right-edge buttons with aria-label and title", () => {
     const withIdle = [{ ...sessions[0], state: "idle" as const, canInput: true }, sessions[1]];
     render(<SessionList sessions={withIdle} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
     const rows = screen.getAllByTestId("session-row");
-    const rename = within(rows[0]).getByRole("button", { name: "名前を変える" });
+    const close = within(rows[0]).getByRole("button", { name: "セッションを閉じる" });
     const remove = within(rows[1]).getByRole("button", { name: "一覧から外す" });
-    expect(rename.getAttribute("title")).toBe("名前を変える");
+    expect(close.getAttribute("title")).toBe("セッションを閉じる");
     expect(remove.getAttribute("title")).toBe("一覧から外す");
-    expect(rename.className).toContain("comp-btn--sm");
+    expect(close.className).toContain("comp-btn--sm");
     expect(remove.className).toContain("comp-btn--sm");
-    // 右端 = 行の最後の子（選択ボタンの後ろ）
-    // 動いている行は、鉛筆の次（最後）が「閉じる」
-    expect(rows[0].lastElementChild?.previousElementSibling?.contains(rename)).toBe(true);
-    expect(rows[0].lastElementChild?.getAttribute("aria-label")).toBe("セッションを閉じる");
+    // 右端 = 行の最後の子（選択ボタンの後ろ）。動いている行は「閉じる」、停止中の行は「外す」
+    expect(rows[0].lastElementChild?.contains(close)).toBe(true);
     expect(rows[1].lastElementChild?.contains(remove)).toBe(true);
     expect(within(rows[0]).queryByRole("button", { name: "一覧から外す" })).toBeNull();
+    expect(within(rows[1]).queryByRole("button", { name: "セッションを閉じる" })).toBeNull();
+    expect(within(rows[0]).queryByRole("button", { name: "名前を変える" })).toBeNull();
     expect(within(rows[1]).queryByRole("button", { name: "名前を変える" })).toBeNull();
   });
 

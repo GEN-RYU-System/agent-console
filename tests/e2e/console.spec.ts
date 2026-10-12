@@ -461,7 +461,7 @@ test("段階2 K1: busy→idle で未読の印・窓タイトル・macOS 通知�
     .poll(() => readFileSync(OSASCRIPT_LOG, "utf8").split("\n").filter((l) => l.includes("notify-target")).length, { timeout: 6000 })
     .toBe(logBefore + 1);
   const line = readFileSync(OSASCRIPT_LOG, "utf8").split("\n").filter((l) => l.includes("notify-target")).pop() as string;
-  expect(line).toContain('display notification "notify-target: 待機" with title "Agent Console"');
+  expect(line).toContain('display notification "notify-target: 指示待ち" with title "Agent Console"');
   await expect(page.getByTestId("notify-help")).toContainText("Claude 公式");
   await shoot(page, "01-session-list-unread");
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -489,7 +489,8 @@ test("段階2 K2: 名前を変えると /rename が端末に送られ、Claude �
   const id = await apiCreate("rename-target", "e2e-plain");
   await openPaired(page);
   const row = rowOf(page, id);
-  const pencil = row.getByRole("button", { name: "名前を変える", exact: true });
+  const rename = row.getByTestId("session-name");
+  await expect(row.getByRole("button", { name: "名前を変える" })).toHaveCount(0);
   const form = page.getByTestId("rename-form");
   // K1: 1 回のクリックは選択だけ。名前のダブルクリックで名前を変える画面が開く
   await row.getByTestId("session-name").click();
@@ -498,13 +499,17 @@ test("段階2 K2: 名前を変えると /rename が端末に送られ、Claude �
   await expect(form).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(form).toHaveCount(0);
+  // F2: 選択ボタンにフォーカスがあるときも開く
+  await row.locator('[aria-keyshortcuts="F2"]').focus();
+  await page.keyboard.press("F2");
+  await expect(form).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(form).toHaveCount(0);
   writeFileSync(STATUS_FILE, "busy");
   await expect(row.getByTestId("status")).toHaveAttribute("data-state", "working", { timeout: STATE_DEADLINE_MS });
-  // 作業中でも鉛筆は押せる
-  await expect(pencil).toBeEnabled();
   await row.click();
   await expect(page.getByTestId("terminal")).toContainText("READY");
-  await pencil.click();
+  await rename.dblclick();
   await form.getByLabel("新しい名前", { exact: false }).fill("queued-by-ui");
   await form.getByRole("button", { name: "変更", exact: true }).click();
   // 予約: 行に予約中の名前が出て、端末にはまだ /rename が無い
@@ -513,14 +518,13 @@ test("段階2 K2: 名前を変えると /rename が端末に送られ、Claude �
   writeFileSync(STATUS_FILE, "waiting");
   await expect(row.getByTestId("status")).toHaveAttribute("data-state", "waiting", { timeout: STATE_DEADLINE_MS });
   await expect(page.getByTestId("terminal")).not.toContainText("/rename");
-  await expect(pencil).toBeEnabled();
   // 待機になったら、予約した名前が 1 回送られ、予約表示が消える
   writeFileSync(STATUS_FILE, "idle");
   await expect(page.getByTestId("terminal")).toContainText("/rename queued-by-ui", { timeout: STATE_DEADLINE_MS });
   await expect(row.getByTestId("pending-name")).toHaveCount(0);
 
   // 待機中は今までどおりすぐ送る
-  await pencil.click();
+  await rename.dblclick();
   await form.getByLabel("新しい名前", { exact: false }).fill("renamed-by-ui");
   await form.getByRole("button", { name: "変更", exact: true }).click();
   await expect(page.getByTestId("terminal")).toContainText("/rename renamed-by-ui");
@@ -538,7 +542,7 @@ test("段階2 K2: /rename を送っても Claude 側の名前が 10 秒変わら
   const row = rowOf(page, id);
   writeFileSync(STATUS_FILE, "idle");
   await expect(row.getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: STATE_DEADLINE_MS });
-  await row.getByRole("button", { name: "名前を変える", exact: true }).click();
+  await row.getByTestId("session-name").dblclick();
   await page.getByTestId("rename-form").getByLabel("新しい名前", { exact: false }).fill("never-applied");
   await page.getByTestId("rename-form").getByRole("button", { name: "変更", exact: true }).click();
   await expect(page.getByText("名前がまだ反映されていません")).toBeVisible({ timeout: 15000 });
@@ -1366,8 +1370,8 @@ test("v0.10.0 K5: 行の1段目は丸と名前だけ（状態の文字なし）�
   const line2 = row.getByTestId("session-line-2");
   await expect(line1.getByTestId("status")).toHaveText("");
   await expect(line1.getByTestId("session-name")).toHaveText("row-layout-target");
-  await expect(line1).not.toContainText("待機");
-  await expect(line2.getByTestId("state-badge")).toHaveText("待機");
+  await expect(line1).not.toContainText("指示待ち");
+  await expect(line2.getByTestId("state-badge")).toHaveText("指示待ち");
   const order = await line2.evaluate((el) => [...el.children].map((c) => c.getAttribute("data-testid") ?? c.className));
   console.log(`v0.10.0 K5 line2 children: ${JSON.stringify(order)}`);
   expect(order[0]).toBe("ac-session__role");
