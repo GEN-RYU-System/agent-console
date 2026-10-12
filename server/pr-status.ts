@@ -157,6 +157,12 @@ export function ciOf(counts: CheckCounts): CiState | null {
   return counts.pass + counts.skipping > 0 ? "pass" : null;
 }
 
+/** セッション一覧の印。開いている PR（state が OPEN）のときだけ値を返す。閉じた・マージ済みの PR の古い失敗は出さない。 */
+export function ciOfResponse(response: PrResponse | undefined): CiState | undefined {
+  if (response?.status !== "ok" || response.pr.state !== "OPEN") return undefined;
+  return ciOf(response.checks.counts) ?? undefined;
+}
+
 /** マージ済みかクローズで、実行中の検査が無い PR。定期の取り直しの対象から外す（K5）。 */
 export function isSettled(response: PrResponse): boolean {
   return response.status === "ok" && response.pr.state !== "OPEN" && response.checks.counts.pending === 0;

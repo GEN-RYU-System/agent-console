@@ -2,7 +2,7 @@ import type { WebSocket } from "ws";
 import { agentForSession, fetchAgents, inputVerdict, stateForSession, type AgentRow, type InputVerdict, type SessionState } from "./agents.ts";
 import type { Config } from "./config.ts";
 import { loadLedger, type LedgerSnapshot } from "./ledger.ts";
-import { ciOf as ciFromCounts, fetchPr, isSettled, resolveTarget, type CiState, type PrResponse, type PrTarget } from "./pr-status.ts";
+import { ciOfResponse, fetchPr, isSettled, resolveTarget, type CiState, type PrResponse, type PrTarget } from "./pr-status.ts";
 import { BreakTracker, breakBody, osascriptSender, type NotificationSender } from "./notify.ts";
 import { startPolling } from "./poll.ts";
 import { descendantPids, readProcessTable } from "./process-tree.ts";
@@ -332,7 +332,7 @@ export class Hub {
   private ciOfSession(sessionId: string): CiState | undefined {
     const key = this.prKeyOfSession.get(sessionId);
     const cached = key === undefined || key === null ? undefined : this.prByKey.get(key);
-    return cached?.status === "ok" ? (ciFromCounts(cached.checks.counts) ?? undefined) : undefined;
+    return ciOfResponse(cached);
   }
 
   async snapshot(): Promise<Snapshot> {
