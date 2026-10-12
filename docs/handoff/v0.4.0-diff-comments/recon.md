@@ -115,7 +115,7 @@
 
 ### B-4 i18n の作法
 【事実】
-- src/i18n.ts:3-23: SA の `@sa/locales/ja.json` と src/locales/ja.json を deepMerge。lng "ja"、fallbackLng "ja"。ja のみ（en なし）。
+- src/i18n.ts:3-23: SA の @sa/locales/ja.json（.sa-cache 側。本リポジトリ外） と src/locales/ja.json を deepMerge。lng "ja"、fallbackLng "ja"。ja のみ（en なし）。
 - src/locales/ja.json はキー先頭 `ac.`。例: `ac.quick.*`（:107-）、`ac.state.*`、`ac.form.*`、`ac.footer.*`。
 - 呼び出し: `useTranslation()` の `t("ac.xxx")`（ConsolePage.tsx:76）。動的キーは `t(\`ac.restoreNotice.${n.reason}\`, {name})`（:279）。
 - 文言の直書き禁止は scripts/check-design-governance.mjs（`npm run lint`、package.json scripts.lint）が検査。
@@ -147,8 +147,8 @@
 【事実（調査報告の記載）】
 - O:12: 方式「Monaco 系 diff にガター「+」。コメントはワークツリーのメタに保存」、保存先 `WorktreeMeta.diffComments`（Orca の状態ファイル）、Claude への渡し方「端末に貼り付け（ブラケットペースト＋Enter）。`terminal.send` RPC。ファイル化・hooks は使わない」。
 - O:32-34: 公式説明「leave comments on any line of any AI-generated hunk, then send them back to the agent as a single batch」。操作はガターの +、Cmd-Enter で保存、Esc で取消。O:34: 行追従（編集で diff がずれても追う）。
-- O:41-42: 型 `src/shared/diff-comment-types.ts:27-48`（id, worktreeId, filePath, startLine?, lineNumber, body, createdAt, sentAt?, scope?, diffIdentity?, side:'modified'）。`sentAt` は送信済みの印、編集すると再送対象に戻る。
-- O:48-54: 整形 `src/shared/diff-comments-format.ts:9-30`。1 件 3 行 `File: <path>` / `Line: <n>`（範囲は `Lines: a-b`、ファイル全体は `Scope: file`）/ `User comment: "<本文>"`、複数件は空行で連結。
+- O:41-42: 型 Orca リポジトリの src/shared/diff-comment-types.ts:27-48（本リポジトリ外）（id, worktreeId, filePath, startLine?, lineNumber, body, createdAt, sentAt?, scope?, diffIdentity?, side:'modified'）。`sentAt` は送信済みの印、編集すると再送対象に戻る。
+- O:48-54: 整形 Orca リポジトリの src/shared/diff-comments-format.ts:9-30（本リポジトリ外）。1 件 3 行 `File: <path>` / `Line: <n>`（範囲は `Lines: a-b`、ファイル全体は `Scope: file`）/ `User comment: "<本文>"`、複数件は空行で連結。
 - O:55-62: 送信は `terminal.wait` で入力待ち（`tui-idle`）を待ち（active-agent-note-send.ts:112-117）、`BRACKETED_PASTE_BEGIN + sanitize(prompt) + END` を `terminal.send`（active-agent-note-send-delivery.ts:70-82、`requireAgentStatus: 'sendable'`）、遅延後に Enter（:105）。
 - O:63: コピー（クリップボード）経路もある。
 - O:37: diff 取得は git（staged/unstaged/untracked 結合）。実装行は【未確認】（O:192）。
@@ -181,7 +181,7 @@
 ### F-2 pr-body-guard の要件
 【事実】
 - フック本体: /Users/tanizawashingo/.claude/scripts/pr-body-guard.sh（settings.json の PreToolUse に登録。/Users/tanizawashingo/.claude/settings.json:60）。対象は Bash の `gh pr create|edit` で `--body` / `--body-file` を含むもの（:23-26）。`PR_BODY_VALIDATE_SKIP=1` でスキップ可能（:33-38。ただし回避の使用可否は別途 PO 判断＝【未確認】）。
-- 検証本体 `scripts/dev/validate-pr-body.sh` の探し方: cwd 直下 → ~/salesanchor → ~/worktrees 配下（pr-body-guard.sh:56-69）。見つからないとスキップ（:71-74）。
+- 検証本体 salesanchor の scripts/dev/validate-pr-body.sh（本リポジトリ外） の探し方: cwd 直下 → ~/salesanchor → ~/worktrees 配下（pr-body-guard.sh:56-69）。見つからないとスキップ（:71-74）。
   - 【事実】agent-console リポジトリ内に scripts/dev/validate-pr-body.sh は無い（`git ls-files` に無し）。cwd が agent-console の worktree の場合は ~/salesanchor 側のスクリプトが使われる（pr-body-guard.sh:61-62）。
 - 規則（/Users/tanizawashingo/salesanchor/scripts/dev/validate-pr-body.sh）:
   - 検査1 `### 標準ワークフロー確認` 見出し（:38）
