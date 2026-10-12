@@ -1,4 +1,4 @@
-import type { ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, ResumeTarget } from "./types";
+import type { ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, ResumeTarget, Routine, RoutineInput } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -118,6 +118,10 @@ export async function fetchPickImage(id: string): Promise<string> {
   });
 }
 export const fetchMemory = (): Promise<MemorySnapshot> => request("/api/memory");
+export const fetchRoutines = (): Promise<{ items: Routine[] }> => request("/api/routines");
+export const createRoutine = (input: RoutineInput): Promise<Routine> => request("/api/routines", { method: "POST", body: JSON.stringify(input) });
+export const updateRoutine = (id: string, input: RoutineInput): Promise<Routine> => request(`/api/routines/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(input) });
+export const setRoutineEnabled = (id: string, enabled: boolean): Promise<Routine> => request(`/api/routines/${encodeURIComponent(id)}/enabled`, { method: "POST", body: JSON.stringify({ enabled }) });
 
 /** ペアリングコードを引換えてセッショントークンを得る（認証前の API）。 */
 export async function redeemCode(code: string): Promise<string> {
