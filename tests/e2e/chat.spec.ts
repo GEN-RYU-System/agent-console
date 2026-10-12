@@ -17,7 +17,8 @@ const HOOK = path.join(DATA_DIR, "hooks", "activity-hook.mjs");
 const SETTLE_MS = 20000;
 const STATE_DEADLINE_MS = 20000;
 
-test.describe.configure({ mode: "serial" });
+// 本物の hook を何十回も起動する試験があり、混み合った機械では 30 秒（既定）を超えることがある
+test.describe.configure({ mode: "serial", timeout: 120000 });
 
 /** 後の試験（console.spec.ts）が一覧の件数・よく使う指示の件数を数えるので、この試験で作ったものは片づける */
 const createdSessions: string[] = [];
