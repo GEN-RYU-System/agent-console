@@ -9,9 +9,11 @@ vi.setConfig({ testTimeout: 60000 });
 
 const REPO = process.cwd();
 const CLI = path.join(REPO, "scripts", "ac-hooks.mjs");
-const EVENTS = ["PreToolUse", "PostToolUse", "SubagentStop", "TaskCreated", "TaskCompleted", "UserPromptSubmit", "Stop", "StopFailure"];
-/** v0.10.0 までに install した 6 つ（Stop・StopFailure はまだ無い） */
+const EVENTS = ["PreToolUse", "PostToolUse", "SubagentStop", "TaskCreated", "TaskCompleted", "UserPromptSubmit", "Stop", "StopFailure", "SubagentStart"];
+/** v0.10.0 までに install した 6 つ（Stop・StopFailure・SubagentStart はまだ無い） */
 const OLD_EVENTS = EVENTS.slice(0, 6);
+/** v0.11.0 までに install した 8 つ（SubagentStart はまだ無い） */
+const V0_11_EVENTS = EVENTS.slice(0, 8);
 const OWN_HANDLER_COUNT = EVENTS.length;
 
 const dirs: string[] = [];
@@ -62,7 +64,7 @@ const PO_SETTINGS = {
 };
 
 describe("K6: 設定の定義", () => {
-  it("8 つのイベントと matcher は設計 §2 のとおり（v0.11.0 で Stop と StopFailure を足した）", () => {
+  it("9 つのイベントと matcher は設計 §2 のとおり（v0.11.0 で Stop と StopFailure、v0.12.0 で SubagentStart を足した）", () => {
     expect(HOOK_SPECS).toEqual([
       { event: "PreToolUse", matcher: "Agent|SubagentHandback" },
       { event: "PostToolUse", matcher: "Agent" },
@@ -72,6 +74,7 @@ describe("K6: 設定の定義", () => {
       { event: "UserPromptSubmit" },
       { event: "Stop" },
       { event: "StopFailure" },
+      { event: "SubagentStart" },
     ]);
   });
 
@@ -86,7 +89,7 @@ describe("K6: 設定の定義", () => {
 });
 
 describe("K6: install", () => {
-  it("今の設定のキーと、ほかの hook をすべて残して、自分の handler を 8 つのイベントに足す（exec の形・空白入りのパス）", () => {
+  it("今の設定のキーと、ほかの hook をすべて残して、自分の handler を 9 つのイベントに足す（exec の形・空白入りのパス）", () => {
     const e = makeEnv();
     writeFileSync(e.settings, JSON.stringify(PO_SETTINGS, null, 2) + "\n");
     const r = installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath, now: () => Date.UTC(2026, 9, 12, 14, 0, 0, 123) });
@@ -133,11 +136,25 @@ describe("K6: install", () => {
     expect(count).toBe(OWN_HANDLER_COUNT);
   });
 
-  it("v0.10.0 までの 6 つだけが入っている設定に install し直すと、Stop と StopFailure の 2 つだけが足される（既存の 6 つは変わらない）", () => {
+  it("v0.11.0 までの 8 つだけが入っている設定に install し直すと、SubagentStart の 1 つだけが足される（既存の 8 つは変わらない）", () => {
+    const e = makeEnv();
+    const old8 = { hooks: Object.fromEntries(V0_11_EVENTS.map((ev) => [ev, [HOOK_SPECS.find((s) => s.event === ev)?.matcher ? { matcher: HOOK_SPECS.find((s) => s.event === ev)?.matcher, hooks: [ownHandler(e)] } : { hooks: [ownHandler(e)] }]])) };
+    writeFileSync(e.settings, JSON.stringify(old8, null, 2) + "\n");
+    expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toMatchObject({ ok: false, reason: "missingHandler", missingEvents: ["SubagentStart"] });
+    const before = readJson(e.settings);
+    const r = installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath });
+    expect(r.changed).toBe(true);
+    const after = readJson(e.settings);
+    for (const ev of V0_11_EVENTS) expect(after.hooks[ev]).toEqual(before.hooks[ev]);
+    expect(after.hooks.SubagentStart).toEqual([{ hooks: [ownHandler(e)] }]);
+    expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toEqual({ ok: true });
+  });
+
+  it("v0.10.0 までの 6 つだけが入っている設定に install し直すと、Stop・StopFailure・SubagentStart の 3 つだけが足される（既存の 6 つは変わらない）", () => {
     const e = makeEnv();
     const oldOnly = { hooks: Object.fromEntries(OLD_EVENTS.map((ev) => [ev, [HOOK_SPECS.find((s) => s.event === ev)?.matcher ? { matcher: HOOK_SPECS.find((s) => s.event === ev)?.matcher, hooks: [ownHandler(e)] } : { hooks: [ownHandler(e)] }]])) };
     writeFileSync(e.settings, JSON.stringify({ ...oldOnly, hooks: { ...oldOnly.hooks, Stop: PO_SETTINGS.hooks.Stop } }, null, 2) + "\n");
-    expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toMatchObject({ ok: false, reason: "missingHandler", missingEvents: ["Stop", "StopFailure"] });
+    expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toMatchObject({ ok: false, reason: "missingHandler", missingEvents: ["Stop", "StopFailure", "SubagentStart"] });
     const before = readJson(e.settings);
     const r = installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath });
     expect(r.changed).toBe(true);
@@ -238,7 +255,7 @@ describe("K6: uninstall", () => {
 });
 
 describe("K6 / K8: check", () => {
-  it("handler が 8 つそろい、node と hook のファイルがあれば ok", () => {
+  it("handler が 9 つそろい、node と hook のファイルがあれば ok", () => {
     const e = makeEnv();
     installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath });
     expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toEqual({ ok: true });

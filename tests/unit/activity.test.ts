@@ -34,36 +34,85 @@ const post = (id: string, agentId: string, over: Rec = {}): Rec => rec({ event: 
 const handback = (agentId: string, message: string, over: Rec = {}): Rec => rec({ event: "PreToolUse", tool: "SubagentHandback", agent_id: agentId, message, ...over });
 const stop = (agentId: string, over: Rec = {}): Rec => rec({ event: "SubagentStop", agent_id: agentId, agent_type: "general-purpose", ...over });
 
-describe("K2 / §3-4: 担当の結び方", () => {
-  it("動いている担当 → 報告が戻ると終わった担当に移る。結果は SubagentHandback の message、かかった時間は SubagentStop の ts − PreToolUse の ts", async () => {
+const start = (agentId: string, over: Rec = {}): Rec => rec({ event: "SubagentStart", agent_id: agentId, agent_type: "general-purpose", ...over });
+
+describe("K2 / §3-1: 動いている担当の結び方", () => {
+  it("呼ぶと動いている。報告と停止が戻ると外れる（終わった担当の一覧は持たない）", async () => {
     write([pre("t1", { ts: T0 }), post("t1", "A", { ts: T0 + 1000 })]);
     await store.refresh();
     let v = store.view(SID);
     expect(v.running).toHaveLength(1);
-    expect(v.finished).toHaveLength(0);
     expect(v.running[0]).toMatchObject({ description: "仕事 t1", subagentType: "general-purpose", model: "sonnet", resolvedModel: "claude-sonnet-5-5", startedAt: T0 });
+    expect(v).not.toHaveProperty("finished");
 
     write([handback("A", "調査OK", { ts: T0 + 90_000 }), stop("A", { ts: T0 + 91_000, last_assistant_message: "別の文" })]);
     await store.refresh();
     v = store.view(SID);
     expect(v.running).toHaveLength(0);
-    expect(v.finished).toHaveLength(1);
-    expect(v.finished[0]).toMatchObject({ description: "仕事 t1", summary: "調査OK", durationMs: 91_000, endedAt: T0 + 91_000 });
   });
 
-  it("handback が無いときだけ、SubagentStop の last_assistant_message を結果にする", async () => {
-    write([pre("t1"), post("t1", "A"), stop("A", { ts: T0 + 5000, last_assistant_message: "停止時の文" })]);
+  it("K2 呼ぶ→終わる→再開（SubagentStart）→終わる: 再開すると動いている担当に戻り、次の終わりで消える。動き始めは再開の時刻", async () => {
+    write([pre("t1", { ts: T0 }), start("A", { ts: T0 + 500 }), post("t1", "A", { ts: T0 + 1000 }), handback("A", "1回目の報告", { ts: T0 + 90_000 }), stop("A", { ts: T0 + 91_000 })]);
     await store.refresh();
-    expect(store.view(SID).finished[0].summary).toBe("停止時の文");
+    expect(store.view(SID).running).toHaveLength(0);
+
+    write([start("A", { ts: T0 + 200_000 })]);
+    await store.refresh();
+    let v = store.view(SID);
+    expect(v.running.map((a) => [a.description, a.startedAt])).toEqual([["仕事 t1", T0 + 200_000]]);
+
+    write([handback("A", "2回目の報告", { ts: T0 + 260_000 }), stop("A", { ts: T0 + 261_000 })]);
+    await store.refresh();
+    v = store.view(SID);
+    expect(v.running).toHaveLength(0);
+  });
+
+  it("K2 再開は、報告（handback）だけ・停止（stop）だけが戻った場合でも、新しい方の終わりで消える", async () => {
+    write([pre("t1", { ts: T0 }), post("t1", "A", { ts: T0 + 1000 }), stop("A", { ts: T0 + 5000 }), start("A", { ts: T0 + 10_000 })]);
+    await store.refresh();
+    expect(store.view(SID).running).toHaveLength(1);
+    write([handback("A", "報告だけ", { ts: T0 + 20_000 })]);
+    await store.refresh();
+    expect(store.view(SID).running).toHaveLength(0);
+  });
+
+  it("K2 再開の SubagentStart は、イベントの順番が入れ替わって読まれても（終わりが先、再開が後）同じ結果になる", async () => {
+    write([stop("A", { ts: T0 + 91_000 }), start("A", { ts: T0 + 200_000 }), post("t1", "A", { ts: T0 + 1000 }), pre("t1", { ts: T0 })]);
+    await store.refresh();
+    expect(store.view(SID).running.map((a) => a.description)).toEqual(["仕事 t1"]);
+  });
+
+  it("K2 前景の担当（status=completed の Post だけで終わる）も、再開すると動いている担当に戻る。次の終わりで消える", async () => {
+    write([pre("t1", { ts: T0 }), start("A", { ts: T0 + 100 }), post("t1", "A", { status: "completed", totalDurationMs: 4200, ts: T0 + 5000 })]);
+    await store.refresh();
+    expect(store.view(SID).running).toHaveLength(0);
+    write([start("A", { ts: T0 + 60_000 })]);
+    await store.refresh();
+    expect(store.view(SID).running.map((a) => a.description)).toEqual(["仕事 t1"]);
+    write([stop("A", { ts: T0 + 70_000 })]);
+    await store.refresh();
+    expect(store.view(SID).running).toHaveLength(0);
+  });
+
+  it("K2 SubagentStart だけで、Agent の呼び出しと結べない担当（Claude の内部の担当・孫の担当）は出さない", async () => {
+    write([
+      start("INTERNAL", { agent_type: "", ts: T0 + 1000 }),
+      start("X", { agent_type: "Explore", ts: T0 + 2000 }),
+      pre("t1", { ts: T0 }),
+      post("t1", "A", { ts: T0 + 100 }),
+      start("A", { ts: T0 + 50 }),
+      pre("g1", { agent_id: "A", description: "孫の仕事", ts: T0 + 3000 }),
+      start("G", { ts: T0 + 3100 }),
+      post("g1", "G", { agent_id: "A", ts: T0 + 3200 }),
+    ]);
+    await store.refresh();
+    expect(store.view(SID).running.map((a) => a.description)).toEqual(["仕事 t1"]);
   });
 
   it("イベントの順番が入れ替わっても（Stop が Post より先）同じ結果になる", async () => {
     write([stop("A", { ts: T0 + 5000 }), handback("A", "先に来た報告", { ts: T0 + 4000 }), post("t1", "A", { ts: T0 + 1000 }), pre("t1", { ts: T0 })]);
     await store.refresh();
-    const v = store.view(SID);
-    expect(v.running).toHaveLength(0);
-    expect(v.finished).toHaveLength(1);
-    expect(v.finished[0]).toMatchObject({ description: "仕事 t1", summary: "先に来た報告", durationMs: 5000 });
+    expect(store.view(SID).running).toHaveLength(0);
   });
 
   it("並列に呼んだ 2 つの担当を、tool_use_id と agent_id で取り違えない", async () => {
@@ -76,17 +125,13 @@ describe("K2 / §3-4: 担当の結び方", () => {
       stop("B", { ts: T0 + 3000 }),
     ]);
     await store.refresh();
-    const v = store.view(SID);
-    expect(v.running.map((a) => a.description)).toEqual(["調べもの"]);
-    expect(v.finished.map((a) => [a.description, a.summary, a.model])).toEqual([["審査", "審査OK", "fable"]]);
+    expect(store.view(SID).running.map((a) => a.description)).toEqual(["調べもの"]);
   });
 
-  it("run_in_background なし（status=completed）は SubagentStop が無くても終わり。時間は totalDurationMs", async () => {
+  it("run_in_background なし（status=completed）は SubagentStop が無くても終わり", async () => {
     write([pre("t1"), post("t1", "A", { status: "completed", totalDurationMs: 4200, ts: T0 + 5000 })]);
     await store.refresh();
-    const v = store.view(SID);
-    expect(v.running).toHaveLength(0);
-    expect(v.finished[0]).toMatchObject({ description: "仕事 t1", durationMs: 4200 });
+    expect(store.view(SID).running).toHaveLength(0);
   });
 
   it("孫の担当（agent_id 付きの PreToolUse(Agent)）は出さない。その Stop・報告も出さない", async () => {
@@ -99,17 +144,13 @@ describe("K2 / §3-4: 担当の結び方", () => {
       stop("G", { ts: T0 + 100 }),
     ]);
     await store.refresh();
-    const v = store.view(SID);
-    expect(v.running.map((a) => a.description)).toEqual(["仕事 t1"]);
-    expect(v.finished).toHaveLength(0);
+    expect(store.view(SID).running.map((a) => a.description)).toEqual(["仕事 t1"]);
   });
 
-  it("結べない SubagentStop は出せる項目だけ出す。agent_type が空で報告も無いもの（内部の担当）は出さない", async () => {
+  it("結べない SubagentStop（記録を始める前に呼ばれた担当・内部の担当）は何も出さない", async () => {
     write([stop("X", { agent_type: "Explore", ts: T0 + 1000, last_assistant_message: "単独の結果" }), stop("INTERNAL", { agent_type: "", ts: T0 + 2000 })]);
     await store.refresh();
-    const v = store.view(SID);
-    expect(v.finished).toHaveLength(1);
-    expect(v.finished[0]).toMatchObject({ subagentType: "Explore", summary: "単独の結果", description: "", durationMs: null });
+    expect(store.view(SID).running).toEqual([]);
   });
 
   it("開始から 24 時間を過ぎた「終わりが記録されない担当」は、動いている担当から外れる（L-a）", async () => {
@@ -117,17 +158,13 @@ describe("K2 / §3-4: 担当の結び方", () => {
     nowMs = T0 + RUNNING_MAX_AGE_MS + MIN;
     await store.refresh();
     expect(store.view(SID).running.map((a) => a.description)).toEqual(["仕事 fresh"]);
-    expect(store.view(SID).finished).toHaveLength(0);
   });
 
-  it("終わった担当は新しい順に 10 件まで", async () => {
-    const rows: Rec[] = [];
-    for (let i = 0; i < 12; i++) rows.push(pre(`t${i}`, { ts: T0 + i * 1000 }), post(`t${i}`, `A${i}`), stop(`A${i}`, { ts: T0 + i * 1000 + 500 }));
-    write(rows);
+  it("24 時間の数え始めは再開の時刻。再開した担当は、再開から 24 時間まで出る", async () => {
+    write([pre("t1", { ts: T0 }), post("t1", "A", { ts: T0 + 1000 }), stop("A", { ts: T0 + 5000 }), start("A", { ts: T0 + 23 * 60 * MIN })]);
+    nowMs = T0 + RUNNING_MAX_AGE_MS + MIN;
     await store.refresh();
-    const v = store.view(SID);
-    expect(v.finished).toHaveLength(10);
-    expect(v.finished.map((a) => a.description)).toEqual(Array.from({ length: 10 }, (_, k) => `仕事 t${11 - k}`));
+    expect(store.view(SID).running.map((a) => a.description)).toEqual(["仕事 t1"]);
   });
 });
 
@@ -309,21 +346,17 @@ describe("K2/K3: チャットの会話の一覧", () => {
 });
 
 describe("メモリの上限", () => {
-  it("stops・handbacks（400）、tasks（200）、孫の呼び出し（400）は、上限を超えると古い ts から落ちる", async () => {
+  it("stops・handbacks・再開（400）、tasks（200）は、上限を超えると古い ts から落ちる。孫の呼び出しは覚えない", async () => {
     const rows: Rec[] = [];
     for (let i = 0; i < 450; i++) {
       const ts = T0 + i * 1000;
-      rows.push(stop(`S${i}`, { ts, agent_type: "Explore" }), handback(`H${i}`, `報告${i}`, { ts }), pre(`n${i}`, { ts, agent_id: "P" }));
+      rows.push(stop(`S${i}`, { ts, agent_type: "Explore" }), handback(`H${i}`, `報告${i}`, { ts }), start(`R${i}`, { ts }), pre(`n${i}`, { ts, agent_id: "P" }));
     }
     for (let i = 0; i < 250; i++) rows.push(rec({ event: "TaskCreated", task_id: `t${i}`, task_subject: `t${i}`, ts: T0 + i }));
     write(rows);
     await store.refresh();
-    expect(store.sizes(SID)).toEqual({ starts: 0, stops: 400, handbacks: 400, tasks: 200, nested: 400 });
+    expect(store.sizes(SID)).toEqual({ starts: 0, stops: 400, handbacks: 400, restarts: 400, tasks: 200 });
     const v = store.view(SID);
-    // 新しいものは残り（古い順に落ちる）、一番古い 50 件の終わりは出ない
-    expect(v.finished.map((a) => a.summary)).toContain("報告449");
-    expect(v.finished.map((a) => a.key)).not.toContain("agent-S0");
-    expect(v.finished.map((a) => a.key)).not.toContain("agent-H0");
     expect(v.tasks[v.tasks.length - 1].id).toBe("t249");
     expect(v.tasks).toHaveLength(50);
   });
@@ -337,7 +370,7 @@ describe("K7: セッションごとに分ける", () => {
     expect(store.view(SID).inputs).toEqual([]);
     expect(store.view(OTHER).running).toEqual([]);
     expect(store.view(OTHER).tasks.map((t) => t.subject)).toEqual(["他人の"]);
-    expect(store.view("00000000-0000-4000-8000-000000000000")).toEqual({ running: [], finished: [], tasks: [], inputs: [], lastEventAt: null });
+    expect(store.view("00000000-0000-4000-8000-000000000000")).toEqual({ running: [], tasks: [], inputs: [], lastEventAt: null });
   });
 });
 

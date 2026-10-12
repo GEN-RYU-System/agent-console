@@ -8,20 +8,19 @@ export const ACTIVITY_DIR_NAME = "activity";
 /** 終わりが記録されない担当を「動いている」とみなす最長（L-a）。開始からこれを過ぎたら外す */
 export const RUNNING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-export const FINISHED_MAX = 10;
 export const TASKS_MAX = 50;
 export const INPUTS_MAX = 3;
 /** セッションごとに覚える担当・入力の上限（メモリが増え続けないため） */
 const STARTS_KEEP = 400;
 const STOPS_KEEP = 400;
 const HANDBACKS_KEEP = 400;
-const NESTED_KEEP = 400;
+const RESTARTS_KEEP = 400;
 const TASKS_KEEP = 200;
 const INPUTS_KEEP = 20;
 const READ_CHUNK_BYTES = 1024 * 1024;
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const EVENT_FILE = /^events-(\d{4})(\d{2})(\d{2})\.jsonl$/;
-const EVENTS = new Set(["PreToolUse", "PostToolUse", "SubagentStop", "TaskCreated", "TaskCompleted", "UserPromptSubmit", "Stop", "StopFailure"]);
+const EVENTS = new Set(["PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "TaskCreated", "TaskCompleted", "UserPromptSubmit", "Stop", "StopFailure"]);
 /** 右の欄の「最近の入力」に出す文字数（表示のときに切る。記録は全文） */
 const INPUT_PREVIEW_CHARS = 80;
 /** チャットに残す会話の件数（1 セッション） */
@@ -32,6 +31,7 @@ const AGENT_MESSAGE_PREFIX = /^\s*<agent-message\b/;
 /** 貼り付けの包みの行（工程0 (c)。`<pasted_content id="…">` と `</pasted_content id="…">`）。行ごと外す */
 const PASTED_WRAPPER_LINE = /^[ \t]*<\/?pasted_content\b[^>\n]*>[ \t]*\n?/gm;
 
+/** 動いている担当 1 つ。終わった担当は画面に出さないので持たない（終わりは「動いている」の判定にだけ使う） */
 export interface AgentItem {
   key: string;
   subagentType: string;
@@ -39,11 +39,8 @@ export interface AgentItem {
   resolvedModel: string;
   /** 頼んだ仕事の説明（Claude が書いた文のまま） */
   description: string;
-  startedAt: number | null;
-  endedAt: number | null;
-  durationMs: number | null;
-  /** 結果のひとこと（報告の先頭 120 字） */
-  summary: string;
+  /** 動き始めた時刻。再開した担当は、再開（SubagentStart）の時刻 */
+  startedAt: number;
 }
 export interface TaskItem {
   id: string;
@@ -56,7 +53,6 @@ export interface InputItem {
 }
 export interface SessionActivity {
   running: AgentItem[];
-  finished: AgentItem[];
   tasks: TaskItem[];
   inputs: InputItem[];
   lastEventAt: number | null;
@@ -106,14 +102,6 @@ interface Post {
   status: string;
   agentId: string;
   resolvedModel: string;
-  totalDurationMs: number | null;
-  /** 担当の中で起きた呼び出し（孫の担当） */
-  nested: boolean;
-}
-interface Report {
-  ts: number;
-  text: string;
-  agentType: string;
 }
 interface Task {
   id: string;
@@ -124,11 +112,13 @@ interface Task {
 }
 interface SessionState {
   starts: Map<string, Start>;
-  /** 孫の担当の呼び出しの tool_use_id → 記録した時刻 */
-  nestedToolUses: Map<string, number>;
   posts: Map<string, Post>;
-  stops: Map<string, Report>;
-  handbacks: Map<string, Report>;
+  /** agent_id → 最後の SubagentStop の時刻 */
+  stops: Map<string, number>;
+  /** agent_id → 最後の SubagentHandback（報告）の時刻 */
+  handbacks: Map<string, number>;
+  /** agent_id → 最後の SubagentStart の時刻（担当を呼んだとき・再開したとき） */
+  restarts: Map<string, number>;
   tasks: Map<string, Task>;
   inputs: InputItem[];
   chat: ChatItem[];
@@ -140,10 +130,10 @@ interface SessionState {
 
 const newSession = (): SessionState => ({
   starts: new Map(),
-  nestedToolUses: new Map(),
   posts: new Map(),
   stops: new Map(),
   handbacks: new Map(),
+  restarts: new Map(),
   tasks: new Map(),
   inputs: [],
   chat: [],
@@ -152,7 +142,16 @@ const newSession = (): SessionState => ({
   lastEventAt: 0,
 });
 
-const emptyActivity = (): SessionActivity => ({ running: [], finished: [], tasks: [], inputs: [], lastEventAt: null });
+const emptyActivity = (): SessionActivity => ({ running: [], tasks: [], inputs: [], lastEventAt: null });
+
+/** 渡された時刻（無いものは除く）のうち一番新しいもの。1 つも無ければ 0 */
+const latestOf = (...times: Array<number | undefined>): number => Math.max(0, ...times.map((t) => t ?? 0));
+
+/** map の agent_id に、新しい方の時刻を覚える。件数が上限を超えたら古い時刻から落とす */
+function rememberLatest(map: Map<string, number>, agentId: string, ts: number, keep: number): void {
+  map.set(agentId, Math.max(map.get(agentId) ?? 0, ts));
+  trimOldest(map, keep, (v) => v);
+}
 
 /** 件数が上限を超えたら、時刻（ts）の古いものから落とす */
 function trimOldest<V>(map: Map<string, V>, keep: number, tsOf: (value: V) => number): void {
@@ -300,13 +299,13 @@ export class ActivityStore {
         this.applyPre(state, rec, ts, agentId);
         break;
       case "PostToolUse":
-        this.applyPost(state, rec, ts, agentId);
+        this.applyPost(state, rec, ts);
+        break;
+      case "SubagentStart":
+        if (agentId !== "") rememberLatest(state.restarts, agentId, ts, RESTARTS_KEEP);
         break;
       case "SubagentStop":
-        if (agentId !== "") {
-          state.stops.set(agentId, { ts, text: text(rec.last_assistant_message), agentType: text(rec.agent_type) });
-          trimOldest(state.stops, STOPS_KEEP, (r) => r.ts);
-        }
+        if (agentId !== "") rememberLatest(state.stops, agentId, ts, STOPS_KEEP);
         break;
       case "TaskCreated":
       case "TaskCompleted":
@@ -341,20 +340,13 @@ export class ActivityStore {
 
   private applyPre(state: SessionState, rec: Raw, ts: number, agentId: string): void {
     if (rec.tool === "SubagentHandback") {
-      if (agentId !== "") {
-        state.handbacks.set(agentId, { ts, text: text(rec.message), agentType: "" });
-        trimOldest(state.handbacks, HANDBACKS_KEEP, (r) => r.ts);
-      }
+      if (agentId !== "") rememberLatest(state.handbacks, agentId, ts, HANDBACKS_KEEP);
       return;
     }
     if (rec.tool !== "Agent") return;
     const toolUseId = text(rec.tool_use_id) || `noid-${(this.seq += 1)}`;
-    // agent_id が付いた呼び出しは、担当がさらに呼んだ担当（孫）。v0.8.0 では出さない
-    if (agentId !== "") {
-      state.nestedToolUses.set(toolUseId, ts);
-      trimOldest(state.nestedToolUses, NESTED_KEEP, (v) => v);
-      return;
-    }
+    // agent_id が付いた呼び出しは、担当がさらに呼んだ担当（孫）。出さない（開始として覚えない）
+    if (agentId !== "") return;
     state.starts.set(toolUseId, { toolUseId, ts, description: text(rec.description), subagentType: text(rec.subagent_type), model: text(rec.model) });
     if (state.starts.size > STARTS_KEEP) {
       const oldest = [...state.starts.values()].sort((a, b) => a.ts - b.ts)[0];
@@ -363,19 +355,11 @@ export class ActivityStore {
     }
   }
 
-  private applyPost(state: SessionState, rec: Raw, ts: number, agentId: string): void {
+  private applyPost(state: SessionState, rec: Raw, ts: number): void {
     if (rec.tool !== "Agent") return;
     const toolUseId = text(rec.tool_use_id);
     if (toolUseId === "") return;
-    const total = rec.totalDurationMs;
-    state.posts.set(toolUseId, {
-      ts,
-      status: text(rec.status),
-      agentId: text(rec.agentId),
-      resolvedModel: text(rec.resolvedModel),
-      totalDurationMs: typeof total === "number" && Number.isFinite(total) ? total : null,
-      nested: agentId !== "",
-    });
+    state.posts.set(toolUseId, { ts, status: text(rec.status), agentId: text(rec.agentId), resolvedModel: text(rec.resolvedModel) });
   }
 
   private applyTask(state: SessionState, rec: Raw, ts: number): void {
@@ -414,9 +398,9 @@ export class ActivityStore {
   }
 
   /** メモリに持っている件数（上限の試験用） */
-  sizes(sessionId: string): { starts: number; stops: number; handbacks: number; tasks: number; nested: number } {
+  sizes(sessionId: string): { starts: number; stops: number; handbacks: number; restarts: number; tasks: number } {
     const s = this.sessions.get(sessionId);
-    return { starts: s?.starts.size ?? 0, stops: s?.stops.size ?? 0, handbacks: s?.handbacks.size ?? 0, tasks: s?.tasks.size ?? 0, nested: s?.nestedToolUses.size ?? 0 };
+    return { starts: s?.starts.size ?? 0, stops: s?.stops.size ?? 0, handbacks: s?.handbacks.size ?? 0, restarts: s?.restarts.size ?? 0, tasks: s?.tasks.size ?? 0 };
   }
 
   /** そのセッションの、画面に出すまとめ。別のセッションの記録は入らない（K7） */
@@ -424,69 +408,26 @@ export class ActivityStore {
     const state = this.sessions.get(sessionId);
     if (state === undefined) return emptyActivity();
     const now = this.now();
-    const nestedAgentIds = new Set<string>();
-    for (const [toolUseId, post] of state.posts) {
-      if (post.agentId !== "" && (post.nested || state.nestedToolUses.has(toolUseId))) nestedAgentIds.add(post.agentId);
-    }
-    const linked = new Set<string>();
     const running: AgentItem[] = [];
-    const finished: AgentItem[] = [];
+    // 動いているのは、Agent の呼び出し（PreToolUse）から始まる担当だけ。SubagentStart だけで呼び出しと結べない担当
+    // （Claude の内部の担当・孫の担当）は、ここに入らない
     for (const start of state.starts.values()) {
       const post = state.posts.get(start.toolUseId);
-      if (post?.agentId) linked.add(post.agentId);
-      const stop = post?.agentId ? state.stops.get(post.agentId) : undefined;
-      const handback = post?.agentId ? state.handbacks.get(post.agentId) : undefined;
-      const completed = post?.status === "completed";
-      const endedAt = stop?.ts ?? handback?.ts ?? (completed ? post.ts : null);
-      const durationMs = stop !== undefined ? stop.ts - start.ts : endedAt === null ? null : completed && post.totalDurationMs !== null ? post.totalDurationMs : endedAt - start.ts;
-      const item: AgentItem = {
-        key: start.toolUseId,
-        subagentType: start.subagentType,
-        model: start.model,
-        resolvedModel: post?.resolvedModel ?? "",
-        description: start.description,
-        startedAt: start.ts,
-        endedAt,
-        durationMs,
-        // 結果は SubagentHandback の報告を優先する。無いときだけ SubagentStop の last_assistant_message
-        summary: handback?.text || stop?.text || "",
-      };
-      if (endedAt !== null) finished.push(item);
-      else if (now - start.ts <= RUNNING_MAX_AGE_MS) running.push(item);
+      const agentId = post?.agentId ?? "";
+      // 始まり = 呼び出しと最後の SubagentStart（再開）の新しい方。終わり = 最後の停止・報告・前景の担当の完了の新しいもの
+      // （agent_id が空のキーは Map に入れていないので、結べていない担当は call の時刻だけ・終わりなしになる）
+      const startedAt = latestOf(start.ts, state.restarts.get(agentId));
+      const endedAt = latestOf(state.stops.get(agentId), state.handbacks.get(agentId), post?.status === "completed" ? post.ts : undefined);
+      const isRunning = endedAt === 0 || startedAt > endedAt;
+      if (!isRunning || now - startedAt > RUNNING_MAX_AGE_MS) continue;
+      running.push({ key: start.toolUseId, subagentType: start.subagentType, model: start.model, resolvedModel: post?.resolvedModel ?? "", description: start.description, startedAt });
     }
-    for (const orphan of this.orphans(state, linked, nestedAgentIds)) finished.push(orphan);
-    finished.sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0));
-    running.sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
+    running.sort((a, b) => a.startedAt - b.startedAt);
     const tasks = [...state.tasks.values()]
       .sort((a, b) => (a.createdAt ?? a.completedAt ?? 0) - (b.createdAt ?? b.completedAt ?? 0) || a.seq - b.seq)
       .slice(-TASKS_MAX)
       .map((t): TaskItem => ({ id: t.id, subject: t.subject, done: t.completedAt !== null }));
-    return { running, finished: finished.slice(0, FINISHED_MAX), tasks, inputs: state.inputs.slice(0, INPUTS_MAX), lastEventAt: state.lastEventAt };
-  }
-
-  /** 担当の開始の記録に結べなかった終わり（記録を始める前に呼ばれた担当など）。出せる項目だけ出す */
-  private orphans(state: SessionState, linked: ReadonlySet<string>, nested: ReadonlySet<string>): AgentItem[] {
-    const ids = new Set([...state.stops.keys(), ...state.handbacks.keys()]);
-    const items: AgentItem[] = [];
-    for (const agentId of ids) {
-      if (linked.has(agentId) || nested.has(agentId)) continue;
-      const stop = state.stops.get(agentId);
-      const handback = state.handbacks.get(agentId);
-      // Claude Code の内部の担当（提案の生成など）は agent_type が空で、報告も無い。これは人に見せない
-      if ((stop?.agentType ?? "") === "" && handback === undefined) continue;
-      items.push({
-        key: `agent-${agentId}`,
-        subagentType: stop?.agentType ?? "",
-        model: "",
-        resolvedModel: "",
-        description: "",
-        startedAt: null,
-        endedAt: stop?.ts ?? handback?.ts ?? null,
-        durationMs: null,
-        summary: handback?.text || stop?.text || "",
-      });
-    }
-    return items;
+    return { running, tasks, inputs: state.inputs.slice(0, INPUTS_MAX), lastEventAt: state.lastEventAt };
   }
 
   /** activityKeepDays より古い日付の events-YYYYMMDD.jsonl だけを消す。消した名前を返す（本番のポートのサーバーだけが呼ぶ） */

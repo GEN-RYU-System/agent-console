@@ -86,6 +86,13 @@ describe("K5 / §3-2: buildRecord は決めた項目と長さだけを残す", (
     expect(without).not.toHaveProperty("last_assistant_message");
   });
 
+  it("K2 SubagentStart（担当の呼び出し・再開）: agent_id と agent_type だけ。ほかの項目（transcript のパスなど）は残さない", () => {
+    const rec = buildRecord({ session_id: SID, hook_event_name: "SubagentStart", agent_id: "ab4603515d5beee56", agent_type: "general-purpose", transcript_path: "/secret/t.jsonl", cwd: "/secret/cwd" }, NOW);
+    expect(rec).toEqual({ ts: NOW, event: "SubagentStart", session_id: SID, agent_id: "ab4603515d5beee56", agent_type: "general-purpose" });
+    // agent_type が空・無いときは項目ごと無い（SubagentStop と同じ）
+    expect(buildRecord({ session_id: SID, hook_event_name: "SubagentStart", agent_id: "adb7" }, NOW)).toEqual({ ts: NOW, event: "SubagentStart", session_id: SID, agent_id: "adb7" });
+  });
+
   it("TaskCreated / TaskCompleted: task_id と task_subject(200字)。task_description は残さない", () => {
     const rec = buildRecord({ session_id: SID, hook_event_name: "TaskCreated", task_id: "1", task_subject: "題".repeat(250), task_description: "説明は残さない" }, NOW);
     expect(rec).toEqual({ ts: NOW, event: "TaskCreated", session_id: SID, task_id: "1", task_subject: "題".repeat(200) });

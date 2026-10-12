@@ -1,4 +1,4 @@
-// agent-console: セッションの様子の記録（Claude Code の hook）。設計 docs/handoff/v0.8.0-activity/design.md §3-2、チャット docs/handoff/chat/design.md §3-1。
+// agent-console: セッションの様子の記録（Claude Code の hook）。設計 docs/handoff/v0.8.0-activity/design.md §3-2、チャット docs/handoff/chat/design.md §3-1、作戦ボード docs/handoff/board/design.md §2。
 // 標準入力の JSON から決めた項目だけを、dataDir/activity/events-YYYYMMDD.jsonl に 1 行で追記する。
 // どんな失敗でも終了コード 0 で終わり、何も出力しない（Claude を止めない）。node の標準の部品だけを使う。
 // この本体は、サーバーが起動のたびに dataDir/hooks/activity-hook.mjs へ写す。dataDir は、この写しの 2 つ上のフォルダ。
@@ -128,6 +128,9 @@ export function buildRecord(input, now = Date.now()) {
       rec = withText(rec, "last_assistant_message", input.last_assistant_message, REPORT_CHARS);
       return rec;
     }
+    case "SubagentStart":
+      // 担当を呼んだとき、そして再開したとき（SendMessage など）にも来る（工程0 (a)）。agent_id と agent_type だけ残す
+      return withText(common, "agent_type", input.agent_type, NAME_CHARS);
     case "TaskCreated":
     case "TaskCompleted": {
       let rec = withText(common, "task_id", input.task_id, ID_CHARS);
