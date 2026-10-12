@@ -9,7 +9,10 @@ vi.setConfig({ testTimeout: 60000 });
 
 const REPO = process.cwd();
 const CLI = path.join(REPO, "scripts", "ac-hooks.mjs");
-const EVENTS = ["PreToolUse", "PostToolUse", "SubagentStop", "TaskCreated", "TaskCompleted", "UserPromptSubmit"];
+const EVENTS = ["PreToolUse", "PostToolUse", "SubagentStop", "TaskCreated", "TaskCompleted", "UserPromptSubmit", "Stop", "StopFailure"];
+/** v0.10.0 までに install した 6 つ（Stop・StopFailure はまだ無い） */
+const OLD_EVENTS = EVENTS.slice(0, 6);
+const OWN_HANDLER_COUNT = EVENTS.length;
 
 const dirs: string[] = [];
 function tmp(): string {
@@ -59,7 +62,7 @@ const PO_SETTINGS = {
 };
 
 describe("K6: 設定の定義", () => {
-  it("6 つのイベントと matcher は設計 §3-3 のとおり", () => {
+  it("8 つのイベントと matcher は設計 §2 のとおり（v0.11.0 で Stop と StopFailure を足した）", () => {
     expect(HOOK_SPECS).toEqual([
       { event: "PreToolUse", matcher: "Agent|SubagentHandback" },
       { event: "PostToolUse", matcher: "Agent" },
@@ -67,6 +70,8 @@ describe("K6: 設定の定義", () => {
       { event: "TaskCreated" },
       { event: "TaskCompleted" },
       { event: "UserPromptSubmit" },
+      { event: "Stop" },
+      { event: "StopFailure" },
     ]);
   });
 
@@ -81,7 +86,7 @@ describe("K6: 設定の定義", () => {
 });
 
 describe("K6: install", () => {
-  it("今の設定のキーと、ほかの hook をすべて残して、自分の handler を 6 つのイベントに足す（exec の形・空白入りのパス）", () => {
+  it("今の設定のキーと、ほかの hook をすべて残して、自分の handler を 8 つのイベントに足す（exec の形・空白入りのパス）", () => {
     const e = makeEnv();
     writeFileSync(e.settings, JSON.stringify(PO_SETTINGS, null, 2) + "\n");
     const r = installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath, now: () => Date.UTC(2026, 9, 12, 14, 0, 0, 123) });
@@ -91,7 +96,9 @@ describe("K6: install", () => {
     expect(after.permissions).toEqual(PO_SETTINGS.permissions);
     expect(after.enabledPlugins).toEqual(PO_SETTINGS.enabledPlugins);
     expect(after.autoMode).toEqual(PO_SETTINGS.autoMode);
-    expect(after.hooks.Stop).toEqual(PO_SETTINGS.hooks.Stop);
+    // PO の Stop の group は先頭にそのまま残り、自分の group が末尾に足される。StopFailure は自分だけ
+    expect(after.hooks.Stop).toEqual([...PO_SETTINGS.hooks.Stop, { hooks: [ownHandler(e)] }]);
+    expect(after.hooks.StopFailure).toEqual([{ hooks: [ownHandler(e)] }]);
     // 既存の group は先頭にそのまま残り、自分の group が末尾に足される
     expect(after.hooks.PreToolUse.slice(0, 2)).toEqual(PO_SETTINGS.hooks.PreToolUse);
     expect(after.hooks.PreToolUse[2]).toEqual({ matcher: "Agent|SubagentHandback", hooks: [ownHandler(e)] });
@@ -123,7 +130,22 @@ describe("K6: install", () => {
     expect(readFileSync(e.settings, "utf8")).toBe(once);
     expect(backups(e)).toHaveLength(1);
     const count = (JSON.stringify(readJson(e.settings)).match(/activity-hook\.mjs/g) ?? []).length;
-    expect(count).toBe(6);
+    expect(count).toBe(OWN_HANDLER_COUNT);
+  });
+
+  it("v0.10.0 までの 6 つだけが入っている設定に install し直すと、Stop と StopFailure の 2 つだけが足される（既存の 6 つは変わらない）", () => {
+    const e = makeEnv();
+    const oldOnly = { hooks: Object.fromEntries(OLD_EVENTS.map((ev) => [ev, [HOOK_SPECS.find((s) => s.event === ev)?.matcher ? { matcher: HOOK_SPECS.find((s) => s.event === ev)?.matcher, hooks: [ownHandler(e)] } : { hooks: [ownHandler(e)] }]])) };
+    writeFileSync(e.settings, JSON.stringify({ ...oldOnly, hooks: { ...oldOnly.hooks, Stop: PO_SETTINGS.hooks.Stop } }, null, 2) + "\n");
+    expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toMatchObject({ ok: false, reason: "missingHandler", missingEvents: ["Stop", "StopFailure"] });
+    const before = readJson(e.settings);
+    const r = installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath });
+    expect(r.changed).toBe(true);
+    const after = readJson(e.settings);
+    for (const ev of OLD_EVENTS) expect(after.hooks[ev]).toEqual(before.hooks[ev]);
+    expect(after.hooks.Stop).toEqual([...PO_SETTINGS.hooks.Stop, { hooks: [ownHandler(e)] }]);
+    expect(after.hooks.StopFailure).toEqual([{ hooks: [ownHandler(e)] }]);
+    expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toEqual({ ok: true });
   });
 
   it("node のパスが変わっていたら（版の更新）、自分の handler をその場で直す。増やさない", () => {
@@ -134,7 +156,7 @@ describe("K6: install", () => {
     expect(r.changed).toBe(true);
     const after = readJson(e.settings);
     expect(after.hooks.SubagentStop).toEqual([{ hooks: [ownHandler(e)] }]);
-    expect((JSON.stringify(after).match(/activity-hook\.mjs/g) ?? []).length).toBe(6);
+    expect((JSON.stringify(after).match(/activity-hook\.mjs/g) ?? []).length).toBe(OWN_HANDLER_COUNT);
   });
 
   it("設定が壊れた JSON・hooks の形が想定外のときは、何も書かずに失敗する（控えも作らない）", () => {
@@ -185,7 +207,7 @@ describe("K6: uninstall", () => {
     writeFileSync(e.settings, JSON.stringify(PO_SETTINGS, null, 2) + "\n");
     installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath });
     const r = uninstallHooks({ settingsPath: e.settings });
-    expect(r.removed).toBe(6);
+    expect(r.removed).toBe(OWN_HANDLER_COUNT);
     expect(readJson(e.settings)).toEqual(PO_SETTINGS);
   });
 
@@ -216,7 +238,7 @@ describe("K6: uninstall", () => {
 });
 
 describe("K6 / K8: check", () => {
-  it("handler が 6 つそろい、node と hook のファイルがあれば ok", () => {
+  it("handler が 8 つそろい、node と hook のファイルがあれば ok", () => {
     const e = makeEnv();
     installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath });
     expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toEqual({ ok: true });
@@ -269,7 +291,7 @@ describe("K6: コマンド（scripts/ac-hooks.mjs を一時の HOME で）", () 
     expect(readFileSync(e.hookPath, "utf8")).toBe(readFileSync(path.join(REPO, "hooks", "activity-hook.mjs"), "utf8"));
     const i2 = cli(e, "install");
     expect(i2.status, i2.err).toBe(0);
-    expect((JSON.stringify(readJson(e.settings)).match(/activity-hook\.mjs/g) ?? []).length).toBe(6);
+    expect((JSON.stringify(readJson(e.settings)).match(/activity-hook\.mjs/g) ?? []).length).toBe(OWN_HANDLER_COUNT);
     expect(readJson(e.settings).hooks.TaskCreated[0].hooks[0]).toEqual({ type: "command", command: process.execPath, args: [e.hookPath], async: true });
 
     const c1 = cli(e, "check");

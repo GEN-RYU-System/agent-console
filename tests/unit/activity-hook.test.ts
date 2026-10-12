@@ -92,13 +92,39 @@ describe("K5 / §3-2: buildRecord は決めた項目と長さだけを残す", (
     expect(buildRecord({ session_id: SID, hook_event_name: "TaskCompleted", task_id: "1", task_subject: "題" }, NOW)).toMatchObject({ event: "TaskCompleted", task_id: "1" });
   });
 
-  it("UserPromptSubmit: prompt の先頭 80 字。改行は空白 1 つにまとめる。工程0で分かった <agent-message の印は source=agent", () => {
-    const human = buildRecord({ session_id: SID, hook_event_name: "UserPromptSubmit", prompt: `最初の行\n\n次の行 ${"あ".repeat(200)}` }, NOW);
-    expect(human?.prompt).toBe(`最初の行 次の行 ${"あ".repeat(80 - "最初の行 次の行 ".length)}`);
+  it("K8 UserPromptSubmit: prompt は全文（改行・タブもそのまま）。工程0で分かった <agent-message の印は source=agent", () => {
+    const body = `最初の行\n\n\t次の行 ${"あ".repeat(200)}`;
+    const human = buildRecord({ session_id: SID, hook_event_name: "UserPromptSubmit", prompt: body }, NOW);
+    expect(human?.prompt).toBe(body);
     expect(human).not.toHaveProperty("source");
+    expect(human).not.toHaveProperty("truncated");
     const agent = buildRecord({ session_id: SID, hook_event_name: "UserPromptSubmit", prompt: '<agent-message from="adb7">\n[Subagent hand-back] ...' }, NOW);
     expect(agent).toMatchObject({ source: "agent" });
-    expect(String(agent?.prompt).length).toBeLessThanOrEqual(80);
+  });
+
+  it("K8 UserPromptSubmit: 貼り付けの包み（<pasted_content>）は記録では生のまま残す", () => {
+    const wrapped = '\n\n<pasted_content id="0995">\n行1\n行2\n行3\n行4\n</pasted_content id="0995">\n';
+    expect(buildRecord({ session_id: SID, hook_event_name: "UserPromptSubmit", prompt: wrapped }, NOW)?.prompt).toBe(wrapped);
+  });
+
+  it("K8 全文用の整形は、改行とタブ以外の制御文字だけを除く（CR・ESC・NUL を除き、LF とタブは残す）", () => {
+    const rec = buildRecord({ session_id: SID, hook_event_name: "UserPromptSubmit", prompt: "a\r\nb\tc\u001bd\u0000e\u007ff" }, NOW);
+    expect(rec?.prompt).toBe("a\nb\tcdef");
+  });
+
+  it("K8 Stop: last_assistant_message を全文で残す。stop_hook_active は真偽のときだけ残す。空なら本文の項目ごと無い", () => {
+    const text = `返事の1行目\n\n- 箇条書き\n\`\`\`ts\nconst a = 1;\n\`\`\`\n${"あ".repeat(500)}`;
+    const rec = buildRecord({ session_id: SID, hook_event_name: "Stop", stop_hook_active: false, last_assistant_message: text, background_tasks: [], session_crons: [] }, NOW);
+    expect(rec).toEqual({ ts: NOW, event: "Stop", session_id: SID, stop_hook_active: false, last_assistant_message: text });
+    expect(buildRecord({ session_id: SID, hook_event_name: "Stop", stop_hook_active: true, last_assistant_message: "x" }, NOW)).toMatchObject({ stop_hook_active: true });
+    const empty = buildRecord({ session_id: SID, hook_event_name: "Stop", last_assistant_message: "" }, NOW);
+    expect(empty).toEqual({ ts: NOW, event: "Stop", session_id: SID });
+  });
+
+  it("K3/K8 StopFailure: エラーの種類（error）だけを残す。API のエラー文（last_assistant_message）は残さない", () => {
+    const rec = buildRecord({ session_id: SID, hook_event_name: "StopFailure", error: "rate_limit", error_details: "429", last_assistant_message: "API Error: Rate limit reached" }, NOW);
+    expect(rec).toEqual({ ts: NOW, event: "StopFailure", session_id: SID, error: "rate_limit" });
+    expect(buildRecord({ session_id: SID, hook_event_name: "StopFailure" }, NOW)).toEqual({ ts: NOW, event: "StopFailure", session_id: SID });
   });
 
   it("agent_id は共通項目として付く（担当の中で起きたとき）。制御文字は空白にする", () => {
@@ -109,7 +135,6 @@ describe("K5 / §3-2: buildRecord は決めた項目と長さだけを残す", (
   it("session_id が UUID の形でないもの・対象外のイベント・対象外のツールは null", () => {
     expect(buildRecord({ session_id: "x", hook_event_name: "TaskCreated", task_id: "1", task_subject: "s" }, NOW)).toBeNull();
     expect(buildRecord({ hook_event_name: "TaskCreated", task_id: "1" }, NOW)).toBeNull();
-    expect(buildRecord({ session_id: SID, hook_event_name: "Stop" }, NOW)).toBeNull();
     expect(buildRecord({ session_id: SID, hook_event_name: "Notification" }, NOW)).toBeNull();
     expect(buildRecord({ session_id: SID, hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "ls" } }, NOW)).toBeNull();
     expect(buildRecord(null, NOW)).toBeNull();
@@ -136,9 +161,10 @@ describe("K4 / §3-2: 書き込み", () => {
     expect(writes).toHaveLength(1);
   });
 
-  it(`1 行が ${MAX_LINE_BYTES} バイトを超えるものは書かない`, () => {
+  it(`K8 1 行の上限は 64KiB（${MAX_LINE_BYTES} バイト）。それを超えるものは書かない`, () => {
+    expect(MAX_LINE_BYTES).toBe(64 * 1024);
     const dir = tmp();
-    const ok = appendRecord(dir, { ts: NOW, event: "TaskCreated", session_id: SID, task_id: "1", task_subject: "あ".repeat(5000) });
+    const ok = appendRecord(dir, { ts: NOW, event: "TaskCreated", session_id: SID, task_id: "1", task_subject: "あ".repeat(30000) });
     expect(ok).toBe(false);
     expect(existsSync(path.join(dir, activityFileName(NOW)))).toBe(false);
   });
@@ -170,6 +196,102 @@ describe("K4 / §3-2: 書き込み", () => {
     const parsed = all.map((l) => JSON.parse(l) as { task_id: string; task_subject: string });
     expect(new Set(parsed.map((r) => r.task_id)).size).toBe(PROCS * PER);
     expect(Math.max(...all.map((l) => Buffer.byteLength(l)))).toBeGreaterThan(3000);
+  });
+
+  it("K8 20 のプロセスが並列に 200 行ずつ、61KiB を超える行（64KiB で切った行）を書いても、読めない行が 0 件で、行が混ざらない", async () => {
+    const dir = path.join(tmp(), "activity");
+    const PROCS = 20;
+    const PER = 200;
+    await Promise.all(
+      Array.from({ length: PROCS }, (_, i) =>
+        new Promise<void>((resolve, reject) => {
+          const child = spawn(process.execPath, [APPEND_MANY, HOOK_SOURCE, dir, String(i), String(PER), "large"], { stdio: "ignore" });
+          child.on("error", reject);
+          child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`child ${i} exit ${code}`))));
+        }),
+      ),
+    );
+    const files = readdirSync(dir);
+    expect(files).toEqual([activityFileName(NOW)]);
+    // 大きいファイルなので、1 行ずつ読む（全体を 1 つの文字列にしない）
+    const buf = readFileSync(path.join(dir, files[0]));
+    const seen = new Set<string>();
+    let unreadable = 0;
+    let maxBytes = 0;
+    let minBytes = Number.POSITIVE_INFINITY;
+    let start = 0;
+    while (start < buf.length) {
+      const end = buf.indexOf(0x0a, start);
+      expect(end).toBeGreaterThan(start); // 最後の行にも改行がある
+      const line = buf.subarray(start, end);
+      start = end + 1;
+      try {
+        const rec = JSON.parse(line.toString("utf8")) as { event: string; truncated?: boolean; last_assistant_message: string };
+        expect(rec.event).toBe("Stop");
+        expect(rec.truncated).toBe(true);
+        seen.add(rec.last_assistant_message.split("\n")[0]);
+      } catch {
+        unreadable += 1;
+      }
+      maxBytes = Math.max(maxBytes, line.length + 1);
+      minBytes = Math.min(minBytes, line.length + 1);
+    }
+    expect(unreadable).toBe(0);
+    expect(seen.size).toBe(PROCS * PER);
+    expect(minBytes).toBeGreaterThan(60 * 1024);
+    expect(maxBytes).toBeLessThanOrEqual(MAX_LINE_BYTES);
+  });
+});
+
+const lineBytes = (rec: unknown): number => Buffer.byteLength(`${JSON.stringify(rec)}\n`);
+
+describe("K8 / M-b: 1 行は JSON 全体で 64KiB まで。超えるときは文字の区切りを割らずに切り、truncated: true を付ける", () => {
+  it("上限ちょうどまでの本文は切らない（truncated も付かない）", () => {
+    const frame = lineBytes({ ts: NOW, event: "UserPromptSubmit", session_id: SID, prompt: "" });
+    const rec = buildRecord({ session_id: SID, hook_event_name: "UserPromptSubmit", prompt: "a".repeat(MAX_LINE_BYTES - frame) }, NOW);
+    expect(lineBytes(rec)).toBe(MAX_LINE_BYTES);
+    expect(rec).not.toHaveProperty("truncated");
+  });
+
+  it("1 バイト超えたら切る。切ったあとの行は上限以内で、truncated: true が付き、本文は先頭の一部", () => {
+    const text = "a".repeat(MAX_LINE_BYTES * 2);
+    const rec = buildRecord({ session_id: SID, hook_event_name: "Stop", last_assistant_message: text }, NOW);
+    expect(rec?.truncated).toBe(true);
+    expect(lineBytes(rec)).toBeLessThanOrEqual(MAX_LINE_BYTES);
+    expect(lineBytes(rec)).toBeGreaterThan(MAX_LINE_BYTES - 16);
+    expect(text.startsWith(String(rec?.last_assistant_message))).toBe(true);
+  });
+
+  it("日本語（1 文字 3 バイト）・絵文字（4 バイト、サロゲートペア）・改行や引用符（JSON で 2 バイトに増える）でも、上限以内で、文字の途中では切らない", () => {
+    const unit = "あ😀\n\"\\x";
+    const text = unit.repeat(30000);
+    const rec = buildRecord({ session_id: SID, hook_event_name: "UserPromptSubmit", prompt: text }, NOW);
+    expect(rec?.truncated).toBe(true);
+    const line = `${JSON.stringify(rec)}\n`;
+    expect(Buffer.byteLength(line)).toBeLessThanOrEqual(MAX_LINE_BYTES);
+    const parsed = JSON.parse(line) as { prompt: string };
+    // 先頭の一部であり、孤立したサロゲートが無い（絵文字が割れていない）
+    expect(text.startsWith(parsed.prompt)).toBe(true);
+    expect(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(parsed.prompt)).toBe(false);
+    // 切った位置は、もう 1 文字入る余地が無い位置（欠け過ぎていない）
+    expect(MAX_LINE_BYTES - Buffer.byteLength(line)).toBeLessThan(8);
+  });
+
+  it("agent の入力（source）も、上限以内に収まる", () => {
+    const rec = buildRecord({ session_id: SID, hook_event_name: "UserPromptSubmit", prompt: `<agent-message from="x">${"あ".repeat(40000)}` }, NOW);
+    expect(rec).toMatchObject({ source: "agent", truncated: true });
+    expect(lineBytes(rec)).toBeLessThanOrEqual(MAX_LINE_BYTES);
+  });
+
+  it("切った 1 行は、そのまま appendRecord で書け、読み直せる（1 回の writeSync）", () => {
+    const dir = tmp();
+    const rec = buildRecord({ session_id: SID, hook_event_name: "Stop", last_assistant_message: "あ".repeat(80000) }, NOW);
+    expect(rec).not.toBeNull();
+    const writes: number[] = [];
+    const ok = appendRecord(dir, rec as NonNullable<typeof rec>, { writeSync: (_fd: number, buf: Buffer) => (writes.push(buf.length), buf.length) });
+    expect(ok).toBe(true);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toBeLessThanOrEqual(MAX_LINE_BYTES);
   });
 });
 
