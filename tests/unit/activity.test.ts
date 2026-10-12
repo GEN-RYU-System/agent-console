@@ -168,6 +168,27 @@ describe("K2: やること・入力", () => {
   });
 });
 
+describe("メモリの上限", () => {
+  it("stops・handbacks（400）、tasks（200）、孫の呼び出し（400）は、上限を超えると古い ts から落ちる", async () => {
+    const rows: Rec[] = [];
+    for (let i = 0; i < 450; i++) {
+      const ts = T0 + i * 1000;
+      rows.push(stop(`S${i}`, { ts, agent_type: "Explore" }), handback(`H${i}`, `報告${i}`, { ts }), pre(`n${i}`, { ts, agent_id: "P" }));
+    }
+    for (let i = 0; i < 250; i++) rows.push(rec({ event: "TaskCreated", task_id: `t${i}`, task_subject: `t${i}`, ts: T0 + i }));
+    write(rows);
+    await store.refresh();
+    expect(store.sizes(SID)).toEqual({ starts: 0, stops: 400, handbacks: 400, tasks: 200, nested: 400 });
+    const v = store.view(SID);
+    // 新しいものは残り（古い順に落ちる）、一番古い 50 件の終わりは出ない
+    expect(v.finished.map((a) => a.summary)).toContain("報告449");
+    expect(v.finished.map((a) => a.key)).not.toContain("agent-S0");
+    expect(v.finished.map((a) => a.key)).not.toContain("agent-H0");
+    expect(v.tasks[v.tasks.length - 1].id).toBe("t249");
+    expect(v.tasks).toHaveLength(50);
+  });
+});
+
 describe("K7: セッションごとに分ける", () => {
   it("別の session_id の記録は、選んだセッションの view に混ざらない", async () => {
     write([pre("t1"), rec({ session_id: OTHER, event: "TaskCreated", task_id: "1", task_subject: "他人の" }), rec({ session_id: OTHER, event: "UserPromptSubmit", prompt: "他の入力" })]);

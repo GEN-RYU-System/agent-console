@@ -12,6 +12,10 @@ export const TASKS_MAX = 50;
 export const INPUTS_MAX = 3;
 /** セッションごとに覚える担当・入力の上限（メモリが増え続けないため） */
 const STARTS_KEEP = 400;
+const STOPS_KEEP = 400;
+const HANDBACKS_KEEP = 400;
+const NESTED_KEEP = 400;
+const TASKS_KEEP = 200;
 const INPUTS_KEEP = 20;
 const READ_CHUNK_BYTES = 1024 * 1024;
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -79,7 +83,8 @@ interface Task {
 }
 interface SessionState {
   starts: Map<string, Start>;
-  nestedToolUses: Set<string>;
+  /** 孫の担当の呼び出しの tool_use_id → 記録した時刻 */
+  nestedToolUses: Map<string, number>;
   posts: Map<string, Post>;
   stops: Map<string, Report>;
   handbacks: Map<string, Report>;
@@ -90,7 +95,7 @@ interface SessionState {
 
 const newSession = (): SessionState => ({
   starts: new Map(),
-  nestedToolUses: new Set(),
+  nestedToolUses: new Map(),
   posts: new Map(),
   stops: new Map(),
   handbacks: new Map(),
@@ -100,6 +105,13 @@ const newSession = (): SessionState => ({
 });
 
 const emptyActivity = (): SessionActivity => ({ running: [], finished: [], tasks: [], inputs: [], lastEventAt: null });
+
+/** 件数が上限を超えたら、時刻（ts）の古いものから落とす */
+function trimOldest<V>(map: Map<string, V>, keep: number, tsOf: (value: V) => number): void {
+  if (map.size <= keep) return;
+  const oldestFirst = [...map.entries()].sort((a, b) => tsOf(a[1]) - tsOf(b[1]));
+  for (const [key] of oldestFirst.slice(0, map.size - keep)) map.delete(key);
+}
 
 const text = (v: unknown): string => (typeof v === "string" ? v : "");
 const isObject = (v: unknown): v is Raw => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -241,7 +253,10 @@ export class ActivityStore {
         this.applyPost(state, rec, ts, agentId);
         break;
       case "SubagentStop":
-        if (agentId !== "") state.stops.set(agentId, { ts, text: text(rec.last_assistant_message), agentType: text(rec.agent_type) });
+        if (agentId !== "") {
+          state.stops.set(agentId, { ts, text: text(rec.last_assistant_message), agentType: text(rec.agent_type) });
+          trimOldest(state.stops, STOPS_KEEP, (r) => r.ts);
+        }
         break;
       case "TaskCreated":
       case "TaskCompleted":
@@ -255,14 +270,18 @@ export class ActivityStore {
 
   private applyPre(state: SessionState, rec: Raw, ts: number, agentId: string): void {
     if (rec.tool === "SubagentHandback") {
-      if (agentId !== "") state.handbacks.set(agentId, { ts, text: text(rec.message), agentType: "" });
+      if (agentId !== "") {
+        state.handbacks.set(agentId, { ts, text: text(rec.message), agentType: "" });
+        trimOldest(state.handbacks, HANDBACKS_KEEP, (r) => r.ts);
+      }
       return;
     }
     if (rec.tool !== "Agent") return;
     const toolUseId = text(rec.tool_use_id) || `noid-${(this.seq += 1)}`;
     // agent_id が付いた呼び出しは、担当がさらに呼んだ担当（孫）。v0.8.0 では出さない
     if (agentId !== "") {
-      state.nestedToolUses.add(toolUseId);
+      state.nestedToolUses.set(toolUseId, ts);
+      trimOldest(state.nestedToolUses, NESTED_KEEP, (v) => v);
       return;
     }
     state.starts.set(toolUseId, { toolUseId, ts, description: text(rec.description), subagentType: text(rec.subagent_type), model: text(rec.model) });
@@ -300,6 +319,7 @@ export class ActivityStore {
       completedAt: created ? (previous?.completedAt ?? null) : ts,
       seq: previous?.seq ?? (this.seq += 1),
     });
+    trimOldest(state.tasks, TASKS_KEEP, (t) => t.createdAt ?? t.completedAt ?? 0);
   }
 
   private applyPrompt(state: SessionState, rec: Raw, ts: number): void {
@@ -307,6 +327,12 @@ export class ActivityStore {
     if (rec.source === "agent" || body === "") return;
     if (state.inputs.some((i) => i.ts === ts && i.text === body)) return;
     state.inputs = [...state.inputs, { ts, text: body }].sort((a, b) => b.ts - a.ts).slice(0, INPUTS_KEEP);
+  }
+
+  /** メモリに持っている件数（上限の試験用） */
+  sizes(sessionId: string): { starts: number; stops: number; handbacks: number; tasks: number; nested: number } {
+    const s = this.sessions.get(sessionId);
+    return { starts: s?.starts.size ?? 0, stops: s?.stops.size ?? 0, handbacks: s?.handbacks.size ?? 0, tasks: s?.tasks.size ?? 0, nested: s?.nestedToolUses.size ?? 0 };
   }
 
   /** そのセッションの、画面に出すまとめ。別のセッションの記録は入らない（K7） */

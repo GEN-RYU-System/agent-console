@@ -26,6 +26,11 @@ node scripts/ac-hooks.mjs uninstall    # 自分の hook だけを外す（ほか
 
 settings.json に hook が無い、または node や hook のファイルが無いときに、右の欄にこの案内が出ます（API を呼ぶたびに点検します）。`node scripts/ac-hooks.mjs check` で理由が分かります。`node scripts/ac-hooks.mjs install` を実行し直せば直ります（node の版が変わってパスが消えたときも同じ）。サーバーの起動のとき（本番のポートのみ）に hook の本体が `dataDir/hooks/` に写され、起動のときと 1 時間ごとに点検結果がログに出ます。
 
+### 設定キー
+
+- `claudeSettingsPath`: 「記録の仕組みが外れていないか」の点検で読む Claude の設定ファイル（既定 `~/.claude/settings.json`。読むだけで、アプリは書き換えません）。
+- `activityKeepDays`: 記録を残す日数（既定 7）。
+
 ### 割り切り
 
 - アプリが読むのは今日と昨日（UTC）の記録だけです。そのため、2 日以上前に呼んだ担当は、アプリを再起動したあとには出ません。
