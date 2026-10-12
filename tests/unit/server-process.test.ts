@@ -23,6 +23,7 @@ interface Proc {
   child: ChildProcess;
   port: number;
   dir: string;
+  configFile: string;
   output: () => string;
   exited: Promise<number | null>;
 }
@@ -54,6 +55,7 @@ async function startServer(env: Record<string, string>, extraRoles: unknown[] = 
     newWorktreeScript: "scripts/new-worktree.sh",
     ledgerLookupScript: "scripts/ledger-lookup.sh",
     ledgerDir: "ledger",
+    dataDir: path.join(dir, "data"),
     claudeBin: writeStub(dir, "claude-stub", 'echo "[]"'),
     agentsPollMs: 60000,
     ledgerPollMs: 60000,
@@ -64,7 +66,7 @@ async function startServer(env: Record<string, string>, extraRoles: unknown[] = 
   writeFileSync(configFile, JSON.stringify(config));
   const child = spawn(process.execPath, ["--import", "tsx", "server/index.ts"], {
     cwd: REPO,
-    env: { ...process.env, AGENT_CONSOLE_CONFIG: configFile, AGENT_CONSOLE_AUTH: "", AGENT_CONSOLE_TOKEN: "", AGENT_CONSOLE_PORT: "", AC_SECURITY: "", AC_STUB_LOG: "", ...env },
+    env: { ...process.env, AGENT_CONSOLE_CONFIG: configFile, AGENT_CONSOLE_AUTH: "", AGENT_CONSOLE_TOKEN: "", AGENT_CONSOLE_PORT: "", AGENT_CONSOLE_RESTORE: "off", AC_SECURITY: "", AC_STUB_LOG: "", ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   running.push(child);
@@ -72,7 +74,7 @@ async function startServer(env: Record<string, string>, extraRoles: unknown[] = 
   child.stdout?.on("data", (d: Buffer) => (out += d.toString()));
   child.stderr?.on("data", (d: Buffer) => (out += d.toString()));
   const exited = new Promise<number | null>((resolve) => child.on("exit", (code) => resolve(code)));
-  return { child, port, dir, output: () => out, exited };
+  return { child, port, dir, configFile, output: () => out, exited };
 }
 
 async function waitHealthy(p: Proc, ms = 15000): Promise<void> {
@@ -177,5 +179,14 @@ describe("server process: no secrets in logs, argv or child env", () => {
     p.port = other;
     await waitHealthy(p);
     expect((await fetch(`http://127.0.0.1:${other}/healthz`)).status).toBe(200);
+  }, 30000);
+
+  it("never uses the production default dataDir: the child config points under its own temp directory and no restore list is written", async () => {
+    const p = await startServer({ AGENT_CONSOLE_TOKEN: SECRET });
+    await waitHealthy(p);
+    const written = JSON.parse(readFileSync(p.configFile, "utf8")) as { dataDir?: string };
+    expect(written.dataDir).toBe(path.join(p.dir, "data"));
+    expect(path.relative(p.dir, written.dataDir as string).startsWith("..")).toBe(false);
+    expect(existsSync(path.join(p.dir, "data", "open-sessions.json"))).toBe(false);
   }, 30000);
 });

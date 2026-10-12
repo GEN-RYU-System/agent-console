@@ -151,8 +151,12 @@ export async function restoreOnStartup(deps: RestoreDeps): Promise<RestoreNotice
   }
 }
 
-/** 自己診断用の一時サーバー（別ポート・本番と同じ dataDir）は AGENT_CONSOLE_RESTORE=off で起動し、復元と記録を一切しない。完全一致の "off" のときだけ無効。 */
-export const isRestoreEnabled = (env: Readonly<Record<string, string | undefined>>): boolean => env.AGENT_CONSOLE_RESTORE !== "off";
+/**
+ * 復元と記録が有効なのは「AGENT_CONSOLE_RESTORE が "off" でなく（完全一致のときだけ無効）、かつ AGENT_CONSOLE_PORT が未設定（空文字も未設定扱い）」のときだけ。
+ * ポートを上書きして起動したサーバー（自己診断・試験・検証用）は、本番と同じ dataDir を読んでも復元も記録もしない。本番の LaunchAgent は AGENT_CONSOLE_PORT を使わない。
+ */
+export const isRestoreEnabled = (env: Readonly<Record<string, string | undefined>>): boolean =>
+  env.AGENT_CONSOLE_RESTORE !== "off" && (env.AGENT_CONSOLE_PORT === undefined || env.AGENT_CONSOLE_PORT === "");
 
 /**
  * 起動時の復元と記録をまとめて始める（index.ts から呼ぶ）。無効のときは復元リストを読み書きしない（null を返す）。
