@@ -5,7 +5,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { createAuth } from "../../../server/auth.ts";
-import { DEFAULT_DIFF_MAX_FILE_BYTES, DEFAULT_DIFF_SEND_MAX_BYTES, DEFAULT_PASTE_SUBMIT_DELAY_MS, type Config } from "../../../server/config.ts";
+import { DEFAULT_DIFF_MAX_FILE_BYTES, DEFAULT_GH_BIN, DEFAULT_PR_POLL_MS, DEFAULT_PR_REFRESH_MIN_MS, DEFAULT_DIFF_SEND_MAX_BYTES, DEFAULT_PASTE_SUBMIT_DELAY_MS, type Config } from "../../../server/config.ts";
 import { MemoryCollector } from "../../../server/memory.ts";
 import { QuickPromptStore } from "../../../server/quick-prompts.ts";
 import { DiffCommentStore } from "../../../server/diff-comments.ts";
@@ -80,6 +80,12 @@ export interface HarnessOptions {
   diffMaxFileBytes?: number;
   /** 送る文章の上限（byte）。既定は config の既定値 */
   diffSendMaxBytes?: number;
+  /** gh の置き場（既定 "gh"）。PR の試験は偽 gh を指す */
+  ghBin?: string;
+  /** 「更新」を受け付ける最小の間隔（ms）。既定は config の既定値 */
+  prRefreshMinMs?: number;
+  /** gh 1 回の時間切れ（ms）。既定は本番値 */
+  ghTimeoutMs?: number;
 }
 
 /** 実 HTTP/WS/PTY（ダミー役割 sh）を 127.0.0.1 の空きポートで起動する。 */
@@ -119,6 +125,9 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     diffMaxFileBytes: options.diffMaxFileBytes ?? DEFAULT_DIFF_MAX_FILE_BYTES,
     diffSendMaxBytes: options.diffSendMaxBytes ?? DEFAULT_DIFF_SEND_MAX_BYTES,
     pasteSubmitDelayMs: DEFAULT_PASTE_SUBMIT_DELAY_MS,
+    ghBin: options.ghBin ?? DEFAULT_GH_BIN,
+    prPollMs: DEFAULT_PR_POLL_MS,
+    prRefreshMinMs: options.prRefreshMinMs ?? DEFAULT_PR_REFRESH_MIN_MS,
     roles: [
       { id: "echo", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo READY; cat"], needsWorktree: false },
       { id: "short", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo bye"], needsWorktree: false },
@@ -135,7 +144,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     ],
   };
   const sessions = new SessionManager(config, { maxSessions: options.maxSessions, closeGraceMs: options.closeGraceMs });
-  const hub = new Hub(config, sessions, options.sendNotification ?? null);
+  const hub = new Hub(config, sessions, options.sendNotification ?? null, { ghTimeoutMs: options.ghTimeoutMs });
   const store = new OpenSessionStore(config.dataDir);
   const recorder = new OpenSessionRecorder(sessions, hub, store);
   if (options.recorder === true) recorder.start();

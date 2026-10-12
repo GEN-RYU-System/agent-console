@@ -158,7 +158,8 @@
     },
     "tabs": {
       "terminal": "端末",
-      "changes": "変更"
+      "changes": "変更",
+      "pr": "PR"
     },
     "diff": {
       "loading": "読み込み中",
@@ -211,6 +212,62 @@
       "sendErrorTitle": "送れませんでした",
       "sendNoticeTitle": "送信の確認",
       "pastedNotSent": "貼り付けましたが送っていません。そのセッションの端末で Enter を押してください"
+    },
+    "ci": {
+      "fail": "CI 失敗",
+      "pending": "CI 実行中",
+      "pass": "CI 成功"
+    },
+    "pr": {
+      "loading": "確認中です",
+      "noPr": "このブランチの PR はありません",
+      "notGitHub": "GitHub のリポジトリではありません",
+      "detached": "ブランチにいないため PR を確認できません",
+      "outside": "この作業場所の PR は確認できません",
+      "outsideHint": "本店と、その worktree 以外の場所では git も gh も実行しません。",
+      "errorTitle": "GitHub の状態を取得できませんでした",
+      "reason": {
+        "ghMissing": "gh コマンドが見つかりません",
+        "authRequired": "GitHub の認証が切れています。ターミナルで gh auth login を実行してください",
+        "timeout": "GitHub の応答が時間内に返りませんでした",
+        "rateLimited": "GitHub の利用上限に達しました。次の取り直しまで待ちます",
+        "ghFailed": "gh の実行に失敗しました",
+        "fetchFailed": "サーバーから取得できませんでした"
+      },
+      "refresh": "更新",
+      "refreshing": "更新中",
+      "fetchedAt": "取得: {{time}}",
+      "open": "開く",
+      "state": {
+        "draft": "下書き",
+        "open": "オープン",
+        "merged": "マージ済み",
+        "closed": "クローズ"
+      },
+      "merge": {
+        "CLEAN": "マージできます",
+        "HAS_HOOKS": "マージできます",
+        "UNSTABLE": "検査が終わっていないか、失敗がありますが、マージは可能です",
+        "BLOCKED": "条件を満たしていないためマージできません",
+        "BEHIND": "main より古いため更新が必要です",
+        "DIRTY": "競合があります",
+        "DRAFT": "下書きです",
+        "UNKNOWN": "確認中です"
+      },
+      "count": {
+        "pass": "成功 {{count}}",
+        "fail": "失敗 {{count}}",
+        "pending": "実行中 {{count}}",
+        "skipping": "スキップ {{count}}",
+        "cancel": "取り消し {{count}}"
+      },
+      "checksTitle": "確認が必要な検査",
+      "noChecks": "検査はありません",
+      "bucket": {
+        "fail": "失敗",
+        "cancel": "取り消し",
+        "pending": "実行中"
+      }
     }
   },
   "role": {

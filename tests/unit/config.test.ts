@@ -138,4 +138,23 @@ describe("parseConfig: diff settings (K8, K12, K14)", () => {
     const shipped = parseConfig(JSON.parse(readFileSync("agent-console.config.json", "utf8")));
     expect([shipped.diffBaseRef, shipped.diffMaxFileBytes, shipped.diffSendMaxBytes, shipped.pasteSubmitDelayMs]).toEqual(["origin/main", 1048576, 16384, 2000]);
   });
+
+  it("ghBin / prPollMs / prRefreshMinMs can be omitted (defaults gh / 120000 / 10000) and can be set", () => {
+    const d = parseConfig(valid);
+    expect([d.ghBin, d.prPollMs, d.prRefreshMinMs]).toEqual(["gh", 120000, 10000]);
+    const c = parseConfig({ ...valid, ghBin: "/opt/homebrew/bin/gh", prPollMs: 30000, prRefreshMinMs: 5000 });
+    expect([c.ghBin, c.prPollMs, c.prRefreshMinMs]).toEqual(["/opt/homebrew/bin/gh", 30000, 5000]);
+  });
+
+  it("refuses an empty or non-string ghBin and non-positive prPollMs / prRefreshMinMs", () => {
+    for (const bad of ["", 5, null]) expect(() => parseConfig({ ...valid, ghBin: bad }), String(bad)).toThrow(/ghBin/);
+    for (const key of ["prPollMs", "prRefreshMinMs"]) {
+      for (const bad of [0, -1, "1", null]) expect(() => parseConfig({ ...valid, [key]: bad }), `${key}=${String(bad)}`).toThrow(new RegExp(key));
+    }
+  });
+
+  it("the shipped config carries the three PR values", () => {
+    const shipped = parseConfig(JSON.parse(readFileSync("agent-console.config.json", "utf8")));
+    expect([shipped.ghBin, shipped.prPollMs, shipped.prRefreshMinMs]).toEqual(["gh", 120000, 10000]);
+  });
 });

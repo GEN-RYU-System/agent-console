@@ -945,4 +945,130 @@ test("v0.4.0 K12: 変更タブを開いてから端末タブに戻っても、�
   await page.waitForTimeout(1500);
   expect(await lastSize()).toBe(before);
   expect(await terminal.innerText()).not.toMatch(/SIZE 2x1\b/);
+
+  // v0.5.0: PR タブを開いて戻っても同じ（PR タブも hidden 属性で隠すだけ）
+  await page.getByRole("tab", { name: "PR", exact: true }).click();
+  await expect(page.getByTestId("pr-pane")).toBeVisible();
+  await expect(terminal).toBeHidden();
+  await page.waitForTimeout(1500);
+  await page.getByRole("tab", { name: /端末/ }).click();
+  await expect(terminal).toBeVisible();
+  await page.waitForTimeout(1500);
+  expect(await lastSize()).toBe(before);
+  expect(await terminal.innerText()).not.toMatch(/SIZE 2x1\b/);
+});
+
+// ---- v0.5.0 PR と CI ----
+const GH_DIR = process.env.AC_E2E_GH_DIR as string;
+const GH_LOG = process.env.AC_E2E_GH_LOG as string;
+/** e2e の本店のブランチ（gh の偽物の出力は、ブランチ名の「/」を「_」にしたキーで切り替える） */
+const ROOT_BRANCH = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: ROOT, encoding: "utf8" }).trim();
+const ghFx = (name: string, content: string): void => writeFileSync(path.join(GH_DIR, name), content);
+const ghFxClear = (): void => {
+  for (const f of readdirSync(GH_DIR)) if (f !== "list.out") rmSync(path.join(GH_DIR, f));
+};
+const prRow = (number: number, state: string): Record<string, unknown> => ({
+  number,
+  title: `e2e PR ${number}`,
+  state,
+  isDraft: false,
+  url: `https://github.com/example/repo/pull/${number}`,
+  updatedAt: "2026-10-12T00:00:00Z",
+});
+const checkRow = (bucket: string, name: string, link = `https://github.com/example/repo/actions/runs/1/job/${name}`): Record<string, unknown> => ({
+  name,
+  state: bucket.toUpperCase(),
+  bucket,
+  link,
+  workflow: "ci",
+  completedAt: "2026-10-12T00:00:00Z",
+});
+function setBranchPr(number: number, state: string, mergeStateStatus: string, checks: Array<Record<string, unknown>>): void {
+  ghFx(`list@${ROOT_BRANCH}.out`, JSON.stringify([prRow(number, state)]));
+  ghFx(`view@${number}.out`, JSON.stringify({ ...prRow(number, state), mergeStateStatus, headRefName: ROOT_BRANCH }));
+  ghFx(`checks@${number}.out`, JSON.stringify(checks));
+}
+
+test("v0.5.0 K1〜K6, K8: PR タブ -> PR・マージできるか・検査の集計と失敗の一覧 -> 一覧の CI の印 -> 更新で変わる -> PR なし・認証切れ", async ({ page }) => {
+  test.setTimeout(90000);
+  page.setDefaultTimeout(15000);
+  await ensureRoom(1);
+  const id = await apiCreate("pr-target", "e2e-plain");
+  ghFxClear();
+  try {
+    setBranchPr(7, "OPEN", "BEHIND", [
+      checkRow("pass", "build"),
+      checkRow("pass", "lint"),
+      checkRow("skipping", "docs"),
+      checkRow("fail", "unit-failing"),
+      checkRow("cancel", "e2e-cancelled"),
+      checkRow("pending", "slow-job", "javascript:alert(1)"),
+    ]);
+    await openPaired(page);
+    await rowOf(page, id).click();
+    await page.getByRole("tab", { name: "PR", exact: true }).click();
+    const pane = page.getByTestId("pr-pane");
+    await expect(pane).toBeVisible();
+
+    // 取り直し（定期は最大 1 秒、画面の読み直しは 5 秒ごと）。「更新」で確実に取る
+    await pane.getByRole("button", { name: "更新", exact: true }).click();
+    const title = pane.getByTestId("pr-title").getByRole("link");
+    await expect(title).toHaveText("#7 e2e PR 7");
+    await expect(title).toHaveAttribute("href", "https://github.com/example/repo/pull/7");
+    await expect(title).toHaveAttribute("target", "_blank");
+    await expect(title).toHaveAttribute("rel", "noopener noreferrer");
+    await expect(pane.getByTestId("pr-state")).toHaveText("オープン");
+    await expect(pane.getByTestId("pr-merge")).toHaveText("main より古いため更新が必要です");
+    const counts = pane.getByTestId("pr-counts");
+    await expect(counts).toContainText("成功 2");
+    await expect(counts).toContainText("失敗 1");
+    await expect(counts).toContainText("実行中 1");
+    await expect(counts).toContainText("スキップ 1");
+    await expect(counts).toContainText("取り消し 1");
+    // 失敗・取り消し・実行中を 1 件ずつ。github.com 以外のリンクは「開く」を出さない（K8）
+    const checks = pane.getByTestId("pr-check");
+    await expect(checks).toHaveCount(3);
+    await expect(checks.nth(0)).toContainText("unit-failing");
+    await expect(checks.nth(0).getByRole("link", { name: "開く" })).toHaveAttribute("href", "https://github.com/example/repo/actions/runs/1/job/unit-failing");
+    await expect(checks.nth(2)).toContainText("slow-job");
+    await expect(checks.nth(2).getByRole("link")).toHaveCount(0);
+
+    // K3: セッション一覧の印（失敗があるので「CI 失敗」）
+    await expect(rowOf(page, id).getByTestId("ci-badge")).toHaveText("CI 失敗");
+
+    // 更新: 失敗が直って実行中だけが残る -> 「CI 実行中」、全部通ると「CI 成功」
+    setBranchPr(7, "OPEN", "CLEAN", [checkRow("pass", "build"), checkRow("pending", "slow-job")]);
+    await pane.getByRole("button", { name: "更新", exact: true }).click();
+    await expect(pane.getByTestId("pr-merge")).toHaveText("マージできます");
+    await expect(rowOf(page, id).getByTestId("ci-badge")).toHaveText("CI 実行中");
+    setBranchPr(7, "MERGED", "UNKNOWN", [checkRow("pass", "build"), checkRow("skipping", "docs")]);
+    await pane.getByRole("button", { name: "更新", exact: true }).click();
+    await expect(pane.getByTestId("pr-state")).toHaveText("マージ済み");
+    await expect(pane.getByTestId("pr-merge")).toHaveCount(0);
+    await expect(rowOf(page, id).getByTestId("ci-badge")).toHaveText("CI 成功");
+
+    // K4: PR が無いブランチ（PR の印は消える）
+    ghFxClear();
+    await pane.getByRole("button", { name: "更新", exact: true }).click();
+    await expect(pane.getByTestId("pr-message")).toContainText("このブランチの PR はありません");
+    await expect(rowOf(page, id).getByTestId("ci-badge")).toHaveCount(0);
+
+    // K6: 認証切れは理由を出してアプリは動き続ける
+    ghFx(`list@${ROOT_BRANCH}.exit`, "4");
+    ghFx(`list@${ROOT_BRANCH}.err`, "To get started with GitHub CLI, please run:  gh auth login\n");
+    await pane.getByRole("button", { name: "更新", exact: true }).click();
+    await expect(pane.getByTestId("pr-message")).toContainText("GitHub の状態を取得できませんでした");
+    await expect(pane.getByTestId("pr-message")).toContainText("GitHub の認証が切れています。ターミナルで gh auth login を実行してください");
+    // 端末タブに戻ると端末はそのまま使える
+    await page.getByRole("tab", { name: /端末/ }).click();
+    await expect(page.getByTestId("terminal")).toContainText("READY");
+
+    // K7: gh は pr list / view / checks だけを呼んでいる
+    const calls = readFileSync(GH_LOG, "utf8").split("\n").filter((l) => l !== "").map((l) => l.split(" | ")[0]);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const c of calls) expect(c).toMatch(/^pr (list|view|checks) /);
+  } finally {
+    ghFxClear();
+    await fetch(`${BASE}/api/sessions/${id}/close`, { method: "POST", headers: BEARER });
+  }
 });

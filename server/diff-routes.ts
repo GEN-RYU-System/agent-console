@@ -1,36 +1,12 @@
-import { realpath } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { formatReviewComments } from "./diff-comments-format.ts";
-import { validateCommentInput, type CommentScope, type KnownPlace } from "./diff-comments.ts";
+import { validateCommentInput } from "./diff-comments.ts";
 import { listChanges, readFileDiff, type ChangedFile } from "./diff.ts";
-import { classifyCwd, listWorktreeEntries, branchName } from "./resume-targets.ts";
-import { SessionConflictError, SessionInputError, SessionNotFoundError } from "./sessions.ts";
+import { SessionConflictError, SessionInputError } from "./sessions.ts";
 import { jsonBody, readJsonBody, sendJson, type AppDeps } from "./http.ts";
+import { resolveWorkplace } from "./workplace.ts";
 
 const SESSION_PREFIX = /^\/api\/sessions\/([^/]+)\/(diff|diff\/file|diff-comments(?:\/[^/]+)?)$/;
-
-interface Workplace extends CommentScope {
-  sessionId: string;
-}
-
-/**
- * セッションの作業場所を、その時点の本店と git worktree list（正本）に照合する。
- * 本店でも worktree でもなければ 409 にして、git を実行しない。worktree 一覧を取れないときは（コメントを誤って捨てないよう）例外のまま 500 にする。
- */
-async function resolveWorkplace(deps: AppDeps, sessionId: string): Promise<Workplace> {
-  const session = deps.sessions.get(sessionId);
-  if (!session) throw new SessionNotFoundError("session not found");
-  const root = deps.config.salesanchorRoot;
-  const entries = await listWorktreeEntries(root);
-  const verdict = await classifyCwd(session.cwd, root, entries.map((e) => e.path));
-  if (verdict.real === null || verdict.scope === null) throw new SessionConflictError(`working directory is ${verdict.block ?? "missing"}`);
-  const known: KnownPlace[] = [];
-  for (const e of entries) {
-    const real = await realpath(e.path).catch(() => null);
-    if (real !== null) known.push({ dir: real, branch: branchName(e.branch) });
-  }
-  return { sessionId, dir: verdict.real, known };
-}
 
 /** 画面から来た path を、いま作った一覧の項目と完全一致で照合する（それ以外は 400）。 */
 async function matchFile(deps: AppDeps, dir: string, requested: unknown): Promise<{ baseRef: string; file: ChangedFile }> {

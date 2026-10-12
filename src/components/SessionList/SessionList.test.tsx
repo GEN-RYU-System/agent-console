@@ -132,4 +132,23 @@ describe("SessionList", () => {
     fireEvent.click(within(rows[1]).getByText("シェル"));
     expect(onSelect).toHaveBeenCalledWith("b");
   });
+
+  it("v0.5.0 K3: ci があるときだけ名前の横に CI の印を出す（失敗=danger / 実行中=info / 成功=success）", () => {
+    const withCi: SessionView[] = [
+      { ...sessions[0], id: "f", name: "f", ci: "fail" },
+      { ...sessions[0], id: "p", name: "p", ci: "pending" },
+      { ...sessions[0], id: "o", name: "o", ci: "pass" },
+      { ...sessions[0], id: "n", name: "n" },
+    ];
+    render(<SessionList sessions={withCi} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} />);
+    const rows = screen.getAllByTestId("session-row");
+    const badge = (i: number) => within(rows[i]).queryByTestId("ci-badge");
+    expect(badge(0)?.textContent).toBe("CI 失敗");
+    expect(badge(0)?.querySelector(".comp-badge--danger")).toBeTruthy();
+    expect(badge(1)?.textContent).toBe("CI 実行中");
+    expect(badge(1)?.querySelector(".comp-badge--info")).toBeTruthy();
+    expect(badge(2)?.textContent).toBe("CI 成功");
+    expect(badge(2)?.querySelector(".comp-badge--success")).toBeTruthy();
+    expect(badge(3)).toBeNull();
+  });
 });

@@ -14,7 +14,11 @@ export interface SessionView {
   canInput: boolean;
   /** 名前の変更を予約中のとき、その名前（待機になったら自動で変わる） */
   pendingName?: string;
+  /** そのセッションのブランチの PR の検査の要約（PR が無い・検査が無い・まだ取れていないときは項目ごと無い） */
+  ci?: CiState;
 }
+
+export type CiState = "fail" | "pending" | "pass";
 
 export interface RoleView {
   id: string;
@@ -116,3 +120,26 @@ export interface DiffComment {
 
 /** コメントの追加・編集で送る内容（id・時刻はサーバーが付ける）。 */
 export type DiffCommentInput = Pick<DiffComment, "path" | "side" | "body"> & Partial<Pick<DiffComment, "line" | "lineText">>;
+
+export type CheckBucket = "pass" | "fail" | "pending" | "skipping" | "cancel";
+export type CheckCounts = Record<CheckBucket, number>;
+export interface CheckItem {
+  name: string;
+  bucket: "fail" | "cancel" | "pending";
+  /** https://github.com/ で始まるものだけ（それ以外は空） */
+  link: string;
+  workflow: string;
+}
+export interface PrInfo {
+  number: number;
+  title: string;
+  state: "OPEN" | "MERGED" | "CLOSED";
+  isDraft: boolean;
+  /** https://github.com/ で始まるものだけ（それ以外は空） */
+  url: string;
+  mergeStateStatus: string;
+}
+export type PrMessageStatus = "loading" | "noPr" | "notGitHub" | "detached" | "ghMissing" | "authRequired" | "timeout" | "rateLimited" | "ghFailed";
+export type PrResponse =
+  | { status: "ok"; pr: PrInfo; checks: { counts: CheckCounts; items: CheckItem[] }; fetchedAt: number }
+  | { status: PrMessageStatus; fetchedAt?: number };

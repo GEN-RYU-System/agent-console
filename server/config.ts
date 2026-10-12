@@ -34,6 +34,9 @@ export const DEFAULT_DIFF_BASE_REF = "origin/main";
 export const DEFAULT_DIFF_MAX_FILE_BYTES = 1024 * 1024;
 export const DEFAULT_DIFF_SEND_MAX_BYTES = 16 * 1024;
 export const DEFAULT_PASTE_SUBMIT_DELAY_MS = 2000;
+export const DEFAULT_GH_BIN = "gh";
+export const DEFAULT_PR_POLL_MS = 120000;
+export const DEFAULT_PR_REFRESH_MIN_MS = 10000;
 /** git に渡す基準の名前。`-` で始まるものはオプションと読まれるので許さない。 */
 const DIFF_BASE_REF_PATTERN = /^[A-Za-z0-9_./][A-Za-z0-9_./-]*$/;
 
@@ -63,6 +66,12 @@ export interface Config {
   diffSendMaxBytes: number;
   /** 文章を貼ってから Enter を送るまでの待ち（ms）。本物の claude で 1 つの依頼になると実測した値が既定 */
   pasteSubmitDelayMs: number;
+  /** GitHub CLI の場所（既定 "gh"。PATH から探す）。PR と検査の状態を読むためだけに使う */
+  ghBin: string;
+  /** PR と検査の状態を取り直す間隔（ms） */
+  prPollMs: number;
+  /** PR タブの「更新」を受け付ける最小の間隔（ms）。連打で GitHub の利用上限を使い切らないため */
+  prRefreshMinMs: number;
 }
 
 const STRING_KEYS = ["salesanchorRoot", "newWorktreeScript", "ledgerLookupScript", "ledgerDir", "claudeBin"] as const;
@@ -147,6 +156,12 @@ function parsePasteDelay(raw: unknown): number {
   return raw;
 }
 
+function parseGhBin(raw: unknown): string {
+  if (raw === undefined) return DEFAULT_GH_BIN;
+  if (typeof raw !== "string" || raw === "") throw new Error("config: ghBin must be a non-empty string");
+  return raw;
+}
+
 const ENV_KEY = /^[A-Z_][A-Z0-9_]*$/;
 // eslint-disable-next-line no-control-regex
 const ENV_CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
@@ -211,6 +226,9 @@ export function parseConfig(raw: unknown): Config {
     diffMaxFileBytes: parsePositive(o.diffMaxFileBytes, "diffMaxFileBytes", DEFAULT_DIFF_MAX_FILE_BYTES),
     diffSendMaxBytes: parsePositive(o.diffSendMaxBytes, "diffSendMaxBytes", DEFAULT_DIFF_SEND_MAX_BYTES),
     pasteSubmitDelayMs: parsePasteDelay(o.pasteSubmitDelayMs),
+    ghBin: parseGhBin(o.ghBin),
+    prPollMs: parsePositive(o.prPollMs, "prPollMs", DEFAULT_PR_POLL_MS),
+    prRefreshMinMs: parsePositive(o.prRefreshMinMs, "prRefreshMinMs", DEFAULT_PR_REFRESH_MIN_MS),
   };
 }
 

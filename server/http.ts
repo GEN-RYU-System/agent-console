@@ -9,6 +9,7 @@ import type { MemoryCollector } from "./memory.ts";
 import { DiffCommentsUnreadableError, type DiffCommentStore } from "./diff-comments.ts";
 import { DiffGitError } from "./diff.ts";
 import { handleDiff } from "./diff-routes.ts";
+import { handlePr } from "./pr-routes.ts";
 import { listResumeTargets, resolveResumeTarget } from "./resume-targets.ts";
 import type { QuickPromptStore } from "./quick-prompts.ts";
 import { SessionConflictError, SessionInputError, SessionNotFoundError, validateName, type SessionManager } from "./sessions.ts";
@@ -143,6 +144,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
     return;
   }
   if (await handleDiff(deps, req, res, url)) return;
+  if (await handlePr(deps, req, res, url)) return;
   if (await handleDailyUse(deps, req, res, url)) return;
   const removeMatch = /^\/api\/sessions\/([^/]+)$/.exec(url.pathname);
   if (req.method === "DELETE" && removeMatch) {

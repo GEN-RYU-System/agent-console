@@ -58,6 +58,8 @@ export function prepareE2eEnv(): void {
   git(root, "-c", "user.name=e2e", "-c", "user.email=e2e@example.invalid", "commit", "-q", "-m", "seed");
   // 変更タブの基準（origin/main）。一時リポジトリには remote が無いので、参照だけ作る
   git(root, "update-ref", "refs/remotes/origin/main", "HEAD");
+  // PR タブの試験用。origin は GitHub の URL の形だけ（gh は偽物なので、ネットワークには出ない）
+  git(root, "remote", "add", "origin", "https://github.com/example/repo.git");
 
   const statusFile = path.join(base, "agent-status");
   writeFileSync(statusFile, "busy");
@@ -74,6 +76,15 @@ export function prepareE2eEnv(): void {
   const osascriptBin = path.join(base, "osascript-stub.sh");
   copyFileSync(path.join(here, "osascript-stub.sh"), osascriptBin);
   chmodSync(osascriptBin, 0o755);
+  // 偽 gh（出力は STUB_GH_DIR のファイルで切り替える。既定は「PR なし」）
+  const ghBin = path.join(base, "gh-stub.sh");
+  copyFileSync(path.join(here, "gh-stub.sh"), ghBin);
+  chmodSync(ghBin, 0o755);
+  const ghDir = path.join(base, "gh-fx");
+  mkdirSync(ghDir);
+  writeFileSync(path.join(ghDir, "list.out"), "[]");
+  const ghLog = path.join(base, "gh.log");
+  writeFileSync(ghLog, "");
   const dataDir = path.join(base, "data");
 
   const roleScript = path.join(here, "role.mjs");
@@ -92,6 +103,9 @@ export function prepareE2eEnv(): void {
     ringBufferBytes: 1048576,
     dataDir,
     notify: { macos: true, osascriptBin },
+    ghBin,
+    prPollMs: 1000,
+    prRefreshMinMs: 1,
     roles: [
       { id: "e2e-plain", labelKey: "role.shell", command: [process.execPath, roleScript, marker], needsWorktree: false },
       { id: "e2e-wt", labelKey: "role.sonnetImpl", command: [process.execPath, roleScript, marker], needsWorktree: true },
@@ -127,4 +141,6 @@ export function prepareE2eEnv(): void {
   process.env.AC_E2E_SLOW_FILE = slowFile;
   process.env.AC_E2E_OSASCRIPT_LOG = osascriptLog;
   process.env.AC_E2E_DATA_DIR = dataDir;
+  process.env.AC_E2E_GH_DIR = ghDir;
+  process.env.AC_E2E_GH_LOG = ghLog;
 }
