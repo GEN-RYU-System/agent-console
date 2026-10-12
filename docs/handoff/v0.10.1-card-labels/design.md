@@ -43,10 +43,10 @@ PO 原文（2026-10-12T17:38Z・17:39Z、本セッション）:
 | 画面 | 開発サーバーで偽のセッション（作業中・回答待ち・指示待ち・未読あり）を出し、幅は今の左欄の幅で、変更前と変更後のスクリーンショットを撮る（設計者が目視） |
 
 ## 戻し方
-PR を revert し、v0.10.0（または v0.9.1）へ `ac-rollback.sh` で戻す。
+PR を revert し、v0.10.0（または v0.9.1）へ `scripts/ac-rollback.sh` で戻す。
 
-## 外部事例
-不要（自前アプリの文言と並びの整理。状態の定義は Claude Code 公式に合わせる）。
+## 外部・過去事例の参照と我々への応用
+外部事例: 不要（自前アプリの文言と並びの整理）。参照: 状態の定義は Claude Code 公式（https://code.claude.com/docs/en/agent-view.md の status・waitingFor・Idle）に合わせる。過去事例の応用: v0.10.0（PR #24）の2段構成と行の高さ 64px の試験をそのまま守る。
 
 ## 維持の仕組み
 守り手: SessionList.test.tsx、tests/e2e/console.spec.ts、CI（ci.yml）。
