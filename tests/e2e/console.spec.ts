@@ -13,9 +13,16 @@ const STATUS_FILE = process.env.AC_E2E_STATUS_FILE as string;
 const BASE = `http://127.0.0.1:${E2E_PORT}`;
 const BEARER = { Authorization: `Bearer ${E2E_TOKEN}` };
 
+/** v0.11.0: 最初に開くタブはチャット。端末を見る試験は、端末タブを押してから見る（意味は v0.10.0 までと同じ） */
+async function openTerminalTab(page: Page): Promise<void> {
+  await page.getByRole("tab", { name: /端末/ }).click();
+  await expect(page.getByRole("tab", { name: /端末/ })).toHaveAttribute("aria-selected", "true");
+}
+
 async function openPaired(page: Page): Promise<void> {
   await page.goto(`${BASE}/pair?code=${await newPairingCode()}`);
   await expect(page.getByRole("button", { name: "新しいセッション", exact: true })).toBeVisible();
+  await openTerminalTab(page);
 }
 
 const NAME_FILE = process.env.AC_E2E_NAME_FILE as string;
@@ -93,6 +100,7 @@ test("K3: タブを開き直しても同じセッションの直近出力が戻�
   await expect(row).toBeVisible();
   await page.reload();
   await page.getByTestId("session-row").first().click();
+  await openTerminalTab(page);
   const terminal = page.getByTestId("terminal");
   await expect(terminal).toContainText("READY");
   await expect(terminal).toContainText("hello-from-e2e");
@@ -302,7 +310,8 @@ test("CSP: 画面・端末・モーダルの操作で CSP 違反が 1 件も出�
   expect(response?.headers()["referrer-policy"]).toBe("no-referrer");
   expect(response?.headers()["x-content-type-options"]).toBe("nosniff");
   await expect(page.getByRole("button", { name: "新しいセッション", exact: true })).toBeVisible();
-  // モーダル（SA 金型）と端末（xterm の style 要素・インライン style）を実際に使う
+  // モーダル（SA 金型）と端末（xterm の style 要素・インライン style）を実際に使う。最初に開くのはチャットなので、端末タブを押す
+  await openTerminalTab(page);
   await createViaUi(page, "csp-session", "e2e-plain");
   await expect(page.getByTestId("terminal")).toContainText("READY");
   await page.getByTestId("terminal").click();
@@ -428,7 +437,7 @@ async function expectLargeCenterTabs(page: Page): Promise<void> {
         rightFont: rightTab ? getComputedStyle(rightTab).fontSize : null,
       };
     });
-  await expect.poll(async () => (await measure()).tabs.length, { timeout: 5000 }).toBe(5);
+  await expect.poll(async () => (await measure()).tabs.length, { timeout: 5000 }).toBe(6);
   let m = await measure();
   await expect.poll(async () => (m = await measure()).tabs[0].height, { timeout: 5000 }).toBe("56px");
   const large = await probe("font-size:var(--font-2xl)");
@@ -586,6 +595,7 @@ test("段階2 K3: よく使う指示を登録・編集・削除でき、ボタ�
   expect(readdirSync(DATA_DIR).filter((n) => n !== "activity").sort()).toEqual(["chrome-extension", "hooks", "open-sessions.json", "picker-token", "quick-prompts.json"]);
   expect(statSync(file).mode & 0o777).toBe(0o600);
   await page.reload();
+  await openTerminalTab(page);
   await expect(page.getByTestId("quick-prompt-bar").getByRole("button", { name: "テスト実行", exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "指示を編集", exact: true }).click();

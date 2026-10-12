@@ -213,6 +213,8 @@ test("K3・K4・K5: 「部品」タブに画像と内容が並び、ひとこと
   await appPage.bringToFront();
   const row = appPage.locator(`[data-testid="session-row"][data-session-id="${id}"]`);
   await row.click();
+  // v0.11.0: 最初に開くタブはチャット。端末を見るので、端末タブを押す
+  await appPage.getByRole("tab", { name: /端末/ }).click();
   await expect(appPage.getByTestId("terminal")).toContainText("READY");
   await expect(row.getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: SETTLE_DEADLINE_MS });
 
