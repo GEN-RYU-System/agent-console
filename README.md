@@ -8,11 +8,11 @@ Local console for running parallel Claude Code sessions (Orca-inspired, lightwei
 
 ## v0.9.0 セッションの様子の記録
 
-左でセッションを選ぶと、右の欄の「このセッション」に、今の状態・動いている担当・終わった担当（結果のひとこと）・やること・最近の入力が出ます（台帳は隣の「台帳」タブ）。Claude Code の hook が `dataDir/activity/events-YYYYMMDD.jsonl`（UTC の日付、権限 600）に 1 行ずつ追記した記録を、アプリが読んでまとめます。設計は [design](docs/handoff/v0.8.0-activity/design.md)、工程0の実測は [step0](docs/handoff/v0.8.0-activity/step0.md)。
+左でセッションを選ぶと、右の欄の「作戦ボード」（v0.11.0 までは「このセッション」）に、今の状態・動いている担当・計画（KGI・KPI・ロードマップ。v0.12.0 から）・最近の入力が出ます（台帳は隣の「台帳」タブ）。v0.12.0 で「終わった担当」と「やること」の欄はなくなりました。Claude Code の hook が `dataDir/activity/events-YYYYMMDD.jsonl`（UTC の日付、権限 600）に 1 行ずつ追記した記録を、アプリが読んでまとめます。設計は [design](docs/handoff/v0.8.0-activity/design.md)、工程0の実測は [step0](docs/handoff/v0.8.0-activity/step0.md)。
 
 ### 入れる（1 回だけ・実行する人が自分で）
 
-アプリは Claude の設定を書き換えません。次を実行すると、`~/.claude/settings.json` に記録用の hook（8 つのイベント。v0.11.0 で Stop と StopFailure が増えました）を足します。足す前に控え `settings.json.ac-backup-<日時>` を作り（新しい 3 つだけ残します）、足すのは自分の hook だけです。2 回実行しても増えません。
+アプリは Claude の設定を書き換えません。次を実行すると、`~/.claude/settings.json` に記録用の hook（9 つのイベント。v0.11.0 で Stop と StopFailure、v0.12.0 で SubagentStart が増えました）を足します。足す前に控え `settings.json.ac-backup-<日時>` を作り（新しい 3 つだけ残します）、足すのは自分の hook だけです。2 回実行しても増えません。
 
 ```
 node scripts/ac-hooks.mjs install      # 足す（hook の本体を dataDir/hooks/ に置いてから、設定に足す）
@@ -47,6 +47,53 @@ settings.json に hook が無い、または node や hook のファイルが無
 ### 更新したあとにやること（hook を入れ直す）
 
 会話を出すために、記録するイベントが増えました（Stop と StopFailure）。**v0.10.0 までに `node scripts/ac-hooks.mjs install` を済ませている人も、更新のあとにもう一度実行してください**（足りない 2 つだけが足されます。すでに入っている 6 つや、ほかの設定は変わらず、足す前に控えを作ります）。実行するまでは、右の欄に「記録の仕組みが外れています」と出て、チャットには新しい会話が出ません。
+
+```
+node scripts/ac-hooks.mjs install
+node scripts/ac-hooks.mjs check
+```
+
+## v0.12.0 作戦ボード
+
+右の欄の「作戦ボード」に、そのセッションで決めた計画（テーマ・KGI・KPI・ロードマップ）と進み具合が出ます。上から 今の状態・動いている担当・KGI・KPI・ロードマップ・最近の入力 の順です。計画を書き込めるのは、そのセッションの Claude だけです（画面から書き換える口はありません。設計書から自動で読み取ることもしません）。画面は計画を 5 秒ごとに取り直すので、書き込んだ内容は 5 秒以内に出ます。最後に書き込んだ時刻（「最後に更新: 3分前」）は KGI の枠の下に出ます。まだ書き込まれていないセッション（Sonnet の役割のセッションや、`/clear` のあと）には「まだ計画が書き込まれていません」と出ます。設計は [design](docs/handoff/board/design.md)、調査は [recon](docs/handoff/board/recon.md)、工程0の実測は [step0](docs/handoff/board/step0.md)。
+
+### 動いている担当（再開したときも出る）
+
+担当を呼んだとき、そして再開したとき（SendMessage など）に、Claude Code の SubagentStart が起きます。これを記録して、再開した担当を「動いている担当」に戻します（v0.11.0 までは、再開した担当が「終わった」に出たままでした）。呼び名・頼んだ仕事の説明・動き始めてからの時間（再開した担当は再開から）が出ます。Agent の呼び出しと結べない担当（Claude の内部の担当、担当がさらに呼んだ担当）は出しません。
+
+### ac-board の使い方（Claude が Bash で打つ）
+
+サーバーが起動するとき（本番のポートのみ）、命令の本体が `dataDir/bin/ac-board.mjs`（この Mac では `~/Library/Application Support/agent-console/bin/ac-board.mjs`）に写されます。Claude は自分で Bash から、標準入力の JSON で打ちます。**ボードは丸ごと書き換わります**（一部だけの書き換えはありません。KGI だけ直したいときも、全部を書いて渡します）。
+
+```
+node "$HOME/Library/Application Support/agent-console/bin/ac-board.mjs" write <<'JSON'
+{
+  "theme": "右の欄を作戦ボードにする",
+  "kgi": [{ "text": "PO が画面で、動いている担当と計画と進み具合を見分けられる" }],
+  "kpis": [{ "name": "試験の数", "target": "100", "current": "40", "unit": "件" }],
+  "roadmap": [
+    { "title": "設計", "status": "done" },
+    { "title": "実装", "status": "doing" },
+    { "title": "導入", "status": "todo" }
+  ]
+}
+JSON
+```
+
+- 自分の会話の番号は、Claude Code の環境変数 `CLAUDE_CODE_SESSION_ID`（Bash の子プロセスと hook に自動で入ります）から取ります。引数では受け取りません（別のセッションのボードに間違って書かないため）。書き込み先は `dataDir/boards/<会話の番号>.json` の 1 か所です（ディレクトリ 700・ファイル 600）。アプリを再起動・更新しても残ります。
+- 形（version 1）: `theme`（文字列）・`kgi`（`{text}` の配列）・`kpis`（`{name, target, current, unit}` の配列。値はすべて文字列）・`roadmap`（`{title, status}` の配列。`status` は `todo`・`doing`・`done` のどれか）。4 つとも必須で、これ以外の項目は書けません（`version` と `updatedAt` は命令が付けます）。
+- 上限（文字数は 1 文字を 1 と数えます）: `theme` 200 字、`kgi` 10 件で各 500 字、`kpis` 20 件で各項目 200 字、`roadmap` 50 件で各 200 字、入力全体 256KiB。`theme`・`kgi.text`・`kpis.name`・`roadmap.title` は空にできません（`target`・`current`・`unit` は空でも構いません）。改行とタブ以外の制御文字は拒否されます。
+- 形が違う・長すぎる・制御文字があるときは、何も書かずに理由を標準エラーに出して、終了コード 1 で終わります。書き込めたときは終了コード 0 です。
+- 進み具合は「`done` の数 / `roadmap` の数」です。KPI の「今の値」が変わったとき、段階の状態が変わったときも、同じ命令で全部を書き直します。
+
+### /clear のときと、番号を付けずに再開したとき
+
+- `/clear` をすると会話の番号が変わり（Claude 公式の仕様）、画面も新しい番号を指すので、**新しい（空の）ボード**になります。前のボードは引き継ぎません（ファイルは `dataDir/boards/<前の番号>.json` に残ります）。必要なら、新しい会話で Claude にもう一度書いてもらいます。
+- 番号を付けずに過去の会話を再開したとき（`claude --resume` の選ぶ一覧、`claude --continue`）、公式の文書は「環境変数の番号が起動のときの番号のままになりうる」と書いています。**この版（Claude Code 2.1.296）で実機で確かめたところ、どちらも食い違いませんでした**（環境変数・hook の session_id・Bash の出力が、再開した会話の番号と同じ）。食い違ったときは、ボードが別の番号に書かれて画面に出ません（工程0 (b)、[step0](docs/handoff/board/step0.md)）。アプリが番号を付けて復元する再開は対象外です。
+
+### 更新したあとにやること（hook を入れ直す）
+
+再開の印（SubagentStart）を記録するために、記録するイベントが増えました。**v0.11.0 までに `node scripts/ac-hooks.mjs install` を済ませている人も、更新のあとにもう一度実行してください**（足りない 1 つだけが足されます。すでに入っている 8 つや、ほかの設定は変わらず、足す前に控えを作ります）。実行するまでは、右の欄に「記録の仕組みが外れています」と出て、再開した担当は「動いている担当」に戻りません。
 
 ```
 node scripts/ac-hooks.mjs install
