@@ -1,5 +1,5 @@
 import { useRef, useState, type DragEvent, type KeyboardEvent } from "react";
-import { Pencil, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@sa/components/Badge";
 import { Button } from "@sa/components/Button";
@@ -67,8 +67,15 @@ export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, o
     const toIndex = sessions.findIndex((x) => x.id === id);
     if (toIndex >= 0) onMove(dragged, toIndex);
   };
-  // 行の div にはフォーカスが乗らないので、選択のボタンで Alt+↑ / Alt+↓ を受ける
-  const handleKeyDown = (e: KeyboardEvent, index: number, id: string): void => {
+  // 行の div にはフォーカスが乗らないので、選択のボタンで F2（名前の変更）と Alt+↑ / Alt+↓ を受ける
+  const handleKeyDown = (e: KeyboardEvent, index: number, s: SessionView): void => {
+    // F2 で名前の変更（ダブルクリックと同じく、停止中の行では開かない）
+    if (e.key === "F2" && s.state !== "stopped") {
+      e.preventDefault();
+      onRename(s.id);
+      return;
+    }
+    const id = s.id;
     if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
     const toIndex = e.key === "ArrowUp" ? index - 1 : index + 1;
     if (toIndex < 0 || toIndex >= sessions.length) return;
@@ -101,7 +108,8 @@ export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, o
             layoutClassName="ac-session__select"
             aria-current={s.id === selectedId ? "true" : undefined}
             onClick={() => onSelect(s.id)}
-            onKeyDown={(e) => handleKeyDown(e, index, s.id)}
+            onKeyDown={(e) => handleKeyDown(e, index, s)}
+            aria-keyshortcuts="F2"
             onDoubleClick={() => {
               if (s.state !== "stopped") onRename(s.id);
             }}
@@ -109,13 +117,6 @@ export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, o
             <span className="ac-session__line" data-testid="session-line-1">
               <StatusDot state={s.state} showLabel={false} />
               <span className="ac-session__name" data-testid="session-name">{s.name}</span>
-              {s.unread > 0 && (
-                <span data-testid="unread-badge">
-                  <Badge variant="info" appearance="solid" size="sm">
-                    {t("ac.unread", { count: s.unread })}
-                  </Badge>
-                </span>
-              )}
             </span>
             <span className="ac-session__sub" data-testid="session-line-2">
               <span className="ac-session__role">{roleLabel(s.roleId)}</span>
@@ -124,6 +125,13 @@ export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, o
                   {t(STATE_LABEL_KEY[s.state])}
                 </Badge>
               </span>
+              {s.unread > 0 && (
+                <span data-testid="unread-badge">
+                  <Badge variant="info" appearance="solid" size="sm">
+                    {t("ac.unread", { count: s.unread })}
+                  </Badge>
+                </span>
+              )}
               {s.ci !== undefined && (
                 <span data-testid="ci-badge" data-ci={s.ci}>
                   <Badge variant={CI_BADGES[s.ci].variant} size="sm">
@@ -138,18 +146,6 @@ export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, o
               )}
             </span>
           </Button>
-          {s.state !== "stopped" && (
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              aria-label={t("ac.rename.open")}
-              title={t("ac.rename.open")}
-              onClick={() => onRename(s.id)}
-            >
-              <Pencil size={14} aria-hidden="true" />
-            </Button>
-          )}
           {s.state !== "stopped" && (
             <Button
               variant="ghost"

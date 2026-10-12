@@ -1,0 +1,9 @@
+
+ RUN  v5.0.3 /Users/tanizawashingo/agent-console-wt/card-labels
+
+
+ Test Files  1 passed (1)
+      Tests  27 passed (27)
+   Start at  04:26:40
+   Duration  18.81s (tests 88%, transform 10%, import 2%)
+

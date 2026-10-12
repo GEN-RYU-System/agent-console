@@ -1,0 +1,278 @@
+{
+  "w260": {
+    "viewport": 1425,
+    "rowWidthMeasured": 260,
+    "deploy-check": {
+      "rowWidth": 260,
+      "line2Right": 190,
+      "role": {
+        "status": "全部見える",
+        "left": 30,
+        "right": 66,
+        "clippedByEllipsis": false
+      },
+      "state": {
+        "status": "全部見える",
+        "left": 74,
+        "right": 114,
+        "clippedByEllipsis": false
+      },
+      "unread": {
+        "status": "全部見える",
+        "left": 124,
+        "right": 190,
+        "clippedByEllipsis": false
+      },
+      "ci": {
+        "status": "全部見える",
+        "left": 122,
+        "right": 177.4,
+        "clippedByEllipsis": false
+      },
+      "pending": {
+        "status": "一部切れる",
+        "left": 185.4,
+        "right": 326.8,
+        "clippedByEllipsis": false
+      }
+    },
+    "ui-review": {
+      "rowWidth": 260,
+      "line2Right": 190,
+      "role": {
+        "status": "全部見える",
+        "left": 30,
+        "right": 66,
+        "clippedByEllipsis": false
+      },
+      "state": {
+        "status": "全部見える",
+        "left": 74,
+        "right": 114,
+        "clippedByEllipsis": false
+      },
+      "unread": {
+        "status": "全部見える",
+        "left": 125.7,
+        "right": 190,
+        "clippedByEllipsis": false
+      },
+      "ci": {
+        "status": "全部見える",
+        "left": 122,
+        "right": 177.4,
+        "clippedByEllipsis": false
+      },
+      "pending": {
+        "status": "なし(その行に出ない)"
+      }
+    }
+  },
+  "w300": {
+    "viewport": 1625,
+    "rowWidthMeasured": 300,
+    "deploy-check": {
+      "rowWidth": 300,
+      "line2Right": 230,
+      "role": {
+        "status": "全部見える",
+        "left": 30,
+        "right": 66,
+        "clippedByEllipsis": false
+      },
+      "state": {
+        "status": "全部見える",
+        "left": 74,
+        "right": 114,
+        "clippedByEllipsis": false
+      },
+      "unread": {
+        "status": "全部見える",
+        "left": 164,
+        "right": 230,
+        "clippedByEllipsis": false
+      },
+      "ci": {
+        "status": "全部見える",
+        "left": 122,
+        "right": 177.4,
+        "clippedByEllipsis": false
+      },
+      "pending": {
+        "status": "一部切れる",
+        "left": 185.4,
+        "right": 326.8,
+        "clippedByEllipsis": false
+      }
+    },
+    "ui-review": {
+      "rowWidth": 300,
+      "line2Right": 230,
+      "role": {
+        "status": "全部見える",
+        "left": 30,
+        "right": 66,
+        "clippedByEllipsis": false
+      },
+      "state": {
+        "status": "全部見える",
+        "left": 74,
+        "right": 114,
+        "clippedByEllipsis": false
+      },
+      "unread": {
+        "status": "全部見える",
+        "left": 165.7,
+        "right": 230,
+        "clippedByEllipsis": false
+      },
+      "ci": {
+        "status": "全部見える",
+        "left": 122,
+        "right": 177.4,
+        "clippedByEllipsis": false
+      },
+      "pending": {
+        "status": "なし(その行に出ない)"
+      }
+    }
+  },
+  "w360": {
+    "viewport": 1925,
+    "rowWidthMeasured": 360,
+    "deploy-check": {
+      "rowWidth": 360,
+      "line2Right": 290,
+      "role": {
+        "status": "全部見える",
+        "left": 30,
+        "right": 66,
+        "clippedByEllipsis": false
+      },
+      "state": {
+        "status": "全部見える",
+        "left": 74,
+        "right": 114,
+        "clippedByEllipsis": false
+      },
+      "unread": {
+        "status": "全部見える",
+        "left": 224,
+        "right": 290,
+        "clippedByEllipsis": false
+      },
+      "ci": {
+        "status": "全部見える",
+        "left": 122,
+        "right": 177.4,
+        "clippedByEllipsis": false
+      },
+      "pending": {
+        "status": "一部切れる",
+        "left": 185.4,
+        "right": 326.8,
+        "clippedByEllipsis": false
+      }
+    },
+    "ui-review": {
+      "rowWidth": 360,
+      "line2Right": 290,
+      "role": {
+        "status": "全部見える",
+        "left": 30,
+        "right": 66,
+        "clippedByEllipsis": false
+      },
+      "state": {
+        "status": "全部見える",
+        "left": 74,
+        "right": 114,
+        "clippedByEllipsis": false
+      },
+      "unread": {
+        "status": "全部見える",
+        "left": 225.7,
+        "right": 290,
+        "clippedByEllipsis": false
+      },
+      "ci": {
+        "status": "全部見える",
+        "left": 122,
+        "right": 177.4,
+        "clippedByEllipsis": false
+      },
+      "pending": {
+        "status": "なし(その行に出ない)"
+      }
+    }
+  },
+  "w420": {
+    "viewport": 2225,
+    "rowWidthMeasured": 420,
+    "deploy-check": {
+      "rowWidth": 420,
+      "line2Right": 350,
+      "role": {
+        "status": "全部見える",
+        "left": 30,
+        "right": 66,
+        "clippedByEllipsis": false
+      },
+      "state": {
+        "status": "全部見える",
+        "left": 74,
+        "right": 114,
+        "clippedByEllipsis": false
+      },
+      "unread": {
+        "status": "全部見える",
+        "left": 284,
+        "right": 350,
+        "clippedByEllipsis": false
+      },
+      "ci": {
+        "status": "全部見える",
+        "left": 122,
+        "right": 177.4,
+        "clippedByEllipsis": false
+      },
+      "pending": {
+        "status": "全部見える",
+        "left": 185.4,
+        "right": 326.8,
+        "clippedByEllipsis": false
+      }
+    },
+    "ui-review": {
+      "rowWidth": 420,
+      "line2Right": 350,
+      "role": {
+        "status": "全部見える",
+        "left": 30,
+        "right": 66,
+        "clippedByEllipsis": false
+      },
+      "state": {
+        "status": "全部見える",
+        "left": 74,
+        "right": 114,
+        "clippedByEllipsis": false
+      },
+      "unread": {
+        "status": "全部見える",
+        "left": 285.7,
+        "right": 350,
+        "clippedByEllipsis": false
+      },
+      "ci": {
+        "status": "全部見える",
+        "left": 122,
+        "right": 177.4,
+        "clippedByEllipsis": false
+      },
+      "pending": {
+        "status": "なし(その行に出ない)"
+      }
+    }
+  }
+}

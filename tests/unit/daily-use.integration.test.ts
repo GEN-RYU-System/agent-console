@@ -95,7 +95,7 @@ describe("break notifications (K1)", () => {
   it("notifies once on busy -> idle and counts unread", async () => {
     setAgents([row(pid, "idle")]);
     await h.hub.pollAgents();
-    expect(sent).toEqual(["claude-name: 待機"]);
+    expect(sent).toEqual(["claude-name: 指示待ち"]);
     await h.hub.pollAgents();
     expect(sent).toHaveLength(1);
     expect((await viewOf(id)).unread).toBe(1);
