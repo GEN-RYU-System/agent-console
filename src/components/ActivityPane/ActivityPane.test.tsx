@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "../../i18n";
-import type { ActivityResponse } from "../../types";
+import type { ActivityResponse, Board, BoardResponse } from "../../types";
 import { agentLabel, formatDuration } from "./agentLabel";
 
 class FakeApiError extends Error {
@@ -14,7 +15,8 @@ class FakeApiError extends Error {
   }
 }
 const fetchActivity = vi.fn();
-vi.mock("../../api", () => ({ ApiError: FakeApiError, fetchActivity: (id: string) => fetchActivity(id) }));
+const fetchBoard = vi.fn();
+vi.mock("../../api", () => ({ ApiError: FakeApiError, fetchActivity: (id: string) => fetchActivity(id), fetchBoard: (id: string) => fetchBoard(id) }));
 
 const { ActivityPane } = await import("./ActivityPane");
 
@@ -29,20 +31,13 @@ const agent = (over: Partial<Extract<ActivityResponse, { status: "ok" }>["runnin
   resolvedModel: "claude-sonnet-5-5",
   description: "ログ画面の調べもの",
   startedAt: NOW - 3 * MIN,
-  endedAt: null,
-  durationMs: null,
-  summary: "",
   ...over,
 });
 const OK: ActivityResponse = {
   status: "ok",
   now: NOW,
   running: [agent()],
-  finished: [agent({ key: "k2", model: "fable", resolvedModel: "", description: "設計の審査", startedAt: NOW - 20 * MIN, endedAt: NOW - 18 * MIN, durationMs: 2 * MIN, summary: "指摘は 2 件でした" })],
-  tasks: [
-    { id: "1", subject: "調べる", done: true },
-    { id: "2", subject: "直す", done: false },
-  ],
+  tasks: [{ id: "1", subject: "調べる", done: true }],
   inputs: [
     { ts: NOW - MIN, text: "続けてください" },
     { ts: NOW - 5 * MIN, text: "最初の依頼" },
@@ -50,9 +45,29 @@ const OK: ActivityResponse = {
   lastEventAt: NOW - MIN,
   hooks: { ok: true },
 };
+const BOARD_BODY: Board = {
+  version: 1,
+  theme: "右の欄を作戦ボードにする",
+  kgi: [{ text: "PO が画面で担当と計画を見分けられる" }, { text: "更新が 5 秒以内に出る" }],
+  kpis: [
+    { name: "試験の数", target: "100", current: "40", unit: "件" },
+    { name: "画面の幅", target: "320", current: "", unit: "px" },
+  ],
+  roadmap: [
+    { title: "設計", status: "done" },
+    { title: "実装", status: "doing" },
+    { title: "導入", status: "todo" },
+  ],
+  updatedAt: NOW - 3 * MIN,
+};
+const BOARD: BoardResponse = { status: "ok", board: BOARD_BODY };
+const boardWith = (over: Partial<Board>): BoardResponse => ({ status: "ok", board: { ...BOARD_BODY, ...over } });
 
 beforeEach(() => {
   fetchActivity.mockReset();
+  fetchBoard.mockReset();
+  fetchActivity.mockResolvedValue(OK);
+  fetchBoard.mockResolvedValue(BOARD);
   vi.useFakeTimers({ shouldAdvanceTime: true });
   vi.setSystemTime(NOW);
 });
@@ -60,6 +75,8 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
 });
+
+const sectionIds = (): (string | null)[] => screen.getAllByTestId(/^(activity|board)-(state|running|kgi|kpi|roadmap|none|invalid|inputs)$/).map((el) => el.getAttribute("data-testid"));
 
 describe("K3: 担当の呼び名", () => {
   it("model を小文字にして、表のキーを部分一致で探す。見つかれば表の名前", () => {
@@ -92,18 +109,24 @@ describe("時間の表示", () => {
   });
 });
 
-describe("K2: ActivityPane", () => {
-  it("上から 5 つの区切り: 今の状態・動いている担当・終わった担当・やること・最近の入力", async () => {
-    fetchActivity.mockResolvedValue(OK);
+describe("K1: 作戦ボードの区切りと順番", () => {
+  it("上から 今の状態・動いている担当・KGI・KPI・ロードマップ・最近の入力 の 6 つ。終わった担当とやることは出さない", async () => {
     render(<ActivityPane sessionId="s1" rev={0} state="working" />);
-    await screen.findByTestId("activity-running");
-    const order = screen.getAllByTestId(/^activity-(state|running|finished|tasks|inputs)$/).map((el) => el.getAttribute("data-testid"));
-    expect(order).toEqual(["activity-state", "activity-running", "activity-finished", "activity-tasks", "activity-inputs"]);
+    await screen.findByTestId("board-roadmap");
+    expect(sectionIds()).toEqual(["activity-state", "activity-running", "board-kgi", "board-kpi", "board-roadmap", "activity-inputs"]);
     expect(within(screen.getByTestId("activity-state")).getByText("作業中")).toBeTruthy();
+    expect(screen.queryByTestId("activity-finished")).toBeNull();
+    expect(screen.queryByTestId("activity-tasks")).toBeNull();
+    expect(screen.queryByTestId("activity-task")).toBeNull();
+    const text = screen.getByTestId("activity-pane").textContent ?? "";
+    expect(text).not.toContain("終わった担当");
+    expect(text).not.toContain("やること");
+    expect(text).not.toContain("調べる");
   });
+});
 
-  it("動いている担当: 呼び名・仕事の説明・動き始めてからの時間", async () => {
-    fetchActivity.mockResolvedValue(OK);
+describe("K2: 動いている担当", () => {
+  it("呼び名・仕事の説明・動き始めてからの時間を出す", async () => {
     render(<ActivityPane sessionId="s1" rev={0} state="working" />);
     const running = await screen.findByTestId("activity-running");
     const item = within(running).getByTestId("activity-agent");
@@ -112,29 +135,118 @@ describe("K2: ActivityPane", () => {
     expect(item.textContent).toContain("動き始めて3分");
   });
 
-  it("終わった担当: 呼び名・仕事の説明・結果のひとこと・かかった時間", async () => {
-    fetchActivity.mockResolvedValue(OK);
+  it("担当がいないときは、いないと書く", async () => {
+    fetchActivity.mockResolvedValue({ ...OK, running: [] });
     render(<ActivityPane sessionId="s1" rev={0} state="idle" />);
-    const finished = await screen.findByTestId("activity-finished");
-    const item = within(finished).getByTestId("activity-agent");
-    expect(item.textContent).toContain("Fable（審査）");
-    expect(item.textContent).toContain("設計の審査");
-    expect(item.textContent).toContain("指摘は 2 件でした");
-    expect(item.textContent).toContain("2分かかった");
+    await screen.findByTestId("activity-running");
+    expect(screen.getByTestId("activity-running").textContent).toContain("動いている担当はいません");
+  });
+});
+
+describe("K3 / K6 / K7: 計画（KGI・KPI・ロードマップ）の表示", () => {
+  it("テーマと KGI を箇条書きで出す。最後に更新した時刻（3分前）を出す", async () => {
+    render(<ActivityPane sessionId="s1" rev={0} state="idle" />);
+    const kgi = await screen.findByTestId("board-kgi");
+    expect(within(kgi).getByTestId("board-theme").textContent).toContain("右の欄を作戦ボードにする");
+    expect(within(kgi).getAllByTestId("board-kgi-item").map((li) => li.textContent)).toEqual(["PO が画面で担当と計画を見分けられる", "更新が 5 秒以内に出る"]);
+    expect(within(kgi).getByTestId("board-updated").textContent).toContain("3分前");
   });
 
-  it("やること: 作った順に並び、終わったものに印（data-done）が付く", async () => {
-    fetchActivity.mockResolvedValue(OK);
+  it("K6 KPI は名前・今の値・目標・単位を、1 件 1 組で出す（工程0 (d): 右の欄の幅で 4 列の表は読めないため、「名前 ／ 今の値 → 目標 単位」の一覧にした）", async () => {
     render(<ActivityPane sessionId="s1" rev={0} state="idle" />);
-    const tasks = within(await screen.findByTestId("activity-tasks")).getAllByTestId("activity-task");
-    expect(tasks.map((t) => [t.textContent, t.getAttribute("data-done")])).toEqual([
-      ["調べる", "true"],
-      ["直す", "false"],
+    const kpi = await screen.findByTestId("board-kpi");
+    const rows = within(kpi).getAllByTestId("board-kpi-item");
+    expect(rows.map((r) => [within(r).getByTestId("board-kpi-name").textContent, within(r).getByTestId("board-kpi-value").textContent])).toEqual([
+      ["試験の数", "40 → 100 件"],
+      ["画面の幅", "— → 320 px"],
+    ]);
+    expect(within(kpi).queryByRole("table")).toBeNull();
+  });
+
+  it("K6 KPI の単位が空なら、単位の分の空白は付けない。今の値も目標も空なら「—」", async () => {
+    fetchBoard.mockResolvedValue(boardWith({ kpis: [{ name: "n", target: "", current: "", unit: "" }, { name: "m", target: "3", current: "1", unit: "" }] }));
+    render(<ActivityPane sessionId="s1" rev={0} state="idle" />);
+    const kpi = await screen.findByTestId("board-kpi");
+    expect(within(kpi).getAllByTestId("board-kpi-value").map((v) => v.textContent)).toEqual(["— → —", "1 → 3"]);
+  });
+
+  it("K6 進み具合は「完了の数 / ロードマップの数」。ProgressBar（label なし）と「完了 1 / 3」の文。各行に状態の Badge", async () => {
+    render(<ActivityPane sessionId="s1" rev={0} state="idle" />);
+    const road = await screen.findByTestId("board-roadmap");
+    const bar = within(road).getByRole("progressbar");
+    expect(bar.getAttribute("aria-valuenow")).toBe("33");
+    expect(within(road).getByTestId("board-progress-text").textContent).toBe("完了 1 / 3");
+    // label を渡さないので、棒の上に % や Done の文字は出ない
+    expect(road.textContent).not.toContain("%");
+    expect(road.textContent).not.toContain("Done");
+    const rows = within(road).getAllByTestId("board-roadmap-item");
+    expect(rows.map((r) => [r.getAttribute("data-status"), r.textContent])).toEqual([
+      ["done", "完了設計"],
+      ["doing", "進行中実装"],
+      ["todo", "未着手導入"],
     ]);
   });
 
-  it("最近の入力: 新しい順。「しんごさんの指示」とは書かない（人の入力を見分けられないため）", async () => {
-    fetchActivity.mockResolvedValue(OK);
+  it("K6 全部が完了なら 100%。棒は成功の色になるが、Done の文字は出さない（i18n できないため label を渡さない）", async () => {
+    fetchBoard.mockResolvedValue(boardWith({ roadmap: [{ title: "a", status: "done" }, { title: "b", status: "done" }] }));
+    render(<ActivityPane sessionId="s1" rev={0} state="idle" />);
+    const road = await screen.findByTestId("board-roadmap");
+    expect(within(road).getByRole("progressbar").getAttribute("aria-valuenow")).toBe("100");
+    expect(within(road).getByTestId("board-progress-text").textContent).toBe("完了 2 / 2");
+    expect(road.textContent).not.toContain("Done");
+  });
+
+  it("ロードマップが空なら、棒は出さずに空であることを書く。KGI・KPI が空でも同じ", async () => {
+    fetchBoard.mockResolvedValue({ status: "ok", board: { version: 1, theme: "t", kgi: [], kpis: [], roadmap: [], updatedAt: NOW } });
+    render(<ActivityPane sessionId="s1" rev={0} state="idle" />);
+    const road = await screen.findByTestId("board-roadmap");
+    expect(within(road).queryByRole("progressbar")).toBeNull();
+    expect(road.textContent).toContain("ロードマップはまだありません");
+    expect(screen.getByTestId("board-kgi").textContent).toContain("KGI はまだありません");
+    expect(screen.getByTestId("board-kpi").textContent).toContain("KPI はまだありません");
+    expect(within(screen.getByTestId("board-kgi")).getByTestId("board-updated").textContent).toContain("たった今");
+  });
+
+  it("K7 ボードがまだ無いセッション（役割が違う・/clear のあと）には「まだ計画が書き込まれていません」を出す。KGI・KPI・ロードマップの区切りは出さない", async () => {
+    fetchBoard.mockResolvedValue({ status: "none" });
+    render(<ActivityPane sessionId="s1" rev={0} state="idle" />);
+    const none = await screen.findByTestId("board-none");
+    expect(none.textContent).toContain("まだ計画が書き込まれていません");
+    expect(sectionIds()).toEqual(["activity-state", "activity-running", "board-none", "activity-inputs"]);
+  });
+
+  it("ボードのファイルが壊れているときは、直し方の案内を出す", async () => {
+    fetchBoard.mockResolvedValue({ status: "invalid" });
+    render(<ActivityPane sessionId="s1" rev={0} state="idle" />);
+    const invalid = await screen.findByTestId("board-invalid");
+    expect(invalid.textContent).toContain("計画のファイルを読めません");
+    expect(invalid.textContent).toContain("ac-board");
+  });
+
+  it("ボードの取得に失敗しても、動いている担当などは出す。ボードの場所に案内を出す", async () => {
+    fetchBoard.mockRejectedValue(new FakeApiError("boom", 500));
+    render(<ActivityPane sessionId="s1" rev={0} state="idle" />);
+    expect((await screen.findByTestId("board-error")).textContent).toContain("計画を取得できません");
+    expect(screen.getByTestId("activity-running").textContent).toContain("ログ画面の調べもの");
+  });
+
+  it("K3 ボードは 5 秒ごとに取り直す。書き込まれた内容が次の取り直しで出る", async () => {
+    fetchBoard.mockResolvedValue({ status: "none" });
+    render(<ActivityPane sessionId="s1" rev={0} state="idle" />);
+    await screen.findByTestId("board-none");
+    expect(fetchBoard).toHaveBeenCalledTimes(1);
+    fetchBoard.mockResolvedValue(BOARD);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect((await screen.findByTestId("board-kgi")).textContent).toContain("右の欄を作戦ボードにする");
+    expect(fetchBoard).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId("board-none")).toBeNull();
+  });
+});
+
+describe("最近の入力（残す機能）", () => {
+  it("新しい順。「しんごさんの指示」とは書かない（人の入力を見分けられないため）", async () => {
     render(<ActivityPane sessionId="s1" rev={0} state="idle" />);
     const inputs = within(await screen.findByTestId("activity-inputs"));
     expect(inputs.getAllByTestId("activity-input").map((i) => i.textContent)).toEqual(["続けてください1分前", "最初の依頼5分前"]);
@@ -142,16 +254,15 @@ describe("K2: ActivityPane", () => {
     expect(screen.getByTestId("activity-inputs").textContent).toContain("最近の入力");
   });
 
-  it("空の区切りには、空であることを書く", async () => {
-    fetchActivity.mockResolvedValue({ ...OK, running: [], finished: [], tasks: [], inputs: [] });
+  it("空のときは、空であることを書く", async () => {
+    fetchActivity.mockResolvedValue({ ...OK, inputs: [] });
     render(<ActivityPane sessionId="s1" rev={0} state="idle" />);
-    await screen.findByTestId("activity-running");
-    expect(screen.getByTestId("activity-running").textContent).toContain("動いている担当はいません");
-    expect(screen.getByTestId("activity-finished").textContent).toContain("終わった担当はまだありません");
-    expect(screen.getByTestId("activity-tasks").textContent).toContain("やることはありません");
+    await screen.findByTestId("activity-inputs");
     expect(screen.getByTestId("activity-inputs").textContent).toContain("入力はまだありません");
   });
+});
 
+describe("K2/K8: 取得の状態", () => {
   it("noSession: 会話がまだ始まっていない案内を出す", async () => {
     fetchActivity.mockResolvedValue({ status: "noSession" });
     render(<ActivityPane sessionId="s1" rev={0} state="no-claude" />);
@@ -159,13 +270,13 @@ describe("K2: ActivityPane", () => {
   });
 
   it("K8: 記録の仕組みが外れているときは、その旨と直し方（README の手順）を出す。ok のときは出さない", async () => {
-    fetchActivity.mockResolvedValue({ ...OK, hooks: { ok: false, reason: "missingHandler", missingEvents: ["TaskCreated"] } });
+    fetchActivity.mockResolvedValue({ ...OK, hooks: { ok: false, reason: "missingHandler", missingEvents: ["SubagentStart"] } });
     const { unmount } = render(<ActivityPane sessionId="s1" rev={0} state="idle" />);
     const warn = await screen.findByTestId("activity-hooks-warning");
     expect(warn.textContent).toContain("記録の仕組みが外れています");
     expect(warn.textContent).toContain("README");
     expect(warn.textContent).toContain("scripts/ac-hooks.mjs install");
-    // v0.11.0: 記録するイベントが増えた（Stop・StopFailure）ので、更新のあとは install をもう一度
+    // 記録するイベントが増えたとき（v0.11.0 の Stop、v0.12.0 の SubagentStart）は、更新のあとに install をもう一度
     expect(warn.textContent).toContain("install をもう一度");
     unmount();
     fetchActivity.mockResolvedValue(OK);
@@ -180,32 +291,44 @@ describe("K2: ActivityPane", () => {
     expect((await screen.findByTestId("activity-error")).textContent).toContain("取得できません");
   });
 
-  it("rev が変わったら取り直す。別のセッションに替わったら、前のセッションの内容は出さない", async () => {
-    fetchActivity.mockResolvedValue(OK);
+  it("rev が変わったら取り直す。別のセッションに替わったら、前のセッションの内容（ボードも）は出さない", async () => {
     const { rerender } = render(<ActivityPane sessionId="s1" rev={0} state="idle" />);
-    await screen.findByTestId("activity-running");
+    await screen.findByTestId("board-kgi");
     expect(fetchActivity).toHaveBeenCalledTimes(1);
+    expect(fetchBoard).toHaveBeenCalledTimes(1);
     rerender(<ActivityPane sessionId="s1" rev={1} state="idle" />);
     await waitFor(() => expect(fetchActivity).toHaveBeenCalledTimes(2));
 
     let release: (v: ActivityResponse) => void = () => undefined;
+    let releaseBoard: (v: BoardResponse) => void = () => undefined;
     fetchActivity.mockReturnValueOnce(new Promise<ActivityResponse>((r) => (release = r)));
+    fetchBoard.mockReturnValueOnce(new Promise<BoardResponse>((r) => (releaseBoard = r)));
     rerender(<ActivityPane sessionId="s2" rev={1} state="idle" />);
     await waitFor(() => expect(fetchActivity).toHaveBeenLastCalledWith("s2"));
+    expect(fetchBoard).toHaveBeenLastCalledWith("s2");
     expect(screen.queryByTestId("activity-running")).toBeNull();
+    expect(screen.queryByTestId("board-kgi")).toBeNull();
     release({ ...OK, running: [agent({ description: "s2の仕事" })] });
+    releaseBoard({ status: "none" });
     expect((await screen.findByTestId("activity-running")).textContent).toContain("s2の仕事");
+    expect((await screen.findByTestId("board-none")).textContent).toContain("まだ計画が書き込まれていません");
   });
 
   it("古い応答が後から返っても、今のセッションの表示を上書きしない", async () => {
     let releaseOld: (v: ActivityResponse) => void = () => undefined;
+    let releaseOldBoard: (v: BoardResponse) => void = () => undefined;
     fetchActivity.mockReturnValueOnce(new Promise<ActivityResponse>((r) => (releaseOld = r)));
+    fetchBoard.mockReturnValueOnce(new Promise<BoardResponse>((r) => (releaseOldBoard = r)));
     const { rerender } = render(<ActivityPane sessionId="s1" rev={0} state="idle" />);
     fetchActivity.mockResolvedValueOnce({ ...OK, running: [agent({ description: "新しいセッションの仕事" })] });
+    fetchBoard.mockResolvedValueOnce({ status: "ok", board: { version: 1, theme: "新しいテーマ", kgi: [], kpis: [], roadmap: [], updatedAt: NOW } });
     rerender(<ActivityPane sessionId="s2" rev={0} state="idle" />);
     await screen.findByText("新しいセッションの仕事", { exact: false });
+    await screen.findByText("新しいテーマ", { exact: false });
     releaseOld({ ...OK, running: [agent({ description: "古いセッションの仕事" })] });
+    releaseOldBoard({ status: "ok", board: { version: 1, theme: "古いテーマ", kgi: [], kpis: [], roadmap: [], updatedAt: NOW } });
     await Promise.resolve();
     expect(screen.queryByText("古いセッションの仕事", { exact: false })).toBeNull();
+    expect(screen.queryByText("古いテーマ", { exact: false })).toBeNull();
   });
 });

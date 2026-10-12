@@ -14,17 +14,17 @@ export const hookPathIn = (dataDir: string): string => path.join(dataDir, "hooks
 export const isActivitySetupEnabled = (env: Readonly<Record<string, string | undefined>>): boolean =>
   env.AGENT_CONSOLE_PORT === undefined || env.AGENT_CONSOLE_PORT === "";
 
-/**
- * リポジトリの hooks/activity-hook.mjs（正本）を dataDir/hooks/ へ写す。入れ替えは一時ファイル→rename。
- * 書き込み中の Claude の hook が、半分だけ写ったファイルを読むことがない。
- */
-export function installHookFile(sourceDir: string, dataDir: string): string {
-  const dest = hookPathIn(dataDir);
-  const dir = path.dirname(dest);
-  mkdirSync(dir, { recursive: true, mode: DIR_MODE });
+export const BOARD_COMMAND_FILE_NAME = "ac-board.mjs";
+
+/** dataDir/bin/ac-board.mjs（Claude の Bash が打つ、作戦ボードの命令） */
+export const boardCommandPathIn = (dataDir: string): string => path.join(dataDir, "bin", BOARD_COMMAND_FILE_NAME);
+
+/** sourceDir/<name>（正本）を dest へ写す。入れ替えは一時ファイル→rename。書き込み中の読み手が、半分だけ写ったファイルを読むことがない */
+function copyAtomically(sourceDir: string, name: string, dest: string): string {
+  mkdirSync(path.dirname(dest), { recursive: true, mode: DIR_MODE });
   const tmp = `${dest}.${process.pid}.tmp`;
   try {
-    copyFileSync(path.join(sourceDir, HOOK_FILE_NAME), tmp);
+    copyFileSync(path.join(sourceDir, name), tmp);
     chmodSync(tmp, FILE_MODE);
     renameSync(tmp, dest);
   } catch (err) {
@@ -32,4 +32,14 @@ export function installHookFile(sourceDir: string, dataDir: string): string {
     throw err;
   }
   return dest;
+}
+
+/** リポジトリの hooks/activity-hook.mjs（正本）を dataDir/hooks/ へ写す */
+export function installHookFile(sourceDir: string, dataDir: string): string {
+  return copyAtomically(sourceDir, HOOK_FILE_NAME, hookPathIn(dataDir));
+}
+
+/** リポジトリの hooks/ac-board.mjs（正本）を dataDir/bin/ へ写す（hook を写す関数と同じ作法） */
+export function installBoardCommand(sourceDir: string, dataDir: string): string {
+  return copyAtomically(sourceDir, BOARD_COMMAND_FILE_NAME, boardCommandPathIn(dataDir));
 }

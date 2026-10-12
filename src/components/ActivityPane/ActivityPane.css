@@ -42,15 +42,11 @@
 }
 
 .ac-activity__desc,
-.ac-activity__summary {
+.ac-activity__theme {
   margin: 0;
   font-size: var(--font-sm);
   color: var(--text-primary);
   overflow-wrap: anywhere;
-}
-
-.ac-activity__summary {
-  color: var(--text-secondary);
 }
 
 .ac-activity__muted {
@@ -59,7 +55,35 @@
   color: var(--text-muted);
 }
 
-.ac-activity__task {
+.ac-activity__bullets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--font-sm);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.ac-activity__kpi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+}
+
+.ac-activity__kpi-name {
+  color: var(--text-primary);
+}
+
+.ac-activity__kpi-value {
+  color: var(--text-secondary);
+}
+
+.ac-activity__step {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
@@ -68,19 +92,12 @@
   overflow-wrap: anywhere;
 }
 
-.ac-activity__task[data-done="true"] {
+.ac-activity__step[data-status="done"] .ac-activity__step-title {
   color: var(--text-muted);
 }
 
-.ac-activity__mark {
-  flex: none;
-  width: var(--font-md);
-  height: var(--font-md);
-  color: var(--text-muted);
-}
-
-.ac-activity__mark--done {
-  color: var(--success);
+.ac-activity__step-title {
+  min-width: 0;
 }
 
 .ac-activity__input {

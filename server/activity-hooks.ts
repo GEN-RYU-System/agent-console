@@ -17,8 +17,9 @@ export interface HookSpec {
 }
 
 /**
- * 記録する 8 つのイベント。Notification は使わない（状態は claude agents --json が正本）。
+ * 記録する 9 つのイベント。Notification は使わない（状態は claude agents --json が正本）。
  * Stop（返事）と StopFailure（API エラー）はチャット画面の会話の記録のため（v0.11.0）。状態の判定には使わない。
+ * SubagentStart は担当の呼び出しと再開の印（v0.12.0 作戦ボード）。再開した担当を「動いている担当」に戻すために使う。
  */
 export const HOOK_SPECS: readonly HookSpec[] = [
   { event: "PreToolUse", matcher: "Agent|SubagentHandback" },
@@ -29,6 +30,7 @@ export const HOOK_SPECS: readonly HookSpec[] = [
   { event: "UserPromptSubmit" },
   { event: "Stop" },
   { event: "StopFailure" },
+  { event: "SubagentStart" },
 ];
 
 type Json = Record<string, unknown>;
@@ -84,7 +86,7 @@ export interface EditResult {
   changed: boolean;
 }
 
-/** 8 つのイベントに自分の handler を足した新しい設定を返す。すでにあれば足さない。内容が違えば（node のパス変更など）その場で直す */
+/** 9 つのイベントに自分の handler を足した新しい設定を返す。すでにあれば足さない。内容が違えば（node のパス変更など）その場で直す */
 export function addHandlers(settings: Json, nodePath: string, hookPath: string): EditResult {
   let next = settings;
   let changed = false;
@@ -171,7 +173,7 @@ export interface CheckInput {
   hookPath: string;
 }
 
-/** 設定ファイルを読むだけ（書かない）。8 つのイベントの handler・node・hook のファイルがそろっているか */
+/** 設定ファイルを読むだけ（書かない）。9 つのイベントの handler・node・hook のファイルがそろっているか */
 export function checkHooks(input: CheckInput): HookCheck {
   let raw: string;
   try {

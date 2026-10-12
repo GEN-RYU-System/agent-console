@@ -1,6 +1,6 @@
 {
   "name": "agent-console",
-  "version": "0.11.1",
+  "version": "0.12.0",
   "private": true,
   "type": "module",
   "engines": { "node": ">=24" },
@@ -8,7 +8,7 @@
     "postinstall": "node scripts/postinstall.mjs",
     "sa-sync": "node scripts/sa-sync.mjs",
     "dev:server": "tsx server/index.ts",
-    "build": "node scripts/build-picker-tokens.mjs && vite build && tsc -p tsconfig.server.json",
+    "build": "node scripts/build-picker-tokens.mjs && vite build && tsc -p tsconfig.server.json && node scripts/copy-board-command.mjs",
     "start": "node scripts/sa-sync.mjs && npm run build && node dist-server/server/index.js",
     "start:built": "node dist-server/server/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
