@@ -76,7 +76,7 @@ $ gh pr view 2649 --json number,state,headRefName,baseRefName,title,closedAt,mer
 【事実】
 - `src/components/SessionList/SessionList.tsx:12-14` CI_BADGES（fail=danger / pending=info / pass=success）。`61-67`: `s.ci !== undefined` のときだけ `data-testid="ci-badge"` の Badge を出す。文言キー `ac.ci.fail|pending|pass`（定義は同ファイル内を含め、このファイル以外に出現しない）。画面側は PR の state を知らない（SessionView に載るのは ci だけ。`server/hub.ts:30`）。
 - `src/components/PrPane/PrPane.tsx:131-135` prState: MERGED=success「merged」、CLOSED=neutral「closed」、OPEN=draft か info。`154-158`: マージ状態は OPEN のときだけ。`137-143`: status=="ok" なら閉じた PR でも見出し・state バッジ・検査集計を出す。つまり PR タブは閉じた PR を「closed」と明示して表示する（今のまま）。
-- `noPr` / `detached` / `notGitHub` は EmptyState（`PrPane.tsx:116-121`）。
+- `noPr` / `detached` / `notGitHub` は EmptyState（`src/components/PrPane/PrPane.tsx:116-121`）。
 
 ## E. 既存の試験
 
