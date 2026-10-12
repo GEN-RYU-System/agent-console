@@ -9,5 +9,5 @@
 .ac-routines__history { display: grid; gap: var(--space-1); margin-top: var(--space-2); }
 .ac-routines__history-title { color: var(--text-muted); font-size: var(--font-xs); }
 .ac-routines__history-empty { color: var(--text-muted); font-size: var(--font-xs); }
-.ac-routines__history-list { display: grid; gap: var(--space-1); max-height: 12rem; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.ac-routines__history-list { display: grid; gap: var(--space-1); max-height: calc(var(--space-12) * 4); margin: 0; padding: 0; overflow-y: auto; list-style: none; }
 .ac-routines__history-event { display: flex; align-items: center; gap: var(--space-2); color: var(--text-muted); font-size: var(--font-xs); }
