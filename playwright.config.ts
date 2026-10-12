@@ -11,7 +11,7 @@ export default defineConfig({
   reporter: [["list"]],
   // app: 従来の画面の試験 / picker: Chrome 拡張を読み込んだ別の Chrome（launchPersistentContext）で行う、部品を選ぶ試験
   projects: [
-    { name: "app", testMatch: /console\.spec\.ts/ },
+    { name: "app", testMatch: /(console|activity)\.spec\.ts/ },
     { name: "picker", testMatch: /picker\.spec\.ts/ },
   ],
   use: {
@@ -37,6 +37,7 @@ export default defineConfig({
       STUB_OSASCRIPT_LOG: process.env.AC_E2E_OSASCRIPT_LOG as string,
       STUB_GH_DIR: process.env.AC_E2E_GH_DIR as string,
       STUB_GH_LOG: process.env.AC_E2E_GH_LOG as string,
+      STUB_UUID_FILE: process.env.AC_E2E_UUID_FILE as string,
     },
   },
 });

@@ -28,6 +28,8 @@ export interface SessionView {
   pendingName?: string;
   /** そのセッションのブランチの PR の検査の要約（PR が無い・検査が 0 件・まだ取れていないときは項目ごと無い） */
   ci?: CiState;
+  /** 動いている Claude の sessionId（UUID の形のものだけ。まだ分からないときは項目ごと無い）。右の欄の「このセッション」が記録を引く鍵 */
+  claudeSessionId?: string;
 }
 
 /** 名前の変更の結果。queued は端末へ何も書かず予約した */
@@ -40,6 +42,8 @@ export interface Snapshot {
   restoreNotices: RestoreNotice[];
   /** 部品タブの件数: まだ Claude に送っていない部品の数 */
   picksUnsent: number;
+  /** セッションの様子の記録の版。進んだら、画面は右の欄を取り直す */
+  activityRev: number;
 }
 
 /** claude agents の定期取得と台帳の定期取得をまとめ、変化があれば購読者へ配信する。 */
@@ -58,6 +62,7 @@ export class Hub {
   private readonly pendingRenames = new Map<string, string>();
   private restoreNotices: RestoreNotice[] = [];
   private picksUnsent = 0;
+  private activityRev = 0;
   private readonly nameListeners = new Set<() => void>();
   /** PR と検査の写し（(repo, branch) ごと）。メモリだけ。正本は GitHub */
   private readonly prByKey = new Map<string, PrResponse>();
@@ -134,6 +139,15 @@ export class Hub {
     if (unsent === this.picksUnsent) return;
     this.picksUnsent = unsent;
     void this.publish().catch((err) => this.onPollError("publish", err));
+  }
+
+  /** セッションの様子の記録の版を配信に載せる。記録が増えるたびに版が進み、画面が右の欄を取り直す。 */
+  watchActivity(store: { onChange: (listener: (rev: number) => void) => unknown; rev: number }): void {
+    this.activityRev = store.rev;
+    store.onChange((rev) => {
+      this.activityRev = rev;
+      void this.publish().catch((err) => this.onPollError("publish", err));
+    });
   }
 
   /** 起動時の復元の結果（開き直せなかった項目）を画面の案内として載せる。 */
@@ -341,12 +355,13 @@ export class Hub {
         canInput: inputVerdict(info, this.agents).ok,
         ...(this.pendingRenames.has(s.id) ? { pendingName: this.pendingRenames.get(s.id) } : {}),
         ...(ci !== undefined ? { ci } : {}),
+        ...(s.claudeSessionId !== undefined ? { claudeSessionId: s.claudeSessionId } : {}),
       };
     });
     const previous = this.lastNames;
     this.lastNames = new Map(views.map((v) => [v.id, v.name]));
     if (views.some((v) => previous.has(v.id) && previous.get(v.id) !== v.name)) for (const l of this.nameListeners) l();
-    return { sessions: views, agentsAvailable: this.agents !== null, restoreNotices: this.restoreNotices, picksUnsent: this.picksUnsent };
+    return { sessions: views, agentsAvailable: this.agents !== null, restoreNotices: this.restoreNotices, picksUnsent: this.picksUnsent, activityRev: this.activityRev };
   }
 
   subscribe(ws: WebSocket): void {
