@@ -20,6 +20,7 @@ import { listResumeTargets, resolveResumeTarget } from "./resume-targets.ts";
 import type { QuickPromptStore } from "./quick-prompts.ts";
 import { SessionConflictError, SessionInputError, SessionNotFoundError, validateName, type SessionManager } from "./sessions.ts";
 import { WorktreeError } from "./worktree.ts";
+import type { RoutineService } from "./routines.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -49,6 +50,7 @@ export interface AppDeps {
   memory: MemoryCollector;
   staticDir: string;
   meta: { saSource: string; claudeVersion: string; version: string; commit: string };
+  routines: RoutineService;
 }
 
 export function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -158,6 +160,12 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
     sendJson(res, 201, { id: session.id });
     return;
   }
+  if (req.method === "GET" && url.pathname === "/api/routines") { sendJson(res, 200, { items: deps.routines.list() }); return; }
+  if (req.method === "POST" && url.pathname === "/api/routines") { sendJson(res, 201, await deps.routines.create(jsonBody(await readJsonBody(req)) as never)); return; }
+  const routineMatch = /^\/api\/routines\/([^/]+)$/.exec(url.pathname);
+  const routineEnabledMatch = /^\/api\/routines\/([^/]+)\/enabled$/.exec(url.pathname);
+  if (routineMatch && req.method === "PUT") { sendJson(res, 200, await deps.routines.update(routineMatch[1], jsonBody(await readJsonBody(req)) as never)); return; }
+  if (routineEnabledMatch && req.method === "POST") { sendJson(res, 200, await deps.routines.setEnabled(routineEnabledMatch[1], jsonBody(await readJsonBody(req)).enabled)); return; }
   if (await handleDiff(deps, req, res, url)) return;
   if (await handlePr(deps, req, res, url)) return;
   if (await handlePicks(deps, req, res, url)) return;

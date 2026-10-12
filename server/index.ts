@@ -16,6 +16,7 @@ import { PickStore } from "./picks.ts";
 import { QuickPromptStore } from "./quick-prompts.ts";
 import { OpenSessionRecorder, startOpenSessionRestore } from "./restore.ts";
 import { OpenSessionStore } from "./session-store.ts";
+import { RoutineService, RoutineStore } from "./routines.ts";
 import { resolveSecret } from "./secret.ts";
 import { SessionManager } from "./sessions.ts";
 import { readSaSource } from "./tokens.ts";
@@ -62,6 +63,7 @@ async function main(): Promise<void> {
   const hub = new Hub(config, sessions);
   const openSessions = new OpenSessionStore(config.dataDir);
   const recorder = new OpenSessionRecorder(sessions, hub, openSessions);
+  const routines = new RoutineService(config, sessions, hub, new RoutineStore(config.dataDir));
   const meta = { saSource: await readSaSource(), claudeVersion: await fetchClaudeVersion(config.claudeBin), version: readVersion(), commit: await readCommit() };
 
   // 拡張の合言葉とフォルダの作り直しは、本番のポートで起動したときだけ（AGENT_CONSOLE_PORT があれば作らない）。作れなくてもサーバーは止めない
@@ -70,13 +72,14 @@ async function main(): Promise<void> {
   hub.watchPicks(picks);
   const activity = startActivity({ config, hub, env: process.env, hooksSourceDir: path.join(process.cwd(), "hooks") });
 
-  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, picker, activity: activity.store, checkHooks: activity.check, memory: new MemoryCollector(), staticDir: path.join(process.cwd(), "dist"), meta }));
+  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, picker, activity: activity.store, checkHooks: activity.check, memory: new MemoryCollector(), staticDir: path.join(process.cwd(), "dist"), meta, routines }));
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   // 期限切れ（12 時間）になったセッションの WebSocket を閉じる
   setInterval(() => controls.sweep(), SESSION_SWEEP_MS).unref();
 
   server.listen(config.port, LISTEN_HOST, () => {
     hub.start();
+    void routines.start().catch((err) => console.error("routines failed:", err));
     if (mode === "fixed") console.warn("agent-console: 警告: AGENT_CONSOLE_TOKEN で固定したトークンを使用中です（テスト用途のみ）");
     if (mode === "keychain") {
       // 本番（起動アプリ経由）。秘密・セッション・コードはログに出さない
@@ -93,6 +96,7 @@ async function main(): Promise<void> {
   const shutdown = (): void => {
     hub.stop();
     activity.stop();
+    routines.stop();
     // 停止で端末が終わっても、復元リストは書き換えない（再起動のあとに開き直すため）
     sessions.beginShutdown();
     sessions.killAll();
