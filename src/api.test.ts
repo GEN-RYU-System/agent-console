@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, clearSessionToken, fetchState, getSessionToken, logout, openSocket, redeemCode, setSessionToken, wsUrl } from "./api";
+import { ApiError, clearSessionToken, fetchState, getSessionToken, logout, openSocket, redeemCode, setSessionToken, uploadImage, wsUrl } from "./api";
 
 beforeEach(() => window.sessionStorage.clear());
 afterEach(() => vi.unstubAllGlobals());
@@ -93,5 +93,34 @@ describe("WebSocket", () => {
     clearSessionToken();
     openSocket("/ws/events");
     expect(calls[1][1]).toEqual([]);
+  });
+});
+
+describe("uploadImage (K4)", () => {
+  it("POSTs the bytes as base64 in JSON to /api/uploads with the Bearer token, and returns the path", async () => {
+    setSessionToken("tok");
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ path: "/d/uploads/x.png" }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const blob = new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff])], { type: "image/png" });
+    await expect(uploadImage(blob)).resolves.toEqual({ path: "/d/uploads/x.png" });
+    const [url, init] = lastCall(fetchMock);
+    expect(url).toBe("/api/uploads");
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok");
+    expect(JSON.parse(init.body as string)).toEqual({ data: "iVBORw0KGgr/" });
+  });
+
+  it("encodes a large file without overflowing the call stack", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ path: "/p" }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const size = 3 * 1024 * 1024;
+    await uploadImage(new Blob([new Uint8Array(size)]));
+    const body = JSON.parse(lastCall(fetchMock)[1].body as string) as { data: string };
+    expect(body.data.length).toBe((size / 3) * 4);
+  });
+
+  it("throws ApiError with the status when the server refuses", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "too large" }), { status: 413 })));
+    await expect(uploadImage(new Blob([new Uint8Array([1])]))).rejects.toMatchObject({ status: 413 });
   });
 });

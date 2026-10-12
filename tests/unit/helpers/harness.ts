@@ -4,13 +4,14 @@ import { createServer, type Server } from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { createAuth } from "../../../server/auth.ts";
-import { DEFAULT_DIFF_MAX_FILE_BYTES, DEFAULT_GH_BIN, DEFAULT_PR_POLL_MS, DEFAULT_PR_REFRESH_MIN_MS, DEFAULT_PICK_HTML_IN_PROMPT_CHARS, DEFAULT_PICK_MAX_KEEP, DEFAULT_PICK_SEND_MAX_BYTES, DEFAULT_DIFF_SEND_MAX_BYTES, DEFAULT_PASTE_SUBMIT_DELAY_MS, DEFAULT_ACTIVITY_KEEP_DAYS, type Config } from "../../../server/config.ts";
+import { createAuth, type Auth } from "../../../server/auth.ts";
+import { DEFAULT_DIFF_MAX_FILE_BYTES, DEFAULT_GH_BIN, DEFAULT_PR_POLL_MS, DEFAULT_PR_REFRESH_MIN_MS, DEFAULT_PICK_HTML_IN_PROMPT_CHARS, DEFAULT_PICK_MAX_KEEP, DEFAULT_PICK_SEND_MAX_BYTES, DEFAULT_DIFF_SEND_MAX_BYTES, DEFAULT_TERMINAL_SMOOTH_SCROLL_MS, DEFAULT_UPLOAD_MAX_BYTES, DEFAULT_UPLOAD_MAX_KEEP, DEFAULT_PASTE_SUBMIT_DELAY_MS, DEFAULT_ACTIVITY_KEEP_DAYS, type Config } from "../../../server/config.ts";
 import { ActivityStore } from "../../../server/activity.ts";
 import { checkHooks } from "../../../server/activity-hooks.ts";
 import { hookPathIn } from "../../../server/activity-setup.ts";
 import { MemoryCollector } from "../../../server/memory.ts";
 import { PickStore } from "../../../server/picks.ts";
+import { UploadStore } from "../../../server/uploads.ts";
 import type { PickerAccess } from "../../../server/picker-extension.ts";
 import { QuickPromptStore } from "../../../server/quick-prompts.ts";
 import { DiffCommentStore } from "../../../server/diff-comments.ts";
@@ -49,6 +50,8 @@ export interface Harness {
   sweep: () => void;
   picks: PickStore;
   activity: ActivityStore;
+  uploads: UploadStore;
+  auth: Auth;
   close: () => Promise<void>;
 }
 
@@ -100,6 +103,10 @@ export interface HarnessOptions {
   pickMaxKeep?: number;
   pickSendMaxBytes?: number;
   pickHtmlInPromptChars?: number;
+  /** 画像の上限（byte）・残す枚数・なめらかなスクロールの時間（ms）。既定は config の既定値 */
+  uploadMaxBytes?: number;
+  uploadMaxKeep?: number;
+  terminalSmoothScrollMs?: number;
   /** 拡張からの受け取り口の相手。既定は固定 id の拡張と試験用の合言葉。null にすると受け取り口は常に 403 */
   picker?: PickerAccess;
 }
@@ -150,6 +157,9 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     pickHtmlInPromptChars: options.pickHtmlInPromptChars ?? DEFAULT_PICK_HTML_IN_PROMPT_CHARS,
     activityKeepDays: DEFAULT_ACTIVITY_KEEP_DAYS,
     claudeSettingsPath: path.join(dir, "home", ".claude", "settings.json"),
+    terminalSmoothScrollMs: options.terminalSmoothScrollMs ?? DEFAULT_TERMINAL_SMOOTH_SCROLL_MS,
+    uploadMaxBytes: options.uploadMaxBytes ?? DEFAULT_UPLOAD_MAX_BYTES,
+    uploadMaxKeep: options.uploadMaxKeep ?? DEFAULT_UPLOAD_MAX_KEEP,
     roles: [
       { id: "echo", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo READY; cat"], needsWorktree: false },
       { id: "short", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo bye"], needsWorktree: false },
@@ -177,9 +187,10 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   hub.watchPicks(picks);
   const activity = new ActivityStore(config.dataDir, { keepDays: config.activityKeepDays });
   hub.watchActivity(activity);
+  const uploads = new UploadStore(config.dataDir, config.uploadMaxBytes, config.uploadMaxKeep);
   const picker: PickerAccess = options.picker ?? { extensionOrigin: PICKER_ORIGIN, token: PICKER_TOKEN, extensionDir: path.join(config.dataDir, "chrome-extension") };
   const server = createServer(
-    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines }),
+    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines }),
   );
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
@@ -198,6 +209,8 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     sweep: () => controls.sweep(),
     picks,
     activity,
+    uploads,
+    auth,
     close: async () => {
       sessions.killAll();
       server.closeAllConnections();

@@ -16,6 +16,8 @@ import { handlePr } from "./pr-routes.ts";
 import type { PickerAccess } from "./picker-extension.ts";
 import { handlePickIngest, handlePicks } from "./picks-routes.ts";
 import type { PickStore } from "./picks.ts";
+import { handleUploads } from "./uploads-routes.ts";
+import type { UploadStore } from "./uploads.ts";
 import { listResumeTargets, resolveResumeTarget } from "./resume-targets.ts";
 import type { QuickPromptStore } from "./quick-prompts.ts";
 import { SessionConflictError, SessionInputError, SessionNotFoundError, validateName, type SessionManager } from "./sessions.ts";
@@ -42,6 +44,7 @@ export interface AppDeps {
   quickPrompts: QuickPromptStore;
   diffComments: DiffCommentStore;
   picks: PickStore;
+  uploads: UploadStore;
   picker: PickerAccess;
   /** セッションの様子の記録（dataDir/activity）の写し */
   activity: ActivityStore;
@@ -133,6 +136,8 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
       claudeVersion: meta.claudeVersion,
       appVersion: meta.version,
       commit: meta.commit,
+      terminalSmoothScrollMs: config.terminalSmoothScrollMs,
+      uploadMaxBytes: config.uploadMaxBytes,
     });
     return;
   }
@@ -170,6 +175,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   if (await handlePr(deps, req, res, url)) return;
   if (await handlePicks(deps, req, res, url)) return;
   if (await handleActivity(deps, req, res, url)) return;
+  if (await handleUploads(deps, req, res, url)) return;
   if (await handleDailyUse(deps, req, res, url)) return;
   const removeMatch = /^\/api\/sessions\/([^/]+)$/.exec(url.pathname);
   if (req.method === "DELETE" && removeMatch) {

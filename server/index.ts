@@ -13,6 +13,7 @@ import { createRequestHandler } from "./http.ts";
 import { MemoryCollector } from "./memory.ts";
 import { setupPicker } from "./picker-extension.ts";
 import { PickStore } from "./picks.ts";
+import { UploadStore } from "./uploads.ts";
 import { QuickPromptStore } from "./quick-prompts.ts";
 import { OpenSessionRecorder, startOpenSessionRestore } from "./restore.ts";
 import { OpenSessionStore } from "./session-store.ts";
@@ -71,8 +72,9 @@ async function main(): Promise<void> {
   const picks = new PickStore(config.dataDir, config.pickMaxKeep);
   hub.watchPicks(picks);
   const activity = startActivity({ config, hub, env: process.env, hooksSourceDir: path.join(process.cwd(), "hooks") });
+  const uploads = new UploadStore(config.dataDir, config.uploadMaxBytes, config.uploadMaxKeep);
 
-  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, picker, activity: activity.store, checkHooks: activity.check, memory: new MemoryCollector(), staticDir: path.join(process.cwd(), "dist"), meta, routines }));
+  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity: activity.store, checkHooks: activity.check, memory: new MemoryCollector(), staticDir: path.join(process.cwd(), "dist"), meta, routines }));
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   // 期限切れ（12 時間）になったセッションの WebSocket を閉じる
   setInterval(() => controls.sweep(), SESSION_SWEEP_MS).unref();

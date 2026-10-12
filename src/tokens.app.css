@@ -1,9 +1,10 @@
 /*
  * アプリ固有トークン。Sales Anchor のトークンに等幅フォントが無いための置き場。
  * SA に --font-mono が追加されたら --ac-font-mono を置き換える（PO 判断待ち）。
+ * 英数字と罫線は Menlo、Menlo に無い記号（※ など）は Monaco、日本語はヒラギノ明朝（Monaco にはかなと漢字が無い）。
  * ダークで値が変わらないので force-dark の定義は不要。
  * このファイルには --ac- で始まるカスタムプロパティだけを置く（check-design-governance が検査）。
  */
 :root {
-  --ac-font-mono: Menlo, Monaco, "Courier New", monospace;
+  --ac-font-mono: Menlo, Monaco, "Hiragino Mincho ProN", monospace;
 }

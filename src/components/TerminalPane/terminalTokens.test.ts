@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import { cssLengthToPx, readTerminalAppearance } from "./terminalTokens";
 
@@ -36,5 +37,24 @@ describe("readTerminalAppearance", () => {
 
   it("falls back to the root font size when the token is missing", () => {
     expect(readTerminalAppearance().fontSize).toBe(16);
+  });
+});
+
+describe("K3: the shipped terminal font stack (tokens.app.css is the only place)", () => {
+  const css = readFileSync("src/tokens.app.css", "utf8");
+  const stack = /--ac-font-mono:\s*([^;]+);/.exec(css)?.[1].trim();
+
+  it("is Menlo, then Monaco (for symbols such as ※), then Hiragino Mincho ProN, then monospace", () => {
+    expect(stack).toBe('Menlo, Monaco, "Hiragino Mincho ProN", monospace');
+  });
+  it("no longer lists Courier New", () => {
+    expect(css).not.toContain("Courier New");
+  });
+});
+
+describe("K1: the terminal stylesheet sets text-spacing-trim: space-all on .xterm", () => {
+  it("has the declaration on the .xterm selector (inherited by the rows and the measuring element)", () => {
+    const css = readFileSync("src/components/TerminalPane/TerminalPane.css", "utf8");
+    expect(css).toMatch(/\.xterm\s*\{[^}]*text-spacing-trim:\s*space-all\s*;[^}]*\}/);
   });
 });

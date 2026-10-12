@@ -2,8 +2,10 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { openSocket } from "../../api";
+import { ApiError, openSocket, uploadImage } from "../../api";
 import { splitByCodePoints } from "./chunkInput";
+import { classifyTransfer } from "./imageTransfer";
+import { WheelClassifier, wheelDeltas } from "./wheelClassifier";
 import { readTerminalAppearance } from "./terminalTokens";
 import "./TerminalPane.css";
 
@@ -32,11 +34,34 @@ export interface TerminalHandle {
 
 export type PasteResult = "sent" | "notPasted" | "pastedNotSent";
 
+/** 画像の添付で画面に案内を出す場面（文言は呼び出し側の i18n） */
+export type UploadNotice = "tooLarge" | "notImage" | "failed" | "switched";
+
+export interface TerminalPaneProps {
+  sessionId: string;
+  /** 物理的なマウスのホイールのときの、なめらかなスクロールの時間（ms。config の値。0 で無し）。トラックパッドなどでは常に 0 */
+  smoothScrollMs?: number;
+  /** 画像 1 枚の上限（byte。config の値）。超えるものは送らずに案内する。サーバーも同じ上限で検査する */
+  uploadMaxBytes?: number;
+  onUploadNotice?: (notice: UploadNotice) => void;
+}
+
 /** 表示中の 1 本だけ xterm を生成する。sessionId が変わる/外れるたびに破棄して再接続する。 */
-export const TerminalPane = forwardRef<TerminalHandle, { sessionId: string }>(function TerminalPane({ sessionId }, ref) {
+export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(function TerminalPane({ sessionId, smoothScrollMs = 0, uploadMaxBytes, onUploadNotice }, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
   /** 今の端末と、それがどのセッションのものか（effect で差し替わるので、同じ組で持つ） */
   const termRef = useRef<{ sessionId: string; term: Terminal } | null>(null);
+  /** 画面から渡された値は、端末を作り直さずに読み直せるよう ref で持つ */
+  const latest = useRef({ smoothScrollMs, uploadMaxBytes, onUploadNotice });
+  latest.current = { smoothScrollMs, uploadMaxBytes, onUploadNotice };
+  /** 今の入力機器が物理ホイールか（変わったときだけ smoothScrollDuration を更新する） */
+  const physicalWheelRef = useRef(false);
+
+  // 設定の値が変わったら、使っている端末に反映する
+  useEffect(() => {
+    const current = termRef.current;
+    if (current) current.term.options.smoothScrollDuration = physicalWheelRef.current ? smoothScrollMs : 0;
+  }, [smoothScrollMs]);
 
   useImperativeHandle(
     ref,
@@ -67,8 +92,11 @@ export const TerminalPane = forwardRef<TerminalHandle, { sessionId: string }>(fu
     if (!host) return;
     const term = new Terminal({
       scrollback: SCROLLBACK_LINES,
+      // 入力機器が分かるまでは 0（ブラウザのそのままの動き）。物理ホイールと分かってから latest の値にする
+      smoothScrollDuration: 0,
       ...readTerminalAppearance(),
     });
+    physicalWheelRef.current = false;
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
@@ -104,7 +132,64 @@ export const TerminalPane = forwardRef<TerminalHandle, { sessionId: string }>(fu
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
     fit.fit();
 
+    // なめらかなスクロール: 物理的なマウスのホイールのときだけ（VS Code と同じ。トラックパッドでは切る）
+    const wheelClassifier = new WheelClassifier();
+    const onWheel = (e: WheelEvent): void => {
+      const { dx, dy } = wheelDeltas(e);
+      wheelClassifier.accept(Date.now(), dx, dy);
+      const physical = wheelClassifier.isPhysicalMouseWheel();
+      if (physical === physicalWheelRef.current) return;
+      physicalWheelRef.current = physical;
+      term.options.smoothScrollDuration = physical ? latest.current.smoothScrollMs : 0;
+    };
+    host.addEventListener("wheel", onWheel, { capture: true, passive: true });
+
+    // 画像の添付: 保存してもらい、その絶対パスを入力欄に貼る（Enter は押さない）。1 枚ずつ順に行う
+    const notify = (notice: UploadNotice): void => latest.current.onUploadNotice?.(notice);
+    const attachOne = async (file: File): Promise<void> => {
+      const max = latest.current.uploadMaxBytes;
+      if (max !== undefined && file.size > max) return notify("tooLarge");
+      try {
+        const { path } = await uploadImage(file);
+        // 待つ間にセッションが切り替わった（別の端末になった）ら入れない
+        if (termRef.current?.term !== term) return notify("switched");
+        term.paste(` ${path} `);
+      } catch (err) {
+        notify(err instanceof ApiError && err.status === 413 ? "tooLarge" : "failed");
+      }
+    };
+    let uploadChain: Promise<void> = Promise.resolve();
+    const attach = (files: File[]): void => {
+      for (const file of files) uploadChain = uploadChain.then(() => attachOne(file));
+    };
+    const onPaste = (e: ClipboardEvent): void => {
+      const { images, text } = classifyTransfer(e.clipboardData);
+      // 文字があるときは今までどおり xterm に任せる（文字と画像の二重の貼り付けを防ぐ）
+      if (images.length === 0 || text !== "") return;
+      e.preventDefault();
+      e.stopPropagation();
+      attach(images);
+    };
+    // 止めないと、ブラウザがファイルをページとして開き、アプリの画面が置き換わる
+    const onDragOver = (e: DragEvent): void => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    };
+    const onDrop = (e: DragEvent): void => {
+      e.preventDefault();
+      const { images, hasOtherFiles } = classifyTransfer(e.dataTransfer);
+      attach(images);
+      if (hasOtherFiles) notify("notImage");
+    };
+    host.addEventListener("paste", onPaste, true);
+    host.addEventListener("dragover", onDragOver);
+    host.addEventListener("drop", onDrop);
+
     return () => {
+      host.removeEventListener("wheel", onWheel, true);
+      host.removeEventListener("paste", onPaste, true);
+      host.removeEventListener("dragover", onDragOver);
+      host.removeEventListener("drop", onDrop);
       themeObserver.disconnect();
       resizeObserver.disconnect();
       dataSub.dispose();
