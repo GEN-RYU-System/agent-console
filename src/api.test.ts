@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, clearSessionToken, fetchState, getSessionToken, logout, openSocket, redeemCode, setSessionToken, uploadImage, wsUrl } from "./api";
+import { ApiError, checkChatSend, clearSessionToken, fetchChat, fetchState, getSessionToken, logout, openSocket, redeemCode, setSessionToken, uploadImage, wsUrl } from "./api";
 
 beforeEach(() => window.sessionStorage.clear());
 afterEach(() => vi.unstubAllGlobals());
@@ -16,6 +16,27 @@ describe("session token storage", () => {
     expect(getSessionToken()).toBe("tok");
     clearSessionToken();
     expect(getSessionToken()).toBeNull();
+  });
+});
+
+describe("chat requests (v0.11.0)", () => {
+  it("fetchChat asks for the items after `since`, and sends the epoch only when known", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ status: "ok" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await fetchChat("s 1", 0, null);
+    expect(lastCall(fetchMock)[0]).toBe("/api/sessions/s%201/chat?since=0");
+    await fetchChat("s1", 7, "e/1");
+    expect(lastCall(fetchMock)[0]).toBe("/api/sessions/s1/chat?since=7&epoch=e%2F1");
+  });
+
+  it("checkChatSend posts the text as JSON to chat/send-check", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ text: "こんにちは", submitDelayMs: 2000 }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(checkChatSend("s1", "こんにちは")).resolves.toEqual({ text: "こんにちは", submitDelayMs: 2000 });
+    const [url, init] = lastCall(fetchMock);
+    expect(url).toBe("/api/sessions/s1/chat/send-check");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ text: "こんにちは" });
   });
 });
 

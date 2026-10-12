@@ -169,6 +169,7 @@
       "switched": "貼る前に別のセッションへ切り替わったため、貼りませんでした"
     },
     "tabs": {
+      "chat": "チャット",
       "terminal": "端末",
       "changes": "変更",
       "pr": "PR",
@@ -362,6 +363,41 @@
       "session": "このセッション",
       "ledger": "台帳"
     },
+    "chat": {
+      "emptyTitle": "まだ会話がありません",
+      "emptyBody": "下の入力欄から Claude に送れます。ここには、今日と昨日の記録の分の会話が出ます。",
+      "inputLabel": "Claude へのメッセージ",
+      "placeholder": "メッセージを入力（Enter で送る・Shift+Enter で改行）",
+      "send": "送る",
+      "sent": "送りました（Claude が受け取ると表示されます）",
+      "truncated": "（以下略）",
+      "waitingInTerminal": "端末で確認が出ています",
+      "openTerminal": "端末を開く",
+      "blocked": {
+        "working": "Claude が作業中のため送れません",
+        "stopped": "このセッションは停止しているため送れません",
+        "unknown": "Claude の状態を確認できないため送れません",
+        "other": "今は端末に入れられない状態のため送れません"
+      },
+      "sendErrorTitle": "送れませんでした",
+      "switched": "確認している間に別のセッションへ切り替わったため、送っていません",
+      "pastedNotSent": "貼り付けましたが送っていません。そのセッションの端末で Enter を押してください",
+      "loadError": "会話を取得できません",
+      "error": {
+        "rate_limit": "利用の上限に達したため、返事が途中で止まりました",
+        "overloaded": "Claude が混み合っているため、返事が止まりました",
+        "authentication_failed": "認証に失敗したため、返事が止まりました",
+        "oauth_org_not_allowed": "この組織ではログインが許可されていないため、返事が止まりました",
+        "account_on_hold": "アカウントが保留になっているため、返事が止まりました",
+        "billing_error": "お支払いの問題のため、返事が止まりました",
+        "invalid_request": "リクエストが受け付けられなかったため、返事が止まりました",
+        "model_not_found": "指定のモデルが見つからないため、返事が止まりました",
+        "server_error": "Claude 側のサーバーエラーのため、返事が止まりました",
+        "max_output_tokens": "返事が長くなり過ぎたため、途中で止まりました",
+        "cloud_credential_error": "クラウドの認証情報の問題のため、返事が止まりました",
+        "unknown": "原因を特定できないエラーのため、返事が止まりました"
+      }
+    },
     "activity": {
       "stateTitle": "今の状態",
       "runningTitle": "動いている担当",
@@ -398,7 +434,8 @@
         "haiku": "Haiku（軽い作業）"
       },
       "hooksOffTitle": "記録の仕組みが外れています",
-      "hooksOffBody": "Claude の設定から、このアプリの記録用の仕組み（hook）が外れているため、担当ややることの様子が新しく記録されません。README の「セッションの様子の記録」の手順で、node scripts/ac-hooks.mjs install を実行してください。"
+      "hooksOffBody": "Claude の設定から、このアプリの記録用の仕組み（hook）が外れているため、担当ややることの様子、チャットの会話が新しく記録されません。README の「セッションの様子の記録」の手順で、node scripts/ac-hooks.mjs install を実行してください。",
+      "hooksReinstall": "アプリを更新したあとは、記録するイベント（チャットの返事の記録）が増えることがあるので、install をもう一度実行してください。"
     }
   },
   "role": {

@@ -97,6 +97,47 @@ describe("QuickPromptBar (v0.10.0 K3)", () => {
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("boom"));
   });
 
+  describe("onPick（チャットの入力欄に入れる使い方。v0.11.0 K7）", () => {
+    it("pinned のボタンを押すと、本文（text）を onPick へ渡す。onSend は呼ばない", () => {
+      const onPick = vi.fn();
+      const { onSend } = renderBar({ onPick });
+      fireEvent.click(screen.getByRole("button", { name: "ビルド" }));
+      expect(onPick).toHaveBeenCalledWith("run build");
+      expect(onSend).not.toHaveBeenCalled();
+    });
+
+    it("canSend が false でも押せる（入力欄に入れるだけなので、送れない状態に関係しない）", () => {
+      const onPick = vi.fn();
+      renderBar({ onPick, canSend: false });
+      const button = screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+      fireEvent.click(button);
+      expect(onPick).toHaveBeenCalledWith("run tests");
+    });
+
+    it("一覧の「使う」も本文を onPick へ渡し、一覧を閉じる。canSend が false でも押せる", async () => {
+      const onPick = vi.fn();
+      renderBar({ onPick, canSend: false });
+      fireEvent.click(screen.getByRole("button", { name: "よく使う指示" }));
+      const row = screen.getAllByTestId("quick-prompt-list-item")[1];
+      const use = within(row).getByRole("button", { name: "使う" }) as HTMLButtonElement;
+      expect(use.disabled).toBe(false);
+      fireEvent.click(use);
+      expect(onPick).toHaveBeenCalledWith("run lint");
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    });
+
+    it("onPick を渡さないときは、今までどおり onSend へ id を渡し、canSend が false なら押せない", () => {
+      const { onSend } = renderBar({ canSend: false });
+      expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(true);
+      cleanup();
+      const again = renderBar();
+      fireEvent.click(screen.getByRole("button", { name: "テスト実行" }));
+      expect(again.onSend).toHaveBeenCalledWith("p1");
+      expect(onSend).not.toHaveBeenCalled();
+    });
+  });
+
   it("calls onEdit from the edit button", () => {
     const { onEdit } = renderBar();
     fireEvent.click(screen.getByRole("button", { name: "指示を編集" }));
