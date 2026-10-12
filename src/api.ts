@@ -1,4 +1,4 @@
-import type { ActivityResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, ResumeTarget, Routine, RoutineInput } from "./types";
+import type { ActivityResponse, BoardResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, ResumeTarget, Routine, RoutineInput } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -120,8 +120,10 @@ export async function fetchPickImage(id: string): Promise<string> {
     reader.readAsDataURL(blob);
   });
 }
-/** 右の欄「このセッション」の中身（そのセッションの担当・やること・入力と、記録の仕組みの点検）。 */
+/** 右の欄「作戦ボード」の、動いている担当・最近の入力と、記録の仕組みの点検。 */
 export const fetchActivity = (sessionId: string): Promise<ActivityResponse> => request(`${diffBase(sessionId)}/activity`);
+/** 右の欄「作戦ボード」の計画（テーマ・KGI・KPI・ロードマップ）。 */
+export const fetchBoard = (sessionId: string): Promise<BoardResponse> => request(`${diffBase(sessionId)}/board`);
 /** チャットの会話（since より後の分。epoch がサーバーのものと違えば全件が返り reset: true）。 */
 export const fetchChat = (sessionId: string, since: number, epoch: string | null): Promise<ChatResponse> =>
   request(`${diffBase(sessionId)}/chat?since=${since}${epoch !== null ? `&epoch=${encodeURIComponent(epoch)}` : ""}`);

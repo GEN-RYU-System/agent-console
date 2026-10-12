@@ -360,7 +360,7 @@
       "noText": "文字なし"
     },
     "rightTabs": {
-      "session": "このセッション",
+      "session": "作戦ボード",
       "ledger": "台帳"
     },
     "chat": {
@@ -401,26 +401,19 @@
     "activity": {
       "stateTitle": "今の状態",
       "runningTitle": "動いている担当",
-      "finishedTitle": "終わった担当",
-      "tasksTitle": "やること",
       "inputsTitle": "最近の入力",
       "emptyRunning": "動いている担当はいません",
-      "emptyFinished": "終わった担当はまだありません",
-      "emptyTasks": "やることはありません",
       "emptyInputs": "入力はまだありません",
       "loading": "読み込み中",
       "errorTitle": "様子を取得できません",
       "errorBody": "アプリのサーバーから、このセッションの様子を取れませんでした。しばらくしてからもう一度ひらいてください。",
       "noSessionTitle": "まだ会話が始まっていません",
-      "noSessionHint": "Claude に最初の指示を出すと、ここに担当ややることの様子が出ます",
+      "noSessionHint": "Claude に最初の指示を出すと、ここに動いている担当や計画の様子が出ます",
       "agentUnknown": "担当",
       "noDescription": "（仕事の説明は記録されていません）",
-      "taskDone": "完了",
-      "taskOpen": "未完了",
       "justNow": "たった今",
       "ago": "{{time}}前",
       "runningFor": "動き始めて{{time}}",
-      "took": "{{time}}かかった",
       "unit": {
         "second": "{{count}}秒",
         "minute": "{{count}}分",
@@ -434,8 +427,34 @@
         "haiku": "Haiku（軽い作業）"
       },
       "hooksOffTitle": "記録の仕組みが外れています",
-      "hooksOffBody": "Claude の設定から、このアプリの記録用の仕組み（hook）が外れているため、担当ややることの様子、チャットの会話が新しく記録されません。README の「セッションの様子の記録」の手順で、node scripts/ac-hooks.mjs install を実行してください。",
-      "hooksReinstall": "アプリを更新したあとは、記録するイベント（チャットの返事の記録）が増えることがあるので、install をもう一度実行してください。"
+      "hooksOffBody": "Claude の設定から、このアプリの記録用の仕組み（hook）が外れているため、動いている担当の様子、チャットの会話が新しく記録されません。README の「セッションの様子の記録」の手順で、node scripts/ac-hooks.mjs install を実行してください。",
+      "hooksReinstall": "アプリを更新したあとは、記録するイベント（チャットの返事、担当の再開）が増えることがあるので、install をもう一度実行してください。"
+    },
+    "board": {
+      "themeLabel": "テーマ",
+      "kgiTitle": "KGI",
+      "kpiTitle": "KPI",
+      "roadmapTitle": "ロードマップ",
+      "emptyKgi": "KGI はまだありません",
+      "emptyKpi": "KPI はまだありません",
+      "emptyRoadmap": "ロードマップはまだありません",
+      "updated": "最後に更新: {{when}}",
+      "progress": "完了 {{done}} / {{total}}",
+      "kpiValue": "{{current}} → {{target}}{{unit}}",
+      "noValue": "—",
+      "status": {
+        "todo": "未着手",
+        "doing": "進行中",
+        "done": "完了"
+      },
+      "noneTitle": "計画",
+      "noneBody": "まだ計画が書き込まれていません",
+      "noneHint": "このセッションの Claude が、テーマ・KGI・KPI・ロードマップを決めて書き込むと、ここに出ます",
+      "invalidTitle": "計画",
+      "invalidBody": "計画のファイルを読めません",
+      "invalidHint": "壊れている可能性があります。Claude に、ac-board の命令で計画を書き直すよう頼んでください（README の「作戦ボード」）",
+      "errorTitle": "計画を取得できません",
+      "errorBody": "アプリのサーバーから、このセッションの計画を取れませんでした。しばらくしてからもう一度ひらいてください。"
     }
   },
   "role": {

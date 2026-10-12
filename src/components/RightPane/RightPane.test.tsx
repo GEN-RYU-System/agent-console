@@ -27,21 +27,21 @@ describe("K1: 右の欄のタブ", () => {
     expect(screen.queryByTestId("activity-pane-stub")).toBeNull();
   });
 
-  it("セッションを選ぶと「このセッション」と「台帳」が出て、「このセッション」が先に開く", () => {
+  it("セッションを選ぶと「作戦ボード」と「台帳」が出て、「作戦ボード」が先に開く", () => {
     render(<RightPane sessionId="s1" rev={3} state="working" ledger={LEDGER} onRefresh={() => undefined} />);
-    expect(tabs()).toEqual(["このセッション", "台帳"]);
-    expect(selected()).toEqual(["このセッション"]);
+    expect(tabs()).toEqual(["作戦ボード", "台帳"]);
+    expect(selected()).toEqual(["作戦ボード"]);
     expect(screen.getByTestId("activity-pane-stub").textContent).toBe("s1:3");
     expect(screen.queryByTestId("ledger-board-stub")).toBeNull();
   });
 
-  it("「台帳」を押すと台帳に切り替わる。別のセッションを選ぶと、また「このセッション」が先に開く", () => {
+  it("「台帳」を押すと台帳に切り替わる。別のセッションを選ぶと、また「作戦ボード」が先に開く", () => {
     const { rerender } = render(<RightPane sessionId="s1" rev={0} state="working" ledger={LEDGER} onRefresh={() => undefined} />);
     fireEvent.click(screen.getByRole("tab", { name: "台帳" }));
     expect(selected()).toEqual(["台帳"]);
     expect(screen.getByTestId("ledger-board-stub")).toBeTruthy();
     rerender(<RightPane sessionId="s2" rev={0} state="working" ledger={LEDGER} onRefresh={() => undefined} />);
-    expect(selected()).toEqual(["このセッション"]);
+    expect(selected()).toEqual(["作戦ボード"]);
     expect(screen.getByTestId("activity-pane-stub").textContent).toBe("s2:0");
   });
 

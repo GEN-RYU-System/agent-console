@@ -183,17 +183,14 @@ export interface PickItem {
   sentAt?: number;
 }
 
-/** 右の欄「このセッション」の 1 つの担当（動いている担当・終わった担当）。説明は Claude が書いた文のまま */
+/** 右の欄「作戦ボード」の、動いている担当 1 つ。説明は Claude が書いた文のまま。startedAt は動き始め（再開した担当は再開の時刻） */
 export interface ActivityAgent {
   key: string;
   subagentType: string;
   model: string;
   resolvedModel: string;
   description: string;
-  startedAt: number | null;
-  endedAt: number | null;
-  durationMs: number | null;
-  summary: string;
+  startedAt: number;
 }
 export interface ActivityTask {
   id: string;
@@ -217,12 +214,25 @@ export type ActivityResponse =
       /** サーバーが答えた時刻。「3分前」はこれとの差で出す */
       now: number;
       running: ActivityAgent[];
-      finished: ActivityAgent[];
       tasks: ActivityTask[];
       inputs: ActivityInput[];
       lastEventAt: number | null;
       hooks: HookCheck;
     };
+
+/** 作戦ボード（各セッションの Claude が命令で丸ごと書く計画）。形と上限は README の「作戦ボード」 */
+export type BoardRoadmapStatus = "todo" | "doing" | "done";
+export interface Board {
+  version: 1;
+  theme: string;
+  kgi: Array<{ text: string }>;
+  kpis: Array<{ name: string; target: string; current: string; unit: string }>;
+  roadmap: Array<{ title: string; status: BoardRoadmapStatus }>;
+  /** 最後に書き込んだ時刻（ms） */
+  updatedAt: number;
+}
+/** none=まだ書き込まれていない、invalid=ファイルが壊れている */
+export type BoardResponse = { status: "none" } | { status: "invalid" } | { status: "ok"; board: Board };
 
 /** チャットの 1 件。user=しんごさんの入力、assistant=Claude の返事、error=API エラー（error に種類） */
 export interface ChatItem {

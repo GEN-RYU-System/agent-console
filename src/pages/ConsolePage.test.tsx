@@ -61,6 +61,7 @@ vi.mock("../api", () => ({
   moveSession: (id: string, toIndex: number) => moveSession(id, toIndex),
   updateQuickPrompt: vi.fn(),
   fetchActivity: vi.fn(async () => ({ status: "noSession" })),
+  fetchBoard: vi.fn(async () => ({ status: "none" })),
   fetchChat: vi.fn(async () => ({ status: "noSession" })),
   checkChatSend: vi.fn(),
   fetchMemory: vi.fn(async () => ({ sessions: [], serverRssMb: 1, system: null })),
