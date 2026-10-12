@@ -165,6 +165,8 @@ describe("K2: ActivityPane", () => {
     expect(warn.textContent).toContain("記録の仕組みが外れています");
     expect(warn.textContent).toContain("README");
     expect(warn.textContent).toContain("scripts/ac-hooks.mjs install");
+    // v0.11.0: 記録するイベントが増えた（Stop・StopFailure）ので、更新のあとは install をもう一度
+    expect(warn.textContent).toContain("install をもう一度");
     unmount();
     fetchActivity.mockResolvedValue(OK);
     render(<ActivityPane sessionId="s1" rev={0} state="idle" />);

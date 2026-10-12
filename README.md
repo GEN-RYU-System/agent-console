@@ -12,7 +12,7 @@ Local console for running parallel Claude Code sessions (Orca-inspired, lightwei
 
 ### 入れる（1 回だけ・実行する人が自分で）
 
-アプリは Claude の設定を書き換えません。次を実行すると、`~/.claude/settings.json` に記録用の hook（6 つのイベント）を足します。足す前に控え `settings.json.ac-backup-<日時>` を作り（新しい 3 つだけ残します）、足すのは自分の hook だけです。2 回実行しても増えません。
+アプリは Claude の設定を書き換えません。次を実行すると、`~/.claude/settings.json` に記録用の hook（8 つのイベント。v0.11.0 で Stop と StopFailure が増えました）を足します。足す前に控え `settings.json.ac-backup-<日時>` を作り（新しい 3 つだけ残します）、足すのは自分の hook だけです。2 回実行しても増えません。
 
 ```
 node scripts/ac-hooks.mjs install      # 足す（hook の本体を dataDir/hooks/ に置いてから、設定に足す）
@@ -20,7 +20,7 @@ node scripts/ac-hooks.mjs check        # 入っているか点検する（入っ
 node scripts/ac-hooks.mjs uninstall    # 自分の hook だけを外す（ほかの設定には触れない）
 ```
 
-`--settings <settings.json>` と `--data-dir <dataDir>` で場所を変えられます。書き直した設定は JSON として整形し直されます（1 行の配列が複数行になることがあります。元の中身は控えにあります）。hook は Claude を待たせず（async）、失敗しても Claude を止めません。残すのは担当の説明・結果の先頭 120 字・やることの題名・入力の先頭 80 字などの決めた項目だけで、手元のファイルから外へは送りません。
+`--settings <settings.json>` と `--data-dir <dataDir>` で場所を変えられます。書き直した設定は JSON として整形し直されます（1 行の配列が複数行になることがあります。元の中身は控えにあります）。hook は Claude を待たせず（async）、失敗しても Claude を止めません。残すのは担当の説明・結果の先頭 120 字・やることの題名などの決めた項目と、v0.11.0 からは入力と Claude の返事の全文（チャット画面の会話のため。1 行 64KiB まで）で、手元のファイルから外へは送りません。全文を残すので、貼った文章に秘密が入っていれば、それも `dataDir/activity/` に残ります（権限 600・7 日で消えます）。
 
 ### 「記録の仕組みが外れています」と出たとき（直し方）
 
@@ -37,6 +37,21 @@ settings.json に hook が無い、または node や hook のファイルが無
 - 古い記録（`activityKeepDays`、既定 7 日より前の日付のファイル）は、本番のポートのサーバーだけが消します。
 - 担当がさらに呼んだ担当（孫）は記録しますが、画面には出しません。担当の会話の中身（transcript）は読みません。
 - 人の入力かどうかは見分けられないため、見出しは「最近の入力」です（担当の報告の戻りだけは除きます）。
+
+## v0.11.0 チャット画面
+
+中央のタブの先頭の「チャット」（最初に開くタブ）に、選んだセッションの会話が、右にしんごさん・左に Claude の吹き出しで出ます。下の入力欄に書いて Enter で送ります（Shift+Enter は改行。日本語の変換中の Enter では送りません）。入力欄の上の「よく使う指示」を押すと、本文が入力欄に入ります（すぐには送りません）。送れるのは、今までどおり Claude が手すき（待機）のときだけです。作業中・確認の待ちのときは「送る」を押せず、理由が出ます（確認の待ちのときは「端末を開く」で端末タブへ移れます）。端末は今までどおり「端末」タブにあります（開いている間はチャットの裏で動き続けます）。
+
+会話は、hook が `dataDir/activity/` に残す記録から作ります（今日と昨日の UTC の分だけ。アプリを再起動すると、それより古い会話は出ません）。Esc で止めた回の返事は記録されません（Stop が起きないため）。作業中に送ること・返事を 1 文字ずつ流して出すこと・許可の確認にチャットから答えることは、この版にはありません。設計は [design](docs/handoff/chat/design.md)、調査は [recon](docs/handoff/chat/recon.md)、工程0の実測は [step0](docs/handoff/chat/step0.md)。
+
+### 更新したあとにやること（hook を入れ直す）
+
+会話を出すために、記録するイベントが増えました（Stop と StopFailure）。**v0.10.0 までに `node scripts/ac-hooks.mjs install` を済ませている人も、更新のあとにもう一度実行してください**（足りない 2 つだけが足されます。すでに入っている 6 つや、ほかの設定は変わらず、足す前に控えを作ります）。実行するまでは、右の欄に「記録の仕組みが外れています」と出て、チャットには新しい会話が出ません。
+
+```
+node scripts/ac-hooks.mjs install
+node scripts/ac-hooks.mjs check
+```
 
 ## 設計メモ
 

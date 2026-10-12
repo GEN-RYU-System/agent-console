@@ -61,6 +61,8 @@ vi.mock("../api", () => ({
   moveSession: (id: string, toIndex: number) => moveSession(id, toIndex),
   updateQuickPrompt: vi.fn(),
   fetchActivity: vi.fn(async () => ({ status: "noSession" })),
+  fetchChat: vi.fn(async () => ({ status: "noSession" })),
+  checkChatSend: vi.fn(),
   fetchMemory: vi.fn(async () => ({ sessions: [], serverRssMb: 1, system: null })),
   fetchDiff: () => fetchDiff(),
   fetchDiffFile: vi.fn(async () => ({ lines: [] })),
@@ -148,6 +150,11 @@ beforeEach(() => {
   fetchState.mockResolvedValue(state);
   vi.stubGlobal("WebSocket", FakeWebSocket);
 });
+
+/** v0.11.0: 最初に開くタブはチャット。端末を見る試験は、端末タブを押してから見る */
+const openTerminalTab = async (): Promise<void> => {
+  fireEvent.click(await screen.findByRole("tab", { name: /端末/ }));
+};
 
 describe("ConsolePage removing a stopped session", () => {
   it("shows an error callout when removal fails (409 / 404 / network)", async () => {
@@ -300,6 +307,7 @@ describe("ConsolePage daily use", () => {
   it("asks the server first and pastes the returned text into the terminal only when a button is pressed", async () => {
     fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0 }] });
     render(<ConsolePage />);
+    await openTerminalTab();
     const button = await screen.findByRole("button", { name: "テスト実行" });
     expect((button as HTMLButtonElement).disabled).toBe(true);
     expect(checkQuickPromptSend).not.toHaveBeenCalled();
@@ -317,6 +325,7 @@ describe("ConsolePage daily use", () => {
     fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0 }, other] });
     render(<ConsolePage />);
     fireEvent.click(await screen.findByText("dead"));
+    await openTerminalTab();
     await waitFor(() => expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "テスト実行" }));
     await waitFor(() => expect(checkQuickPromptSend).toHaveBeenCalledWith("s1", "p1"));
@@ -331,6 +340,7 @@ describe("ConsolePage daily use", () => {
     fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0 }] });
     render(<ConsolePage />);
     fireEvent.click(await screen.findByText("dead"));
+    await openTerminalTab();
     await waitFor(() => expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "テスト実行" }));
     expect((await screen.findByRole("alert")).textContent).toContain("claude is busy");
@@ -341,6 +351,7 @@ describe("ConsolePage daily use", () => {
     fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0, canInput: false }] });
     render(<ConsolePage />);
     fireEvent.click(await screen.findByText("dead"));
+    await openTerminalTab();
     expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -351,7 +362,7 @@ describe("ConsolePage daily use", () => {
 });
 
 describe("ConsolePage center tabs (v0.10.0 K1)", () => {
-  it("puts ac-center-tabs on the center tablist only (all 5 tabs share it), not on the right pane", async () => {
+  it("puts ac-center-tabs on the center tablist only (all 6 tabs share it), not on the right pane", async () => {
     render(<ConsolePage />);
     fireEvent.click(await screen.findByText("dead"));
     const tab = await screen.findByRole("tab", { name: /変更/ });
@@ -359,7 +370,7 @@ describe("ConsolePage center tabs (v0.10.0 K1)", () => {
     expect(list.className).toContain("ac-center-tabs");
     expect(list.className).toContain("comp-tabs");
     const labels = within(list).getAllByRole("tab").map((n) => n.textContent);
-    expect(labels).toHaveLength(5);
+    expect(labels).toHaveLength(6);
     const others = screen.getAllByRole("tablist").filter((n) => n !== list);
     for (const other of others) expect(other.className).not.toContain("ac-center-tabs");
   });
@@ -374,6 +385,61 @@ describe("ConsolePage center tabs (v0.10.0 K1)", () => {
   });
 });
 
+describe("ConsolePage チャット tab (v0.11.0 K1, K6, K7)", () => {
+  it("K1 中央のタブの先頭に「チャット」が加わり、最初に開くタブになる。ほかのタブは今の順のまま", async () => {
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    const tab = await screen.findByRole("tab", { name: /変更/ });
+    const list = tab.closest('[role="tablist"]') as HTMLElement;
+    const tabs = within(list).getAllByRole("tab");
+    expect(tabs.map((n) => (n.textContent ?? "").replace(/\d+$/, ""))).toEqual(["チャット", "端末", "変更", "PR", "部品", "定期実行"]);
+    expect(tabs[0].getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByTestId("chat-pane").hasAttribute("hidden")).toBe(false);
+    expect(screen.getByTestId("terminal-stub").parentElement?.hasAttribute("hidden")).toBe(true);
+  });
+
+  it("端末タブを押すとチャットが隠れ（外さない）、端末が見える。チャットに戻れる", async () => {
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    const chat = screen.getByTestId("chat-pane");
+    await openTerminalTab();
+    expect(screen.getByTestId("chat-pane")).toBe(chat);
+    expect(chat.hasAttribute("hidden")).toBe(true);
+    expect(screen.getByTestId("terminal-stub").parentElement?.hasAttribute("hidden")).toBe(false);
+    fireEvent.click(screen.getByRole("tab", { name: /チャット/ }));
+    expect(chat.hasAttribute("hidden")).toBe(false);
+  });
+
+  it("K7 チャットのよく使う指示は、押すと本文が入力欄に入り、送らない（端末へも貼らない）", async () => {
+    fetchState.mockResolvedValue({ ...state, sessions: [{ ...state.sessions[0], state: "idle", hasClaude: true, canInput: true }] });
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    const bar = await screen.findByTestId("quick-prompt-bar");
+    fireEvent.click(within(bar).getByRole("button", { name: "テスト実行" }));
+    expect((screen.getByTestId("chat-input") as HTMLTextAreaElement).value).toBe("run tests");
+    expect(checkQuickPromptSend).not.toHaveBeenCalled();
+    expect(pasteAndEnter).not.toHaveBeenCalled();
+  });
+
+  it("K6 確認の待ち（waiting）のとき、「端末を開く」で端末タブへ移る", async () => {
+    fetchState.mockResolvedValue({ ...state, sessions: [{ ...state.sessions[0], state: "waiting", hasClaude: true, canInput: false }] });
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    fireEvent.click(await screen.findByRole("button", { name: "端末を開く" }));
+    expect(screen.getByTestId("chat-pane").hasAttribute("hidden")).toBe(true);
+    expect(screen.getByTestId("terminal-stub").parentElement?.hasAttribute("hidden")).toBe(false);
+    expect(screen.getByRole("tab", { name: /端末/ }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("端末のタブにいる間（チャットが隠れている間）は、端末の上のよく使う指示のバーだけが見える（バーは 2 本並ばない）", async () => {
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    await openTerminalTab();
+    // 見えているバー（hidden の中は数えない）は 1 本
+    expect(screen.getAllByRole("toolbar")).toHaveLength(1);
+  });
+});
+
 describe("ConsolePage terminal / changes tabs (K1, K12)", () => {
   it("shows the 端末 and 変更 tabs with the changed-file count, and hides (not removes) the terminal when 変更 is chosen", async () => {
     render(<ConsolePage />);
@@ -383,6 +449,9 @@ describe("ConsolePage terminal / changes tabs (K1, K12)", () => {
     await waitFor(() => expect(changes.textContent).toContain("1"));
     const terminal = screen.getByTestId("terminal-stub");
     const wrapper = terminal.parentElement as HTMLElement;
+    // 最初に開くのはチャット。端末は隠れた状態で開いている（外さない）
+    expect(wrapper.hasAttribute("hidden")).toBe(true);
+    await openTerminalTab();
     expect(wrapper.hasAttribute("hidden")).toBe(false);
     fireEvent.click(changes);
     // 端末の部品は DOM に残り（xterm の接続を保つ）、包みが hidden 属性で隠れる

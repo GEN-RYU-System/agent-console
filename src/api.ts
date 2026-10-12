@@ -1,4 +1,4 @@
-import type { ActivityResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, ResumeTarget, Routine, RoutineInput } from "./types";
+import type { ActivityResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, ResumeTarget, Routine, RoutineInput } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -122,7 +122,13 @@ export async function fetchPickImage(id: string): Promise<string> {
 }
 /** 右の欄「このセッション」の中身（そのセッションの担当・やること・入力と、記録の仕組みの点検）。 */
 export const fetchActivity = (sessionId: string): Promise<ActivityResponse> => request(`${diffBase(sessionId)}/activity`);
-export const fetchMemory = (): Promise<MemorySnapshot> => request("/api/memory");
+/** チャットの会話（since より後の分。epoch がサーバーのものと違えば全件が返り reset: true）。 */
+export const fetchChat = (sessionId: string, since: number, epoch: string | null): Promise<ChatResponse> =>
+  request(`${diffBase(sessionId)}/chat?since=${since}${epoch !== null ? `&epoch=${encodeURIComponent(epoch)}` : ""}`);
+/** 送る文章を検査させ、手すきのときだけ本文と待ち時間を返す（サーバーは端末へ書かない。画面が貼って Enter を送る）。 */
+export const checkChatSend = (sessionId: string, text: string): Promise<{ text: string; submitDelayMs: number }> =>
+  request(`${diffBase(sessionId)}/chat/send-check`, { method: "POST", body: JSON.stringify({ text }) });
+export const fetchMemory =(): Promise<MemorySnapshot> => request("/api/memory");
 export const fetchRoutines = (): Promise<{ items: Routine[] }> => request("/api/routines");
 export const createRoutine = (input: RoutineInput): Promise<Routine> => request("/api/routines", { method: "POST", body: JSON.stringify(input) });
 export const updateRoutine = (id: string, input: RoutineInput): Promise<Routine> => request(`/api/routines/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(input) });

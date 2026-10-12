@@ -1,6 +1,6 @@
 {
   "name": "agent-console",
-  "version": "0.10.1",
+  "version": "0.11.1",
   "private": true,
   "type": "module",
   "engines": { "node": ">=24" },
@@ -26,6 +26,8 @@
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-i18next": "17.0.16",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
     "ws": "8.22.0"
   },
   "devDependencies": {

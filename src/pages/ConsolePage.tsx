@@ -25,6 +25,7 @@ import {
   renameSession,
   resumeSession,
 } from "../api";
+import { ChatPane } from "../components/ChatPane/ChatPane";
 import { DiffPane } from "../components/DiffPane/DiffPane";
 import { MemoryPanel } from "../components/MemoryPanel/MemoryPanel";
 import { PicksPane } from "../components/PicksPane/PicksPane";
@@ -48,7 +49,7 @@ const RENAME_CONFIRM_MS = 10000;
 const UPLOAD_NOTICE_MS = 8000;
 const BYTES_PER_MB = 1024 * 1024;
 
-type CenterTab = "terminal" | "changes" | "pr" | "picks" | "routines";
+type CenterTab = "chat" | "terminal" | "changes" | "pr" | "picks" | "routines";
 
 function useConsoleState() {
   const [state, setState] = useState<ConsoleState | null>(null);
@@ -104,7 +105,8 @@ export function ConsolePage() {
   const [resumeBusyPath, setResumeBusyPath] = useState<string | null>(null);
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [memoryOpen, setMemoryOpen] = useState(false);
-  const [centerTab, setCenterTab] = useState<CenterTab>("terminal");
+  // 最初に開くタブはチャット（端末は隠れた状態で開き、端末タブを押すと見える。大きさは見えたときに合う）
+  const [centerTab, setCenterTab] = useState<CenterTab>("chat");
   const [diffCount, setDiffCount] = useState<number | null>(null);
   const [closeTargetId, setCloseTargetId] = useState<string | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
@@ -344,6 +346,7 @@ export function ConsolePage() {
           activeKey={centerTab}
           onChange={setCenterTab}
           items={[
+            { key: "chat", label: t("ac.tabs.chat") },
             { key: "terminal", label: t("ac.tabs.terminal") },
             { key: "changes", label: t("ac.tabs.changes"), ...(activeId !== null && diffCount !== null ? { count: diffCount } : {}) },
             { key: "pr", label: t("ac.tabs.pr") },
@@ -370,6 +373,20 @@ export function ConsolePage() {
             {t(`ac.upload.${uploadNotice}`, { max: `${Math.round(((state.uploadMaxBytes / BYTES_PER_MB) + Number.EPSILON) * 10) / 10} MB` })}
           </Callout>
         )}
+        {/* チャットも隠すだけで外す（会話・入力欄の下書きを保つ）。セッションを切り替えたら key で作り直す */}
+        <ChatPane
+          key={activeId ?? "none"}
+          sessionId={activeId}
+          active={centerTab === "chat"}
+          rev={state.activityRev}
+          state={activeSession?.state ?? "unknown"}
+          canInput={activeSession?.canInput === true}
+          paste={pasteToTerminal}
+          prompts={quickPrompts}
+          onEditPrompts={() => setQuickEditorOpen(true)}
+          onPromptsChanged={loadQuickPrompts}
+          onOpenTerminal={() => setCenterTab("terminal")}
+        />
         {/* 端末は隠すだけで外さない（xterm の接続を保つ）。隠し方は hidden 属性（display:none）だけ。高さ 0 などで隠すと 2 列×1 行が pty に送られる */}
         <div className="ac-page__terminal" hidden={centerTab !== "terminal"}>
           {activeId ? <TerminalPane ref={terminalRef} sessionId={activeId} smoothScrollMs={state.terminalSmoothScrollMs} uploadMaxBytes={state.uploadMaxBytes} onUploadNotice={setUploadNotice} /> : <EmptyState title={t("ac.selectSession")} />}

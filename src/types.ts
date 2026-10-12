@@ -223,3 +223,25 @@ export type ActivityResponse =
       lastEventAt: number | null;
       hooks: HookCheck;
     };
+
+/** チャットの 1 件。user=しんごさんの入力、assistant=Claude の返事、error=API エラー（error に種類） */
+export interface ChatItem {
+  /** そのセッションの中の連番。続きだけ取るときの印（since） */
+  seq: number;
+  ts: number;
+  role: "user" | "assistant" | "error";
+  text: string;
+  error?: string;
+  /** 記録の時点で、長さの上限により後ろが切れている */
+  truncated?: boolean;
+}
+export type ChatResponse =
+  | { status: "noSession" }
+  | {
+      status: "ok";
+      /** アプリの起動ごとに変わる id。変わったら seq が振り直されている */
+      epoch: string;
+      reset: boolean;
+      lastSeq: number;
+      items: ChatItem[];
+    };

@@ -1,5 +1,6 @@
 // セッションの様子（担当・やること・入力）の記録を読んで、セッションごとにまとめる。設計 §3-4。
 // 正本は dataDir/activity/events-YYYYMMDD.jsonl（UTC の日付、hooks/activity-hook.mjs が追記する）。ここはその写しをメモリに持つだけ。
+import { createHash, randomUUID } from "node:crypto";
 import { open, readdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 
@@ -20,7 +21,16 @@ const INPUTS_KEEP = 20;
 const READ_CHUNK_BYTES = 1024 * 1024;
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const EVENT_FILE = /^events-(\d{4})(\d{2})(\d{2})\.jsonl$/;
-const EVENTS = new Set(["PreToolUse", "PostToolUse", "SubagentStop", "TaskCreated", "TaskCompleted", "UserPromptSubmit"]);
+const EVENTS = new Set(["PreToolUse", "PostToolUse", "SubagentStop", "TaskCreated", "TaskCompleted", "UserPromptSubmit", "Stop", "StopFailure"]);
+/** 右の欄の「最近の入力」に出す文字数（表示のときに切る。記録は全文） */
+const INPUT_PREVIEW_CHARS = 80;
+/** チャットに残す会話の件数（1 セッション） */
+export const CHAT_KEEP = 200;
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g;
+const AGENT_MESSAGE_PREFIX = /^\s*<agent-message\b/;
+/** 貼り付けの包みの行（工程0 (c)。`<pasted_content id="…">` と `</pasted_content id="…">`）。行ごと外す */
+const PASTED_WRAPPER_LINE = /^[ \t]*<\/?pasted_content\b[^>\n]*>[ \t]*\n?/gm;
 
 export interface AgentItem {
   key: string;
@@ -50,6 +60,37 @@ export interface SessionActivity {
   tasks: TaskItem[];
   inputs: InputItem[];
   lastEventAt: number | null;
+}
+/** チャットの 1 件。user=しんごさんの入力、assistant=Claude の返事（Stop）、error=API エラー（StopFailure。error に種類） */
+export interface ChatItem {
+  /** そのセッションの中の連番（読み込んだ順）。画面は since=<seq> で続きだけ取る */
+  seq: number;
+  ts: number;
+  role: "user" | "assistant" | "error";
+  text: string;
+  error?: string;
+  /** 記録の時点で長さの上限（64KiB）により切られている */
+  truncated?: boolean;
+}
+export interface ChatPage {
+  items: ChatItem[];
+  lastSeq: number;
+}
+
+/** 同じ会話かどうかの鍵（本文は最大 64KiB なので、そのまま持たずに要約する） */
+function chatKey(entry: Omit<ChatItem, "seq">): string {
+  return `${entry.role}:${entry.ts}:${entry.error ?? ""}:${createHash("sha1").update(entry.text).digest("base64")}`;
+}
+
+/** 貼り付けの包みの行・先頭と末尾の空行を外した表示用の本文。包みが無ければ、先頭と末尾の空行だけを外す */
+export function unwrapPasted(body: string): string {
+  return body.replace(PASTED_WRAPPER_LINE, "").replace(/^\n+|\n+$/g, "");
+}
+
+/** 右の欄の短い項目: 制御文字と連続する空白を空白 1 つにまとめ、先頭 INPUT_PREVIEW_CHARS 字（コードポイント単位） */
+function previewOf(body: string): string {
+  const flat = body.replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").trim();
+  return Array.from(flat).slice(0, INPUT_PREVIEW_CHARS).join("");
 }
 
 type Raw = Record<string, unknown>;
@@ -90,6 +131,10 @@ interface SessionState {
   handbacks: Map<string, Report>;
   tasks: Map<string, Task>;
   inputs: InputItem[];
+  chat: ChatItem[];
+  /** chat に入っている会話の重なり防止の鍵（同じ記録を読み直しても二重に出さない） */
+  chatKeys: Set<string>;
+  chatSeq: number;
   lastEventAt: number;
 }
 
@@ -101,6 +146,9 @@ const newSession = (): SessionState => ({
   handbacks: new Map(),
   tasks: new Map(),
   inputs: [],
+  chat: [],
+  chatKeys: new Set(),
+  chatSeq: 0,
   lastEventAt: 0,
 });
 
@@ -139,6 +187,8 @@ interface FileCursor {
 }
 
 export class ActivityStore {
+  /** このアプリの起動ごとに変わる id。チャットの seq はアプリを起動し直すと振り直されるので、画面は epoch が変わったら全件を取り直す */
+  readonly epoch = randomUUID();
   /** 取り込んだ記録の版。変化があったときだけ進む（画面へは WebSocket の合図で伝える） */
   rev = 0;
   /** 読めなかった行の数（起動からの合計） */
@@ -265,7 +315,28 @@ export class ActivityStore {
       case "UserPromptSubmit":
         this.applyPrompt(state, rec, ts);
         break;
+      case "Stop":
+        if (text(rec.last_assistant_message) !== "") this.addChat(state, { ts, role: "assistant", text: text(rec.last_assistant_message), ...(rec.truncated === true ? { truncated: true } : {}) });
+        break;
+      case "StopFailure":
+        this.addChat(state, { ts, role: "error", text: "", error: text(rec.error) || "unknown" });
+        break;
     }
+  }
+
+  /** 会話を 1 件足す。同じ内容（役割・時刻・本文・エラー）がすでにあれば足さない。上限を超えたら ts の古いものから落とす */
+  private addChat(state: SessionState, entry: Omit<ChatItem, "seq">): void {
+    const key = chatKey(entry);
+    if (state.chatKeys.has(key)) return;
+    state.chatKeys.add(key);
+    state.chatSeq += 1;
+    state.chat.push({ seq: state.chatSeq, ...entry });
+    if (state.chat.length <= CHAT_KEEP) return;
+    const oldestFirst = [...state.chat].sort((a, b) => a.ts - b.ts || a.seq - b.seq);
+    const dropped = oldestFirst.slice(0, state.chat.length - CHAT_KEEP);
+    const droppedSeqs = new Set(dropped.map((d) => d.seq));
+    for (const d of dropped) state.chatKeys.delete(chatKey(d));
+    state.chat = state.chat.filter((c) => !droppedSeqs.has(c.seq));
   }
 
   private applyPre(state: SessionState, rec: Raw, ts: number, agentId: string): void {
@@ -323,10 +394,23 @@ export class ActivityStore {
   }
 
   private applyPrompt(state: SessionState, rec: Raw, ts: number): void {
-    const body = text(rec.prompt);
-    if (rec.source === "agent" || body === "") return;
-    if (state.inputs.some((i) => i.ts === ts && i.text === body)) return;
-    state.inputs = [...state.inputs, { ts, text: body }].sort((a, b) => b.ts - a.ts).slice(0, INPUTS_KEEP);
+    const raw = text(rec.prompt);
+    // 担当の報告の戻りは人の入力ではない（記録は残るが、右の欄にもチャットにも出さない）
+    if (rec.source === "agent" || AGENT_MESSAGE_PREFIX.test(raw)) return;
+    const shown = unwrapPasted(raw);
+    if (shown === "") return;
+    this.addChat(state, { ts, role: "user", text: shown, ...(rec.truncated === true ? { truncated: true } : {}) });
+    const preview = previewOf(shown);
+    if (preview === "" || state.inputs.some((i) => i.ts === ts && i.text === preview)) return;
+    state.inputs = [...state.inputs, { ts, text: preview }].sort((a, b) => b.ts - a.ts).slice(0, INPUTS_KEEP);
+  }
+
+  /** そのセッションの会話（ts の順、同じ ts は seq の順）。since より後の seq だけ。lastSeq は今の最大の seq */
+  chat(sessionId: string, since = 0): ChatPage {
+    const state = this.sessions.get(sessionId);
+    if (state === undefined) return { items: [], lastSeq: 0 };
+    const items = state.chat.filter((c) => c.seq > since).sort((a, b) => a.ts - b.ts || a.seq - b.seq);
+    return { items, lastSeq: state.chatSeq };
   }
 
   /** メモリに持っている件数（上限の試験用） */
