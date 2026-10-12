@@ -5,28 +5,13 @@ import os from "node:os";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import WebSocket from "ws";
-import { clientProof } from "../../server/pair-proof";
 import { E2E_PORT, E2E_TOKEN } from "../fixtures/e2e-env";
+import { newPairingCode } from "../fixtures/e2e-pairing";
 
 const ROOT = process.env.AC_E2E_ROOT as string;
 const STATUS_FILE = process.env.AC_E2E_STATUS_FILE as string;
 const BASE = `http://127.0.0.1:${E2E_PORT}`;
 const BEARER = { Authorization: `Bearer ${E2E_TOKEN}` };
-
-/** launcher と同じ相互認証（チャレンジ → サーバー証明の検証 → クライアント証明）で 1 回限りコードを発行する。 */
-async function newPairingCode(): Promise<string> {
-  const cnonce = "ab".repeat(16);
-  const challenge = await fetch(`${BASE}/api/pair/challenge`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cnonce }) });
-  expect(challenge.status).toBe(200);
-  const { snonce } = (await challenge.json()) as { snonce: string };
-  const res = await fetch(`${BASE}/api/pair`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cnonce, snonce, proof: clientProof(E2E_TOKEN, cnonce, snonce) }),
-  });
-  expect(res.status).toBe(200);
-  return ((await res.json()) as { code: string }).code;
-}
 
 async function openPaired(page: Page): Promise<void> {
   await page.goto(`${BASE}/pair?code=${await newPairingCode()}`);
@@ -555,8 +540,8 @@ test("段階2 K3: よく使う指示を登録・編集・削除でき、ボタ�
   await expect(page.getByTestId("terminal")).toContainText("echo-quick-prompt-v2");
 
   const file = path.join(DATA_DIR, "quick-prompts.json");
-  // 保存先は 2 ファイルだけ（よく使う指示と、v0.3.8 の復元リスト）
-  expect(readdirSync(DATA_DIR).sort()).toEqual(["open-sessions.json", "quick-prompts.json"]);
+  // 保存先は 4 つだけ（よく使う指示・v0.3.8 の復元リスト・v0.6.0 の拡張の合言葉と拡張のフォルダ）。部品の picks/ は部品の試験（別の project）だけが作る
+  expect(readdirSync(DATA_DIR).sort()).toEqual(["chrome-extension", "open-sessions.json", "picker-token", "quick-prompts.json"]);
   expect(statSync(file).mode & 0o777).toBe(0o600);
   await page.reload();
   await expect(page.getByTestId("quick-prompt-bar").getByRole("button", { name: "テスト実行", exact: true })).toBeVisible();

@@ -9,6 +9,11 @@ export default defineConfig({
   fullyParallel: false,
   timeout: 30000,
   reporter: [["list"]],
+  // app: 従来の画面の試験 / picker: Chrome 拡張を読み込んだ別の Chrome（launchPersistentContext）で行う、部品を選ぶ試験
+  projects: [
+    { name: "app", testMatch: /console\.spec\.ts/ },
+    { name: "picker", testMatch: /picker\.spec\.ts/ },
+  ],
   use: {
     baseURL: `http://127.0.0.1:${E2E_PORT}`,
     browserName: "chromium",
@@ -22,6 +27,8 @@ export default defineConfig({
     timeout: 30000,
     env: {
       ...(process.env as Record<string, string>),
+      // 拡張の合言葉とフォルダの作り直しは「AGENT_CONSOLE_PORT が無い」ときだけ行う。開発者の環境に残っていても試験に影響させない
+      AGENT_CONSOLE_PORT: "",
       AGENT_CONSOLE_CONFIG: process.env.AC_E2E_CONFIG as string,
       AGENT_CONSOLE_TOKEN: E2E_TOKEN,
       STUB_STATUS_FILE: process.env.AC_E2E_STATUS_FILE as string,
