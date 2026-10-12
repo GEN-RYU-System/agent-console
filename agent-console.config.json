@@ -10,6 +10,7 @@
   "ringBufferBytes": 1048576,
   "notify": { "macos": true },
   "terminalEnv": { "LANG": "ja_JP.UTF-8" },
+  "restoreStaggerMs": 3000,
   "roles": [
     {
       "id": "opus-designer",
@@ -17,7 +18,8 @@
       "command": ["/bin/zsh", "-ic", "ccopusgo"],
       "needsWorktree": false,
       "resumeScope": "main",
-      "resumeCommand": ["/bin/zsh", "-ic", "ccopusgo --resume"]
+      "resumeCommand": ["/bin/zsh", "-ic", "ccopusgo --resume"],
+      "restoreCommand": ["/bin/zsh", "-ic", "ccopusgo --resume \"$AC_RESUME_ID\""]
     },
     {
       "id": "sonnet-impl",
@@ -25,7 +27,8 @@
       "command": ["/bin/zsh", "-ic", "claude --model sonnet"],
       "needsWorktree": true,
       "resumeScope": "worktree",
-      "resumeCommand": ["/bin/zsh", "-ic", "claude --model sonnet --resume"]
+      "resumeCommand": ["/bin/zsh", "-ic", "claude --model sonnet --resume"],
+      "restoreCommand": ["/bin/zsh", "-ic", "claude --model sonnet --resume \"$AC_RESUME_ID\""]
     },
     { "id": "shell", "labelKey": "role.shell", "command": ["/bin/zsh", "-i"], "needsWorktree": false }
   ]

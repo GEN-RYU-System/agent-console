@@ -201,11 +201,17 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
     sendJson(res, 201, { id: session.id });
     return true;
   }
-  const sessionMatch = /^\/api\/sessions\/([^/]+)\/(read|rename|send-check)$/.exec(url.pathname);
+  const sessionMatch = /^\/api\/sessions\/([^/]+)\/(read|rename|send-check|close)$/.exec(url.pathname);
   if (method !== "POST" || !sessionMatch) return false;
   const [, id, action] = sessionMatch;
   const session = sessions.get(id);
   if (!session) throw new SessionNotFoundError("session not found");
+  if (action === "close") {
+    // 止まっているものは一覧から外し、動いているものは端末（と子孫）を終わらせてから外す。確認は画面で行う
+    await sessions.close(id);
+    sendJson(res, 200, { closed: true });
+    return true;
+  }
   if (action === "read") {
     await hub.markRead(id);
     sendJson(res, 200, { read: true });

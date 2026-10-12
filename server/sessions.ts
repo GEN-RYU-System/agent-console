@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { spawn, type IPty } from "node-pty";
 import type { WebSocket } from "ws";
 import { CHILD_ENV_BLOCKLIST, TERMINAL_ENV_FORBIDDEN, type Config, type RoleConfig } from "./config.ts";
+import { descendantPids, readProcessTable } from "./process-tree.ts";
 import { RingBuffer } from "./ring-buffer.ts";
 import { createWorktree, isValidBranch, WorktreeError } from "./worktree.ts";
 
@@ -10,6 +11,14 @@ const MAX_NAME_LENGTH = 40;
 const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 30;
 const MAX_DIMENSION = 500;
+/** 閉じるとき、SIGHUP で終わらなければ SIGKILL へ切り替えるまでの時間 */
+const DEFAULT_CLOSE_GRACE_MS = 5000;
+const CLOSE_POLL_MS = 50;
+const CLOSE_FINAL_WAIT_MS = 2000;
+/** Claude の sessionId（UUID の形のものだけを保存・使用する） */
+const CLAUDE_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+export const isClaudeSessionId = (value: unknown): value is string => typeof value === "string" && CLAUDE_SESSION_ID.test(value);
 
 export class SessionInputError extends Error {}
 export class SessionConflictError extends Error {}
@@ -17,6 +26,8 @@ export class SessionNotFoundError extends Error {}
 
 export interface SessionManagerOptions {
   maxSessions?: number;
+  /** 閉じるときに SIGKILL へ切り替えるまでの時間（ms） */
+  closeGraceMs?: number;
 }
 
 export interface CreateSessionInput {
@@ -36,6 +47,8 @@ export interface Session {
   ring: RingBuffer;
   clients: Set<WebSocket>;
   exited: boolean;
+  /** 動いている Claude の sessionId（UUID の形のものだけ。復元に使う） */
+  claudeSessionId?: string;
 }
 
 // eslint-disable-next-line no-control-regex
@@ -70,11 +83,41 @@ export function buildChildEnv(source: Record<string, string | undefined>, termin
   return env;
 }
 
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    // 権限が無い（EPERM）は存在する
+    return (err as { code?: string }).code === "EPERM";
+  }
+}
+
+function killQuietly(pid: number): void {
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    /* すでに終わっている */
+  }
+}
+
+async function waitUntil(done: () => boolean, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (!done()) {
+    if (Date.now() >= deadline) return false;
+    await new Promise((r) => setTimeout(r, CLOSE_POLL_MS));
+  }
+  return true;
+}
+
 export class SessionManager {
   private readonly sessions = new Map<string, Session>();
   private changeListeners = new Set<() => void>();
   private removedListeners = new Set<(id: string) => void>();
   private readonly maxSessions: number;
+  private readonly closeGraceMs: number;
+  private shuttingDown = false;
+  private readonly closing = new Map<string, Promise<void>>();
   /** worktree 作成中など、まだ sessions に入っていない作成途中の数（上限判定に含める）。 */
   private pending = 0;
 
@@ -83,6 +126,7 @@ export class SessionManager {
     options: SessionManagerOptions = {},
   ) {
     this.maxSessions = options.maxSessions ?? DEFAULT_MAX_SESSIONS;
+    this.closeGraceMs = options.closeGraceMs ?? DEFAULT_CLOSE_GRACE_MS;
   }
 
   onChange(listener: () => void): () => void {
@@ -147,6 +191,41 @@ export class SessionManager {
     return this.spawnSession(validateName(input.name), role, null, input.cwd, role.resumeCommand);
   }
 
+  /** 新しい端末を開く余裕があるか（作成途中の分を含む）。 */
+  hasCapacity(): boolean {
+    return this.sessions.size + this.pending < this.maxSessions;
+  }
+
+  /**
+   * 前回の続きとして端末を開く（起動時の復元用）。起動コマンドは呼び出し側が決めた config の命令のみ。
+   * claudeSessionId（UUID の形のもの）があるときは、環境変数 AC_RESUME_ID で渡す（コマンドの文字列にはつなげない）。
+   */
+  restore(input: { role: RoleConfig; name: unknown; cwd: string; branch: string | null; claudeSessionId?: string }): Session {
+    if (!this.hasCapacity()) throw new SessionInputError("too many sessions");
+    const sid = isClaudeSessionId(input.claudeSessionId) ? input.claudeSessionId : undefined;
+    const useRestore = sid !== undefined && input.role.restoreCommand !== undefined;
+    const command = useRestore ? (input.role.restoreCommand as string[]) : input.role.command;
+    // 復元の起動でも、同じ会話の id を引き継ぐ（次の再起動でも続きを開ける）
+    return this.spawnSession(validateName(input.name), input.role, input.branch, input.cwd, command, useRestore ? { AC_RESUME_ID: sid } : {}, useRestore ? sid : undefined);
+  }
+
+  /** Claude の sessionId を知ったとき。UUID の形でない値は受け付けない。変わったときだけ通知する。 */
+  setClaudeSessionId(id: string, claudeSessionId: unknown): void {
+    const session = this.sessions.get(id);
+    if (!session || session.exited || !isClaudeSessionId(claudeSessionId) || session.claudeSessionId === claudeSessionId) return;
+    session.claudeSessionId = claudeSessionId;
+    this.notify();
+  }
+
+  /** サーバー停止の印。これ以降の終了では、復元リストを書き換えない。 */
+  beginShutdown(): void {
+    this.shuttingDown = true;
+  }
+
+  isShuttingDown(): boolean {
+    return this.shuttingDown;
+  }
+
   /** アプリ側の名前を変える（Claude が動いていないセッション用。Claude 起動中は /rename を使う）。 */
   rename(id: string, name: unknown): void {
     const session = this.sessions.get(id);
@@ -162,6 +241,7 @@ export class SessionManager {
     cwd: string,
     command: string[] = role.command,
     extraEnv: Record<string, string> = {},
+    claudeSessionId?: string,
   ): Session {
     const term = spawn(command[0], command.slice(1), {
       name: "xterm-256color",
@@ -181,6 +261,7 @@ export class SessionManager {
       ring: new RingBuffer(this.config.ringBufferBytes),
       clients: new Set(),
       exited: false,
+      ...(claudeSessionId !== undefined ? { claudeSessionId } : {}),
     };
     term.onData((data) => {
       session.ring.push(data);
@@ -215,6 +296,41 @@ export class SessionManager {
   resize(session: Session, cols: unknown, rows: unknown): void {
     if (session.exited) return;
     session.term.resize(clampDimension(cols, DEFAULT_COLS), clampDimension(rows, DEFAULT_ROWS));
+  }
+
+  /**
+   * セッションを閉じる。止まっているものは一覧から外す。動いているものは SIGHUP を送り、終了（端末と子孫）を待ってから外す。
+   * 猶予（既定 5 秒）で終わらなければ、端末とその子孫に SIGKILL を送る。
+   */
+  close(id: string): Promise<void> {
+    const session = this.sessions.get(id);
+    if (!session) return Promise.reject(new SessionNotFoundError("session not found"));
+    if (session.exited) {
+      this.remove(id);
+      return Promise.resolve();
+    }
+    const pending = this.closing.get(id);
+    if (pending) return pending;
+    const run = this.closeRunning(session).finally(() => this.closing.delete(id));
+    this.closing.set(id, run);
+    return run;
+  }
+
+  private async closeRunning(session: Session): Promise<void> {
+    // 終了後は子が親を失って辿れなくなるので、先に子孫を控える
+    const family = new Set(descendantPids(session.term.pid, await readProcessTable().catch(() => [])));
+    try {
+      session.term.kill();
+    } catch {
+      /* すでに終わっている */
+    }
+    const gone = (): boolean => session.exited && [...family].every((pid) => pid === session.term.pid || !isAlive(pid));
+    if (!(await waitUntil(gone, this.closeGraceMs))) {
+      for (const pid of descendantPids(session.term.pid, await readProcessTable().catch(() => []))) family.add(pid);
+      for (const pid of family) killQuietly(pid);
+      if (!(await waitUntil(gone, CLOSE_FINAL_WAIT_MS))) throw new SessionConflictError("session did not stop");
+    }
+    this.remove(session.id);
   }
 
   /** サーバー停止時に全 pty を終了する。 */

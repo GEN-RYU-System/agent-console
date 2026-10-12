@@ -10,6 +10,9 @@ import { MemoryCollector } from "../../../server/memory.ts";
 import { QuickPromptStore } from "../../../server/quick-prompts.ts";
 import { Hub } from "../../../server/hub.ts";
 import { createRequestHandler } from "../../../server/http.ts";
+import { OpenSessionStore } from "../../../server/session-store.ts";
+import { OpenSessionRecorder } from "../../../server/restore.ts";
+import type { RoleConfig } from "../../../server/config.ts";
 import { SessionManager } from "../../../server/sessions.ts";
 import { attachWebSockets } from "../../../server/ws.ts";
 
@@ -27,6 +30,9 @@ export interface Harness {
   dir: string;
   sessions: SessionManager;
   hub: Hub;
+  store: OpenSessionStore;
+  recorder: OpenSessionRecorder;
+  config: Config;
   server: Server;
   secretPath: string;
   clock: Clock;
@@ -61,6 +67,14 @@ export interface HarnessOptions {
   mainResumeCommand?: string[];
   /** 端末の子へ重ねる環境（既定は LANG のみ） */
   terminalEnv?: Record<string, string>;
+  /** 復元リストへの書き込みを有効にする（既定は無効。復元の試験だけ有効にする） */
+  recorder?: boolean;
+  /** 起動の間隔（ms）。既定 0 */
+  restoreStaggerMs?: number;
+  /** 閉じるときに SIGKILL へ切り替えるまでの時間（ms）。既定は本番値 */
+  closeGraceMs?: number;
+  /** 試験用に足す役割 */
+  extraRoles?: RoleConfig[];
 }
 
 /** 実 HTTP/WS/PTY（ダミー役割 sh）を 127.0.0.1 の空きポートで起動する。 */
@@ -95,6 +109,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     dataDir: path.join(dir, "data"),
     notify: { macos: false, osascriptBin: "/nonexistent/osascript" },
     terminalEnv: options.terminalEnv ?? { LANG: "ja_JP.UTF-8" },
+    restoreStaggerMs: options.restoreStaggerMs ?? 0,
     roles: [
       { id: "echo", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo READY; cat"], needsWorktree: false },
       { id: "short", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo bye"], needsWorktree: false },
@@ -107,10 +122,14 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
       ...(options.mainResumeCommand
         ? [{ id: "resumable-main", labelKey: "role.opusDesigner", command: ["/bin/sh", "-c", "cat"], needsWorktree: false, resumeCommand: options.mainResumeCommand, resumeScope: "main" as const }]
         : []),
+      ...(options.extraRoles ?? []),
     ],
   };
-  const sessions = new SessionManager(config, { maxSessions: options.maxSessions });
+  const sessions = new SessionManager(config, { maxSessions: options.maxSessions, closeGraceMs: options.closeGraceMs });
   const hub = new Hub(config, sessions, options.sendNotification ?? null);
+  const store = new OpenSessionStore(config.dataDir);
+  const recorder = new OpenSessionRecorder(sessions, hub, store);
+  if (options.recorder === true) recorder.start();
   const clock: Clock = { t: Date.now(), advance(ms) { this.t += ms; } };
   const auth = createAuth(TOKEN, port, { now: () => clock.t });
   const server = createServer(
@@ -124,6 +143,9 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     dir,
     sessions,
     hub,
+    store,
+    recorder,
+    config,
     server,
     secretPath,
     clock,

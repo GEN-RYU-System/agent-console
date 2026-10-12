@@ -3,10 +3,12 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@sa/components/Button";
 import { Callout } from "@sa/components/Callout";
 import { EmptyState } from "@sa/components/EmptyState";
+import ConfirmModal from "@sa/components/ConfirmModal";
 import { Modal } from "@sa/components/Modal";
 import {
   ApiError,
   checkQuickPromptSend,
+  closeSession,
   createSession,
   fetchLedger,
   fetchResumeTargets,
@@ -91,6 +93,10 @@ export function ConsolePage() {
   const [resumeBusyPath, setResumeBusyPath] = useState<string | null>(null);
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [closeTargetId, setCloseTargetId] = useState<string | null>(null);
+  const [closeError, setCloseError] = useState<string | null>(null);
+  // 復元の案内は、閉じた内容を覚えておく（メモリだけ。同じ内容は出し直さない）
+  const [dismissedNotices, setDismissedNotices] = useState<string | null>(null);
   const terminalRef = useRef<TerminalHandle>(null);
   const selectedIdRef = useRef<string | null>(null);
   selectedIdRef.current = selectedId;
@@ -142,6 +148,14 @@ export function ConsolePage() {
   const handleRemove = (id: string): void => {
     setRemoveError(null);
     removeSession(id).catch((err: unknown) => setRemoveError(err instanceof Error ? err.message : String(err)));
+  };
+
+  const handleConfirmClose = (): void => {
+    if (closeTargetId === null) return;
+    const id = closeTargetId;
+    setCloseTargetId(null);
+    setCloseError(null);
+    closeSession(id).catch((err: unknown) => setCloseError(err instanceof Error ? err.message : String(err)));
   };
 
   const handleSendPrompt = (promptId: string): void => {
@@ -229,6 +243,9 @@ export function ConsolePage() {
   const activeId = state.sessions.some((s) => s.id === selectedId) ? selectedId : null;
   const activeSession = state.sessions.find((s) => s.id === activeId);
   const renameTarget = state.sessions.find((s) => s.id === renameTargetId);
+  const closeTarget = state.sessions.find((s) => s.id === closeTargetId);
+  const noticesKey = JSON.stringify(state.restoreNotices);
+  const showNotices = state.restoreNotices.length > 0 && dismissedNotices !== noticesKey;
 
   return (
     <div className="ac-page">
@@ -249,6 +266,25 @@ export function ConsolePage() {
             {removeError}
           </Callout>
         )}
+        {closeError !== null && (
+          <Callout variant="warning" title={t("ac.close.error")}>
+            {closeError}
+          </Callout>
+        )}
+        {showNotices && (
+          <div data-testid="restore-notices">
+            <Callout variant="info" title={t("ac.restoreNotice.title")}>
+              <ul>
+                {state.restoreNotices.map((n, i) => (
+                  <li key={`${n.reason}-${n.name ?? ""}-${i}`}>{t(`ac.restoreNotice.${n.reason}`, { name: n.name ?? "" })}</li>
+                ))}
+              </ul>
+              <Button variant="outline" size="sm" onClick={() => setDismissedNotices(noticesKey)}>
+                {t("ac.restoreNotice.dismiss")}
+              </Button>
+            </Callout>
+          </div>
+        )}
         {renameNotice !== null && (
           <Callout variant="warning" title={t("ac.rename.notReflectedTitle")}>
             {t("ac.rename.notReflectedBody")}
@@ -260,6 +296,10 @@ export function ConsolePage() {
           selectedId={activeId}
           onSelect={handleSelect}
           onRemove={handleRemove}
+          onClose={(id) => {
+            setCloseError(null);
+            setCloseTargetId(id);
+          }}
           onRename={(id) => {
             setRenameNotice(null);
             setRenameError(null);
@@ -310,6 +350,16 @@ export function ConsolePage() {
           {t("ac.logout")}
         </Button>
       </footer>
+      <ConfirmModal
+        open={closeTarget !== undefined}
+        title={t("ac.close.title")}
+        message={closeTarget !== undefined ? t("ac.close.body", { name: closeTarget.name }) : ""}
+        confirmLabel={t("ac.close.confirm")}
+        cancelLabel={t("ac.close.cancel")}
+        danger
+        onConfirm={handleConfirmClose}
+        onCancel={() => setCloseTargetId(null)}
+      />
       <Modal open={renameTarget !== undefined} onClose={() => setRenameTargetId(null)} title={t("ac.rename.title")} size="sm">
         {renameTarget !== undefined && (
           <RenameForm key={renameTarget.id} session={renameTarget} busy={renameBusy} error={renameError} onSubmit={(n) => void handleRename(n)} />

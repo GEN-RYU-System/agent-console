@@ -5,6 +5,7 @@ import { loadLedger, type LedgerSnapshot } from "./ledger.ts";
 import { BreakTracker, breakBody, osascriptSender, type NotificationSender } from "./notify.ts";
 import { startPolling } from "./poll.ts";
 import { descendantPids, readProcessTable } from "./process-tree.ts";
+import type { RestoreNotice } from "./restore.ts";
 import { SessionConflictError, type SessionManager } from "./sessions.ts";
 
 export interface SessionView {
@@ -31,6 +32,8 @@ export type RenameMode = "claude" | "app" | "queued";
 export interface Snapshot {
   sessions: SessionView[];
   agentsAvailable: boolean;
+  /** 起動時に前回のセッションを開き直せなかった理由（メモリだけ。画面の案内） */
+  restoreNotices: RestoreNotice[];
 }
 
 /** claude agents の定期取得と台帳の定期取得をまとめ、変化があれば購読者へ配信する。 */
@@ -47,6 +50,8 @@ export class Hub {
   private readonly sendNotification: NotificationSender | null;
   /** 名前の変更の予約（セッション id → 名前）。メモリだけ。送るか捨てるまでの正本はここ */
   private readonly pendingRenames = new Map<string, string>();
+  private restoreNotices: RestoreNotice[] = [];
+  private readonly nameListeners = new Set<() => void>();
 
   constructor(
     private readonly config: Config,
@@ -94,6 +99,18 @@ export class Hub {
     await this.detectBreaks();
     await this.flushPendingRenames();
     await this.publish();
+  }
+
+  /** 既存のセッションの表示名（Claude 側の名前を優先）が変わったときに呼ばれる（復元リストの保存し直し用）。 */
+  onDisplayNameChanged(listener: () => void): () => void {
+    this.nameListeners.add(listener);
+    return () => this.nameListeners.delete(listener);
+  }
+
+  /** 起動時の復元の結果（開き直せなかった項目）を画面の案内として載せる。 */
+  setRestoreNotices(notices: readonly RestoreNotice[]): void {
+    this.restoreNotices = [...notices];
+    void this.publish().catch((err) => this.onPollError("publish", err));
   }
 
   /** 名前の変更の要求。待機中ならすぐ反映し、作業中・許可待ち・状態不明なら端末に書かず予約する。 */
@@ -148,6 +165,8 @@ export class Hub {
     const table = await readProcessTable().catch(() => []);
     for (const s of this.sessions.list()) {
       const agent = agentForSession({ exited: s.exited, pids: descendantPids(s.term.pid, table) }, this.agents);
+      // Claude の sessionId を知ったら控える（再起動のあとに同じ会話を開き直すため。UUID の形でなければ無視される）
+      if (agent?.sessionId !== undefined) this.sessions.setClaudeSessionId(s.id, agent.sessionId);
       const isBreak = this.tracker.observe(s.id, agent?.status ?? null);
       if (isBreak && agent && (agent.status === "waiting" || agent.status === "idle")) {
         this.sendNotification?.(breakBody(agent.name ?? s.name, agent.status));
@@ -209,8 +228,10 @@ export class Hub {
         ...(this.pendingRenames.has(s.id) ? { pendingName: this.pendingRenames.get(s.id) } : {}),
       };
     });
+    const previous = this.lastNames;
     this.lastNames = new Map(views.map((v) => [v.id, v.name]));
-    return { sessions: views, agentsAvailable: this.agents !== null };
+    if (views.some((v) => previous.has(v.id) && previous.get(v.id) !== v.name)) for (const l of this.nameListeners) l();
+    return { sessions: views, agentsAvailable: this.agents !== null, restoreNotices: this.restoreNotices };
   }
 
   subscribe(ws: WebSocket): void {

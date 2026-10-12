@@ -566,3 +566,14 @@ describe("shell syntax", () => {
     },
   );
 });
+
+describe("ac_diagnose starts the diagnosis server without session restore", () => {
+  it("passes AGENT_CONSOLE_RESTORE=off on the line that starts dist-server/server/index.js, and index.ts honours it", () => {
+    const common = readFileSync(path.join(REPO, "scripts/lib/ac-common.sh"), "utf8");
+    const start = common.indexOf("ac_diagnose()");
+    const body = common.slice(start, common.indexOf("\n}\n", start));
+    const launch = body.split("\n").filter((l, i, all) => l.includes("AGENT_CONSOLE_PORT=") || (all[i + 1] ?? "").includes("dist-server/server/index.js"));
+    expect(launch.some((l) => l.includes("AGENT_CONSOLE_RESTORE=off"))).toBe(true);
+    expect(readFileSync(path.join(REPO, "server/index.ts"), "utf8")).toContain("startOpenSessionRestore(process.env");
+  });
+});
