@@ -540,8 +540,9 @@ test("段階2 K3: よく使う指示を登録・編集・削除でき、ボタ�
   await expect(page.getByTestId("terminal")).toContainText("echo-quick-prompt-v2");
 
   const file = path.join(DATA_DIR, "quick-prompts.json");
-  // 保存先は 4 つだけ（よく使う指示・v0.3.8 の復元リスト・v0.6.0 の拡張の合言葉と拡張のフォルダ）。部品の picks/ は部品の試験（別の project）だけが作る
-  expect(readdirSync(DATA_DIR).sort()).toEqual(["chrome-extension", "open-sessions.json", "picker-token", "quick-prompts.json"]);
+  // 保存先は 5 つだけ（よく使う指示・v0.3.8 の復元リスト・v0.6.0 の拡張の合言葉と拡張のフォルダ・v0.9.0 の記録用 hook の本体の写し hooks/）。
+  // 部品の picks/ は部品の試験（別の project）だけが、記録の activity/ は右の欄の試験（activity.spec.ts）だけが作る
+  expect(readdirSync(DATA_DIR).filter((n) => n !== "activity").sort()).toEqual(["chrome-extension", "hooks", "open-sessions.json", "picker-token", "quick-prompts.json"]);
   expect(statSync(file).mode & 0o777).toBe(0o600);
   await page.reload();
   await expect(page.getByTestId("quick-prompt-bar").getByRole("button", { name: "テスト実行", exact: true })).toBeVisible();

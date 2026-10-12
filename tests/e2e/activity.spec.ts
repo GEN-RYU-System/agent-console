@@ -47,8 +47,11 @@ const rightTab = (page: Page, name: string) => page.getByRole("tab", { name, exa
 test.beforeAll(() => {
   writeFileSync(UUID_FILE, "uuid");
 });
-test.afterAll(() => {
+/** 後の試験（console.spec.ts）が一覧の件数を数えるので、この試験で作ったセッションは閉じて片づける */
+const created: string[] = [];
+test.afterAll(async () => {
   writeFileSync(UUID_FILE, "");
+  for (const id of created) await fetch(`${BASE}/api/sessions/${id}/close`, { method: "POST", headers: { ...BEARER, "Content-Type": "application/json" }, body: "{}" });
 });
 
 test("K1: セッションを選ぶ前は右の欄に「台帳」だけ。選ぶと「このセッション」が先に開く", async ({ page }) => {
@@ -61,6 +64,7 @@ test("K1: セッションを選ぶ前は右の欄に「台帳」だけ。選ぶ�
   const res = await fetch(`${BASE}/api/sessions`, { method: "POST", headers: { ...BEARER, "Content-Type": "application/json" }, body: JSON.stringify({ name: sessionName, roleId: "e2e-plain" }) });
   expect(res.status).toBe(201);
   const { id } = (await res.json()) as { id: string };
+  created.push(id);
 
   // Claude の sessionId（UUID）が分かるまで待つ（agents --json を 1 秒ごとに取る）
   await expect
@@ -88,6 +92,7 @@ test("K1: セッションを選ぶ前は右の欄に「台帳」だけ。選ぶ�
   const otherName = `other-${Date.now().toString(36)}`;
   const other = await fetch(`${BASE}/api/sessions`, { method: "POST", headers: { ...BEARER, "Content-Type": "application/json" }, body: JSON.stringify({ name: otherName, roleId: "e2e-plain" }) });
   expect(other.status).toBe(201);
+  created.push(((await other.json()) as { id: string }).id);
   await page.getByTestId("session-row").filter({ hasText: otherName }).click();
   await expect(rightTab(page, "このセッション")).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("ledger-filters")).toHaveCount(0);
