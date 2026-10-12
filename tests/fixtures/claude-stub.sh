@@ -13,13 +13,17 @@ case "${1:-}" in
     NAME="$(cat "${STUB_NAME_FILE:-/dev/null}" 2>/dev/null | head -1)"
     NAME_JSON=""
     [ -n "${NAME}" ] && NAME_JSON="\"name\":\"${NAME}\","
+    # $STUB_UUID_FILE に中身があるときだけ、sessionId を pid から作った UUID の形にする（本物の claude は UUID を返す。既定は UUID でない "x"）
+    UUID_MODE="$(cat "${STUB_UUID_FILE:-/dev/null}" 2>/dev/null | head -1)"
     PIDS="$(ps -axo pid=,command= | grep 'agent-console-e2e-role' | grep -v grep | awk '{print $1}')"
     printf '[\r\n'
     FIRST=1
     for P in ${PIDS}; do
       [ "${FIRST}" = 1 ] || printf ',\r\n'
       FIRST=0
-      printf '{"pid":%s,"status":"%s",%s"sessionId":"x","unknownKey":1}' "${P}" "${STATUS}" "${NAME_JSON}"
+      SESSION_ID="x"
+      [ -n "${UUID_MODE}" ] && SESSION_ID="$(printf '00000000-0000-4000-8000-%012d' "${P}")"
+      printf '{"pid":%s,"status":"%s",%s"sessionId":"%s","unknownKey":1}' "${P}" "${STATUS}" "${NAME_JSON}" "${SESSION_ID}"
     done
     printf '\r\n]\033[?25h'
     exit 0 ;;

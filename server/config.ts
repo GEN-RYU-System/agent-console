@@ -40,6 +40,8 @@ export const DEFAULT_PR_REFRESH_MIN_MS = 10000;
 export const DEFAULT_PICK_MAX_KEEP = 50;
 export const DEFAULT_PICK_SEND_MAX_BYTES = 16 * 1024;
 export const DEFAULT_PICK_HTML_IN_PROMPT_CHARS = 1500;
+export const DEFAULT_ACTIVITY_KEEP_DAYS = 7;
+export const DEFAULT_CLAUDE_SETTINGS_PATH = "~/.claude/settings.json";
 /** VS Code の端末と同じ値。物理的なマウスのホイールのときだけ使う（画面が判定する） */
 export const DEFAULT_TERMINAL_SMOOTH_SCROLL_MS = 125;
 export const DEFAULT_UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
@@ -85,6 +87,10 @@ export interface Config {
   pickSendMaxBytes: number;
   /** 送る文章に入れる部品 1 件あたりの HTML の長さ（字）。保存は拡張が送った長さのまま */
   pickHtmlInPromptChars: number;
+  /** セッションの様子の記録（dataDir/activity/events-YYYYMMDD.jsonl）を残す日数。これより古い日付のファイルは本番のポートのサーバーが消す */
+  activityKeepDays: number;
+  /** 記録の仕組み（hooks）が入っているかを点検するために読む Claude の設定ファイル。読むだけで書かない */
+  claudeSettingsPath: string;
   /** マウスのホイールでスクロールするときのなめらかさ（ms）。0 で無し */
   terminalSmoothScrollMs: number;
   /** 端末に貼る画像 1 枚の上限（byte） */
@@ -187,6 +193,12 @@ function parseGhBin(raw: unknown): string {
   return raw;
 }
 
+function parseClaudeSettingsPath(raw: unknown): string {
+  if (raw === undefined) return expandHome(DEFAULT_CLAUDE_SETTINGS_PATH);
+  if (typeof raw !== "string" || raw === "") throw new Error("config: claudeSettingsPath must be a non-empty string");
+  return expandHome(raw);
+}
+
 const ENV_KEY = /^[A-Z_][A-Z0-9_]*$/;
 // eslint-disable-next-line no-control-regex
 const ENV_CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
@@ -257,6 +269,8 @@ export function parseConfig(raw: unknown): Config {
     pickMaxKeep: parsePositive(o.pickMaxKeep, "pickMaxKeep", DEFAULT_PICK_MAX_KEEP),
     pickSendMaxBytes: parsePositive(o.pickSendMaxBytes, "pickSendMaxBytes", DEFAULT_PICK_SEND_MAX_BYTES),
     pickHtmlInPromptChars: parsePositive(o.pickHtmlInPromptChars, "pickHtmlInPromptChars", DEFAULT_PICK_HTML_IN_PROMPT_CHARS),
+    activityKeepDays: parsePositive(o.activityKeepDays, "activityKeepDays", DEFAULT_ACTIVITY_KEEP_DAYS),
+    claudeSettingsPath: parseClaudeSettingsPath(o.claudeSettingsPath),
     terminalSmoothScrollMs: parseSmoothScroll(o.terminalSmoothScrollMs),
     uploadMaxBytes: parsePositive(o.uploadMaxBytes, "uploadMaxBytes", DEFAULT_UPLOAD_MAX_BYTES),
     uploadMaxKeep: parsePositive(o.uploadMaxKeep, "uploadMaxKeep", DEFAULT_UPLOAD_MAX_KEEP),
