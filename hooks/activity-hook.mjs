@@ -1,4 +1,4 @@
-// agent-console: セッションの様子の記録（Claude Code の hook）。設計 docs/handoff/v0.8.0-activity/design.md §3-2。
+// agent-console: セッションの様子の記録（Claude Code の hook）。設計 docs/handoff/v0.8.0-activity/design.md §3-2、チャット docs/handoff/chat/design.md §3-1。
 // 標準入力の JSON から決めた項目だけを、dataDir/activity/events-YYYYMMDD.jsonl に 1 行で追記する。
 // どんな失敗でも終了コード 0 で終わり、何も出力しない（Claude を止めない）。node の標準の部品だけを使う。
 // この本体は、サーバーが起動のたびに dataDir/hooks/activity-hook.mjs へ写す。dataDir は、この写しの 2 つ上のフォルダ。
@@ -6,15 +6,14 @@ import { chmodSync, closeSync, fchmodSync, mkdirSync, openSync, readFileSync, re
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** 1 行の上限（byte）。1 回の write に収めるための、実用上の上限 */
-export const MAX_LINE_BYTES = 4096;
+/** 1 行の上限（byte、改行を含む JSON 全体）。1 回の write に収めるための上限。macOS と Linux は、実用上、1 回の write を分割しない（並列の試験で固定する） */
+export const MAX_LINE_BYTES = 64 * 1024;
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
 
 const DESCRIPTION_CHARS = 200;
 const SUBJECT_CHARS = 200;
 const REPORT_CHARS = 120;
-const PROMPT_CHARS = 80;
 const ID_CHARS = 100;
 const NAME_CHARS = 100;
 
@@ -28,6 +27,52 @@ function clip(value, max) {
   if (typeof value !== "string") return "";
   const flat = value.replace(CONTROL_CHARS, " ").replace(/\s+/g, " ").trim();
   return Array.from(flat).slice(0, max).join("");
+}
+
+// 全文用: 改行（LF）とタブ以外の制御文字だけを除く（CR・ESC・NUL・DEL など）
+// eslint-disable-next-line no-control-regex
+const TEXT_CONTROL_CHARS = /[\u0000-\u0008\u000b-\u001f\u007f]/g;
+
+/** 全文用の整形。文字列でなければ空。改行とタブは残す（右の欄の短い項目は clip() を使う） */
+function fullText(value) {
+  return typeof value === "string" ? value.replace(TEXT_CONTROL_CHARS, "") : "";
+}
+
+/**
+ * 1 つのコードポイントが、JSON 文字列の中で占める byte 数（UTF-8）。JSON.stringify の結果と同じ数になる:
+ * 引用符・バックスラッシュ・改行・タブは 2、そのほかの制御文字は \u00XX で 6、孤立したサロゲートは \udXXX で 6、
+ * それ以外は UTF-8 の長さ（1〜4）。1 文字ごとに文字列を作らないので、長い本文でも速い。
+ */
+function jsonBytesOf(codePoint) {
+  if (codePoint === 0x22 || codePoint === 0x5c || codePoint === 0x0a || codePoint === 0x09) return 2;
+  if (codePoint < 0x20) return 6;
+  if (codePoint < 0x80) return 1;
+  if (codePoint < 0x800) return 2;
+  if (codePoint >= 0xd800 && codePoint <= 0xdfff) return 6;
+  return codePoint < 0x10000 ? 3 : 4;
+}
+
+/** 1 行（JSON ＋ 改行）の byte 数 */
+const lineBytes = (record) => Buffer.byteLength(`${JSON.stringify(record)}\n`, "utf8");
+
+/**
+ * base に本文 key を足した記録を返す。1 行が MAX_LINE_BYTES に収まればそのまま。
+ * 収まらないときは、先に「本文に使える byte 数」を決め（上限 − 本文以外の長さ）、コードポイントの区切りで後ろから切って
+ * truncated: true を付ける。本文の長さは JSON にしたあとの長さ（改行や引用符は 2 byte に増える）で数えるので、繰り返し測り直さない。
+ */
+function withFullText(base, key, text) {
+  const whole = { ...base, [key]: text };
+  if (lineBytes(whole) <= MAX_LINE_BYTES) return whole;
+  const frame = { ...base, [key]: "", truncated: true };
+  let budget = MAX_LINE_BYTES - lineBytes(frame);
+  let keptUnits = 0;
+  for (const ch of text) {
+    const cost = jsonBytesOf(ch.codePointAt(0));
+    if (cost > budget) break;
+    budget -= cost;
+    keptUnits += ch.length;
+  }
+  return { ...frame, [key]: text.slice(0, keptUnits) };
 }
 
 /** 項目が空でなければ足した新しいオブジェクトを返す */
@@ -65,7 +110,7 @@ function toolRecord(common, input) {
 
 /**
  * hook の入力から、書く 1 件を作る。対象外のイベント・ツール、session_id が UUID の形でないものは null。
- * 書くのは設計 §3-2 の項目と長さだけ（会話の本文・transcript のパスなどは残さない）。
+ * 書くのは決めた項目だけ（transcript のパスなどは残さない）。入力（prompt）と返事（last_assistant_message）は全文（1 行 64KiB まで）。
  */
 export function buildRecord(input, now = Date.now()) {
   if (!isObject(input)) return null;
@@ -91,10 +136,21 @@ export function buildRecord(input, now = Date.now()) {
     }
     case "UserPromptSubmit": {
       // 担当の報告の戻りは、人の入力ではない。工程0（docs/handoff/v0.8.0-activity/step0.md）で見分けられた印だけを付ける
+      // 本文は全文（貼り付けの包み <pasted_content …> も生のまま。外すのは表示のとき）
       const raw = typeof input.prompt === "string" ? input.prompt : "";
-      const rec = withText(common, "prompt", raw, PROMPT_CHARS);
-      return AGENT_MESSAGE_PREFIX.test(raw) ? { ...rec, source: "agent" } : rec;
+      const base = AGENT_MESSAGE_PREFIX.test(raw) ? { ...common, source: "agent" } : common;
+      const text = fullText(raw);
+      return text === "" ? base : withFullText(base, "prompt", text);
     }
+    case "Stop": {
+      // 1 回の返事の最後の本文（途中の文章は含まれない。工程0 (a)）。1 回の入力に Stop が何回か来ることがある
+      const base = typeof input.stop_hook_active === "boolean" ? { ...common, stop_hook_active: input.stop_hook_active } : common;
+      const text = fullText(input.last_assistant_message);
+      return text === "" ? base : withFullText(base, "last_assistant_message", text);
+    }
+    case "StopFailure":
+      // API エラーで回が終わった。last_assistant_message はエラー文で、返事ではないので残さない。種類だけ残す
+      return withText(common, "error", input.error, NAME_CHARS);
     default:
       return null;
   }

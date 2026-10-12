@@ -127,7 +127,7 @@ export function ActivityPane({ sessionId, rev, state }: Props) {
       {!value.hooks.ok && (
         <div data-testid="activity-hooks-warning">
           <Callout variant="warning" title={t("ac.activity.hooksOffTitle")}>
-            {t("ac.activity.hooksOffBody")}
+            {t("ac.activity.hooksOffBody")} {t("ac.activity.hooksReinstall")}
           </Callout>
         </div>
       )}
