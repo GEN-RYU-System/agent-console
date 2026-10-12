@@ -5,8 +5,10 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { createAuth } from "../../../server/auth.ts";
-import { DEFAULT_DIFF_MAX_FILE_BYTES, DEFAULT_GH_BIN, DEFAULT_PR_POLL_MS, DEFAULT_PR_REFRESH_MIN_MS, DEFAULT_DIFF_SEND_MAX_BYTES, DEFAULT_PASTE_SUBMIT_DELAY_MS, type Config } from "../../../server/config.ts";
+import { DEFAULT_DIFF_MAX_FILE_BYTES, DEFAULT_GH_BIN, DEFAULT_PR_POLL_MS, DEFAULT_PR_REFRESH_MIN_MS, DEFAULT_PICK_HTML_IN_PROMPT_CHARS, DEFAULT_PICK_MAX_KEEP, DEFAULT_PICK_SEND_MAX_BYTES, DEFAULT_DIFF_SEND_MAX_BYTES, DEFAULT_PASTE_SUBMIT_DELAY_MS, type Config } from "../../../server/config.ts";
 import { MemoryCollector } from "../../../server/memory.ts";
+import { PickStore } from "../../../server/picks.ts";
+import type { PickerAccess } from "../../../server/picker-extension.ts";
 import { QuickPromptStore } from "../../../server/quick-prompts.ts";
 import { DiffCommentStore } from "../../../server/diff-comments.ts";
 import { Hub } from "../../../server/hub.ts";
@@ -18,6 +20,8 @@ import { SessionManager } from "../../../server/sessions.ts";
 import { attachWebSockets } from "../../../server/ws.ts";
 
 export const TOKEN = "t".repeat(40);
+export const PICKER_ORIGIN = "chrome-extension://cifnedlggndeehoejlfapbhepekgikao";
+export const PICKER_TOKEN = "ab".repeat(32);
 export const COMMIT = "0123456789abcdef0123456789abcdef01234567";
 
 export interface Clock {
@@ -39,6 +43,7 @@ export interface Harness {
   clock: Clock;
   /** 期限切れセッションの WebSocket を閉じる処理を、時計を進めた後に手動で実行する。 */
   sweep: () => void;
+  picks: PickStore;
   close: () => Promise<void>;
 }
 
@@ -86,6 +91,12 @@ export interface HarnessOptions {
   prRefreshMinMs?: number;
   /** gh 1 回の時間切れ（ms）。既定は本番値 */
   ghTimeoutMs?: number;
+  /** 部品を残す件数・送る文章の上限（byte）・依頼文に入れる HTML の字数。既定は config の既定値 */
+  pickMaxKeep?: number;
+  pickSendMaxBytes?: number;
+  pickHtmlInPromptChars?: number;
+  /** 拡張からの受け取り口の相手。既定は固定 id の拡張と試験用の合言葉。null にすると受け取り口は常に 403 */
+  picker?: PickerAccess;
 }
 
 /** 実 HTTP/WS/PTY（ダミー役割 sh）を 127.0.0.1 の空きポートで起動する。 */
@@ -128,6 +139,9 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     ghBin: options.ghBin ?? DEFAULT_GH_BIN,
     prPollMs: DEFAULT_PR_POLL_MS,
     prRefreshMinMs: options.prRefreshMinMs ?? DEFAULT_PR_REFRESH_MIN_MS,
+    pickMaxKeep: options.pickMaxKeep ?? DEFAULT_PICK_MAX_KEEP,
+    pickSendMaxBytes: options.pickSendMaxBytes ?? DEFAULT_PICK_SEND_MAX_BYTES,
+    pickHtmlInPromptChars: options.pickHtmlInPromptChars ?? DEFAULT_PICK_HTML_IN_PROMPT_CHARS,
     roles: [
       { id: "echo", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo READY; cat"], needsWorktree: false },
       { id: "short", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo bye"], needsWorktree: false },
@@ -150,8 +164,11 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   if (options.recorder === true) recorder.start();
   const clock: Clock = { t: Date.now(), advance(ms) { this.t += ms; } };
   const auth = createAuth(TOKEN, port, { now: () => clock.t });
+  const picks = new PickStore(config.dataDir, config.pickMaxKeep);
+  hub.watchPicks(picks);
+  const picker: PickerAccess = options.picker ?? { extensionOrigin: PICKER_ORIGIN, token: PICKER_TOKEN, extensionDir: path.join(config.dataDir, "chrome-extension") };
   const server = createServer(
-    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT } }),
+    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, picker, memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT } }),
   );
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
@@ -168,6 +185,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     secretPath,
     clock,
     sweep: () => controls.sweep(),
+    picks,
     close: async () => {
       sessions.killAll();
       server.closeAllConnections();
