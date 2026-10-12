@@ -1,7 +1,7 @@
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RoleConfig } from "../../server/config.ts";
 import { OPEN_SESSIONS_FILE } from "../../server/session-store.ts";
 import { isRestoreEnabled, restoreOnStartup, startOpenSessionRestore, type RestoreNotice } from "../../server/restore.ts";
@@ -14,6 +14,14 @@ const BAD_ID = "11111111-1111-4111-8111-11111111111$(touch /tmp/pwned)";
 
 const CLOSE_GRACE_MS = 600;
 const STAGGER_MS = 250;
+/** SIGHUP だけで閉じる経路の確認用。SIGKILL への切替（この猶予の後）に入ったかどうかを、負荷下の遅れと区別できる大きさにする */
+const SIGHUP_ONLY_GRACE_MS = 10000;
+/** 端末（pty）の出力・子プロセスの出現を待つ時間。既定の 1000ms は負荷で足りない */
+const WAIT = { timeout: 5000 };
+/** 負荷下で遅れうる試験の全体の上限 */
+const SLOW_TEST_MS = 30000;
+// 端末の起動を待つ試験は、負荷下で既定の 5000ms では足りない。このファイル全体に適用する
+vi.setConfig({ testTimeout: SLOW_TEST_MS });
 
 /** 復元の試験用の役割: 通常の起動と、復元の起動（AC_RESUME_ID を環境変数で受ける）を出力で区別する */
 const EXTRA_ROLES: RoleConfig[] = [
@@ -59,7 +67,39 @@ const isAlive = (pid: number): boolean => {
     return false;
   }
 };
+/** 試験が失敗しても、その試験が作ったセッションを後続の試験へ残さない */
+async function closeAllSessions(h: Harness): Promise<void> {
+  for (const s of [...h.sessions.list()]) await h.sessions.close(s.id).catch(() => undefined);
+}
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+describe("close a running session (K1, SIGHUP path)", () => {
+  let h: Harness;
+  beforeAll(async () => {
+    h = await startHarness({ recorder: true, closeGraceMs: SIGHUP_ONLY_GRACE_MS, extraRoles: EXTRA_ROLES });
+  });
+  afterAll(async () => {
+    await h.close();
+  });
+  afterEach(async () => {
+    await closeAllSessions(h);
+  });
+
+  it("ends the terminal process and removes the row from the list", async () => {
+    const id = await newSession(h, "echo", "closing");
+    const pid = sessionOf(h, id).term.pid;
+    await vi.waitFor(() => expect(sessionOf(h, id).ring.snapshot()).toContain("READY"), WAIT);
+    const started = Date.now();
+    const res = await api(h, "POST", `/api/sessions/${id}/close`);
+    expect(res.status).toBe(200);
+    // SIGHUP で終わるので、SIGKILL への切替（猶予）を待たない。猶予は 10 秒なので、負荷で数百 ms 遅れても、猶予まで待った（SIGKILL の経路に入った）場合とは区別できる
+    expect(Date.now() - started).toBeLessThan(SIGHUP_ONLY_GRACE_MS);
+    expect(h.sessions.get(id)).toBeUndefined();
+    await vi.waitFor(() => expect(isAlive(pid)).toBe(false), WAIT);
+    const state = await api(h, "GET", "/api/state");
+    expect((state.json.sessions as Array<{ id: string }>).some((s) => s.id === id)).toBe(false);
+  }, SLOW_TEST_MS);
+});
 
 describe("close a running session (K1)", () => {
   let h: Harness;
@@ -69,25 +109,13 @@ describe("close a running session (K1)", () => {
   afterAll(async () => {
     await h.close();
   });
-
-  it("ends the terminal process and removes the row from the list", async () => {
-    const id = await newSession(h, "echo", "closing");
-    const pid = sessionOf(h, id).term.pid;
-    await vi.waitFor(() => expect(sessionOf(h, id).ring.snapshot()).toContain("READY"));
-    const started = Date.now();
-    const res = await api(h, "POST", `/api/sessions/${id}/close`);
-    expect(res.status).toBe(200);
-    // SIGHUP で終わるので、SIGKILL への切替（猶予）を待たない
-    expect(Date.now() - started).toBeLessThan(CLOSE_GRACE_MS);
-    expect(h.sessions.get(id)).toBeUndefined();
-    await vi.waitFor(() => expect(isAlive(pid)).toBe(false));
-    const state = await api(h, "GET", "/api/state");
-    expect((state.json.sessions as Array<{ id: string }>).some((s) => s.id === id)).toBe(false);
+  afterEach(async () => {
+    await closeAllSessions(h);
   });
 
   it("removes a stopped session like the existing remove, and returns 404 for an unknown id", async () => {
     const id = await newSession(h, "short", "already-stopped");
-    await vi.waitFor(() => expect(sessionOf(h, id).exited).toBe(true));
+    await vi.waitFor(() => expect(sessionOf(h, id).exited).toBe(true), WAIT);
     expect((await api(h, "POST", `/api/sessions/${id}/close`)).status).toBe(200);
     expect(h.sessions.get(id)).toBeUndefined();
     expect((await api(h, "POST", `/api/sessions/${id}/close`)).status).toBe(404);
@@ -96,22 +124,22 @@ describe("close a running session (K1)", () => {
   it("sends SIGKILL after the grace period to a terminal that ignores SIGHUP, and leaves no descendant process", async () => {
     const id = await newSession(h, "stubborn", "stubborn");
     const session = sessionOf(h, id);
-    await vi.waitFor(async () => expect(descendantPids(session.term.pid, await readProcessTable()).size).toBeGreaterThan(1));
+    await vi.waitFor(async () => expect(descendantPids(session.term.pid, await readProcessTable()).size).toBeGreaterThan(1), WAIT);
     const family = [...descendantPids(session.term.pid, await readProcessTable())];
     const started = Date.now();
     expect((await api(h, "POST", `/api/sessions/${id}/close`)).status).toBe(200);
     expect(Date.now() - started).toBeGreaterThanOrEqual(CLOSE_GRACE_MS - 50);
     await vi.waitFor(() => expect(family.filter(isAlive)).toEqual([]), { timeout: 3000 });
-  });
+  }, SLOW_TEST_MS);
 
   it("kills a descendant that survives the terminal's exit (SIGHUP ignored by the child)", async () => {
     const id = await newSession(h, "leaky", "leaky");
     const session = sessionOf(h, id);
-    await vi.waitFor(async () => expect(descendantPids(session.term.pid, await readProcessTable()).size).toBeGreaterThan(1));
+    await vi.waitFor(async () => expect(descendantPids(session.term.pid, await readProcessTable()).size).toBeGreaterThan(1), WAIT);
     const family = [...descendantPids(session.term.pid, await readProcessTable())];
     expect((await api(h, "POST", `/api/sessions/${id}/close`)).status).toBe(200);
     await vi.waitFor(() => expect(family.filter(isAlive)).toEqual([]), { timeout: 3000 });
-  });
+  }, SLOW_TEST_MS);
 
   it("requires authentication", async () => {
     const res = await fetch(`${h.base}/api/sessions/x/close`, { method: "POST" });
@@ -120,8 +148,9 @@ describe("close a running session (K1)", () => {
 });
 
 describe("restore list contents (K2, K7)", () => {
+  // 試験ごとに新しい harness（新しい dataDir）を使う。前の試験が残す記録の書き込みと競合させず、失敗しても後続へセッションを残さないため
   let h: Harness;
-  beforeAll(async () => {
+  beforeEach(async () => {
     const stubDir = mkdtempSync(path.join(os.tmpdir(), "ac-restore-stub-"));
     const rowsFile = path.join(stubDir, "rows.json");
     writeFileSync(rowsFile, "[]");
@@ -131,7 +160,7 @@ describe("restore list contents (K2, K7)", () => {
     h = await startHarness({ recorder: true, claudeBin: stub, extraRoles: EXTRA_ROLES });
     (h as unknown as { rowsFile: string }).rowsFile = rowsFile;
   });
-  afterAll(async () => {
+  afterEach(async () => {
     await h.close();
   });
   const setAgents = (rows: unknown[]): void => writeFileSync((h as unknown as { rowsFile: string }).rowsFile, JSON.stringify(rows));
@@ -142,7 +171,7 @@ describe("restore list contents (K2, K7)", () => {
   it("holds only running sessions, with role, name, cwd and branch, in a 600 file", async () => {
     const a = await newSession(h, "echo", "alpha");
     const b = await newSession(h, "short", "beta-ends");
-    await vi.waitFor(() => expect(sessionOf(h, b).exited).toBe(true));
+    await vi.waitFor(() => expect(sessionOf(h, b).exited).toBe(true), WAIT);
     await settle();
     const list = readList(h);
     expect(list.version).toBe(1);
@@ -160,7 +189,7 @@ describe("restore list contents (K2, K7)", () => {
     await settle();
     sessionOf(h, d).term.write("\x04"); // Ctrl+D: 自分で終わる
     await vi.waitFor(() => expect(readList(h).items.map((i) => i.name)).not.toContain("to-exit"));
-  });
+  }, SLOW_TEST_MS);
 
   it("records the Claude sessionId when the periodic poll learns it, and the Claude-side name", async () => {
     const id = await newSession(h, "restorable", "named-here");
@@ -230,13 +259,14 @@ describe("shutdown keeps the list (K3)", () => {
 });
 
 describe("restore on startup (K4, K5, K6, K8)", () => {
+  // 試験ごとに新しい harness（新しい dataDir）を使う（K8 を含む）。前の試験（closeAll 等）が残す記録の書き込みと競合させず、失敗しても後続へセッションを残さないため
   let h: Harness;
   let root: string;
-  beforeAll(async () => {
+  beforeEach(async () => {
     h = await startHarness({ recorder: true, restoreStaggerMs: STAGGER_MS, maxSessions: 4, extraRoles: EXTRA_ROLES });
     root = h.config.salesanchorRoot;
   });
-  afterAll(async () => {
+  afterEach(async () => {
     await h.close();
   });
   const run = (): Promise<RestoreNotice[]> =>
@@ -257,13 +287,13 @@ describe("restore on startup (K4, K5, K6, K8)", () => {
     ]);
     const notices = await run();
     expect(notices).toEqual([]);
-    await vi.waitFor(() => expect(ringOf("with-id")).toContain("RESTORED"));
+    await vi.waitFor(() => expect(ringOf("with-id")).toContain("RESTORED"), WAIT);
     expect(ringOf("with-id")).toContain(`id=[${ID_A}]`);
     expect(ringOf("with-id")).toContain(`cwd=${root}`);
-    await vi.waitFor(() => expect(ringOf("without-id")).toContain("FRESH"));
+    await vi.waitFor(() => expect(ringOf("without-id")).toContain("FRESH"), WAIT);
     expect(ringOf("without-id")).toContain("id=[]");
     // restoreCommand を持たない役割は、sessionId があっても通常の命令（環境変数も渡さない）
-    await vi.waitFor(() => expect(ringOf("shell-with-id")).toContain("READY"));
+    await vi.waitFor(() => expect(ringOf("shell-with-id")).toContain("READY"), WAIT);
     expect(ringOf("shell-with-id")).not.toContain(ID_B);
     // 復元後の写しに sessionId が残り、もう一度再起動しても続きを開ける
     await h.recorder.sync();
@@ -278,7 +308,7 @@ describe("restore on startup (K4, K5, K6, K8)", () => {
   it("K7: a non-UUID sessionId in the list is never passed to the command", async () => {
     writeList(h, [{ roleId: "restorable", name: "evil", cwd: root, claudeSessionId: BAD_ID }]);
     expect(await run()).toEqual([]);
-    await vi.waitFor(() => expect(ringOf("evil")).toContain("FRESH"));
+    await vi.waitFor(() => expect(ringOf("evil")).toContain("FRESH"), WAIT);
     expect(ringOf("evil")).toContain("id=[]");
     expect(ringOf("evil")).not.toContain("pwned");
     await closeAll();
