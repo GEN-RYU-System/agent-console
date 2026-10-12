@@ -6,3 +6,12 @@
   box-sizing: border-box;
   overflow: hidden;
 }
+
+/*
+ * 全角の句読点・括弧（（ ）、 。）を、常に全角の字形（2 マス）で描く。
+ * 既定の normal だと、xterm が測った幅（約 7px）との差が字間に足され、1 文字ずつ別の span で 2.81 マス幅になって右端がはみ出す。
+ * text-spacing-trim は継承される。xterm が幅を測る要素も行も .xterm の子孫なので、ここだけで足りる。
+ */
+.xterm {
+  text-spacing-trim: space-all;
+}

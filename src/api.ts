@@ -153,3 +153,27 @@ export function openSocket(path: string, params: Record<string, string> = {}): W
   const token = getSessionToken();
   return new WebSocket(wsUrl(path, params), token ? [`ac.${token}`] : []);
 }
+
+const BASE64_CHUNK_BYTES = 0x8000;
+
+/** バイト列を base64 にする。btoa に一度に渡せる長さには限りがあるので、小さく区切って文字にする。 */
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += BASE64_CHUNK_BYTES) binary += String.fromCharCode(...bytes.subarray(i, i + BASE64_CHUNK_BYTES));
+  return btoa(binary);
+}
+
+function readBytes(file: Blob): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+/** 端末に貼る画像を保存してもらい、保存先の絶対パスを受け取る（PNG と JPEG だけ。形式と大きさはサーバーが検査する）。 */
+export async function uploadImage(file: Blob): Promise<{ path: string }> {
+  const data = toBase64(await readBytes(file));
+  return request("/api/uploads", { method: "POST", body: JSON.stringify({ data }) });
+}

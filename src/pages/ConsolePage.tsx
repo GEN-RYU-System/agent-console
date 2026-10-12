@@ -36,13 +36,15 @@ import { QuickPromptEditor } from "../components/QuickPrompts/QuickPromptEditor"
 import { RenameForm } from "../components/RenameForm/RenameForm";
 import { SessionList } from "../components/SessionList/SessionList";
 import { ThemeToggle } from "../components/ThemeToggle/ThemeToggle";
-import { TerminalPane, type PasteResult, type TerminalHandle } from "../components/TerminalPane/TerminalPane";
+import { TerminalPane, type PasteResult, type TerminalHandle, type UploadNotice } from "../components/TerminalPane/TerminalPane";
 import type { ConsoleState, LedgerSnapshot, QuickPrompt, ResumeTarget, SessionView } from "../types";
 import "./ConsolePage.css";
 
 const LEDGER_POLL_MS = 60000;
 const RECONNECT_MS = 1000;
 const RENAME_CONFIRM_MS = 10000;
+const UPLOAD_NOTICE_MS = 8000;
+const BYTES_PER_MB = 1024 * 1024;
 
 type CenterTab = "terminal" | "changes" | "pr" | "picks";
 
@@ -90,6 +92,7 @@ export function ConsolePage() {
   const [quickPrompts, setQuickPrompts] = useState<QuickPrompt[]>([]);
   const [quickEditorOpen, setQuickEditorOpen] = useState(false);
   const [quickError, setQuickError] = useState<string | null>(null);
+  const [uploadNotice, setUploadNotice] = useState<UploadNotice | null>(null);
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
   const [renameBusy, setRenameBusy] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
@@ -137,6 +140,12 @@ export function ConsolePage() {
     return () => clearInterval(timer);
   }, []);
 
+  // 画像の案内は、しばらくしたら消す（Callout は閉じるボタンを持たない）
+  useEffect(() => {
+    if (uploadNotice === null) return;
+    const timer = setTimeout(() => setUploadNotice(null), UPLOAD_NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [uploadNotice]);
   const handleRefresh = useCallback(() => void refreshLedger().then(setLedger, () => undefined), []);
 
   const handleCreate = async (values: NewSessionValues): Promise<void> => {
@@ -350,9 +359,14 @@ export function ConsolePage() {
             {quickError}
           </Callout>
         )}
+        {uploadNotice !== null && (
+          <Callout variant="warning" title={t("ac.upload.title")}>
+            {t(`ac.upload.${uploadNotice}`, { max: `${Math.round(((state.uploadMaxBytes / BYTES_PER_MB) + Number.EPSILON) * 10) / 10} MB` })}
+          </Callout>
+        )}
         {/* 端末は隠すだけで外さない（xterm の接続を保つ）。隠し方は hidden 属性（display:none）だけ。高さ 0 などで隠すと 2 列×1 行が pty に送られる */}
         <div className="ac-page__terminal" hidden={centerTab !== "terminal"}>
-          {activeId ? <TerminalPane ref={terminalRef} sessionId={activeId} /> : <EmptyState title={t("ac.selectSession")} />}
+          {activeId ? <TerminalPane ref={terminalRef} sessionId={activeId} smoothScrollMs={state.terminalSmoothScrollMs} uploadMaxBytes={state.uploadMaxBytes} onUploadNotice={setUploadNotice} /> : <EmptyState title={t("ac.selectSession")} />}
         </div>
         {activeId ? (
           <DiffPane
