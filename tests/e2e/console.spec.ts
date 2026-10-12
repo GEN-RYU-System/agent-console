@@ -1030,7 +1030,8 @@ test("v0.5.0 K1〜K6, K8: PR タブ -> PR・マージできるか・検査の集
     await pane.getByRole("button", { name: "更新", exact: true }).click();
     await expect(pane.getByTestId("pr-state")).toHaveText("マージ済み");
     await expect(pane.getByTestId("pr-merge")).toHaveCount(0);
-    await expect(rowOf(page, id).getByTestId("ci-badge")).toHaveText("CI 成功");
+    // マージ済み（開いていない PR）の検査は、成功でも一覧に印を出さない（ci-badge の修正）
+    await expect(rowOf(page, id).getByTestId("ci-badge")).toHaveCount(0);
 
     // K4: PR が無いブランチ（PR の印は消える）
     ghFxClear();

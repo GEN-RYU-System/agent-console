@@ -236,6 +236,18 @@ describe("K3: セッション一覧の CI の印（snapshot の ci）", () => {
     for (const [i, [, , , expected]] of cases.entries()) expect(await ciOf(ids[i]), cases[i][0]).toBe(expected);
     expect(await ciOf(none.id)).toBeUndefined();
   });
+
+  it("閉じた PR・マージ済みの PR は、検査に失敗があっても ci が無い（開いている PR だけ印を出す）", async () => {
+    clearFx();
+    const closed = newPlace("release/ci-closed");
+    setPr("release/ci-closed", 81, "CLOSED", [check("pass", "a"), check("fail", "b")]);
+    const merged = newPlace("release/ci-merged");
+    setPr("release/ci-merged", 82, "MERGED", [check("pass", "a"), check("fail", "b")]);
+    for (const id of [closed.id, merged.id]) await refreshPr(id);
+    expect((await refreshPr(closed.id)).json.checks.counts.fail).toBe(1);
+    expect(await ciOf(closed.id)).toBeUndefined();
+    expect(await ciOf(merged.id)).toBeUndefined();
+  });
 });
 
 describe("K4: PR が無い・GitHub でない・作業場所が対象外", () => {

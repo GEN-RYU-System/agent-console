@@ -4,6 +4,7 @@ import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   ciOf,
+  ciOfResponse,
   classifyGhFailure,
   GhFailure,
   isSafeBranch,
@@ -11,6 +12,7 @@ import {
   runGh,
   safeGithubUrl,
   summarizeChecks,
+  type PrResponse,
 } from "../../server/pr-status.ts";
 
 const here = path.dirname(new URL(import.meta.url).pathname);
@@ -149,5 +151,29 @@ describe("runGh (K7: gh は pr list / view / checks だけ)", () => {
     expect((t as GhFailure).kind).toBe("timeout");
     const m = await runGh("/nonexistent/gh", ["pr", "view", "1"], { cwd: os.tmpdir(), timeoutMs: 1000 }).catch((e: unknown) => e);
     expect((m as GhFailure).kind).toBe("ghMissing");
+  });
+});
+
+describe("ciOfResponse (K1: 開いている PR のときだけ一覧の印を出す)", () => {
+  const counts = (over: Partial<Record<"pass" | "fail" | "pending" | "skipping" | "cancel", number>>) => ({ pass: 0, fail: 0, pending: 0, skipping: 0, cancel: 0, ...over });
+  const ok = (state: "OPEN" | "MERGED" | "CLOSED", over = {}): PrResponse => ({
+    status: "ok",
+    pr: { number: 1, title: "t", state, isDraft: false, url: "", mergeStateStatus: "CLEAN" },
+    checks: { counts: counts(over), items: [] },
+    fetchedAt: 0,
+  });
+
+  it("OPEN keeps the existing values (fail / pending / pass)", () => {
+    expect(ciOfResponse(ok("OPEN", { pass: 1, fail: 1 }))).toBe("fail");
+    expect(ciOfResponse(ok("OPEN", { pass: 1, pending: 1 }))).toBe("pending");
+    expect(ciOfResponse(ok("OPEN", { pass: 2 }))).toBe("pass");
+  });
+  it("CLOSED and MERGED give undefined even when checks failed", () => {
+    expect(ciOfResponse(ok("CLOSED", { pass: 49, fail: 8 }))).toBeUndefined();
+    expect(ciOfResponse(ok("MERGED", { pass: 3, fail: 1 }))).toBeUndefined();
+  });
+  it("undefined or non-ok responses give undefined", () => {
+    expect(ciOfResponse(undefined)).toBeUndefined();
+    expect(ciOfResponse({ status: "noPr" })).toBeUndefined();
   });
 });
