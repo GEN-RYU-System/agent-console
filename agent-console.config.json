@@ -21,6 +21,9 @@
   "pickMaxKeep": 50,
   "pickSendMaxBytes": 16384,
   "pickHtmlInPromptChars": 1500,
+  "terminalSmoothScrollMs": 125,
+  "uploadMaxBytes": 5242880,
+  "uploadMaxKeep": 100,
   "roles": [
     {
       "id": "opus-designer",
