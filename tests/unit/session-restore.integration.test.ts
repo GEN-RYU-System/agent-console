@@ -175,7 +175,8 @@ describe("restore list contents (K2, K7)", () => {
     await settle();
     const list = readList(h);
     expect(list.version).toBe(1);
-    expect(list.items).toEqual([{ roleId: "echo", name: "alpha", cwd: sessionOf(h, a).cwd }]);
+    // id は端末の本体（tmux のセッション）を見つけるために保存する
+    expect(list.items).toEqual([{ id: a, roleId: "echo", name: "alpha", cwd: sessionOf(h, a).cwd }]);
     expect(statSync(fileOf(h)).mode & 0o777).toBe(0o600);
   });
 

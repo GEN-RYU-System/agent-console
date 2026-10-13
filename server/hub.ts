@@ -8,7 +8,7 @@ import { BreakTracker, breakBody, osascriptSender, type NotificationSender } fro
 import { startPolling } from "./poll.ts";
 import { descendantPids, readProcessTable } from "./process-tree.ts";
 import type { RestoreNotice } from "./restore.ts";
-import { SessionConflictError, SessionNotFoundError, type SessionManager } from "./sessions.ts";
+import { SessionConflictError, SessionNotFoundError, type SessionManager, type TerminalNotice } from "./sessions.ts";
 import { resolveWorkplace } from "./workplace.ts";
 
 export interface SessionView {
@@ -63,6 +63,8 @@ export interface Snapshot {
   agentsAvailable: boolean;
   /** 起動時に前回のセッションを開き直せなかった理由（メモリだけ。画面の案内） */
   restoreNotices: RestoreNotice[];
+  /** 端末の置き場についての案内（tmux が無い／端末につなげない）。無ければ省く */
+  terminalNotices?: TerminalNotice[];
   /** 部品タブの件数: まだ Claude に送っていない部品の数 */
   picksUnsent: number;
   /** セッションの様子の記録の版。進んだら、画面は右の欄を取り直す */
@@ -566,7 +568,7 @@ export class Hub {
     const previous = this.lastNames;
     this.lastNames = new Map(views.map((v) => [v.id, v.name]));
     if (views.some((v) => previous.has(v.id) && previous.get(v.id) !== v.name)) for (const l of this.nameListeners) l();
-    return { sessions: views, agentsAvailable: this.agents !== null, restoreNotices: this.restoreNotices, picksUnsent: this.picksUnsent, activityRev: this.activityRev + this.chatRev };
+    return { sessions: views, agentsAvailable: this.agents !== null, restoreNotices: this.restoreNotices, ...terminalNoticesField(this.sessions.terminalNotices()), picksUnsent: this.picksUnsent, activityRev: this.activityRev + this.chatRev };
   }
 
   subscribe(ws: WebSocket): void {
@@ -589,3 +591,5 @@ export class Hub {
     }
   }
 }
+
+const terminalNoticesField = (notices: TerminalNotice[]): { terminalNotices?: TerminalNotice[] } => (notices.length > 0 ? { terminalNotices: notices } : {});
