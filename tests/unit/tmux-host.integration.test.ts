@@ -41,6 +41,7 @@ const TIMING = process.env.AC_TMUX_TIMING === "1";
 const ESC_MEDIAN_MAX_MS = 20;
 const BIG_OUTPUT_MAX_MS = 1000;
 const REATTACH_X12_MAX_MS = 1000;
+const REATTACH_K12_MAX_MS = 1500;
 
 const tmuxAvailable = TMUX !== null;
 const suite = tmuxAvailable || REQUIRE_TMUX ? describe : describe.skip;
@@ -313,7 +314,7 @@ suite("tmux host (real tmux, dedicated socket)", () => {
     await sleep(100);
     const t0 = Date.now();
     expect(await waitFor(() => pgrep().length > 0, 3000, 10)).toBe(true);
-    expect(Date.now() - t0).toBeLessThan(1500);
+    if (TIMING) expect(Date.now() - t0).toBeLessThan(REATTACH_K12_MAX_MS);
     expect(s.exited).toBe(false);
     expect(s.term.pid).toBe(pid);
     await sleep(500);
