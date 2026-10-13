@@ -34,6 +34,15 @@ export function tmuxVersion(tmux: string): string | null {
   return r.status === 0 ? r.stdout.trim() : null;
 }
 
+/** `tmux -V` の出力（例: "tmux 3.7c"、"tmux next-3.8"）が major.minor 以上か。読めない時は null */
+export function tmuxVersionAtLeast(versionOutput: string | null, major: number, minor: number): boolean | null {
+  const m = versionOutput === null ? null : /(\d+)\.(\d+)/.exec(versionOutput);
+  if (!m) return null;
+  const maj = Number(m[1]);
+  const min = Number(m[2]);
+  return maj > major || (maj === major && min >= minor);
+}
+
 export interface SyncResult {
   status: number | null;
   stdout: string;

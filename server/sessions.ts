@@ -6,7 +6,7 @@ import { ACCOUNT_LOGIN_ROLE_ID, CHILD_ENV_BLOCKLIST, TERMINAL_ENV_FORBIDDEN, typ
 import { descendantPids, readProcessTable } from "./process-tree.ts";
 import { RingBuffer } from "./ring-buffer.ts";
 import { sessionName } from "./terminal-host/tmux-protocol.ts";
-import { findTmux, newSession, probeSession, startupSweep, tmuxVersion } from "./terminal-host/tmux-runner.ts";
+import { findTmux, newSession, probeSession, startupSweep, tmuxVersion, tmuxVersionAtLeast } from "./terminal-host/tmux-runner.ts";
 import { TmuxControlTerminal } from "./terminal-host/tmux-terminal.ts";
 import { consoleLogger, type TerminalHandle, type TerminalLogger, type TmuxContext } from "./terminal-host/types.ts";
 import path from "node:path";
@@ -199,6 +199,10 @@ export class SessionManager {
       return null;
     }
     const version = tmuxVersion(found);
+    if (tmuxVersionAtLeast(version, 3, 8) === false) {
+      // pane_private_modes は 3.8 で追加。未満だと先入れでモード（貼り付けモード等）が戻らない
+      this.logger.warn(`tmux ${(version ?? "").replace(/^tmux\s+/, "")} は 3.8 未満のため、つなぎ直しで端末のモード（貼り付けモード等）が戻らない`);
+    }
     this.logger.info(`terminal: host=tmux ${version ?? "(version unknown)"} path=${found} socket=${this.config.tmuxSocket ?? "agent-console"}`);
     const ctx: TmuxContext = { tmux: found, socket: this.config.tmuxSocket ?? "agent-console", conf };
     this.sweptNames = startupSweep(ctx, this.childEnv(), this.logger);

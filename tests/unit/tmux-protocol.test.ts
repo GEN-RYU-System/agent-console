@@ -15,6 +15,7 @@ import {
   sessionTarget,
   unescapeOutput,
 } from "../../server/terminal-host/tmux-protocol.ts";
+import { tmuxVersionAtLeast } from "../../server/terminal-host/tmux-runner.ts";
 
 describe("unescapeOutput（K5・8進戻し）", () => {
   it("\\ooo を1バイトに戻す。バックスラッシュ自身は \\134", () => {
@@ -168,5 +169,21 @@ describe("先入れ（replay）", () => {
     expect(cursorStyleCode("underline", true)).toBe(3);
     expect(cursorStyleCode("bar", false)).toBe(6);
     expect(cursorStyleCode("default", false)).toBe(0);
+  });
+});
+
+describe("tmuxVersionAtLeast（S2）", () => {
+  it.each([
+    ["tmux 3.8", true],
+    ["tmux 3.10", true],
+    ["tmux 4.0", true],
+    ["tmux next-3.8", true],
+    ["tmux 3.7c", false],
+    ["tmux 3.4", false],
+    ["tmux 2.9a", false],
+    ["tmux master", null],
+    [null, null],
+  ])("%s -> %s", (v, expected) => {
+    expect(tmuxVersionAtLeast(v as string | null, 3, 8)).toBe(expected);
   });
 });

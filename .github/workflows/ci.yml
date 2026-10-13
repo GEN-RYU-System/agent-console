@@ -25,9 +25,20 @@ jobs:
       - name: Install tmux (macOS)
         if: runner.os == 'macOS'
         run: brew install tmux
-      - name: Install tmux (Linux)
+      # apt の tmux は 3.4（pane_private_modes が無い）。モードを戻すのは 3.8 以上なので、公式の 3.8 リリースをビルドする
+      - name: Install tmux 3.8 (Linux, official release tarball)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y tmux
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libevent-dev libncurses-dev
+          curl -fsSL -o "$RUNNER_TEMP/tmux-3.8.tar.gz" https://github.com/tmux/tmux/releases/download/3.8/tmux-3.8.tar.gz
+          echo "e79c699c7e949dccd0a4a125e17b8d1261e311b16979dbc8eb34542f3966d82e  $RUNNER_TEMP/tmux-3.8.tar.gz" | sha256sum -c -
+          mkdir "$RUNNER_TEMP/tmux-src"
+          tar -xzf "$RUNNER_TEMP/tmux-3.8.tar.gz" -C "$RUNNER_TEMP/tmux-src" --strip-components=1
+          cd "$RUNNER_TEMP/tmux-src"
+          ./configure --prefix=/usr/local
+          make -j"$(nproc)"
+          sudo make install
       - name: tmux version
         run: tmux -V
       - run: npm ci

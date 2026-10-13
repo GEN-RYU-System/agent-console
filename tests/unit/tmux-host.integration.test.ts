@@ -9,7 +9,7 @@ import type { RoleConfig } from "../../server/config.ts";
 import { restoreHeldFiles } from "../../server/held-merge.ts";
 import { restoreOnStartup } from "../../server/restore.ts";
 import { sessionName } from "../../server/terminal-host/tmux-protocol.ts";
-import { newSession, probeSession } from "../../server/terminal-host/tmux-runner.ts";
+import { newSession, probeSession, tmuxVersion, tmuxVersionAtLeast } from "../../server/terminal-host/tmux-runner.ts";
 import { startHarness, type Harness } from "./helpers/harness.ts";
 import { cleanupSockets, CONF, processStart, REQUIRE_TMUX, sleep, testSocket, TMUX, tmuxRun, waitFor } from "./helpers/tmux-env.ts";
 
@@ -374,18 +374,26 @@ suite("tmux host (real tmux, dedicated socket)", () => {
     expect(ours.buffer.active.getLine(0)?.translateToString(true)).toContain("RED BOLDBLUE ORANGE TRUE REV");
     // 色が実際に付いている（比べる相手が全部空でないこと）
     expect(cellOf(ours, 0, 0)).not.toBe(cellOf(ours, 0, 4));
-    // カーソル位置とモード
+    // カーソル位置とモード（モードは pane_private_modes が要る tmux 3.8 以上だけ比べる）
+    const version = tmuxVersion(TMUX as string);
+    const hasModes = tmuxVersionAtLeast(version, 3, 8) !== false;
+    console.warn(`[K17 screen] ${version ?? "tmux version unknown"}: mode comparison ${hasModes ? "on" : "skipped (tmux < 3.8 has no pane_private_modes)"}`);
+    if (!hasModes && process.env.CI === "true" && process.platform === "linux") {
+      expect.fail(`CI(ubuntu) の tmux は 3.8 以上であること（${version}）。モード比較が黙って消えないよう失敗にする`);
+    }
     const info = tmuxRun(socket, ["display", "-p", "-t", target, "#{cursor_x} #{cursor_y} #{pane_private_modes}"]).stdout.trim();
-    const m = /^(\d+) (\d+) \[?([^\]]*)\]?$/.exec(info);
+    const m = /^(\d+) (\d+)(?: \[?([^\]]*)\]?)?$/.exec(info);
     expect(m, info).not.toBeNull();
     expect(ours.buffer.active.cursorX).toBe(Number(m![1]));
     expect(ours.buffer.active.cursorY).toBe(Number(m![2]));
-    const modes = m![3].split(",").map((v) => Number(v.replace(/^\?/, "")));
-    expect(modes).toContain(2004);
-    expect(ours.modes.bracketedPasteMode).toBe(modes.includes(2004));
-    expect(ours.modes.applicationCursorKeysMode).toBe(modes.includes(1));
-    expect(ours.modes.bracketedPasteMode).toBe(true);
-    expect(ours.modes.applicationCursorKeysMode).toBe(true);
+    if (hasModes) {
+      const modes = (m![3] ?? "").split(",").map((v) => Number(v.replace(/^\?/, "")));
+      expect(modes).toContain(2004);
+      expect(ours.modes.bracketedPasteMode).toBe(modes.includes(2004));
+      expect(ours.modes.applicationCursorKeysMode).toBe(modes.includes(1));
+      expect(ours.modes.bracketedPasteMode).toBe(true);
+      expect(ours.modes.applicationCursorKeysMode).toBe(true);
+    }
     await h2.sessions.close(id);
   });
 

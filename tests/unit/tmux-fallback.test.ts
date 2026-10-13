@@ -42,4 +42,25 @@ describe("fallback to direct always shows the notice (R8)", () => {
     expect(h.sessions.terminalNotices()).toEqual([{ reason: "tmuxMissing" }]);
     await h.sessions.close(s.id);
   });
+
+  it("S2: tmux older than 3.8 warns once that terminal modes are not restored on reattach; 3.8 does not", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "ac-fake-tmux-ver-"));
+    dirs.push(dir);
+    const make = (ver: string): string => {
+      const f = path.join(dir, `tmux-${ver}`);
+      writeFileSync(f, `#!/bin/sh\nif [ "$1" = "-V" ]; then echo "tmux ${ver}"; exit 0; fi\nexit 1\n`);
+      chmodSync(f, 0o755);
+      return f;
+    };
+    const h = await startHarness({ terminalHost: "tmux", tmuxSocket: "ac-test-fallback-ver" });
+    hosts.push(h);
+    const run = (ver: string): string[] => {
+      const warns: string[] = [];
+      new SessionManager({ ...h.config, tmuxPath: make(ver) }, { logger: { info: () => undefined, warn: (m) => warns.push(m) } });
+      return warns;
+    };
+    const old = run("3.7c");
+    expect(old.filter((w) => w.includes("3.8 未満"))).toEqual(["tmux 3.7c は 3.8 未満のため、つなぎ直しで端末のモード（貼り付けモード等）が戻らない"]);
+    expect(run("3.8").filter((w) => w.includes("3.8 未満"))).toEqual([]);
+  });
 });
