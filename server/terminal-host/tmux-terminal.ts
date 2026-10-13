@@ -127,12 +127,13 @@ export class TmuxControlTerminal implements TerminalHandle {
     if (ev.kind === "block") {
       if (!this.ready) {
         this.ready = true;
+        this.queue.markSeen(ev.block.num);
         this.onReady();
         return;
       }
-      const waiter = this.queue.take();
+      const waiter = this.queue.take(ev.block.num);
       if (!waiter) {
-        this.opts.logger.warn(`tmux: unexpected block ${ev.block.num} dropped (${this.opts.name})`);
+        this.opts.logger.warn(`tmux: unexpected or out-of-order block ${ev.block.num} dropped (${this.opts.name})`);
         return;
       }
       waiter.resolve(ev.block);

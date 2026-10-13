@@ -128,9 +128,9 @@ describe("CommandQueue", () => {
     const q = new CommandQueue<number>();
     q.enqueue(1);
     q.enqueue(2);
-    expect(q.take()).toBe(1);
-    expect(q.take()).toBe(2);
-    expect(q.take()).toBeUndefined();
+    expect(q.take(1)).toBe(1);
+    expect(q.take(2)).toBe(2);
+    expect(q.take(3)).toBeUndefined();
   });
 });
 

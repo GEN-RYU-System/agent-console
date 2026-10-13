@@ -27,7 +27,7 @@ export function unescapeOutput(value: string): Buffer {
   let n = 0;
   for (let i = 0; i < value.length; i++) {
     const c = value.charCodeAt(i);
-    if (c === 0x5c && i + 3 < value.length + 0 && /^[0-7]{3}$/.test(value.slice(i + 1, i + 4))) {
+    if (c === 0x5c && i + 3 < value.length && /^[0-7]{3}$/.test(value.slice(i + 1, i + 4))) {
       out[n++] = parseInt(value.slice(i + 1, i + 4), 8) & 0xff;
       i += 3;
     } else {
@@ -123,15 +123,27 @@ export class ControlParser {
   }
 }
 
-/** 送った命令の待ち行列。応答は送った順に対応させる */
+/**
+ * 送った命令の待ち行列。応答は送った順に対応させ、番号（%begin の第2項）が直前に受けた番号より新しくない応答は対応させない。
+ * tmux の番号はサーバー全体の通し番号で（ほかの client の命令が間に入り、飛び飛びになる）、送る前には予測できない。そのため「期待する番号」ではなく
+ * 「前より新しいこと」で照合する（attach ごとに作り直す）。
+ */
 export class CommandQueue<T> {
   private readonly waiting: T[] = [];
+  private lastNum = -1;
   enqueue(item: T): void {
     this.waiting.push(item);
   }
-  /** 応答に対応する待ちを取り出す。待ちが無ければ undefined（呼び出し側がログに出して捨てる） */
-  take(): T | undefined {
-    return this.waiting.shift();
+  /** 待ちに対応しない応答（attach 自身の応答）を受けた番号として覚える */
+  markSeen(num: number): void {
+    if (num > this.lastNum) this.lastNum = num;
+  }
+  /** 応答に対応する待ちを取り出す。待ちが無い・番号が新しくないなら undefined（呼び出し側がログに出して捨てる） */
+  take(num: number): T | undefined {
+    if (num <= this.lastNum) return undefined;
+    const item = this.waiting.shift();
+    if (item !== undefined) this.lastNum = num;
+    return item;
   }
   get size(): number {
     return this.waiting.length;

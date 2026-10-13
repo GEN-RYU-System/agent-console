@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TmuxControlTerminal } from "../../server/terminal-host/tmux-terminal.ts";
-import { waitFor } from "./helpers/tmux-env.ts";
+import { CommandQueue } from "../../server/terminal-host/tmux-protocol.ts";
+import { sleep, waitFor } from "./helpers/tmux-env.ts";
 
 /**
  * 偽の tmux（control mode の応答を台本どおりに返す）で TmuxControlTerminal を動かす。本物の tmux・ソケットには触れない。
@@ -71,5 +72,30 @@ describe("TmuxControlTerminal with a scripted tmux", () => {
     expect(events).toEqual(["replay", 'data:"TAIL\\r\\n"']);
     expect(term.pid).toBe(4242);
     term.release();
+  });
+
+  it("R3: a response whose number is not newer than the last one is dropped with a warning; the replay still completes", async () => {
+    const { term, events, warns } = open("stale");
+    expect(await waitFor(() => events.length >= 2, 5000)).toBe(true);
+    expect(events).toEqual(["replay", 'data:"TAIL\\r\\n"']);
+    expect(warns.some((w) => w.includes("50"))).toBe(true);
+    await sleep(50);
+    term.release();
+  });
+});
+
+describe("CommandQueue numbering (R3)", () => {
+  it("takes a waiter only for a number newer than the last seen one", () => {
+    const q = new CommandQueue<string>();
+    q.markSeen(100);
+    q.enqueue("a");
+    q.enqueue("b");
+    expect(q.take(99)).toBeUndefined();
+    expect(q.take(100)).toBeUndefined();
+    expect(q.size).toBe(2);
+    expect(q.take(105)).toBe("a");
+    expect(q.take(105)).toBeUndefined();
+    expect(q.take(107)).toBe("b");
+    expect(q.take(108)).toBeUndefined();
   });
 });
