@@ -53,7 +53,7 @@ describe("K2/K3: GET /api/sessions/:id/chat", () => {
     expect((await call("GET", "/api/sessions/missing/chat")).status).toBe(404);
     const r = await call("GET", `/api/sessions/${s.id}/chat`);
     expect(r.status).toBe(200);
-    expect(r.json).toEqual({ status: "noSession" });
+    expect(r.json).toEqual({ status: "noSession", queued: [] });
   });
 
   it("選んだセッションの会話だけを古い順に返す（user・assistant・error）。別のセッションの会話・担当の報告の戻りは出ない", async () => {

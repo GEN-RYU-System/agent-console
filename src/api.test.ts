@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, checkChatSend, clearSessionToken, fetchChat, fetchState, getSessionToken, logout, openSocket, redeemCode, setSessionToken, uploadImage, wsUrl } from "./api";
+import { ApiError, cancelChatQueue, checkChatSend, clearSessionToken, fetchChat, fetchState, getSessionToken, logout, openSocket, queueChat, redeemCode, setSessionToken, uploadImage, wsUrl } from "./api";
 
 beforeEach(() => window.sessionStorage.clear());
 afterEach(() => vi.unstubAllGlobals());
@@ -37,6 +37,21 @@ describe("chat requests (v0.11.0)", () => {
     expect(url).toBe("/api/sessions/s1/chat/send-check");
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body as string)).toEqual({ text: "こんにちは" });
+  });
+
+  it("queueChat posts the text to chat/queue, and cancelChatQueue deletes the item (id is URL-encoded)", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: "q1" }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(queueChat("s1", "予約")).resolves.toEqual({ id: "q1" });
+    const [url, init] = lastCall(fetchMock);
+    expect(url).toBe("/api/sessions/s1/chat/queue");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ text: "予約" });
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    await expect(cancelChatQueue("s 1", "q/1")).resolves.toEqual({ ok: true });
+    const [delUrl, delInit] = lastCall(fetchMock);
+    expect(delUrl).toBe("/api/sessions/s%201/chat/queue/q%2F1");
+    expect(delInit.method).toBe("DELETE");
   });
 });
 

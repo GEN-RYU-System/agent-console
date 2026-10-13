@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { WebSocket } from "ws";
 import { agentForSession, fetchAgents, inputVerdict, stateForSession, type AgentRow, type InputVerdict, type SessionState } from "./agents.ts";
 import type { Config } from "./config.ts";
@@ -35,6 +36,26 @@ export interface SessionView {
 /** 名前の変更の結果。queued は端末へ何も書かず予約した */
 export type RenameMode = "claude" | "app" | "queued";
 
+/** チャットの送信の予約の上限（1 セッションあたり。送信済みで受け取り待ちのものも数える） */
+export const CHAT_QUEUE_MAX = 10;
+const BRACKETED_PASTE_START = "\u001b[200~";
+const BRACKETED_PASTE_END = "\u001b[201~";
+
+/** 送信の予約 1 件。queued=まだ端末に書いていない、sent=端末に書いた（Claude が受け取るのを待っている） */
+export interface ChatQueueItem {
+  id: string;
+  text: string;
+  createdAt: number;
+  state: "queued" | "sent";
+  /** 端末に書いた時点の、そのセッションの会話の最後の seq。これより後の role=user の記録が届いたら、予約から外す。分からないときは項目ごと無い */
+  sentAtSeq?: number;
+}
+
+/** 記録（ActivityStore）のうち、予約の判定に使う部分 */
+export interface ChatSource {
+  chat(sessionId: string, since?: number): { items: ReadonlyArray<{ seq: number; role: string }>; lastSeq: number };
+}
+
 export interface Snapshot {
   sessions: SessionView[];
   agentsAvailable: boolean;
@@ -63,6 +84,16 @@ export class Hub {
   private restoreNotices: RestoreNotice[] = [];
   private picksUnsent = 0;
   private activityRev = 0;
+  /** 送信の予約（セッション id → 古い順）。メモリだけ。アプリを再起動すると消える。正本はここ */
+  private chatQueue = new Map<string, ChatQueueItem[]>();
+  /** 1 件送った後、Claude が受け取ったと観測するまで次を送らないための印。sentSeq は送った時点の会話の最後の seq（分からなければ null） */
+  private readonly chatSentGuard = new Map<string, { sentSeq: number | null }>();
+  /** 送信済みの予約を外すのに、すでに使った user の記録の seq（同じ記録で 2 件外さない） */
+  private readonly chatConsumedSeq = new Map<string, number>();
+  /** セッションごとの、flush の同時実行を防ぐ印 */
+  private readonly chatFlushing = new Set<string>();
+  private chatRev = 0;
+  private chatSource: ChatSource | null = null;
   private readonly nameListeners = new Set<() => void>();
   /** PR と検査の写し（(repo, branch) ごと）。メモリだけ。正本は GitHub */
   private readonly prByKey = new Map<string, PrResponse>();
@@ -85,6 +116,7 @@ export class Hub {
       this.tracker.forget(id);
       this.pendingRenames.delete(id);
       this.prKeyOfSession.delete(id);
+      this.dropChatState(id);
     });
   }
 
@@ -121,6 +153,7 @@ export class Hub {
     await this.detectBreaks();
     await this.flushPendingRenames();
     await this.publish();
+    await this.flushChatQueues();
   }
 
   /** 既存のセッションの表示名（Claude 側の名前を優先）が変わったときに呼ばれる（復元リストの保存し直し用）。 */
@@ -142,10 +175,12 @@ export class Hub {
   }
 
   /** セッションの様子の記録の版を配信に載せる。記録が増えるたびに版が進み、画面が右の欄を取り直す。 */
-  watchActivity(store: { onChange: (listener: (rev: number) => void) => unknown; rev: number }): void {
+  watchActivity(store: { onChange: (listener: (rev: number) => void) => unknown; rev: number } & ChatSource): void {
+    this.chatSource = store;
     this.activityRev = store.rev;
     store.onChange((rev) => {
       this.activityRev = rev;
+      this.reconcileChatQueues();
       void this.publish().catch((err) => this.onPollError("publish", err));
     });
   }
@@ -199,6 +234,146 @@ export class Hub {
       } catch (err) {
         this.onPollError("rename", err);
       }
+    }
+  }
+
+  /** そのセッションの送信の予約（古い順）。画面の写し用 */
+  chatQueueOf(sessionId: string): ChatQueueItem[] {
+    return [...(this.chatQueue.get(sessionId) ?? [])];
+  }
+
+  /**
+   * 送信の予約を足す。端末へは何も書かない（書くのは flushChatQueue だけ）。停止中は 409、上限を超えたら 409。
+   * 足したあと、書いてよい状態ならすぐ送るよう flush を 1 回起こす（応答は待たせない）。
+   */
+  enqueueChat(sessionId: string, text: string): ChatQueueItem {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new SessionNotFoundError("session not found");
+    if (session.exited) throw new SessionConflictError("session is stopped");
+    const items = this.chatQueue.get(sessionId) ?? [];
+    if (items.length >= CHAT_QUEUE_MAX) throw new SessionConflictError(`chat queue is full (max ${CHAT_QUEUE_MAX})`);
+    const item: ChatQueueItem = { id: randomUUID(), text, createdAt: Date.now(), state: "queued" };
+    this.chatQueue.set(sessionId, [...items, item]);
+    this.bumpChat();
+    void this.flushChatQueue(sessionId).catch((err) => this.onPollError("chat", err));
+    return item;
+  }
+
+  /** 予約を取り消す。送信済み（Claude の受け取りを確認できていないもの）も消せる。端末には何も書かず、送信済みを消すときは見張りも消す。 */
+  cancelChat(sessionId: string, queueId: string): void {
+    const items = this.chatQueue.get(sessionId) ?? [];
+    const target = items.find((i) => i.id === queueId);
+    if (!target) throw new SessionNotFoundError("queue item not found");
+    if (target.state === "sent") this.chatSentGuard.delete(sessionId);
+    this.setChatItems(sessionId, items.filter((i) => i.id !== queueId));
+    this.bumpChat();
+  }
+
+  private setChatItems(sessionId: string, items: ChatQueueItem[]): void {
+    if (items.length === 0) this.chatQueue.delete(sessionId);
+    else this.chatQueue.set(sessionId, items);
+  }
+
+  private dropChatState(sessionId: string): void {
+    const had = this.chatQueue.has(sessionId);
+    this.chatQueue.delete(sessionId);
+    this.chatSentGuard.delete(sessionId);
+    this.chatConsumedSeq.delete(sessionId);
+    this.chatFlushing.delete(sessionId);
+    if (had) this.bumpChat();
+  }
+
+  /** 画面が取り直すよう、配信の版を進める */
+  private bumpChat(): void {
+    this.chatRev += 1;
+    void this.publish().catch((err) => this.onPollError("publish", err));
+  }
+
+  /** 記録が増えたとき。送信済みの予約は、送った後の seq で role=user の記録が届いたら外し、見張りも消す（本文の一致は見ない）。 */
+  private reconcileChatQueues(): void {
+    const source = this.chatSource;
+    if (source === null) return;
+    for (const [id, items] of [...this.chatQueue]) {
+      const claudeId = this.sessions.get(id)?.claudeSessionId;
+      if (claudeId === undefined) continue;
+      let consumed = this.chatConsumedSeq.get(id) ?? 0;
+      let next = items;
+      for (const item of items) {
+        if (item.state !== "sent" || item.sentAtSeq === undefined) continue;
+        const hit = source.chat(claudeId, Math.max(item.sentAtSeq, consumed)).items.find((r) => r.role === "user");
+        if (hit === undefined) break;
+        consumed = hit.seq;
+        next = next.filter((i) => i.id !== item.id);
+      }
+      if (next !== items) {
+        this.chatConsumedSeq.set(id, consumed);
+        this.setChatItems(id, next);
+        this.bumpChat();
+      }
+    }
+    for (const [id, guard] of [...this.chatSentGuard]) {
+      const claudeId = this.sessions.get(id)?.claudeSessionId;
+      if (claudeId === undefined || guard.sentSeq === null) continue;
+      if (source.chat(claudeId, guard.sentSeq).items.some((r) => r.role === "user")) this.chatSentGuard.delete(id);
+    }
+  }
+
+  /** 予約か見張りがあるセッションを 1 回ずつ flush する（定期取得のたびに呼ぶ） */
+  async flushChatQueues(): Promise<void> {
+    const ids = new Set([...this.chatQueue.keys(), ...this.chatSentGuard.keys()]);
+    await Promise.all([...ids].map((id) => this.flushChatQueue(id).catch((err) => this.onPollError("chat", err))));
+  }
+
+  /**
+   * 手が空いていれば、そのセッションの古い予約を 1 件だけ端末へ書く。
+   * 条件: 予約がある／見張りが無い／定期取得の値で idle かつ待ちなし／書く直前の取り直しでも同じ。
+   * Claude 起動中は括弧付きで貼ってから submitDelayMs 待って Enter。待った後に、取り消し・終了があれば Enter は送らない。
+   */
+  async flushChatQueue(sessionId: string): Promise<void> {
+    if (this.chatFlushing.has(sessionId)) return;
+    this.chatFlushing.add(sessionId);
+    try {
+      await this.flushChatQueueOnce(sessionId);
+    } finally {
+      this.chatFlushing.delete(sessionId);
+    }
+  }
+
+  private async flushChatQueueOnce(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    if (session.exited) {
+      this.dropChatState(sessionId);
+      return;
+    }
+    const table = await readProcessTable().catch(() => []);
+    const info = { exited: false, pids: descendantPids(session.term.pid, table) };
+    // 送った後の見張り (a): 作業中か確認待ちを観測したら外す
+    const status = agentForSession(info, this.agents)?.status;
+    if (status === "busy" || status === "waiting") this.chatSentGuard.delete(sessionId);
+    const next = (this.chatQueue.get(sessionId) ?? []).find((i) => i.state === "queued");
+    if (next === undefined || this.chatSentGuard.has(sessionId)) return;
+    if (!inputVerdict(info, this.agents).ok) return;
+    const verdict = await this.checkInput(sessionId);
+    if (!verdict.ok) return;
+    // 取り直している間に、取り消し・差し替わり・見張りの再設定があれば尊重する
+    const current = (this.chatQueue.get(sessionId) ?? []).find((i) => i.id === next.id);
+    if (current === undefined || current.state !== "queued" || this.chatSentGuard.has(sessionId) || session.exited) return;
+    const claudeId = session.claudeSessionId;
+    const sentSeq = verdict.hasClaude && claudeId !== undefined && this.chatSource !== null ? this.chatSource.chat(claudeId, Number.MAX_SAFE_INTEGER).lastSeq : null;
+    // await の前に同期で sent にする（同時の実行・取り消しとの競合を避ける）
+    this.setChatItems(sessionId, (this.chatQueue.get(sessionId) ?? []).map((i) => (i.id === next.id ? { ...i, state: "sent", ...(sentSeq !== null ? { sentAtSeq: sentSeq } : {}) } : i)));
+    if (verdict.hasClaude) this.chatSentGuard.set(sessionId, { sentSeq });
+    this.bumpChat();
+    this.sessions.write(session, verdict.hasClaude ? `${BRACKETED_PASTE_START}${next.text}${BRACKETED_PASTE_END}` : next.text);
+    await new Promise<void>((resolve) => setTimeout(resolve, this.config.pasteSubmitDelayMs));
+    const stillThere = (this.chatQueue.get(sessionId) ?? []).some((i) => i.id === next.id);
+    if (!stillThere || session.exited || this.sessions.get(sessionId) !== session) return;
+    this.sessions.write(session, "\r");
+    // 素のシェルには「受け取りの記録」が来ないので、Enter を送ったら予約から外す
+    if (!verdict.hasClaude) {
+      this.setChatItems(sessionId, (this.chatQueue.get(sessionId) ?? []).filter((i) => i.id !== next.id));
+      this.bumpChat();
     }
   }
 
@@ -361,7 +536,7 @@ export class Hub {
     const previous = this.lastNames;
     this.lastNames = new Map(views.map((v) => [v.id, v.name]));
     if (views.some((v) => previous.has(v.id) && previous.get(v.id) !== v.name)) for (const l of this.nameListeners) l();
-    return { sessions: views, agentsAvailable: this.agents !== null, restoreNotices: this.restoreNotices, picksUnsent: this.picksUnsent, activityRev: this.activityRev };
+    return { sessions: views, agentsAvailable: this.agents !== null, restoreNotices: this.restoreNotices, picksUnsent: this.picksUnsent, activityRev: this.activityRev + this.chatRev };
   }
 
   subscribe(ws: WebSocket): void {

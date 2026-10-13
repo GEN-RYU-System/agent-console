@@ -25,17 +25,20 @@ export function mergeChat(prev: readonly ChatItem[], incoming: readonly ChatItem
   return sorted.slice(-CHAT_CLIENT_KEEP);
 }
 
-const BLOCKED_KEY: Partial<Record<SessionState, string>> = {
-  working: "ac.chat.blocked.working",
+/** 送れない（予約も作れない）のは、停止中だけ。ほかの状態は予約になる */
+export const isSendBlocked = (state: SessionState): boolean => state === "stopped";
+
+const NOTICE_KEY: Partial<Record<SessionState, string>> = {
+  working: "ac.chat.queue.notice.working",
   waiting: "ac.chat.waitingInTerminal",
   stopped: "ac.chat.blocked.stopped",
-  unknown: "ac.chat.blocked.unknown",
+  unknown: "ac.chat.queue.notice.unknown",
 };
 
-/** 送れない理由の文言のキー。送れる状態（canInput）なら null。サーバーの判定（canInput）をそのまま使い、画面では作り直さない */
-export function blockedReasonKey(state: SessionState, canInput: boolean): string | null {
+/** 入力欄の上の案内の文言のキー。すぐ届く状態（canInput）なら null。サーバーの判定（canInput）をそのまま使い、画面では作り直さない */
+export function queueNoticeKey(state: SessionState, canInput: boolean): string | null {
   if (canInput) return null;
-  return BLOCKED_KEY[state] ?? "ac.chat.blocked.other";
+  return NOTICE_KEY[state] ?? "ac.chat.queue.notice.other";
 }
 
 export interface SendKeyEvent {

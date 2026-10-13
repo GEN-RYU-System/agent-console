@@ -243,7 +243,7 @@ test("K2/K8: 新しいものが来たら一番下まで動く。上を読んで�
   await expect(bubbles(page).last()).toContainText("（以下略）");
 });
 
-test("K5/K6/K7: 入力欄から送る。Enter で送り、Shift+Enter は改行、変換中は送らない。作業中は押せず、確認の待ちでは端末タブへ移る。よく使う指示は入力欄に入る", async ({ page }) => {
+test("K1/K3/K4/K7/K8: 入力欄から送ると予約に入る。作業中は端末に書かれず、手が空いたら書かれ、受け取りの記録で消える。取り消せる。確認の待ちでも予約できる。よく使う指示は入力欄に入る", async ({ page }) => {
   const s = await makeSession("e2e-plain", "chat-send");
   const promptRes = await fetch(`${BASE}/api/quick-prompts`, { method: "POST", headers: BEARER, body: JSON.stringify({ label: "テスト実行", text: "run the tests please" }) });
   expect(promptRes.status).toBe(201);
@@ -255,68 +255,82 @@ test("K5/K6/K7: 入力欄から送る。Enter で送り、Shift+Enter は改行�
   await expect(rowOf(page, s.name).getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: STATE_DEADLINE_MS });
   const input = page.getByTestId("chat-input");
   const send = page.getByRole("button", { name: "送る", exact: true });
+  const queueItems = page.getByTestId("chat-queue-item");
   await expect(send).toBeDisabled();
 
-  // K7: よく使う指示を押すと入力欄に入る（すぐには送らない）
+  // よく使う指示を押すと入力欄に入る（すぐには送らない）
   await page.getByTestId("quick-prompt-bar").getByRole("button", { name: "テスト実行", exact: true }).click();
   await expect(input).toHaveValue("run the tests please");
   await page.waitForTimeout(500);
-  await expect(page.getByTestId("chat-sent-notice")).toHaveCount(0);
+  await expect(queueItems).toHaveCount(0);
   await input.fill("");
 
-  // K5: Shift+Enter は改行（送らない）
+  // Shift+Enter は改行（送らない）／変換中（isComposing）の Enter では送らない
   await input.click();
   await page.keyboard.type("first-line");
   await page.keyboard.press("Shift+Enter");
   await page.keyboard.type("second-line");
   await expect(input).toHaveValue("first-line\nsecond-line");
-  await page.waitForTimeout(500);
-  await expect(page.getByTestId("chat-sent-notice")).toHaveCount(0);
-  // K5: 日本語の変換中（isComposing）の Enter では送らない
   await input.evaluate((el) => el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", keyCode: 229, isComposing: true, bubbles: true, cancelable: true })));
   await page.waitForTimeout(500);
-  await expect(page.getByTestId("chat-sent-notice")).toHaveCount(0);
+  await expect(queueItems).toHaveCount(0);
   await expect(input).toHaveValue("first-line\nsecond-line");
 
-  // K5: Enter で送る。端末に貼られて Enter が届き、入力欄は空になり、「送りました」が出る
+  // 手が空いているとき: Enter で予約に入り、入力欄は空になる。サーバーが端末に書き（「送信済み」）、受け取りの記録（hook）が届くと会話に出て、予約は消える
   await input.press("Enter");
-  await expect(page.getByTestId("chat-sent-notice")).toHaveText("送りました（Claude が受け取ると表示されます）", { timeout: 15000 });
   await expect(input).toHaveValue("");
+  await expect(queueItems).toHaveCount(1);
+  await expect(queueItems.first()).toHaveAttribute("data-state", "sent", { timeout: 15000 });
+  await expect(queueItems.first()).toContainText("送信済み（受け取り待ち）");
   await tab(page, /端末/).click();
-  await expect(page.getByTestId("terminal")).toContainText("first-line");
+  await expect(page.getByTestId("terminal")).toContainText("first-line", { timeout: 15000 });
   await expect(page.getByTestId("terminal")).toContainText("second-line");
-  // Claude が受け取ったとき（hook が届いたとき）に会話へ出て、「送りました」は消える
   await tab(page, /チャット/).click();
   fireHook({ session_id: s.claudeSessionId, hook_event_name: "UserPromptSubmit", prompt: "first-line\nsecond-line" });
   await expect(bubbles(page).last()).toHaveText("first-line\nsecond-line", { timeout: SETTLE_MS });
-  await expect(page.getByTestId("chat-sent-notice")).toHaveCount(0);
+  await expect(queueItems).toHaveCount(0);
 
-  // K6: 作業中は「送る」を押せず、理由の文が出る。Enter でも送らない
+  // 作業中: 「送る」を押せて、予約中の印が出る。端末には書かれない。案内が出る
   writeFileSync(STATUS_FILE, "busy");
   await expect(rowOf(page, s.name).getByTestId("status")).toHaveAttribute("data-state", "working", { timeout: STATE_DEADLINE_MS });
-  await input.fill("作業中に書いた下書き");
-  await expect(send).toBeDisabled();
-  await expect(page.getByTestId("chat-blocked")).toContainText("Claude が作業中のため送れません");
+  await input.fill("queued-while-busy");
+  await expect(send).toBeEnabled();
+  await expect(page.getByTestId("chat-blocked")).toContainText("作業が終わってから届きます");
   await input.press("Enter");
-  await page.waitForTimeout(500);
-  await expect(page.getByTestId("chat-sent-notice")).toHaveCount(0);
-  await expect(input).toHaveValue("作業中に書いた下書き");
-  // よく使う指示は、作業中でも押せる（入力欄に入るだけ）
-  await page.getByTestId("quick-prompt-bar").getByRole("button", { name: "テスト実行", exact: true }).click();
-  await expect(input).toHaveValue("作業中に書いた下書き\nrun the tests please");
+  await expect(queueItems).toHaveCount(1);
+  await expect(queueItems.first()).toHaveAttribute("data-state", "queued");
+  await expect(queueItems.first()).toContainText("予約中（作業が終わったら送ります）");
+  await expect(page.getByTestId("chat-queue-note")).toContainText("アプリを再起動すると予約は消えます");
+  await page.waitForTimeout(3500); // サーバーの定期取得を何度か待っても、書かれない
+  await expect(queueItems.first()).toHaveAttribute("data-state", "queued");
+  await tab(page, /端末/).click();
+  await expect(page.getByTestId("terminal")).not.toContainText("queued-while-busy");
+  await tab(page, /チャット/).click();
 
-  // K6: 確認の待ちのときは「端末で確認が出ています」と、端末タブへ移る Button
+  // 取り消せる（取り消した予約は、手が空いても書かれない）
+  await queueItems.first().getByRole("button", { name: "取り消す", exact: true }).click();
+  await expect(queueItems).toHaveCount(0);
+
+  // 確認の待ち: 案内と端末へ移る Button を出したまま、予約もできる
   writeFileSync(STATUS_FILE, "waiting");
   await expect(rowOf(page, s.name).getByTestId("status")).toHaveAttribute("data-state", "waiting", { timeout: STATE_DEADLINE_MS });
-  await expect(send).toBeDisabled();
   await expect(page.getByTestId("chat-blocked")).toContainText("端末で確認が出ています");
+  await input.fill("queued-while-waiting");
+  await expect(send).toBeEnabled();
+  await input.press("Enter");
+  await expect(queueItems).toHaveCount(1);
+  await expect(queueItems.first()).toHaveAttribute("data-state", "queued");
   await page.getByTestId("chat-blocked").getByRole("button", { name: "端末を開く", exact: true }).click();
   await expect(tab(page, /端末/)).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("terminal")).toBeVisible();
+  await expect(page.getByTestId("terminal")).not.toContainText("queued-while-waiting");
 
-  // 手すきに戻ると、また送れる
+  // 手が空くと、予約が端末に書かれる（作業中・確認の待ちの間は書かれていない）
   writeFileSync(STATUS_FILE, "idle");
+  await expect(page.getByTestId("terminal")).toContainText("queued-while-waiting", { timeout: 20000 });
   await tab(page, /チャット/).click();
-  await expect(rowOf(page, s.name).getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: STATE_DEADLINE_MS });
-  await expect(send).toBeEnabled();
+  await expect(queueItems.first()).toHaveAttribute("data-state", "sent");
+  fireHook({ session_id: s.claudeSessionId, hook_event_name: "UserPromptSubmit", prompt: "queued-while-waiting" });
+  await expect(queueItems).toHaveCount(0, { timeout: SETTLE_MS });
+  await expect(bubbles(page).last()).toHaveText("queued-while-waiting");
 });

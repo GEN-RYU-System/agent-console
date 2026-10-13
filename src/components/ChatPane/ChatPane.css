@@ -182,11 +182,35 @@
   color: var(--text-muted);
 }
 
-.ac-chat__sent {
+/* 送信の予約: 会話の一番下に、送る順に並べる。吹き出しは自分の文章と同じ形で、少し薄くして「まだ届いていない」ことを示す */
+.ac-chat__queue-note {
   margin: 0;
-  padding: 0 var(--space-3);
   font-size: var(--font-xs);
   color: var(--text-muted);
+  text-align: right;
+}
+
+.ac-chat__queued {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 70%;
+}
+
+.ac-chat__queued .ac-chat__bubble {
+  max-width: 100%;
+}
+
+.ac-chat__bubble--queued {
+  opacity: var(--opacity-muted);
+}
+
+.ac-chat__queued-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .ac-chat__input-row {

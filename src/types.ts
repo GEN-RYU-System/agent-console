@@ -245,10 +245,19 @@ export interface ChatItem {
   /** 記録の時点で、長さの上限により後ろが切れている */
   truncated?: boolean;
 }
+/** チャットの送信の予約 1 件（サーバーのメモリの写し）。queued=まだ端末に書いていない、sent=書いた（Claude の受け取り待ち） */
+export interface ChatQueueItem {
+  id: string;
+  text: string;
+  createdAt: number;
+  state: "queued" | "sent";
+  sentAtSeq?: number;
+}
 export type ChatResponse =
-  | { status: "noSession" }
+  | { status: "noSession"; queued: ChatQueueItem[] }
   | {
       status: "ok";
+      queued: ChatQueueItem[];
       /** アプリの起動ごとに変わる id。変わったら seq が振り直されている */
       epoch: string;
       reset: boolean;
