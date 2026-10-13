@@ -346,7 +346,9 @@ export class Hub {
       this.dropChatState(sessionId);
       return;
     }
-    const table = await readProcessTable().catch(() => []);
+    // ps が失敗したときは、子孫の判定が当てにならないので送らない（このコードの側だけで扱う）
+    const table = await readProcessTable().catch(() => null);
+    if (table === null) return;
     const info = { exited: false, pids: descendantPids(session.term.pid, table) };
     // 送った後の見張り (a): 作業中か確認待ちを観測したら外す
     const status = agentForSession(info, this.agents)?.status;
@@ -368,7 +370,7 @@ export class Hub {
     this.sessions.write(session, verdict.hasClaude ? `${BRACKETED_PASTE_START}${next.text}${BRACKETED_PASTE_END}` : next.text);
     await new Promise<void>((resolve) => setTimeout(resolve, this.config.pasteSubmitDelayMs));
     const stillThere = (this.chatQueue.get(sessionId) ?? []).some((i) => i.id === next.id);
-    if (!stillThere || session.exited || this.sessions.get(sessionId) !== session) return;
+    if (!stillThere || session.exited || this.sessions.get(sessionId) !== session || this.sessions.isClosing(sessionId)) return;
     this.sessions.write(session, "\r");
     // 素のシェルには「受け取りの記録」が来ないので、Enter を送ったら予約から外す
     if (!verdict.hasClaude) {
