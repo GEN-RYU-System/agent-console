@@ -1,7 +1,7 @@
 import path from "node:path";
 import { ActivityStore } from "./activity.ts";
 import { checkHooks, type HookCheck } from "./activity-hooks.ts";
-import { hookPathIn, installBoardCommand, installHookFile, isActivitySetupEnabled } from "./activity-setup.ts";
+import { hookPathIn, installBoardCommand, installHookFile, installStatuslineCommand, isActivitySetupEnabled } from "./activity-setup.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
 import { startPolling } from "./poll.ts";
@@ -29,7 +29,7 @@ export interface StartOptions {
 /**
  * セッションの様子の記録を使えるようにする。
  * 本番のポートで起動したときだけ（AGENT_CONSOLE_PORT を上書きした自己診断・試験では行わない）:
- *   hook の本体を dataDir/hooks/ へ、作戦ボードの命令を dataDir/bin/ へ写す／起動のときと 1 時間ごとに、activityKeepDays より古い記録を消し、記録の仕組みを点検して外れていればログに出す。
+ *   hook の本体を dataDir/hooks/ へ、作戦ボードの命令・利用量の命令を dataDir/bin/ へ写す／起動のときと 1 時間ごとに、activityKeepDays より古い記録を消し、記録の仕組みを点検して外れていればログに出す。
  * 写せなくてもサーバーは止めない。
  */
 export function startActivity(opts: StartOptions): ActivityRuntime {
@@ -49,6 +49,11 @@ export function startActivity(opts: StartOptions): ActivityRuntime {
       installBoardCommand(opts.hooksSourceDir, config.dataDir);
     } catch (err) {
       console.error("activity: cannot place the board command:", err instanceof Error ? err.message : err);
+    }
+    try {
+      installStatuslineCommand(opts.hooksSourceDir, config.dataDir);
+    } catch (err) {
+      console.error("activity: cannot place the statusline command:", err instanceof Error ? err.message : err);
     }
     stoppers.push(
       startPolling(

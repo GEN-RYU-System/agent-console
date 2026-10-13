@@ -43,3 +43,13 @@ export function installHookFile(sourceDir: string, dataDir: string): string {
 export function installBoardCommand(sourceDir: string, dataDir: string): string {
   return copyAtomically(sourceDir, BOARD_COMMAND_FILE_NAME, boardCommandPathIn(dataDir));
 }
+
+export const STATUSLINE_COMMAND_FILE_NAME = "ac-statusline.mjs";
+
+/** dataDir/bin/ac-statusline.mjs（Claude の statusLine が動かす、利用量の写し取りの命令） */
+export const statuslineCommandPathIn = (dataDir: string): string => path.join(dataDir, "bin", STATUSLINE_COMMAND_FILE_NAME);
+
+/** リポジトリの hooks/ac-statusline.mjs（正本）を dataDir/bin/ へ写す（ac-board と同じ作法） */
+export function installStatuslineCommand(sourceDir: string, dataDir: string): string {
+  return copyAtomically(sourceDir, STATUSLINE_COMMAND_FILE_NAME, statuslineCommandPathIn(dataDir));
+}

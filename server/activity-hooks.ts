@@ -8,7 +8,7 @@ import path from "node:path";
 export const OWN_HOOK_SUFFIX = "/hooks/activity-hook.mjs";
 export const BACKUP_PREFIX = "settings.json.ac-backup-";
 const BACKUP_NAME = /^settings\.json\.ac-backup-\d{8}T\d{9}Z$/;
-export const BACKUPS_KEPT = 3;
+export const BACKUPS_KEPT = 6;
 const SETTINGS_MODE = 0o600;
 
 export interface HookSpec {
@@ -249,7 +249,10 @@ function commit(read: ReadSettings, next: Json, now: number): void {
   const original = read.text;
   let backup: string | null = null;
   if (original !== null) {
-    backup = path.join(dir, backupName(now));
+    // 同じミリ秒に 2 回書いても（hooks の段と statusLine の段）、最初の控えを上書きしない
+    let stamp = now;
+    while (existsSync(path.join(dir, backupName(stamp)))) stamp += 1;
+    backup = path.join(dir, backupName(stamp));
     copyFileSync(read.real, backup);
     pruneBackups(dir);
   }
@@ -309,4 +312,118 @@ export function uninstallHooks(input: UninstallInput): UninstallResult {
   if (!result.changed) return { changed: false, removed: 0 };
   commit(read, result.settings, now);
   return { changed: true, removed: result.removed };
+}
+
+// ---- statusLine（利用量の写し取り。設計 docs/handoff/usage-meter/design.md §3-2・§10-3・§10-5）----
+// hooks の Handler 型は使わない。statusLine は settings.json の最上位の鍵 1 つで、形は {type:"command", command:"<文字列>"} だけ（args は無い）。
+
+export interface StatusLine {
+  type: "command";
+  command: string;
+}
+
+/** command の文字列に入れると引用が崩れる文字（二重引用符・$・バッククォート・バックスラッシュ・改行） */
+const UNSAFE_IN_COMMAND = /["$`\\\n\r]/;
+
+export class StatusLineRefusedError extends HookSettingsError {}
+
+/** `"<node>" "<命令>"`。2 つのパスを二重引用符で囲む。引用が崩れる文字が入っていたら、理由つきで例外（何も書かない） */
+export function buildStatusLine(nodePath: string, scriptPath: string): StatusLine {
+  for (const p of [nodePath, scriptPath]) {
+    if (UNSAFE_IN_COMMAND.test(p)) throw new StatusLineRefusedError(`パスに引用を崩す文字（" $ \` \\ 改行）が含まれているため、statusLine を足しません: ${JSON.stringify(p)}`);
+  }
+  return { type: "command", command: `"${nodePath}" "${scriptPath}"` };
+}
+
+/** 自分の物かは、command に `"<命令のパス>"`（引用符を含む）がそのまま入っているかで見分ける */
+export function isOwnStatusLine(value: unknown, scriptPath: string): boolean {
+  return isObject(value) && value.type === "command" && typeof value.command === "string" && value.command.includes(`"${scriptPath}"`);
+}
+
+export type AddStatusLineOutcome = "added" | "updated" | "unchanged" | "foreign";
+
+export interface AddStatusLineResult {
+  settings: Json;
+  outcome: AddStatusLineOutcome;
+}
+
+/** statusLine を足した新しい設定を返す。無ければ足す／自分の物で内容が違えば直す／同じなら変えない／別の物があれば上書きしない（foreign） */
+export function addStatusLine(settings: Json, nodePath: string, scriptPath: string): AddStatusLineResult {
+  const current = settings.statusLine;
+  if (current === undefined) return { settings: { ...settings, statusLine: buildStatusLine(nodePath, scriptPath) }, outcome: "added" };
+  if (!isOwnStatusLine(current, scriptPath)) return { settings, outcome: "foreign" };
+  const wanted = buildStatusLine(nodePath, scriptPath);
+  if (JSON.stringify(current) === JSON.stringify(wanted)) return { settings, outcome: "unchanged" };
+  return { settings: { ...settings, statusLine: wanted }, outcome: "updated" };
+}
+
+/** 自分の statusLine だけを外した新しい設定を返す（別の物には触れない） */
+export function removeStatusLine(settings: Json, scriptPath: string): EditResult {
+  if (!isOwnStatusLine(settings.statusLine, scriptPath)) return { settings, changed: false };
+  const { statusLine: _removed, ...rest } = settings;
+  return { settings: rest, changed: true };
+}
+
+export interface StatusLineCheck {
+  ok: boolean;
+  reason?: "noSettings" | "unreadable" | "missing" | "foreign" | "nodeMissing" | "scriptFileMissing";
+}
+
+export interface StatusLineCheckInput {
+  settingsPath: string;
+  /** dataDir/bin/ac-statusline.mjs */
+  scriptPath: string;
+}
+
+/** 設定ファイルを読むだけ（書かない）。自分の statusLine があり、node と命令のファイルがあるか。hooks の点検（checkHooks）には含めない */
+export function checkStatusLine(input: StatusLineCheckInput): StatusLineCheck {
+  let settings: Json;
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(input.settingsPath, "utf8"));
+    if (!isObject(parsed)) return { ok: false, reason: "unreadable" };
+    settings = parsed;
+  } catch (err) {
+    return { ok: false, reason: (err as { code?: string }).code === "ENOENT" ? "noSettings" : "unreadable" };
+  }
+  const current = settings.statusLine;
+  if (current === undefined) return { ok: false, reason: "missing" };
+  if (!isOwnStatusLine(current, input.scriptPath)) return { ok: false, reason: "foreign" };
+  const nodePath = /^"([^"]*)"/.exec((current as Json).command as string)?.[1];
+  if (nodePath === undefined || !existsSync(nodePath)) return { ok: false, reason: "nodeMissing" };
+  return existsSync(input.scriptPath) ? { ok: true } : { ok: false, reason: "scriptFileMissing" };
+}
+
+export interface InstallStatusLineInput {
+  settingsPath: string;
+  nodePath: string;
+  scriptPath: string;
+  now?: () => number;
+}
+
+export interface InstallStatusLineResult {
+  outcome: AddStatusLineOutcome;
+}
+
+export function installStatusLine(input: InstallStatusLineInput): InstallStatusLineResult {
+  const now = (input.now ?? Date.now)();
+  const read = readSettings(input.settingsPath);
+  const result = addStatusLine(read.settings, input.nodePath, input.scriptPath);
+  if (result.outcome === "added" || result.outcome === "updated") commit(read, result.settings, now);
+  return { outcome: result.outcome };
+}
+
+export interface UninstallStatusLineInput {
+  settingsPath: string;
+  scriptPath: string;
+  now?: () => number;
+}
+
+export function uninstallStatusLine(input: UninstallStatusLineInput): { changed: boolean } {
+  const now = (input.now ?? Date.now)();
+  const read = readSettings(input.settingsPath);
+  if (read.text === null) return { changed: false };
+  const result = removeStatusLine(read.settings, input.scriptPath);
+  if (!result.changed) return { changed: false };
+  commit(read, result.settings, now);
+  return { changed: true };
 }

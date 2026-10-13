@@ -1,4 +1,4 @@
-import type { ActivityResponse, BoardResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, ResumeTarget, Routine, RoutineInput } from "./types";
+import type { ActivityResponse, BoardResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, ResumeTarget, Routine, RoutineInput, UsageResponse } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -124,6 +124,8 @@ export async function fetchPickImage(id: string): Promise<string> {
 export const fetchActivity = (sessionId: string): Promise<ActivityResponse> => request(`${diffBase(sessionId)}/activity`);
 /** 右の欄「作戦ボード」の計画（テーマ・KGI・KPI・ロードマップ）。 */
 export const fetchBoard = (sessionId: string): Promise<BoardResponse> => request(`${diffBase(sessionId)}/board`);
+/** Claude の利用量（週・5 時間）。サーバーはファイルを読むだけで、Claude には何も送らない。 */
+export const fetchUsage = (): Promise<UsageResponse> => request("/api/usage");
 /** チャットの会話（since より後の分。epoch がサーバーのものと違えば全件が返り reset: true）。 */
 export const fetchChat = (sessionId: string, since: number, epoch: string | null): Promise<ChatResponse> =>
   request(`${diffBase(sessionId)}/chat?since=${since}${epoch !== null ? `&epoch=${encodeURIComponent(epoch)}` : ""}`);

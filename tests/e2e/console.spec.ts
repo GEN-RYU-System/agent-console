@@ -241,6 +241,65 @@ test("フッターに Sales Anchor 展開元 SHA と claude --version が出る"
   );
 });
 
+/** 利用量（週・5 時間）の写し。本物の命令（dataDir/bin/ac-statusline.mjs）に statusLine の 2 回目以降の入力の形を流して作る */
+const USAGE_FILE = path.join(DATA_DIR, "usage.json");
+const USAGE_COMMAND = path.join(DATA_DIR, "bin", "ac-statusline.mjs");
+const USAGE_SHOT_DIR = process.env.AC_USAGE_SHOT_DIR;
+function fireStatusline(weekPct: number, fivePct: number, resetsInSec: number): void {
+  const now = Math.floor(Date.now() / 1000);
+  const input = { rate_limits: { five_hour: { used_percentage: fivePct, resets_at: now + resetsInSec }, seven_day: { used_percentage: weekPct, resets_at: now + resetsInSec * 20 } } };
+  const r = execFileSync(process.execPath, [USAGE_COMMAND], { input: JSON.stringify(input), encoding: "utf8" });
+  expect(r).toBe(`週 ${weekPct}% · 5時間 ${fivePct}%\n`);
+}
+
+test("下の帯に利用量（週・5時間）の 2 本のバーが出る: 値が無い→まだ値がありません、命令が書くと棒・N%・リセット・N分前、80/95/100% の Badge", async ({ page }) => {
+  rmSync(USAGE_FILE, { force: true });
+  expect(existsSync(USAGE_COMMAND)).toBe(true);
+  try {
+    await openPaired(page);
+    const footer = page.getByTestId("footer");
+    await expect(footer.getByTestId("usage-meter-message")).toHaveText("まだ値がありません（Claude が返事をすると出ます）");
+
+    fireStatusline(41, 23, 3 * 3600);
+    await page.reload();
+    await expect(footer.getByTestId("usage-meter-bar-week")).toBeVisible();
+    await expect(footer.getByTestId("usage-meter-bar-fiveHour")).toBeVisible();
+    await expect(footer.getByTestId("usage-meter-pct-week")).toHaveText("41%");
+    await expect(footer.getByTestId("usage-meter-pct-fiveHour")).toHaveText("23%");
+    await expect(footer.getByTestId("usage-meter-week")).toContainText(/リセット \d+月\d+日 \d+:\d{2}/);
+    await expect(footer.getByTestId("usage-meter-age")).toHaveText("たった今書かれた値");
+    await expect(footer.getByTestId("usage-meter-badge-week")).toHaveCount(0);
+
+    // 工程0(d): footer の幅で 2 本のバーが読めるか（スクリーンショットは AC_USAGE_SHOT_DIR を指定したときだけ保存する）
+    const widths = [1400, 1280, 1024, 800];
+    const cases: Array<[string, number, number]> = [["normal", 41, 23], ["warning", 97, 85], ["full", 100, 100]];
+    for (const [name, week, five] of cases) {
+      fireStatusline(week, five, 3 * 3600);
+      await page.reload();
+      await expect(footer.getByTestId("usage-meter-pct-week")).toHaveText(`${week}%`);
+      if (name === "warning") {
+        await expect(footer.getByTestId("usage-meter-badge-week")).toHaveText("ほぼ上限");
+        await expect(footer.getByTestId("usage-meter-badge-fiveHour")).toHaveText("上限に近い");
+        await expect(footer.getByTestId("usage-meter-bar-week")).toBeVisible();
+      }
+      if (name === "full") {
+        await expect(footer.getByTestId("usage-meter-bar-week")).toHaveCount(0);
+        await expect(footer.getByTestId("usage-meter-badge-week")).toHaveText("上限");
+      }
+      if (USAGE_SHOT_DIR) {
+        mkdirSync(USAGE_SHOT_DIR, { recursive: true });
+        for (const width of widths) {
+          await page.setViewportSize({ width, height: 800 });
+          await footer.screenshot({ path: path.join(USAGE_SHOT_DIR, `footer-${name}-${width}.png`) });
+        }
+        await page.setViewportSize({ width: 1400, height: 800 });
+      }
+    }
+  } finally {
+    rmSync(USAGE_FILE, { force: true });
+  }
+});
+
 test("ペアリング: /pair?code で一覧が開き、URL に秘密もコードも残らず、トークンは sessionStorage のみ（Cookie 無し）", async ({ page, context }) => {
   const code = await newPairingCode();
   await page.goto(`${BASE}/pair?code=${code}`);

@@ -204,16 +204,16 @@ describe("K6: install", () => {
     expect(readJson(real).hooks.TaskCreated).toBeDefined();
   });
 
-  it("控えは新しい 3 つだけを残す。消すのは settings.json.ac-backup-<日時> の形のファイルだけ", () => {
+  it("控えは新しい 6 つだけを残す（1 回の install で hooks の段と statusLine の段の 2 つできるため）。消すのは settings.json.ac-backup-<日時> の形のファイルだけ", () => {
     const e = makeEnv();
     writeFileSync(e.settings, JSON.stringify(PO_SETTINGS) + "\n");
     const dir = path.dirname(e.settings);
-    const names = ["20260101T000000000Z", "20260102T000000000Z", "20260103T000000000Z"].map((s) => `settings.json.ac-backup-${s}`);
+    const names = ["20260101T000000000Z", "20260102T000000000Z", "20260103T000000000Z", "20260104T000000000Z", "20260105T000000000Z", "20260106T000000000Z"].map((s) => `settings.json.ac-backup-${s}`);
     for (const n of names) writeFileSync(path.join(dir, n), "{}");
     writeFileSync(path.join(dir, "settings.json.ac-backup-manual"), "{}");
     writeFileSync(path.join(dir, "settings.local.json"), "{}");
     installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath, now: () => Date.UTC(2026, 9, 12, 14, 0, 0, 0) });
-    expect(backups(e)).toEqual([names[1], names[2], "settings.json.ac-backup-20261012T140000000Z", "settings.json.ac-backup-manual"].sort());
+    expect(backups(e)).toEqual([names[1], names[2], names[3], names[4], names[5], "settings.json.ac-backup-20261012T140000000Z", "settings.json.ac-backup-manual"].sort());
     expect(existsSync(path.join(dir, "settings.local.json"))).toBe(true);
   });
 });

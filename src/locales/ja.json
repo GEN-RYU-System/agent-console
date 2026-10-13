@@ -40,6 +40,21 @@
       "version": "版",
       "commit": "コミット"
     },
+    "usage": {
+      "week": "週",
+      "fiveHour": "5時間",
+      "percent": "{{percent}}%",
+      "none": "まだ値がありません（Claude が返事をすると出ます）",
+      "invalid": "利用量の値を読めません",
+      "error": "利用量を取得できません",
+      "resetAt": "リセット {{month}}月{{day}}日 {{time}}",
+      "resetDone": "リセット済み・次の返事を待っています",
+      "minutesAgo": "{{minutes}}分前に書かれた値",
+      "justNow": "たった今書かれた値",
+      "nearLimit": "上限に近い",
+      "almostLimit": "ほぼ上限",
+      "atLimit": "上限"
+    },
     "loadError": "状態を取得できません",
     "removeSession": "一覧から外す",
     "ledgerErrorTitle": "台帳を読めません",
