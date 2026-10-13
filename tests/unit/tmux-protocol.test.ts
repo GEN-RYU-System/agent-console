@@ -8,6 +8,7 @@ import {
   cursorStyleCode,
   paneTarget,
   parsePaneInfo,
+  splitCapture,
   resizeCommand,
   sendKeysCommands,
   sessionName,
@@ -135,9 +136,9 @@ describe("CommandQueue", () => {
 });
 
 describe("先入れ（replay）", () => {
-  const info = parsePaneInfo("1234 0 5 3 2 1 default 0 4294967295 4294967295 0 [7,25,1004,2004]");
+  const info = parsePaneInfo("1234 0 5 3 2 1 default 0 4294967295 4294967295 0 24 [7,25,1004,2004]");
   it("display の値を読む", () => {
-    expect(info).toMatchObject({ pid: 1234, alternateOn: false, historySize: 5, cursorX: 3, cursorY: 2, cursorVisible: true, keypad: false, privateModes: [7, 25, 1004, 2004] });
+    expect(info).toMatchObject({ pid: 1234, alternateOn: false, historySize: 5, cursorX: 3, cursorY: 2, cursorVisible: true, keypad: false, paneHeight: 24, privateModes: [7, 25, 1004, 2004] });
   });
   it("通常画面: 消去 → 履歴＋画面 → モード（25 を除く）→ カーソル形・位置・表示", () => {
     const out = buildReplay({ info: info!, history: ["h1", "h2"], normal: ["row1", "row2"], alt: [] });
@@ -149,12 +150,17 @@ describe("先入れ（replay）", () => {
     expect(out).not.toContain("\x1b[?1049h");
   });
   it("alt 画面: 通常画面を書いた後、保存カーソルへ移って 1049h、alt 画面を書く", () => {
-    const alt = parsePaneInfo("1 1 0 0 0 0 block 1 4 9 1 [25,1049,1000]")!;
+    const alt = parsePaneInfo("1 1 0 0 0 0 block 1 4 9 1 24 [25,1049,1000]")!;
     const out = buildReplay({ info: alt, history: [], normal: ["normal"], alt: ["alt1", "alt2"] });
     expect(out).toContain("normal\x1b[10;5H\x1b[?1049h\x1b[H\x1b[2Jalt1\r\nalt2");
     expect(out).toContain("\x1b[?1000h\x1b=");
     expect(out.indexOf("\x1b[?1049h")).toBeLessThan(out.indexOf("\x1b[?1000h"));
     expect(out.endsWith("\x1b[1 q\x1b[1;1H\x1b[?25l")).toBe(true);
+  });
+  it("S1: 1 本の capture を末尾 pane_height 行（可視）と残り（履歴）に分ける。足りない時は全部可視", () => {
+    expect(splitCapture(["h1", "h2", "v1", "v2"], 2)).toEqual({ history: ["h1", "h2"], visible: ["v1", "v2"] });
+    expect(splitCapture(["v1", "", ""], 3)).toEqual({ history: [], visible: ["v1", "", ""] });
+    expect(splitCapture(["v1"], 3)).toEqual({ history: [], visible: ["v1"] });
   });
   it("カーソル形の値", () => {
     expect(cursorStyleCode("block", true)).toBe(1);

@@ -152,7 +152,7 @@ export class CommandQueue<T> {
 
 /** 先入れを作るために control client から取る値の並び（display の書式） */
 export const DISPLAY_FORMAT =
-  "#{pane_pid} #{alternate_on} #{history_size} #{cursor_x} #{cursor_y} #{cursor_flag} #{cursor_shape} #{cursor_blinking} #{alternate_saved_x} #{alternate_saved_y} #{keypad_flag} #{pane_private_modes}";
+  "#{pane_pid} #{alternate_on} #{history_size} #{cursor_x} #{cursor_y} #{cursor_flag} #{cursor_shape} #{cursor_blinking} #{alternate_saved_x} #{alternate_saved_y} #{keypad_flag} #{pane_height} #{pane_private_modes}";
 
 export interface PaneInfo {
   pid: number;
@@ -166,6 +166,7 @@ export interface PaneInfo {
   altSavedX: number;
   altSavedY: number;
   keypad: boolean;
+  paneHeight: number;
   privateModes: number[];
 }
 
@@ -173,9 +174,9 @@ const UNSET = 4294967295;
 
 export function parsePaneInfo(line: string): PaneInfo | null {
   const parts = line.trim().split(/\s+/);
-  if (parts.length < 11) return null;
+  if (parts.length < 12) return null;
   const num = (s: string): number => (Number.isFinite(Number(s)) ? Number(s) : 0);
-  const modes = (parts[11] ?? "")
+  const modes = (parts[12] ?? "")
     .replace(/^\[|\]$/g, "")
     .split(",")
     .map((s) => Number(s.replace(/^\?/, "")))
@@ -192,8 +193,18 @@ export function parsePaneInfo(line: string): PaneInfo | null {
     altSavedX: num(parts[8]),
     altSavedY: num(parts[9]),
     keypad: parts[10] === "1",
+    paneHeight: num(parts[11]),
     privateModes: modes,
   };
+}
+
+/**
+ * `capture-pane -p -e -S -`（履歴の先頭から可視の末尾まで 1 命令）の行を、末尾 paneHeight 行を可視、残りを履歴に分ける。
+ * 実測（tmux 3.8）: 末尾の空行も落とされず、行数は history_size + pane_height になる。行数が paneHeight に満たない時は全てを可視にする。
+ */
+export function splitCapture(lines: string[], paneHeight: number): { history: string[]; visible: string[] } {
+  const cut = Math.max(0, lines.length - Math.max(0, paneHeight));
+  return { history: lines.slice(0, cut), visible: lines.slice(cut) };
 }
 
 /** DECSCUSR の値（カーソルの形と点滅） */

@@ -8,7 +8,7 @@ import { sleep, waitFor } from "./helpers/tmux-env.ts";
 
 /**
  * 偽の tmux（control mode の応答を台本どおりに返す）で TmuxControlTerminal を動かす。本物の tmux・ソケットには触れない。
- * FAKE_MODE: "tail" = 4本目の %end と同じ塊に %output が続く / "stale" = 番号が古い応答が先に来る
+ * FAKE_MODE: "tail" = 3本目の %end と同じ塊に %output が続く / "stale" = 番号が古い応答が先に来る
  *   "readydie" = 最初の応答だけ返して終わる（has-session は alive） / "plain" = 先入れに普通に答える
  * FAKE_LOG: 受けた命令を書き出すファイル
  */
@@ -21,18 +21,40 @@ process.stdout.write("%begin 1 100 0\\n%end 1 100 0\\n");
 if (mode === "readydie") setTimeout(() => process.exit(0), 30);
 let buf = "";
 let answered = false;
+// drift: 命令を受けるたびに pane の出力が3行進む台本（履歴と可視を別の命令で取ると間の行が欠ける）
+let total = 10;
+let nextNum = 101;
+let consumed = 0;
+const range = (a, b) => { const r = []; for (let i = a; i <= b; i++) r.push(String(i)); return r; };
+function drift(line) {
+  if (line.startsWith("display")) return block(nextNum++, ["4242 0 " + (total - 3) + " 0 0 1 default 0 4294967295 4294967295 0 3 []"]);
+  if (!line.startsWith("capture-pane")) return "";
+  if (line.includes(" -a ")) return block(nextNum++, []);
+  let lines;
+  if (line.includes("-S -")) lines = range(1, total);
+  else lines = range(total - 2, total);
+  total += 3;
+  return block(nextNum++, lines);
+}
 process.stdin.on("data", (d) => {
   buf += d;
+  if (mode === "drift") {
+    const ls = buf.split("\\n");
+    ls.pop();
+    let out = "";
+    for (; consumed < ls.length; consumed++) out += drift(ls[consumed]);
+    if (out) process.stdout.write(out);
+    return;
+  }
   if (process.env.FAKE_LOG) fs.writeFileSync(process.env.FAKE_LOG, buf);
   const lines = buf.split("\\n").filter(Boolean);
-  if (!answered && lines.length >= 4 && mode !== "readydie") {
+  if (!answered && lines.length >= 3 && mode !== "readydie") {
     answered = true;
     let out = "";
     if (mode === "stale") out += block(50, ["stale"]);
-    out += block(101, ["4242 0 0 0 0 1 default 0 4294967295 4294967295 0 []"]);
-    out += block(102, []);
+    out += block(101, ["4242 0 0 0 0 1 default 0 4294967295 4294967295 0 1 []"]);
+    out += block(102, ["visible"]);
     out += block(103, []);
-    out += block(104, ["visible"]);
     if (mode === "tail" || mode === "stale") out += "%output %0 TAIL\\\\015\\\\012\\n";
     process.stdout.write(out);
   }
@@ -63,15 +85,30 @@ function open(mode: string, reattachIntervalMs?: number, extraEnv: Record<string
     logger: { info: () => undefined, warn: (m) => warns.push(m) },
     ...(reattachIntervalMs !== undefined ? { reattachIntervalMs } : {}),
   });
-  term.onReplay(() => events.push("replay"));
+  const replays: string[] = [];
+  term.onReplay((d) => {
+    replays.push(d);
+    events.push("replay");
+  });
   term.onData((d) => events.push(`data:${JSON.stringify(d)}`));
   const statuses: string[] = [];
   term.onStatus((st) => statuses.push(st));
-  return { term, events, warns, statuses };
+  return { term, events, warns, statuses, replays };
 }
 
 describe("TmuxControlTerminal with a scripted tmux", () => {
-  it("R2: an %output in the same chunk as the 4th %end is kept, and arrives after the replay", async () => {
+  it("S1: history and the visible screen come from one capture; lines that scroll in while replaying leave no gap or overlap", async () => {
+    const { term, replays } = open("drift");
+    expect(await waitFor(() => replays.length >= 1, 5000)).toBe(true);
+    const m = /\x1b\[3J([\d\r\n]*)/.exec(replays[0]);
+    const nums = (m?.[1] ?? "").split("\r\n").map(Number);
+    expect(nums.length).toBeGreaterThan(0);
+    nums.forEach((n, i) => expect(n).toBe(nums[0] + i));
+    expect(nums[0]).toBe(1);
+    term.release();
+  });
+
+  it("R2: an %output in the same chunk as the 3rd %end is kept, and arrives after the replay", async () => {
     const { term, events } = open("tail");
     expect(await waitFor(() => events.length >= 2, 5000)).toBe(true);
     expect(events).toEqual(["replay", 'data:"TAIL\\r\\n"']);

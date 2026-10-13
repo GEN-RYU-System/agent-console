@@ -13,6 +13,7 @@ import {
   resizeCommand,
   sendKeysCommands,
   sessionTarget,
+  splitCapture,
   type ControlBlock,
   type ControlEvent,
   type HasSessionResult,
@@ -150,24 +151,24 @@ export class TmuxControlTerminal implements TerminalHandle {
     // 先入れの命令は 1 回の write で詰めて送る（途中に出力が割り込まない）
     const commands = [
       `display -p -t ${t} '${DISPLAY_FORMAT}'`,
-      `capture-pane -p -e -S - -E -1 -t ${t}`,
+      // 履歴の先頭から可視の末尾までを 1 命令で取る（履歴と可視を別命令にすると、間に流れた行が欠ける）
+      `capture-pane -p -e -S - -t ${t}`,
       `capture-pane -p -e -a -q -t ${t}`,
-      `capture-pane -p -e -t ${t}`,
     ];
-    // 4 本目の応答を受けた同じ同期処理の中で先入れを終える（同じ塊の後ろの %output を捨てず、先入れの後ろに流す）
+    // 3 本目の応答を受けた同じ同期処理の中で先入れを終える（同じ塊の後ろの %output を捨てず、先入れの後ろに流す）
     const got: ControlBlock[] = [];
     for (let i = 0; i < commands.length; i++) {
       this.queue.enqueue({
         resolve: (b) => {
           got.push(b);
-          if (got.length === commands.length) this.finishReplay(got[0], got[1], got[2], got[3]);
+          if (got.length === commands.length) this.finishReplay(got[0], got[1], got[2]);
         },
       });
     }
     this.client?.stdin?.write(`${commands.join("\n")}\n`);
   }
 
-  private finishReplay(info: ControlBlock, history: ControlBlock, altNormal: ControlBlock, visible: ControlBlock): void {
+  private finishReplay(info: ControlBlock, capture: ControlBlock, altNormal: ControlBlock): void {
     const parsed = info.ok && info.lines.length > 0 ? parsePaneInfo(decodeLine(info.lines[0])) : null;
     // つなぎ直しが済んだ（先入れまで届いた）ので、再試行の回数を戻す。最初の応答だけでは戻さない
     this.attempts = 0;
@@ -181,12 +182,13 @@ export class TmuxControlTerminal implements TerminalHandle {
     }
     if (parsed.pid > 0) this.pid = parsed.pid;
     const text = (b: ControlBlock): string[] => (b.ok ? b.lines.map(decodeLine) : []);
-    const histLines = parsed.historySize > 0 ? text(history) : [];
+    // 1 本の capture を、末尾 pane_height 行（可視）とそれより前（履歴）に分ける
+    const { history, visible } = splitCapture(text(capture), parsed.paneHeight);
     const replay = buildReplay({
       info: parsed,
-      history: histLines,
-      normal: parsed.alternateOn ? text(altNormal) : text(visible),
-      alt: parsed.alternateOn ? text(visible) : [],
+      history: parsed.alternateOn ? [] : history,
+      normal: parsed.alternateOn ? text(altNormal) : visible,
+      alt: parsed.alternateOn ? visible : [],
     });
     for (const l of this.replayListeners) l(replay);
     this.setConnected();
