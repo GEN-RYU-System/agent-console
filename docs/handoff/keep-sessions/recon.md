@@ -76,7 +76,7 @@ StandardOutPath / StandardErrorPath
   - `sh -c "trap '' HUP; exec sleep 78"`: 親の終了後も子は**生きている**（ppid=1、pgid=自分、`Ss+`、tty `ttys025`）。ただし master を握る者が居ない孤児。（実験後に kill 済み）
   → 【事実】SIGHUP を無視する子は、master が閉じても死なない。claude が SIGHUP をどう扱うかは【未確認】（公式文書に SIGHUP/ハングアップの記述は見つからなかった。troubleshooting・cli-reference・how-claude-code-works・agent-view・env-vars を grep）。
 - 【事実】node-pty のソース（`/Users/tanizawashingo/agent-console/node_modules/node-pty/src/unixTerminal.ts:236-253`）: `destroy()` は socket を閉じてから `kill('SIGHUP')`、`kill(signal)` は `process.kill(this.pid, signal || 'SIGHUP')`。`src/unix/pty.cc:399` は `forkpty(...)`。
-- 【事実】node-pty には「プロセス再起動をまたいで pty を引き継ぐ」API は見つからない（`src/index.ts`・`interfaces.ts` を確認した範囲。fd の受け取り口は無い）→ サーバーの再起動で master fd を引き継ぐ手は、node-pty だけでは取れない【推測を含む：fd を別プロセスへ渡す方法は未調査】。
+- 【事実】node-pty には「プロセス再起動をまたいで pty を引き継ぐ」API は見つからない（src/index.ts・interfaces.ts を確認した範囲。fd の受け取り口は無い）→ サーバーの再起動で master fd を引き継ぐ手は、node-pty だけでは取れない【推測を含む：fd を別プロセスへ渡す方法は未調査】。
 
 ### A-6 今の運用で起きていること
 - 【事実】ps の実測で pty 付きセッションは 11 件（上記）。更新＝全 pty の SIGHUP＋再起動後の `--resume` 開き直し、という構造。
@@ -102,7 +102,7 @@ StandardOutPath / StandardErrorPath
   - `exit-empty`（既定 on）: 「the server will exit when there are no active sessions」。`exit-unattached`（既定 off）。
 - 【事実】xterm.js 6.0.0 を使用中（`package.json`）。ブラウザ側 `src/components/TerminalPane/TerminalPane.tsx:105` は `/ws/term` に WebSocket で繋ぎ、サーバーの生バイト列（`ring.snapshot()` を最初に送る、`server/ws.ts:24-26`）をそのまま xterm に書く。
 - 【推測】tmux の制御モードの `%output` は octal エスケープ済みなので、xterm.js へ流す前に戻す変換が要る。tmux の再描画（画面全体を tmux が持つ）の都合で、スクロールバックや選択・マウス・Kitty/画像系のエスケープがそのまま通るかは別途確認が要る。【未確認】（試していない）。
-- 【事実】サーバー側で pty の pid に依存する箇所: `hub.ts:194,210,232,341`、`memory.ts:62,121`、`sessions.ts:344-352`（`descendantPids(session.term.pid, ps の一覧)` で子孫を辿り、作業中判定・メモリ・close の SIGKILL を行う）。番人／tmux に置くと、`session.term.pid` に相当する pid（tmux では `#{pane_pid}`）の取り方が変わる。pid の木は同じ Mac の ps で引けるので辿り方自体は使い回せるが、起点 pid の取得が必要【推測】。
+- 【事実】サーバー側で pty の pid に依存する箇所: `server/hub.ts:194,210,232,341`、`server/memory.ts:62,121`、`server/sessions.ts:344-352`（`descendantPids(session.term.pid, ps の一覧)` で子孫を辿り、作業中判定・メモリ・close の SIGKILL を行う）。番人／tmux に置くと、`session.term.pid` に相当する pid（tmux では `#{pane_pid}`）の取り方が変わる。pid の木は同じ Mac の ps で引けるので辿り方自体は使い回せるが、起点 pid の取得が必要【推測】。
 
 **必要な変更（材料）**
 - 【事実】pty に直接触る箇所は少ない（E 参照）。`Session.term`（`IPty`）の型を介して 5 メソッド（`onData`・`onExit`・`write`・`resize`・`kill`）と `pid` 参照だけ。
@@ -113,7 +113,7 @@ StandardOutPath / StandardErrorPath
 - 【事実】`man launchd.plist`: `AbandonProcessGroup`（A-4 に引用）。
 - 【事実】A-5 のとおり、pty の子は**もともとサーバーと別 pgid**なので、`AbandonProcessGroup` を足しても pty の子の運命は変わらない見込み（この設定が効くのはサーバーと同じ pgid の残り＝`claude agents --json` 等のみ）【推測：根拠は A-5 の ps の pgid の実測】。
 - 【事実】今のコードが自分で `killAll`（SIGHUP）する（`server/index.ts:104`）。子を残すには、これを止める変更が要る。
-- 【事実】サーバーが消えると pty の master fd も消える（node-pty はそれを `tty.ReadStream(term.fd)` で保持、`unixTerminal.ts:106`）。子は master を失った孤児の端末になる。A-5 の実験で、SIGHUP を無視しない子は死に、無視する子は孤児として生き残るが、**誰も master を握らないので出力も入力も届かない**（新サーバーが同じ端末に再接続する手段は node-pty に無い）。
+- 【事実】サーバーが消えると pty の master fd も消える（node-pty はそれを `tty.ReadStream(term.fd)` で保持、unixTerminal.ts:106）。子は master を失った孤児の端末になる。A-5 の実験で、SIGHUP を無視しない子は死に、無視する子は孤児として生き残るが、**誰も master を握らないので出力も入力も届かない**（新サーバーが同じ端末に再接続する手段は node-pty に無い）。
 - 【結論材料】AbandonProcessGroup だけでは「生き残ったセッションを新サーバーが再び操作する」ことはできない。再接続するには master fd を握る別プロセスが要る（B-1）。
 
 ### B-3 コードだけを止めずに入れ替える（ホットリロード）
@@ -134,7 +134,7 @@ StandardOutPath / StandardErrorPath
   - 「After an auto-update: the supervisor restarts itself onto the new version and moves idle sessions over in the background. Sessions that are working, waiting on you, or attached aren't interrupted.」
   - `claude attach <id|name>`（端末で接続）、`←` / `Ctrl+Z` で detach、`claude --bg "<prompt>"`、`claude respawn <id>` / `claude respawn --all`（更新後のバイナリへ移す）、`claude daemon status|logs|stop --any [--keep-workers]`。
   - 「Shutting down or restarting your machine stops running background sessions ... Within 48 hours, the session shows as failed. Attach or reply to it and it restarts from its saved conversation.」
-  - 状態は `~/.claude/daemon/roster.json`、`~/.claude/jobs/<id>/state.json`、`~/.claude/daemon.log`。
+  - 状態は ~/.claude/daemon/roster.json、~/.claude/jobs/<id>/state.json、~/.claude/daemon.log。
   - 「If you set CLAUDE_CONFIG_DIR, the supervisor ... runs as a separate instance with its own sessions.」
 - 【事実】agent-console はすでに `claude agents --json` を poll している（`server/agents.ts:104`）。実機の ps でも `claude agents --json` が見えた。
 - 【未確認】`claude attach` を agent-console の pty の中で動かし、その pty だけが消えた（サーバー再起動）とき、背後のセッションが supervisor 配下で動き続けるか。公式文書は detach 操作（`←`/`Ctrl+Z`）の挙動を書くが、attach 側の端末がいきなり消えた場合は書いていない。実セッションを作る実験が要る（トークンを使うため今回は未実施）。
@@ -147,12 +147,12 @@ StandardOutPath / StandardErrorPath
 
 ### D-1 Orca（stablyai/orca、clone: `/private/tmp/claude-501/-Users-tanizawashingo-salesanchor/f16867bb-0f82-4b6a-8e6f-be39adca12b1/scratchpad/orca-src/orca`、HEAD `eaf5dbed9e5fec6046eb8b4835303c40125b8012` = 既存 recon-orca.md と同一）
 （本リポジトリ外。パスは clone ルート相対）
-- 【事実】Orca は **端末を持つ専用の常駐プロセス（"daemon"）を別に分けている**。`src/main/daemon/` にソース 243 ファイル（テスト除く）・合計約 87,000 行（`ls | grep -v test | wc -l` / `cat *.ts | wc -l`）。
-- 【事実】`src/main/daemon/daemon-launched-child-spawn.ts:60-95`: 「detached+unref outlives Electron」。`detached: true`、`stdio: ['ignore','ignore','pipe','ipc']`、`ELECTRON_RUN_AS_NODE=1`（「run as plain Node so Electron's GPU/display init can't interfere with node-pty's posix_spawn」）、cwd は userData（「detached daemons outlive dev worktrees」）。
-- 【事実】`src/main/daemon/daemon-protocol-version.ts:1`: 「// Why: daemons survive app updates, so wire behavior must be version-gated.」`PROTOCOL_VERSION = 44`。古い daemon にも接続できるよう、機能ごとに版番号の境目の定数を持つ（"older owners stay attachable"）。
-- 【事実】`src/main/daemon/AGENTS.md`: ソケットパスの所有（`link`→`rename`、「Never collapse "can't tell" into "dead."」「Do not add a sweeper」）と、その規則を決めた経緯（「Seven review rounds ... produced twenty-three defects」）。ソケットの二重起動・取り違えは「terminals that accept keystrokes and never run them」という事故につながった。
-- 【事実】`src/main/daemon/daemon-cgroup-scope.ts:1-15`（Linux）: 「`detached: true` buys the daemon its own POSIX process group, not its own cgroup ... `systemctl stop/restart` SIGKILLs whatever is left there ... every live terminal dies」→ `systemd-run --user --scope` で別 cgroup へ逃がす。
-- 【事実】macOS 用に `macos-login-session-death-watch.ts` がある（ログインセッションの終了を見る。中身は未読）。daemon-entry の終了処理は `SHUTDOWN_TIMEOUT_MS = 5000`（`daemon-entry.ts:181-`）。
+- 【事実】Orca は **端末を持つ専用の常駐プロセス（"daemon"）を別に分けている**。src/main/daemon/ にソース 243 ファイル（テスト除く）・合計約 87,000 行（`ls | grep -v test | wc -l` / `cat *.ts | wc -l`）。
+- 【事実】src/main/daemon/daemon-launched-child-spawn.ts:60-95: 「detached+unref outlives Electron」。`detached: true`、`stdio: ['ignore','ignore','pipe','ipc']`、`ELECTRON_RUN_AS_NODE=1`（「run as plain Node so Electron's GPU/display init can't interfere with node-pty's posix_spawn」）、cwd は userData（「detached daemons outlive dev worktrees」）。
+- 【事実】src/main/daemon/daemon-protocol-version.ts:1: 「// Why: daemons survive app updates, so wire behavior must be version-gated.」`PROTOCOL_VERSION = 44`。古い daemon にも接続できるよう、機能ごとに版番号の境目の定数を持つ（"older owners stay attachable"）。
+- 【事実】src/main/daemon/AGENTS.md: ソケットパスの所有（`link`→`rename`、「Never collapse "can't tell" into "dead."」「Do not add a sweeper」）と、その規則を決めた経緯（「Seven review rounds ... produced twenty-three defects」）。ソケットの二重起動・取り違えは「terminals that accept keystrokes and never run them」という事故につながった。
+- 【事実】src/main/daemon/daemon-cgroup-scope.ts:1-15（Linux）: 「`detached: true` buys the daemon its own POSIX process group, not its own cgroup ... `systemctl stop/restart` SIGKILLs whatever is left there ... every live terminal dies」→ `systemd-run --user --scope` で別 cgroup へ逃がす。
+- 【事実】macOS 用に macos-login-session-death-watch.ts がある（ログインセッションの終了を見る。中身は未読）。daemon-entry の終了処理は `SHUTDOWN_TIMEOUT_MS = 5000`（daemon-entry.ts:181-）。
 - 【事実】`docs/audits/daemon-late-exit/`・`daemon-shutdown-descendants`・`daemon-stream-retention` などの監査記録が複数ある（実運用で出た不具合の記録）。
 - 【推測】Orca の規模（約 8.7 万行）は、本格的な番人プロセスを自作した場合の上限側の目安。agent-console に要る範囲（ローカル 1 台・1 ユーザー）はそれよりずっと小さい見込みだが、見積もりはしていない。
 
@@ -167,18 +167,18 @@ StandardOutPath / StandardErrorPath
 ### E-1 pty に直接触る箇所（`git grep` の全件、テスト除く）
 - 【事実】`node-pty` の import は `server/sessions.ts:2` の 1 か所。その `spawn`（:268）が唯一の生成。
 - 【事実】`IPty` を持つ `Session.term`（`server/sessions.ts:46`）への触り方:
-  - 生成と購読: `sessions.ts:268`（spawn）、:289（`term.onData`）、:295（`term.onExit`）
+  - 生成と購読: `server/sessions.ts:268`（spawn）、:289（`term.onData`）、:295（`term.onExit`）
   - 入出力: :316（`term.write`）、:321（`term.resize`）
   - 終了: :346（`term.kill()`）、:362（`killAll` の `term.kill()`）
-  - pid 参照: `sessions.ts:344,350,352`、`hub.ts:194,210,232,341`、`memory.ts:62,121`、`http.ts:205`（`term: s.term` を memory へ渡す）
-  - 起動前の確認: `index.ts:30-35`（spawn-helper の実行権）
-- 【事実】`term.` を外から触るメソッドは onData・onExit・write・resize・kill と `pid` のみ（`git grep` 結果）。`session.ring`・`session.clients` は `sessions.ts:290-291,309` と `ws.ts:24,26,39`。
+  - pid 参照: `server/sessions.ts:344,350,352`、`server/hub.ts:194,210,232,341`、`server/memory.ts:62,121`、`server/http.ts:205`（`term: s.term` を memory へ渡す）
+  - 起動前の確認: `server/index.ts:30-35`（spawn-helper の実行権）
+- 【事実】`term.` を外から触るメソッドは onData・onExit・write・resize・kill と `pid` のみ（`git grep` 結果）。`session.ring`・`session.clients` は `server/sessions.ts:290-291,309` と `server/ws.ts:24,26,39`。
 
 ### E-2 流れ（hub・ws・TerminalPane）
 - 【事実】ブラウザ `src/components/TerminalPane/TerminalPane.tsx:105` `openSocket("/ws/term", {session})` → `server/ws.ts:97-103` が `/ws/term` を `attachTerminal`（:24-39）に渡す → 接続時に `session.ring.snapshot()`（バックログ）を送り `session.clients.add(ws)`、以降は `sessions.write`（`{type:"input"}`）・`sessions.resize`（`{type:"resize"}`）。
 - 【事実】出力は `server/sessions.ts:289-294` の `onData` が `ring.push` ＋ clients へ `ws.send(data)`（生バイト列）。
 - 【事実】`/ws/events` は hub（`server/hub.ts:386` 行）が購読者へ送る。hub は端末の出力そのものは見ず、`ps` の子孫（`readProcessTable`、`server/process-tree.ts:52-55`）と `claude agents --json`（`server/agents.ts:104`）、hooks の記録で状態を決める。
-- 【事実】`server/` は約 5,950 行（`wc -l server/*.ts`、うち `sessions.ts` 367 行・`hub.ts` 386 行・`ws.ts` 116 行・`restore.ts` 168 行・`index.ts` 115 行）。
+- 【事実】`server/` は約 5,950 行（`wc -l server/*.ts`、うち `server/sessions.ts` 367 行・`server/hub.ts` 386 行・`server/ws.ts` 116 行・`server/restore.ts` 168 行・`server/index.ts` 115 行）。
 
 ---
 
@@ -189,7 +189,7 @@ StandardOutPath / StandardErrorPath
 4. tmux の制御モード／capture-pane と xterm.js の見た目・スクロール・マウスの相性。
 5. 本番 `restoreStaggerMs` の値と、10 セッション復元の実秒数。
 6. VS Code の pty host の仕組み（出典が取れていない）。
-7. Orca の macOS 側 daemon の終了時の挙動（`macos-login-session-death-watch.ts` 未読）。
+7. Orca の macOS 側 daemon の終了時の挙動（macos-login-session-death-watch.ts 未読）。
 
 ---
 
@@ -200,7 +200,7 @@ StandardOutPath / StandardErrorPath
 ### F-1 Claude 公式のバックグラウンドセッション
 (a) 公式の記述（https://code.claude.com/docs/en/agent-view.md、B-5 に引用済み）: 「A session started by running `claude` directly is tied to that terminal and ends when it closes, unless you send it to the background」「The supervisor is a background service that runs your background sessions so they keep working after you close agent view or your terminal」。`claude --bg "<prompt>"`・`claude attach <id|name>`・`claude logs <id>`・`claude stop <id>`・`claude daemon status|stop --any [--keep-workers]`。
 
-(b) 準備: 捨てディレクトリ `.../scratchpad/bgexp`（`.claude/settings.local.json` に Bash(sleep 30) 等の許可だけ）。起動は `claude --model sonnet --setting-sources project,local --bg "<prompt>"` を node-pty で。
+(b) 準備: 捨てディレクトリ `.../scratchpad/bgexp`（.claude/settings.local.json に Bash(sleep 30) 等の許可だけ）。起動は `claude --model sonnet --setting-sources project,local --bg "<prompt>"` を node-pty で。
 - 初回は workspace trust ダイアログが出た（既定は「No, exit」で、Enter だけだと終了コード 1 で終わる。↓＋Enter で「Yes, I trust」）。この信頼の記録は claude 側が書くもの（この捨てディレクトリ分だけ）。
 - 10:25:26 実行 → 出力:
 ```
