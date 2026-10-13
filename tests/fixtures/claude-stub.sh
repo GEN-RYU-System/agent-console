@@ -27,5 +27,17 @@ case "${1:-}" in
     done
     printf '\r\n]\033[?25h'
     exit 0 ;;
+  auth)
+    # `auth status --json`: $STUB_AUTH_FILE の中身をそのまま返す。loggedIn が false なら終了コード 1（本物と同じ）
+    # `auth logout` / `auth login`: 引数を $STUB_AUTH_LOG に 1 行追記して終了コード 0
+    case "${2:-}" in
+      status)
+        cat "${STUB_AUTH_FILE:-/dev/null}" 2>/dev/null
+        grep -q '"loggedIn": *false' "${STUB_AUTH_FILE:-/dev/null}" 2>/dev/null && exit 1
+        exit 0 ;;
+      logout|login)
+        echo "auth $2" >> "${STUB_AUTH_LOG:-/dev/null}"
+        exit 0 ;;
+    esac ;;
 esac
 exit 1

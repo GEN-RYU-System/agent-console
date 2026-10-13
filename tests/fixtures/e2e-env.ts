@@ -93,6 +93,12 @@ export function prepareE2eEnv(): void {
   const uuidFile = path.join(base, "agents-uuid");
   writeFileSync(uuidFile, "");
 
+  // アカウント表示の試験用: auth status の応答 JSON と、auth logout / login の引数の記録
+  const authFile = path.join(base, "auth-status.json");
+  writeFileSync(authFile, JSON.stringify({ loggedIn: true, email: "stub@example.com", subscriptionType: "max" }));
+  const authLog = path.join(base, "auth.log");
+  writeFileSync(authLog, "");
+
   const roleScript = path.join(here, "role.mjs");
   const bracketedScript = path.join(here, "bracketed-role.mjs");
   const sizeScript = path.join(here, "size-role.mjs");
@@ -121,6 +127,7 @@ export function prepareE2eEnv(): void {
     terminalSmoothScrollMs: 125,
     uploadMaxBytes: 5242880,
     uploadMaxKeep: 100,
+    accountLoginCommand: ["/bin/sh", "-c", `"${claudeBin}" auth logout; "${claudeBin}" auth login`],
     roles: [
       { id: "e2e-plain", labelKey: "role.shell", command: [process.execPath, roleScript, marker], needsWorktree: false },
       { id: "e2e-wt", labelKey: "role.sonnetImpl", command: [process.execPath, roleScript, marker], needsWorktree: true },
@@ -161,4 +168,6 @@ export function prepareE2eEnv(): void {
   process.env.AC_E2E_UUID_FILE = uuidFile;
   process.env.AC_E2E_GH_DIR = ghDir;
   process.env.AC_E2E_GH_LOG = ghLog;
+  process.env.AC_E2E_AUTH_FILE = authFile;
+  process.env.AC_E2E_AUTH_LOG = authLog;
 }

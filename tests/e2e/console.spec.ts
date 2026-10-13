@@ -1491,3 +1491,78 @@ test("v0.10.0 K6・K7: 行をドラッグして離すと並び順が変わり（
   await expect(page.getByTestId("rename-form")).toBeVisible();
   await page.keyboard.press("Escape");
 });
+
+// ---- v0.16.0 アカウント切り替え（docs/handoff/account-switch/design.md §11-2） ----
+const AUTH_FILE = process.env.AC_E2E_AUTH_FILE as string;
+const AUTH_LOG = process.env.AC_E2E_AUTH_LOG as string;
+const AUTH_INITIAL = { loggedIn: true, email: "stub@example.com", subscriptionType: "max" };
+const AUTH_SWITCHED_EMAIL = "switched@example.com";
+const ACCOUNT_REFLECT_MS = 10000;
+const jaLocale = JSON.parse(readFileSync(path.join(process.cwd(), "src", "locales", "ja.json"), "utf8")) as { ac: { account: Record<string, string> } };
+
+test.describe.serial("アカウント切り替え", () => {
+  test.beforeEach(() => {
+    writeFileSync(AUTH_FILE, JSON.stringify(AUTH_INITIAL));
+    writeFileSync(AUTH_LOG, "");
+  });
+  test.afterAll(async ({ request }) => {
+    writeFileSync(AUTH_FILE, JSON.stringify(AUTH_INITIAL));
+    writeFileSync(AUTH_LOG, "");
+    const state = (await (await request.get(`${BASE}/api/state`, { headers: BEARER })).json()) as { sessions: Array<{ id: string; roleId: string }> };
+    for (const s of state.sessions.filter((x) => x.roleId === "account-login")) await request.delete(`${BASE}/api/sessions/${s.id}`, { headers: BEARER });
+  });
+
+  test("K1: 下の帯に「Claude ログイン: <メール>」とプランが出る。メールは auth status の email と一字一句同じ", async ({ page }) => {
+    await openPaired(page);
+    const badge = page.getByTestId("account-badge");
+    await expect(badge).toContainText(`${jaLocale.ac.account.label}:`);
+    await expect(page.getByTestId("account-email")).toHaveText(AUTH_INITIAL.email);
+    await expect(page.getByTestId("account-plan")).toHaveText(AUTH_INITIAL.subscriptionType);
+    await expect(page.getByTestId("account-email").locator("..")).toHaveAttribute("title", jaLocale.ac.account.hint);
+  });
+
+  test("K2: 未ログイン（終了コード 1）は「Claude: 未ログイン」と出る", async ({ page }) => {
+    writeFileSync(AUTH_FILE, JSON.stringify({ loggedIn: false }));
+    await openPaired(page);
+    await expect(page.getByTestId("account-message")).toHaveText(jaLocale.ac.account.loggedOut);
+  });
+
+  test("K3: /api/account の応答のキーは status・loggedIn・email・subscriptionType だけ", async ({ request }) => {
+    writeFileSync(AUTH_FILE, JSON.stringify({ ...AUTH_INITIAL, authMethod: "claude.ai", orgId: "o", orgName: "n", configDirectory: "/x" }));
+    const json = (await (await request.get(`${BASE}/api/account`, { headers: BEARER })).json()) as Record<string, unknown>;
+    expect(Object.keys(json).sort()).toEqual(["email", "loggedIn", "status", "subscriptionType"]);
+  });
+
+  test("K5: 確認ダイアログの本文が確定文と一致し、「開き直す」「新しいアカウント」を含む。「やめる」では何も起きない", async ({ page }) => {
+    await openPaired(page);
+    await page.getByTestId("account-switch").getByRole("button").click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    const body = dialog.locator(".form-actions").locator("xpath=preceding-sibling::div[1]");
+    await expect(body).toHaveText(jaLocale.ac.account.confirmBody);
+    await expect(body).toContainText("開き直す");
+    await expect(body).toContainText("新しいアカウント");
+    await dialog.getByRole("button", { name: jaLocale.ac.account.cancel }).click();
+    await expect(dialog).toHaveCount(0);
+    await page.waitForTimeout(500);
+    expect(readFileSync(AUTH_LOG, "utf8")).toBe("");
+    const state = (await (await page.request.get(`${BASE}/api/state`, { headers: BEARER })).json()) as { sessions: Array<{ roleId: string }> };
+    expect(state.sessions.filter((s) => s.roleId === "account-login")).toHaveLength(0);
+  });
+
+  test("K6・K7: 確認すると account-login の端末が増え、auth logout → auth login の 2 行だけが動き、終わると 10 秒以内に表示が新しいアカウントに変わる", async ({ page }) => {
+    await openPaired(page);
+    await expect(page.getByTestId("account-email")).toHaveText(AUTH_INITIAL.email);
+    // 切り替えを押す前に、偽の claude が返すアカウントを差し替える（端末が終わるまで画面は古いまま）
+    writeFileSync(AUTH_FILE, JSON.stringify({ ...AUTH_INITIAL, email: AUTH_SWITCHED_EMAIL }));
+    await page.getByTestId("account-switch").getByRole("button").click();
+    await page.getByRole("dialog").getByRole("button", { name: jaLocale.ac.account.confirm }).click();
+    // K6: 名前「アカウント切り替え」の端末が一覧に増える（役割の表示は role.accountLogin）
+    const row = page.getByTestId("session-row").filter({ hasText: "account-login" });
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText("アカウント切り替え");
+    await expect.poll(() => readFileSync(AUTH_LOG, "utf8").trim().split("\n"), { timeout: 5000 }).toEqual(["auth logout", "auth login"]);
+    // K7: 端末が停止し、10 秒以内に新しいメールが出る
+    await expect(page.getByTestId("account-email")).toHaveText(AUTH_SWITCHED_EMAIL, { timeout: ACCOUNT_REFLECT_MS });
+  });
+});

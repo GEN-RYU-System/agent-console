@@ -2,7 +2,7 @@
 
 Local console for running parallel Claude Code sessions (Orca-inspired, lightweight).
 
-## 定期実行（v0.7.0、v0.16.0 で「毎回新しいセッション」に変更）
+## 定期実行（v0.7.0、v0.17.0 で「毎回新しいセッション」に変更）
 
 「定期実行」タブは、Asia/Tokyo の曜日・時刻になると新しい Claude Code セッションを1つ開き、Claude が入力待ちになったら登録した指示を一度だけ送ります（登録しただけではセッションは開きません）。開いたセッションはふつうのセッションと同じで、自動では閉じません（不要になったら自分で閉じてください）。定義・`lastSlot`・実行履歴（結果と開いたセッション名）は `dataDir/routines.json`（version 2）のみへ保存されます。設計は [routines-new-session](docs/handoff/routines-new-session/design.md)（v0.7.0 の [routine design](docs/handoff/v0.7.0-routines/design.md) の一部を置き換え）を参照してください。
 
@@ -186,6 +186,15 @@ node scripts/ac-hooks.mjs check
 画面下の帯の利用量バーは、Claude Code の statusLine の命令が書く `dataDir/usage.json` を読みます。`node scripts/ac-hooks.mjs install` が hook に続けて settings.json の `statusLine` を 1 つ足します（`node scripts/ac-hooks.mjs check` で点検、`uninstall` で自分の statusLine だけを外す）。すでに別の statusLine がある場合は足さず、「statusLine: 別の設定があるので足していません」と出して終了コード 0 で終わります（そのときバーは「まだ値がありません」のまま）。値は Claude の最初の API 応答のあとに来るため、起動直後は出ません。パスに `"`・`$`・バッククォート・`\`・改行を含む dataDir では statusLine を足さず、理由を出して終了コード 1 で終わります（hooks は入ります）。
 
 dataDir を変えたときは、先に旧 dataDir で `ac-hooks.mjs uninstall` を実行してください（または settings.json の statusLine を手で外してください）。自分の物かは、今の dataDir の引用符付きパスで見分けるためです。
+
+## Claude アカウントの切り替え
+
+画面下の帯の「Claude ログイン: メール」は、この Mac に保存された Claude のログインです（サーバーが `claude auth status --json` を毎回聞き、メールとプランだけを画面へ返します。アプリは保存しません）。「アカウントを切り替える」を押して確認すると、「アカウント切り替え」という端末が開き、`claude auth logout; claude auth login`（`agent-console.config.json` の `accountLoginCommand`。無ければボタンは出ません）が動きます。端末の案内に沿ってブラウザでログインし、必要ならコードを端末へ貼ってください。終わったらその端末を「一覧から外す」で消してください（ログイン用の URL やコードが端末の出力に残るため）。端末が終わると、帯の表示が新しいアカウントに変わります。
+
+- **会話ごとの確認は `/status` で行います。** 帯の表示は「この Mac に保存されたログイン」で、会話ごとの実際の認証ではありません。
+- **開き直しで切り替わります。** 環境変数 `CLAUDE_CODE_OAUTH_TOKEN` を持つ会話は、`claude auth login` では切り替わらず、開き直すまで起動したときのトークンを使い続けます。開いている会話は、閉じて開き直すと新しいアカウントで動きます。
+- **サーバーの環境に `CLAUDE_CODE_OAUTH_TOKEN` を置かないでください。** 置くと、子の会話がすべてそのトークンで動き、帯の表示と食い違います（この変数は子の環境から除外していません）。
+- ログインの途中でやめると、ログインし直すまで新しい会話は使えず、開いている会話も止まることがあります。元に戻すときは同じボタンで入り直してください。
 
 ## 認証の仕組み（要点）
 

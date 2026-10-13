@@ -1,4 +1,4 @@
-import type { Config } from "./config.ts";
+import { ACCOUNT_LOGIN_ROLE_ID, type Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
 import { classifyCwd, listWorktreeEntries, type ListWorktrees } from "./resume-targets.ts";
 import { normalizeItem, type OpenSessionItem, type OpenSessionStore } from "./session-store.ts";
@@ -71,7 +71,7 @@ export class OpenSessionRecorder {
       const names = new Map(snap.sessions.map((v) => [v.id, v.name]));
       const items: OpenSessionItem[] = this.sessions
         .list()
-        .filter((s) => !s.exited)
+        .filter((s) => !s.exited && s.roleId !== ACCOUNT_LOGIN_ROLE_ID)
         .map((s) =>
           normalizeItem({
             roleId: s.roleId,

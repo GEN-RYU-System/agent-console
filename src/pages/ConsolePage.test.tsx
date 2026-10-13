@@ -18,6 +18,7 @@ const state: ConsoleState = {
   commit: "abcdef0123456789abcdef0123456789abcdef01",
   terminalSmoothScrollMs: 125,
   uploadMaxBytes: 5 * 1024 * 1024,
+  accountSwitchEnabled: false,
 };
 
 const removeSession = vi.fn();
@@ -63,6 +64,8 @@ vi.mock("../api", () => ({
   fetchActivity: vi.fn(async () => ({ status: "noSession" })),
   fetchBoard: vi.fn(async () => ({ status: "none" })),
   fetchUsage: vi.fn(async () => ({ status: "none" })),
+  fetchAccount: vi.fn(async () => ({ status: "error" })),
+  startAccountLogin: vi.fn(),
   fetchChat: vi.fn(async () => ({ status: "noSession", queued: [] })),
   checkChatSend: vi.fn(),
   fetchMemory: vi.fn(async () => ({ sessions: [], serverRssMb: 1, system: null })),

@@ -51,6 +51,8 @@ export interface ConsoleState {
   terminalSmoothScrollMs: number;
   /** 端末に貼る画像 1 枚の上限（byte。config の値） */
   uploadMaxBytes: number;
+  /** 「アカウントを切り替える」を出すか（config の accountLoginCommand があるとき true） */
+  accountSwitchEnabled: boolean;
 }
 
 export type LookupResult = { kind: "found"; state: string; startedAt: number | null } | { kind: "unregistered" } | { kind: "conflict" };
@@ -275,3 +277,12 @@ export interface UsageWindow {
   resetsAt: number;
 }
 export type UsageResponse = { status: "none" } | { status: "invalid" } | { status: "ok"; observedAt: number; fiveHour?: UsageWindow; sevenDay?: UsageWindow };
+
+/** アカウント切り替えの端末の役割 id（server/config.ts の ACCOUNT_LOGIN_ROLE_ID と同じ値） */
+export const ACCOUNT_LOGIN_ROLE_ID = "account-login";
+/** GET /api/account の応答。キーは status・loggedIn・email・subscriptionType だけ */
+export type AccountResponse =
+  | { status: "ok"; loggedIn: true; email: string; subscriptionType: string }
+  | { status: "ok"; loggedIn: false }
+  | { status: "invalid" }
+  | { status: "error" };
