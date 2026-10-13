@@ -61,7 +61,9 @@ jobs:
       - run: npm run lint
       - run: npm test
       # 所要時間の閾値（設計 §7）は並列実行だと揺れるので、tmux の統合試験だけをファイル並列なしで 1 回、AC_TMUX_TIMING=1 で判定する
+      # npm test が赤でも走らせる（並列の負荷が原因か tmux の版が原因かを切り分けるため）
       - name: tmux timing check (single file, no file parallelism)
+        if: always()
         env:
           AC_TMUX_TIMING: "1"
         run: npx vitest run tests/unit/tmux-host.integration.test.ts --no-file-parallelism
