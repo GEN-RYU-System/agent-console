@@ -1,0 +1,393 @@
+[A]\e[H\e[2J\e[?1h\e=\e[?12l\e[?25h\e[?1000l\e[?1002l\e[?1003l\e[?1006l\e[?1005l\e[?2004h\e[?2031h\e[?996n\e(B\e[m\e[?12l\e[?25h\e[?1006l\e[?1000l\e[?1002l\e[?1003l\e[1;1H\e[1;30r\e[c\e[>c\e[>q\e[?2026$p\e]10;?\e\\e]11;?\e\\e[1;1H\e[?25l\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K\e[?12l\e[?25h\e[H[A]\e[18t\e[14t\e(B\e[m\e[?12l\e[?25h\e[?1006l\e[?1000l\e[?1002l\e[?1003l\e[1;1H\e[1;30r\e[1;1H\e[?25l\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K\e[?12l\e[?25h\e[H[A]\e[>4;2m\e(B\e[m\e[?12l\e[?25h\e[?1006l\e[?1000l\e[?1002l\e[?1003l\e[1;1H\e[1;30r\e[1;1H\e[?25l\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K\e[?12l\e[?25h\e[H[A]\e[>4;2m\e(B\e[m\e[?12l\e[?25h\e[?1006l\e[?1000l\e[?1002l\e[?1003l\e[1;1H\e[1;30r\e[1;1H\e[?25l\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K\e[?12l\e[?25h\e[H[A]\e[>4;2m\e(B\e[m\e[?12l\e[?25h\e[?1006l\e[?1000l\e[?1002l\e[?1003l\e[1;1H\e[1;30r\e[1;1H\e[?2026h\e[?25l\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K\e[?12l\e[?25h\e[H\e[?2026l[A]\e[?2026h\e[?25l\e[?12l\e[?25h\e[?2026l[A]\e[?2026h\e[?25l\e[?12l\e[?25h\e[?2026l[A]\e[?2026h\e[27;54H\e[?25l\e[?1006l\e[?1000l\e[?1002l\e[?1003l\e[?1006h\e[?1000h\e[?1002h\e[?1003h\e[?2026l[A]\e[?2026h\e[H\e[K\e[38;5;174m
+ ▐\e[48;5;16m▛███▛█\e[39m\e[49m   \e[1mClaude Code\e(B\e[m \e[38;5;246mv2.1.296\e[39m\e[K\e[38;5;174m
+▝▜\e[48;5;16m█████\e[49m█▀\e[39m  \e[38;5;246mSonnet 5.5 · Claude API\e[39m\e[K\e[38;5;174m
+ ▝▝   ▝▝\e[39m   \e[38;5;246m/…/tmp/claude-501/-Users-tanizawashingo-salesanchor/f16867bb-0f82-4b6a-8e6f-be39adca12b1/scratchpad/bgexp\e[39m    \e[5;1H\e[K
+\e[K\e[38;5;246m\e[48;5;237m
+❯ \e[38;5;231mUse the Bash tool to run exactly: sleep 30 && echo DONE . After it finishes, print the numbers 1 to 120 as plain\e[39m      \e[49m\e[48;5;237m\e[8;1H  \e[38;5;231mtext, one number per line (no code block, no commentary), then on the last line write FINISHED.\e[39m\e[K\e[49m
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K\e[38;5;174m
+✳\e[39m \e[38;5;216mPh\e[38;5;174motosynthesizing…\e[39m\e[K\e[26;100H\e[1K\e[38;5;246m\e[C◐ medium · /effort\e[39m  \e[38;5;244m\e[27;1H──────────────────────────────[A]───────────────────────\e[39m\e[K
+\e[K
+\e[K
+\e[K\e[27;54H\e[?2026l[A]\e[1;30r\e(B\e[m\e[?1l\e>\e[H\e[2J\e[?12l\e[?25h\e[?1000l\e[?1002l\e[?1003l\e[?1006l\e[?1005l\e[?2004l\e[?1004l\e[>4m\e[?2031l[A][lost tty]
+[B]\e[H\e[2J\e[?1h\e=\e[?12l\e[?25h\e[?1000l\e[?1002l\e[?1003l\e[?1006l\e[?1005l\e[?2004h\e[?2031h\e[?996n\e(B\e[m\e[?12l\e[?25h\e[?1006l\e[?1000l\e[?1002l\e[?1003l\e[1;1H\e[1;30r\e[c\e[>c\e[>q\e[?2026$p\e]10;?\e\\e]11;?\e\\e[28;3H\e[?1006l\e[?1000l\e[?1002l\e[?1003l\e[?1006h\e[?1000h\e[?1002h\e[?1003h[B]\e[?25l\e[H\e[K\e[38;5;174m
+ ▐\e[48;5;16m▛███▛█\e[39m\e[49m   \e[1mClaude Code\e(B\e[m \e[38;5;246mv2.1.296\e[39m\e[K\e[38;5;174m
+▝▜\e[48;5;16m█████\e[49m█▀\e[39m  \e[38;5;246mSonnet 5.5 · Claude API\e[39m\e[K\e[38;5;174m
+ ▝▝   ▝▝\e[39m   \e[38;5;246m/…/tmp/claude-501/-Users-tanizawashingo-salesanchor/f16867bb-0f82-4b6a-8e6f-be39adca12b1/scratchpad/bgexp\e[39m    \e[5;1H\e[K
+\e[K\e[38;5;246m\e[48;5;237m
+❯ \e[38;5;231mUse the Bash tool to run exactly: sleep 30 && echo DONE . After it finishes, print the numbers 1 to 120 as plain\e[39m      \e[49m\e[48;5;237m\e[8;1H  \e[38;5;231mtext, one number per line (no code block, no commentary), then on the last line write FINISHED.\e[39m\e[K\e[49m
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K\e[38;5;174m
+✳\e[39m \e[38;5;216mPh\e[38;5;174motosynthesizing…\e[39m\e[K\e[26;100H\e[1K\e[38;5;246m\e[C◐ medium · /effort\e[39m  \e[38;5;244m\e[27;1H──────────────────────────────[B]──────────────────────────────────────────────────────────────────────────────────────────\e[39m\e[38;5;246m\e[28;1H❯ \e[39m\e[K\e[38;5;244m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\e[30;1H  \e[38;5;220m⏵⏵ auto mode on\e[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents\e[39m\e[K\e[?12l\e[?25h\e[28;3H\e[18t\e[14t\e(B\e[m\e[?12l\e[?25h\e[?1006l\e[?1000l\e[?1002l\e[?1003l\e[1;1H\e[1;30r\e[28;3H\e[?1006l\e[?1000l\e[?1002l\e[?1003l\e[?1006h\e[?1000h\e[?1002h\e[?1003h[B]\e[?25l\e[H\e[K\e[38;5;174m
+ ▐\e[48;5;16m▛███▛█\e[39m\e[49m   \e[1mClaude Code\e(B\e[m \e[38;5;246mv2.1.296\e[39m\e[K\e[38;5;174m
+▝▜\e[48;5;16m█████\e[49m█▀\e[39m  \e[38;5;246mSonnet 5.5 · Claude API\e[39m\e[K\e[38;5;174m
+ ▝▝   ▝▝\e[39m   \e[38;5;246m/…/tmp/claude-501/-Users-tanizawashingo-salesanchor/f16867bb-0f82-4b6a-8e6f-be39adca12b1/scratchpad/bgexp\e[39m    \e[5;1H\e[K
+\e[K\e[38;5;246m\e[48;5;237m
+❯ \e[38;5;231mUse the Bash tool to run exactly: sleep 30 && echo DONE . After it finishes, print the numbers 1 to 120 as plain\e[39m      \e[49m\e[48;5;237m\e[8;1H  \e[38;5;231mtext, one number per line (no code block, no commentary), then on the last line write FINISHED.\e[39m\e[K\e[49m
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K\e[38;5;174m
+✳\e[39m \e[38;5;216mPh\e[38;5;174motosynthesizing…\e[39m\e[K\e[26;100H\e[1K\e[38;5;246m\e[C◐ medium · /effort\e[39m  \e[38;5;244m\e[27;1H──────────────────────────────[B]──────────────────────────────────────────────────────────────────────────────────────────\e[39m\e[38;5;246m\e[28;1H❯ \e[39m\e[K\e[38;5;244m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\e[30;1H  \e[38;5;220m⏵⏵ auto mode on\e[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents\e[39m\e[K\e[?12l\e[?25h\e[28;3H[B]\e[>4;2m\e(B\e[m\e[?12l\e[?25h\e[?1006l\e[?1000l\e[?1002l\e[?1003l\e[1;1H\e[1;30r\e[28;3H\e[?1006l\e[?1000l\e[?1002l\e[?1003l\e[?1006h\e[?1000h\e[?1002h\e[?1003h\e[?25l\e[H\e[K\e[38;5;174m
+ ▐\e[48;5;16m▛███▛█\e[39m\e[49m   \e[1mClaude Code\e(B\e[m \e[38;5;246mv2.1.296\e[39m\e[K\e[38;5;174m
+▝▜\e[48;5;16m█████\e[49m█▀\e[39m  \e[38;5;246mSonnet 5.5 · Claude API\e[39m\e[K\e[38;5;174m
+ ▝▝   ▝▝\e[39m   \e[38;5;246m/…/tmp/claude-501/-Users-tanizawashingo-salesanchor/f16867bb-0f82-4b6a-8e6f-be39adca12b1/scratchpad/bgexp\e[39m    \e[5;1H\e[K
+\e[K\e[38;5;246m\e[48;5;237m
+❯ \e[38;5;231mUse the Bash tool to run exactly: sleep 30 && echo DONE . After it finishes, print the numbers 1 to 120 as plain\e[39m      \e[49m\e[48;5;237m\e[8;1H  \e[38;5;231mtext, one number per line (no code block, no commentary), then on the last line write FINISHED.\e[39m\e[K\e[49m
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K\e[38;5;174m
+✳\e[39m \e[38;5;216mPh\e[38;5;174motosynthesizing…\e[39m\e[K\e[26;100H\e[1K\e[38;5;246m[B]\e[C◐ medium · /effort\e[39m  \e[38;5;244m\e[27;1H────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\e[38;5;246m\e[28;1H❯ \e[39m\e[K\e[38;5;244m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\e[30;1H  \e[38;5;220m⏵⏵ auto mode on\e[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents\e[39m\e[K\e[?12l\e[?25h\e[28;3H[B]\e[>4;2m\e(B\e[m\e[?12l\e[?25h\e[?1006l\e[?1000l\e[?1002l\e[?1003l\e[1;1H\e[1;30r\e[28;3H\e[?1006l\e[?1000l\e[?1002l\e[?1003l\e[?1006h\e[?1000h\e[?1002h\e[?1003h\e[?25l\e[H\e[K\e[38;5;174m
+ ▐\e[48;5;16m▛███▛█\e[39m\e[49m   \e[1mClaude Code\e(B\e[m \e[38;5;246mv2.1.296\e[39m\e[K\e[38;5;174m
+▝▜\e[48;5;16m█████\e[49m█▀\e[39m  \e[38;5;246mSonnet 5.5 · Claude API\e[39m\e[K\e[38;5;174m
+ ▝▝   ▝▝\e[39m   \e[38;5;246m/…/tmp/claude-501/-Users-tanizawashingo-salesanchor/f16867bb-0f82-4b6a-8e6f-be39adca12b1/scratchpad/bgexp\e[39m    \e[5;1H\e[K
+\e[K\e[38;5;246m\e[48;5;237m
+❯ \e[38;5;231mUse the Bash tool to run exactly: sleep 30 && echo DONE . After it finishes, print the numbers 1 to 120 as plain\e[39m      \e[49m\e[48;5;237m\e[8;1H  \e[38;5;231mtext, one number per line (no code block, no commentary), then on the last line write FINISHED.\e[39m\e[K\e[49m
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K\e[38;5;174m
+✳\e[39m \e[38;5;216mPh\e[38;5;174motosynthesizing…\e[39m\e[K\e[26;100H\e[1K\e[38;5;246m[B]\e[C◐ medium · /effort\e[39m  \e[38;5;244m\e[27;1H────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\e[38;5;246m\e[28;1H❯ \e[39m\e[K\e[38;5;244m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\e[30;1H  \e[38;5;220m⏵⏵ auto mode on\e[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents\e[39m\e[K\e[?12l\e[?25h\e[28;3H[B]\e[>4;2m\e(B\e[m\e[?12l\e[?25h\e[?1006l\e[?1000l\e[?1002l\e[?1003l\e[1;1H\e[1;30r\e[28;3H\e[?1006l\e[?1000l\e[?1002l\e[?1003l\e[?1006h\e[?1000h\e[?1002h\e[?1003h\e[?2026h\e[?25l\e[H\e[K\e[38;5;174m
+ ▐\e[48;5;16m▛███▛█\e[39m\e[49m   \e[1mClaude Code\e(B\e[m \e[38;5;246mv2.1.296\e[39m\e[K\e[38;5;174m
+▝▜\e[48;5;16m█████\e[49m█▀\e[39m  \e[38;5;246mSonnet 5.5 · Claude API\e[39m\e[K\e[38;5;174m
+ ▝▝   ▝▝\e[39m   \e[38;5;246m/…/tmp/claude-501/-Users-tanizawashingo-salesanchor/f16867bb-0f82-4b6a-8e6f-be39adca12b1/scratchpad/bgexp\e[39m    \e[5;1H\e[K
+\e[K\e[38;5;246m\e[48;5;237m
+❯ \e[38;5;231mUse the Bash tool to run exactly: sleep 30 && echo DONE . After it finishes, print the numbers 1 to 120 as plain\e[39m      \e[49m\e[48;5;237m\e[8;1H  \e[38;5;231mtext, one number per line (no code block, no commentary), then on the last line write FINISHED.\e[39m\e[K\e[49m
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K
+\e[K\e[38;5;174m
+✳\e[39m \e[38;5;216mPh\e[38;5;174motosynthesizing…\e[39m\e[K\e[26;100H\e[1K\e[3[B]8;5;246m\e[C◐ medium · /effort\e[39m  \e[38;5;244m\e[27;1H────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\e[38;5;246m\e[28;1H❯ \e[39m\e[K\e[38;5;244m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\e[39m\e[30;1H  \e[38;5;220m⏵⏵ auto mode on\e[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents\e[39m\e[K\e[?12l\e[?25h\e[28;3H\e[?2026l[B]\e[3A\e[38;5;174mPh\e[?25l\e(B\e[m\e[26;47H\e[38;5;220mYou've used 98% o\e(B\e[m\e[38;5;220mf your weekly limit · resets Oct 1\e(B\e[m\e[38;5;220m6 at 6pm (Asia/Tokyo)\e[30;1H\e(B\e[m\e[28;3H\e[?12l\e[?25h[B]\e[25;1H\e[38;5;174m·\e[28;3H\e(B\e[m[B]\e[25;1H\e[?25l\e[38;5;173m✽\e[CPhotosy\e(B\e[m\e[38;5;173mnthesizing… \e(B\e[m\e[28;3H\e[?12l\e[?25h[B]\e[?2026h\e[?25l\e[38;5;167m\e[25;1H✽\e[39m \e[38;5;167mPhotosynthesizing…\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;167m\e[25;1H✶\e[39m \e[38;5;167mPhotosynthesizing…\e[39m\e[K
+\e[1K\e[38;5;246m\e[Ctmux detected · scroll with PgUp/PgDn · or add 'set -g mouse on' to ~/.tmux.conf for wheel scroll\e[39m  \e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;167m\e[25;1H✳\e[39m \e[38;5;167mPhotosynthesizing…\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;131m\e[25;1H·\e[39m \e[38;5;131mPhotosynthesizing… \e[38;5;246m(16s)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;131m\e[25;1H✳\e[39m \e[38;5;131mPhotosynthesizing… \e[38;5;246m(16s)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;131m\e[25;1H✶\e[39m \e[38;5;131mPhotosynthesizing… \e[38;5;246m(16s)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l\e[?2026h\e[?25l\e[38;5;131m\e[25;1H✽\e[39m \e[38;5;131mPhotosynthesizing… \e[38;5;246m(16s)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;131m\e[25;1H✻\e[39m \e[38;5;131mPhotosynthesizing… \e[38;5;246m(19s)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;131m\e[25;1H·\e[39m \e[38;5;131mPhotosynthesizing… \e[38;5;246m(19s)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l\e[?2026h\e[?25l\e[38;5;131m\e[25;1H·\e[39m \e[38;5;131mPhotosynthesizing… \e[38;5;246m(20s)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;246m\e[10;1H⏺\e[39m Running \e[1m1\e(B\e[m shell command…\e[K\e[38;5;131m\e[25;1H·\e[39m \e[38;5;131mHatching… \e[38;5;246m(20s)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;131m\e[25;1H✳\e[39m \e[38;5;131mHatching… \e[38;5;246m(20s)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;246m\e[10;1H⏺\e[39m Running sleep 30 && echo DONE\e[K\e[38;5;246m
+  ⎿  $ sleep 30 && echo DONE\e[39m\e[K\e[38;5;174m\e[25;1H✳\e[39m \e[38;5;174mHatching… \e[38;5;246m(22s · ↓\e[39m \e[38;5;246m53 tokens)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;174m\e[25;1H✽\e[39m \e[38;5;180mHatching…\e[38;5;174m \e[38;5;246m(23s · ↓\e[39m \e[38;5;246m58 tokens)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[26;18H\e[1K\e[38;5;246m\e[Ctmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus tracking\e[39m  \e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;174m\e[25;1H·\e[39m \e[38;5;180mHatching…\e[38;5;174m \e[38;5;246m(23s · ↓\e[39m \e[38;5;246m58 tokens)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;174m\e[25;1H·\e[39m \e[38;5;174mHat\e[38;5;216mchi\e[38;5;174mng… \e[38;5;246m(24s · ↓\e[39m \e[38;5;246m58 tokens)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;174m\e[25;1H·\e[39m \e[38;5;174mHat\e[38;5;216mchi\e[38;5;174mng… \e[38;5;246m(24s · ↓\e[39m \e[38;5;246m58 tokens · \e[38;5;247mthinking\e[38;5;246m)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;174m\e[25;1H✳\e[39m \e[38;5;174mH\e[38;5;216matc\e[38;5;174mhing… \e[38;5;246m(24s · ↓\e[39m \e[38;5;246m58 tokens · thinking)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l\e[?2026h\e[?25l\e[38;5;174m\e[25;1H✶\e[39m \e[38;5;174mH\e[38;5;216matc\e[38;5;174mhing… \e[38;5;246m(24s · ↓\e[39m \e[38;5;246m58 tokens · thinking)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;174m\e[25;1H✻\e[39m \e[38;5;216mHat\e[38;5;174mching… \e[38;5;246m(24s · ↓\e[39m \e[38;5;246m58 tokens · thinking)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;174m\e[25;1H✽\e[39m \e[38;5;216mHa\e[38;5;174mtching… \e[38;5;246m(24s · ↓\e[39m \e[38;5;246m58 tokens · \e[38;5;247mthinking\e[38;5;246m)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[10;1H  \e[38;5;246mRan \e[1m1\e(B\e[m\e[38;5;246m shell command\e[39m\e[K
+\e[K\e[38;5;231m
+⏺\e[39m Foreground \e[38;5;153msleep\e[39m is blocked here, so I'll run the same command in the background.\e[K\e[38;5;246m\e[14;1H⏺\e[39m Running \e[1m1\e(B\e[m shell command…\e[K\e[38;5;246m
+  ⎿  $ sleep 30 && echo DONE\e[39m\e[K\e[38;5;174m\e[25;1H✽\e[39m \e[38;5;216mHa\e[38;5;174mtching… \e[38;5;246m(25s · ↓\e[39m \e[38;5;246m83 tokens)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;174m\e[25;1H·\e[39m \e[38;5;180mHatching…\e[38;5;174m \e[38;5;246m(26s · ↓\e[39m \e[38;5;246m282 tokens)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[14;1H  Running \e[1m1\e(B\e[m shell command\e[38;5;246m · 2s\e[39m…\e[K\e[38;5;174m\e[25;1H✽\e[39m \e[38;5;180mHatching…\e[38;5;174m \e[38;5;246m(27s · ↓\e[39m \e[38;5;246m296 tokens · thought for 2s)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;174m\e[25;1H·\e[39m \e[38;5;180mHatching…\e[38;5;174m \e[38;5;246m(28s · ↓\e[39m \e[38;5;246m296 tokens · thought for 2s)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;246m\e[14;1H⏺\e[39m Running \e[1m1\e(B\e[m shell command\e[38;5;246m · 3s\e[39m…\e[K\e[38;5;174m\e[25;1H✻\e[39m \e[38;5;216mHatching…\e[38;5;174m \e[38;5;246m(28s · ↓\e[39m \e[38;5;246m296 tokens · thought for 2s)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;174m\e[25;1H✽\e[39m \e[38;5;180mHatching…\e[38;5;174m \e[38;5;246m(29s · ↓\e[39m \e[38;5;246m296 tokens · thought for 2s)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l\e[?2026h\e[?25l\e[14;1H  Running \e[1m1\e(B\e[m shell command\e[38;5;246m · 3s\e[39m…\e[K\e[38;5;174m\e[25;1H✽\e[39m \e[38;5;180mHatching…\e[38;5;174m \e[38;5;246m(29s · ↓\e[39m \e[38;5;246m296 tokens)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[14;1H  Running \e[1m1\e(B\e[m shell command\e[38;5;246m · 4s\e[39m…\e[K\e[38;5;174m\e[25;1H✻\e[39m \e[38;5;174mHatching… \e[38;5;246m(29s · ↓\e[39m \e[38;5;246m296 tokens)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;246m\e[14;1H⏺\e[39m Running \e[1m1\e(B\e[m shell command\e[38;5;246m · 4s\e[39m…\e[K\e[38;5;174m\e[25;1H✢\e[39m \e[38;5;174mHatching… \e[38;5;246m(29s · ↓\e[39m \e[38;5;246m296 tokens)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l\e[?2026h\e[?25l\e[38;5;174m\e[25;1H·\e[39m \e[38;5;180mHatching…\e[38;5;174m \e[38;5;246m(29s · ↓\e[39m \e[38;5;246m296 tokens)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;246m\e[14;1H⏺\e[39m Running \e[1m1\e(B\e[m shell command…\e[K\e[38;5;174m\e[24;1H·\e[39m \e[38;5;180mHatching…\e[38;5;174m \e[38;5;246m(31s · ↓\e[39m \e[38;5;246m296 tokens)\e[39m\e[K\e[38;5;246m
+  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work\e[39m\e[K\e[30;1H  \e[38;5;220m⏵⏵ auto mode on\e[38;5;246m · \e[38;5;44m1 shell\e[38;5;246m · esc to interrupt · ← for agents · ↓ to manage\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[14;1H  Running \e[1m1\e(B\e[m shell command…\e[K\e[38;5;174m\e[24;1H·\e[39m \e[38;5;180mHatching…\e[38;5;174m \e[38;5;246m(32s · ↓\e[39m \e[38;5;246m296 tokens)\e[39m\e[K\e[26;1H\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;246m\e[14;1H⏺\e[39m Running \e[1m1\e(B\e[m shell command…\e[K\e[38;5;174m\e[24;1H✢\e[39m \e[38;5;216mHatching…\e[38;5;174m \e[38;5;246m(32s · ↓\e[39m \e[38;5;246m296 tokens)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;174m\e[24;1H✳\e[39m \e[38;5;216mHatching…\e[38;5;174m \e[38;5;246m(32s · ↓\e[39m \e[38;5;246m296 tokens)\e[39m\e[K\e[38;5;174m✶\e[39m \e[38;5;216mHatching…\e[38;5;174m \e[38;5;246m(32s · ↓\e[39m \e[38;5;246m296 tokens)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[14;1H  Running \e[1m1\e(B\e[m shell command…\e[K\e[38;5;174m\e[24;1H✻\e[39m \e[38;5;174mHatching… \e[38;5;246m(33s · ↓\e[39m \e[38;5;246m296 tokens)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;174m\e[24;1H·\e[39m \e[38;5;180mHatching…\e[38;5;174m \e[38;5;246m(34s · ↓\e[39m \e[38;5;246m296 tokens)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;174m\e[24;1H✢\e[39m \e[38;5;216mHatching…\e[38;5;174m \e[38;5;246m(34s · ↓\e[39m \e[38;5;246m296 tokens)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[14;1H  \e[38;5;246mRan \e[1m1\e(B\e[m\e[38;5;246m shell command\e[39m\e[K
+\e[K\e[38;5;231m
+⏺\e[39m The command is running in the background. I'll print the numbers once it finishes.\e[K\e[38;5;246m\e[18;1H✻\e[39m \e[38;5;246mWorked for 36s · done 14:05 · 1 shell still running\e[39m\e[K\e[24;1H\e[K
+\e[K\e[28d❯ \e[K\e[30;1H  \e[38;5;220m⏵⏵ auto mode on\e[38;5;246m · \e[38;5;44m1 shell\e[38;5;246m · ← for agents · ↓ to manage\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;246m\e[18;1H✻\e[39m \e[38;5;246mWorked for 36s · done 14:05\e[39m\e[K\e[38;5;174m\e[24;1H✽\e[39m \e[38;5;174mWrang\e[38;5;216mlin\e[38;5;174mg…\e[39m\e[K\e[38;5;246m
+  ⎿  Tip: Use /statusline to set up a custom status line that will display beneath the input box\e[39m\e[K\e[38;5;246m\e[28;1H❯ \e[39m\e[K\e[30;1H  \e[38;5;220m⏵⏵ auto mode on\e[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;114m\e[20;1H⏺\e[39m Background command "sleep 30 && echo DONE" completed (exit code 0)\e[K\e[38;5;174m\e[24;1H✢\e[39m \e[38;5;174mW\e[38;5;216mran\e[38;5;174mgling…\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;174m\e[24;1H✢\e[39m \e[38;5;216mW\e[38;5;174mrangling…\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;174m\e[24;1H✳\e[39m \e[38;5;174mWrangling…\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;174m\e[24;1H✶\e[39m \e[38;5;174mWrangling…\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;174m\e[24;1H✻\e[39m \e[38;5;174mWrangling…\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;174m\e[24;1H✻\e[39m \e[38;5;174mWrangling… \e[38;5;246m(2s · ↓\e[39m \e[38;5;246m2 tokens)\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[H  27\e[K
+  28\e[K
+  29\e[K
+  30\e[K
+  31\e[K
+  32\e[K
+  33\e[K
+  34\e[K
+  35\e[K
+  36\e[K
+  37\e[K
+  38\e[K
+  39\e[K
+  40\e[K
+  41\e[K
+  42\e[K
+  43\e[K
+  44\e[K
+  45\e[K
+  46\e[K
+  47\e[K
+  48\e[K
+  49\e[K
+  50\e[K
+  51\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[H  75\e[K
+  76\e[K
+  77\e[K
+  78\e[K
+  79\e[K
+  80\e[K
+  81\e[K
+  82\e[K
+  83\e[K
+  84\e[K
+  85\e[K
+  86\e[K
+  87\e[K
+  88\e[K
+  89\e[K
+  90\e[K
+  91\e[K
+  92\e[K
+  93\e[K
+  94\e[K
+  95\e[K
+  96\e[K
+  97\e[K
+  98\e[K
+  99\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[H  99\e[K
+  100\e[K
+  101\e[K
+  102\e[K
+  103\e[K
+  104\e[K
+  105\e[K
+  106\e[K
+  107\e[K
+  108\e[K
+  109\e[K
+  110\e[K
+  111\e[K
+  112\e[K
+  113\e[K
+  114\e[K
+  115\e[K
+  116\e[K
+  117\e[K
+  118\e[K
+  119\e[K
+  120\e[K
+  FINISHED\e[K
+\e[K\e[38;5;246m
+✻\e[39m \e[38;5;246mSautéed for 3s · done 14:06\e[39m\e[K\e[28;1H❯ \e[K\e[30;1H  \e[38;5;220m⏵⏵ auto mode on\e[38;5;246m (shift+tab to cycle) · ← for agents\e[39m\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[H  98\e[K
+  99\e[K
+  100\e[K
+  101\e[K
+  102\e[K
+  103\e[K
+  104\e[K
+  105\e[K
+  106\e[K
+  107\e[K
+  108\e[K
+  109\e[K
+  110\e[K
+  111\e[K
+  112\e[K
+  113\e[K
+  114\e[K
+  115\e[K
+  116\e[K
+  117\e[K
+  118\e[K
+  119\e[K
+  120\e[K
+  FINISHED\e[K
+\e[K\e[28;3H\e[?12l\e[?25h\e[?2026l[B]\e[?2026h\e[?25l\e[38;5;239m\e[48;5;237m\e[H❯ Use the Bash tool to run exactly: sleep 30 && echo DONE . After it finishes, print the numbers 1 to 120 as plain tex…\e[39m \e[49m\e[25;47H\e[1K\e[38;5;231m\e[48;5;237m\e[C Jump to bottom (click) ↓ \e[39m\e[49m \e[K\e[28;3H\e[?12l\e[?25h\e[?2026l

@@ -1,0 +1,72 @@
+{
+  "mode": "direct",
+  "scenario": "esc",
+  "tmuxVersion": null,
+  "esc": [
+    {
+      "hex": [
+        "1b"
+      ],
+      "latencyMs": 51
+    },
+    {
+      "hex": [
+        "1b"
+      ],
+      "latencyMs": 9
+    },
+    {
+      "hex": [
+        "1b"
+      ],
+      "latencyMs": 16
+    },
+    {
+      "hex": [
+        "1b"
+      ],
+      "latencyMs": 5
+    },
+    {
+      "hex": [
+        "1b"
+      ],
+      "latencyMs": 4
+    },
+    {
+      "hex": [
+        "1b"
+      ],
+      "latencyMs": 22
+    },
+    {
+      "hex": [
+        "1b"
+      ],
+      "latencyMs": 6
+    },
+    {
+      "hex": [
+        "1b"
+      ],
+      "latencyMs": 10
+    },
+    {
+      "hex": [
+        "1b"
+      ],
+      "latencyMs": 3
+    },
+    {
+      "hex": [
+        "1b"
+      ],
+      "latencyMs": 11
+    }
+  ],
+  "escLatencyMs": {
+    "min": 3,
+    "median": 10,
+    "max": 51
+  }
+}

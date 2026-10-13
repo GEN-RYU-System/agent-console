@@ -1,0 +1,8 @@
+# cleanup check 2026-10-13 13:44:50
+--- ps matches above (empty = none)
+no server running on /private/tmp/tmux-501/acexp
+no server running on /private/tmp/tmux-501/kspr
+total 0
+drwx------    3 tanizawashingo  wheel     96 10月 13 13:44 .
+drwxrwxrwt  350 root            wheel  11200 10月 13 13:44 ..
+srw-rw----    1 tanizawashingo  wheel      0 10月 13 10:11 default
