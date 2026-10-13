@@ -1,4 +1,4 @@
-// agent-console: 作戦ボード（テーマ・KGI・KPI・ロードマップ）の命令と、その検査・読み出し。設計 docs/handoff/board/design.md §3-2。
+// agent-console: 作戦ボード（テーマ・KGI・KPI・ロードマップ・タスク）の命令と、その検査・読み出し。設計 docs/handoff/board/design.md §3-2。
 // 使い方: node "<dataDir>/bin/ac-board.mjs" write < board.json（標準入力の JSON で、そのセッションのボードを丸ごと書き換える）。
 // 自分の会話の番号は、環境変数 CLAUDE_CODE_SESSION_ID から取る（引数では受け取らない）。書くのは dataDir/boards/<番号>.json の 1 か所だけ。
 // 検査（validateBoard）・書き込み（writeBoard）・読み出し（readBoard）はこの 1 ファイルが持つ。サーバーはこのファイルを import し、
@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 export const BOARD_VERSION = 1;
 export const BOARDS_DIR_NAME = "boards";
 /** 長さの上限（文字数はコードポイントで数える）と件数の上限 */
-export const BOARD_LIMITS = Object.freeze({ themeChars: 200, kgiItems: 10, kgiChars: 500, kpiItems: 20, kpiChars: 200, roadmapItems: 50, roadmapChars: 200 });
+export const BOARD_LIMITS = Object.freeze({ themeChars: 200, kgiItems: 10, kgiChars: 500, kpiItems: 20, kpiChars: 200, roadmapItems: 50, roadmapChars: 200, taskItems: 100, taskChars: 200 });
 /** 標準入力の上限（byte）。上限の合計（約 40KB 強）より十分大きく、暴走した入力だけを止める */
 const MAX_INPUT_BYTES = 256 * 1024;
 const FILE_MODE = 0o600;
@@ -37,8 +37,8 @@ function stringProblem(value, label, maxChars, allowEmpty = false) {
 }
 
 /** オブジェクトのキーが、決めたキーだけで過不足ないかの検査 */
-function keyProblem(obj, label, keys, extraHint = "") {
-  for (const key of Object.keys(obj)) if (!keys.includes(key)) return `${label}${label === "" ? "" : "."}${key} は指定できません${extraHint}`;
+function keyProblem(obj, label, keys, extraHint = "", optionalKeys = []) {
+  for (const key of Object.keys(obj)) if (!keys.includes(key) && !optionalKeys.includes(key)) return `${label}${label === "" ? "" : "."}${key} は指定できません${extraHint}`;
   for (const key of keys) if (!(key in obj)) return `${label}${label === "" ? "" : "."}${key} がありません`;
   return null;
 }
@@ -66,29 +66,33 @@ function objectItemProblem(value, label, keys, fieldProblem) {
 }
 
 const TOP_KEYS = ["theme", "kgi", "kpis", "roadmap"];
-const TOP_HINT = "（形は theme・kgi・kpis・roadmap だけです。version と updatedAt は命令が付けます）";
+/** 省ける鍵（省いたら 0 件。古い形のファイルも読めるように） */
+const OPTIONAL_TOP_KEYS = ["tasks"];
+const TOP_HINT = "（形は theme・kgi・kpis・roadmap・tasks だけです。version と updatedAt は命令が付けます）";
 
 /**
  * ボードの入力の検査。形が合えば { ok: true, board }（新しいオブジェクト）、合わなければ { ok: false, reason }。
- * 形: { theme, kgi:[{text}], kpis:[{name,target,current,unit}], roadmap:[{title,status}] }。status は todo・doing・done。
+ * 形: { theme, kgi:[{text}], kpis:[{name,target,current,unit}], roadmap:[{title,status}], tasks?:[{title,status}] }（tasks は省ける。省いたら []）。status は todo・doing・done。
  * 文字列はコードポイントで数えた上限（BOARD_LIMITS）以内で、改行とタブ以外の制御文字を含まない。
  */
 export function validateBoard(input) {
   if (!isObject(input)) return fail("入力は JSON のオブジェクトにしてください");
-  const keyIssue = keyProblem(input, "", TOP_KEYS, TOP_HINT);
+  const keyIssue = keyProblem(input, "", TOP_KEYS, TOP_HINT, OPTIONAL_TOP_KEYS);
   if (keyIssue !== null) return fail(keyIssue);
+  const rawTasks = "tasks" in input ? input.tasks : [];
+  const statusItem = (limitChars) => (v, label) =>
+    objectItemProblem(v, label, ["title", "status"], (key, field, fieldLabel) => {
+      if (key === "title") return stringProblem(field, fieldLabel, limitChars);
+      return STATUSES.includes(field) ? null : `${fieldLabel} は ${STATUSES.join("・")} のどれかにしてください`;
+    });
   const problems = [
     stringProblem(input.theme, "theme", BOARD_LIMITS.themeChars),
     listProblem(input.kgi, "kgi", BOARD_LIMITS.kgiItems, (v, label) => objectItemProblem(v, label, ["text"], (_k, field, fieldLabel) => stringProblem(field, fieldLabel, BOARD_LIMITS.kgiChars))),
     listProblem(input.kpis, "kpis", BOARD_LIMITS.kpiItems, (v, label) =>
       objectItemProblem(v, label, KPI_FIELDS, (key, field, fieldLabel) => stringProblem(field, fieldLabel, BOARD_LIMITS.kpiChars, key !== "name")),
     ),
-    listProblem(input.roadmap, "roadmap", BOARD_LIMITS.roadmapItems, (v, label) =>
-      objectItemProblem(v, label, ["title", "status"], (key, field, fieldLabel) => {
-        if (key === "title") return stringProblem(field, fieldLabel, BOARD_LIMITS.roadmapChars);
-        return STATUSES.includes(field) ? null : `${fieldLabel} は ${STATUSES.join("・")} のどれかにしてください`;
-      }),
-    ),
+    listProblem(input.roadmap, "roadmap", BOARD_LIMITS.roadmapItems, statusItem(BOARD_LIMITS.roadmapChars)),
+    listProblem(rawTasks, "tasks", BOARD_LIMITS.taskItems, statusItem(BOARD_LIMITS.taskChars)),
   ];
   const problem = problems.find((p) => p !== null);
   if (problem !== undefined) return fail(problem);
@@ -99,6 +103,7 @@ export function validateBoard(input) {
       kgi: input.kgi.map((k) => ({ text: k.text })),
       kpis: input.kpis.map((k) => ({ name: k.name, target: k.target, current: k.current, unit: k.unit })),
       roadmap: input.roadmap.map((r) => ({ title: r.title, status: r.status })),
+      tasks: rawTasks.map((t) => ({ title: t.title, status: t.status })),
     },
   };
 }

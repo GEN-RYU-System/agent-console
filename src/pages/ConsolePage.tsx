@@ -415,7 +415,7 @@ export function ConsolePage() {
         <RoutinesPane roles={state.roles} active={centerTab === "routines"} />
       </main>
       <aside className="ac-page__right">
-        <RightPane sessionId={activeId} rev={state.activityRev} state={activeSession?.state ?? "unknown"} ledger={ledger} onRefresh={handleRefresh} />
+        <RightPane sessionId={activeId} rev={state.activityRev} ledger={ledger} onRefresh={handleRefresh} />
       </aside>
       <footer className="ac-page__footer" data-testid="footer">
         <span data-testid="sa-source">

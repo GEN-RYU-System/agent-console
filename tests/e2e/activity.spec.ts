@@ -193,6 +193,11 @@ test("K3/K6/K7: 命令（dataDir/bin/ac-board.mjs）で書いた計画が、5 �
       { title: "実装", status: "doing" },
       { title: "導入", status: "todo" },
     ],
+    tasks: [
+      { title: "試験を書く", status: "done" },
+      { title: "実装する", status: "doing" },
+      { title: "導入する", status: "todo" },
+    ],
   });
   expect(first).toEqual({ status: 0, stderr: "" });
   // 画面はボードを 5 秒ごとに取り直す。5 秒に少し余裕を足して待つ
@@ -208,9 +213,18 @@ test("K3/K6/K7: 命令（dataDir/bin/ac-board.mjs）で書いた計画が、5 �
   await expect(road.getByTestId("board-progress-text")).toHaveText("完了 1 / 3");
   await expect(road.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "33");
   await expect(road.getByTestId("board-roadmap-item")).toHaveCount(3);
-  // 上から 今の状態・動いている担当・KGI・KPI・ロードマップ・最近の入力
-  const order = await pane.locator("[data-testid^='activity-'][data-testid$='state'], [data-testid='activity-running'], [data-testid='board-kgi'], [data-testid='board-kpi'], [data-testid='board-roadmap'], [data-testid='activity-inputs']").evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")));
-  expect(order).toEqual(["activity-state", "activity-running", "board-kgi", "board-kpi", "board-roadmap", "activity-inputs"]);
+  // タスク: 3 つの組・進み具合。完了の組は閉じていて、押すと開く
+  const tasks = pane.getByTestId("board-tasks");
+  await expect(tasks.getByTestId("board-tasks-progress-text")).toHaveText("完了 1 / 3");
+  await expect(tasks.getByTestId("board-tasks-group-doing")).toContainText("実装する");
+  await expect(tasks.getByTestId("board-tasks-group-todo")).toContainText("導入する");
+  const doneGroup = tasks.getByTestId("board-tasks-group-done");
+  await expect(doneGroup.getByTestId("board-task-item")).toBeHidden();
+  await doneGroup.locator("summary").click();
+  await expect(doneGroup.getByTestId("board-task-item")).toHaveText("試験を書く");
+  // 上から 動いている担当・KGI・KPI・ロードマップ・タスク・最近の入力
+  const order = await pane.locator("[data-testid='activity-running'], [data-testid='board-kgi'], [data-testid='board-kpi'], [data-testid='board-roadmap'], [data-testid='board-tasks'], [data-testid='activity-inputs']").evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")));
+  expect(order).toEqual(["activity-running", "board-kgi", "board-kpi", "board-roadmap", "board-tasks", "activity-inputs"]);
 
   // 丸ごと書き換え: 2 回目の内容だけが残る
   const second = writeBoard(claudeSessionId, { theme: "書き直したテーマ", kgi: [], kpis: [], roadmap: [{ title: "全部", status: "done" }] });
@@ -221,6 +235,7 @@ test("K3/K6/K7: 命令（dataDir/bin/ac-board.mjs）で書いた計画が、5 �
   await expect(road.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "100");
   await expect(road).not.toContainText("Done");
   await expect(pane.getByTestId("board-kpi")).not.toContainText("試験の数");
+  await expect(pane.getByTestId("board-tasks-empty")).toBeVisible();
 
   // 別のセッションには出ない（ボードは会話の番号ごと）
   const otherName = `board-other-${Date.now().toString(36)}`;

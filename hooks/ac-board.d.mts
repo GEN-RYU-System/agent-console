@@ -1,7 +1,7 @@
 // ac-board.mjs の型（試験とサーバーから import するため）。本体は node の標準の部品だけで動く素の JS。
 export const BOARD_VERSION: 1;
 export const BOARDS_DIR_NAME: string;
-export const BOARD_LIMITS: Readonly<{ themeChars: number; kgiItems: number; kgiChars: number; kpiItems: number; kpiChars: number; roadmapItems: number; roadmapChars: number }>;
+export const BOARD_LIMITS: Readonly<{ themeChars: number; kgiItems: number; kgiChars: number; kpiItems: number; kpiChars: number; roadmapItems: number; roadmapChars: number; taskItems: number; taskChars: number }>;
 
 export type BoardStatus = "todo" | "doing" | "done";
 /** 命令に渡す形（version と updatedAt は命令が付ける） */
@@ -10,14 +10,19 @@ export interface BoardInput {
   kgi: Array<{ text: string }>;
   kpis: Array<{ name: string; target: string; current: string; unit: string }>;
   roadmap: Array<{ title: string; status: BoardStatus }>;
+  /** 省ける（省いたら 0 件） */
+  tasks?: Array<{ title: string; status: BoardStatus }>;
 }
-/** 保存される形 */
+/** 保存される形（tasks は必ず入る） */
 export interface StoredBoard extends BoardInput {
+  tasks: Array<{ title: string; status: BoardStatus }>;
   version: 1;
   updatedAt: number;
 }
 
-export type ValidateResult = { ok: true; board: BoardInput } | { ok: false; reason: string };
+/** 検査を通った形（tasks は必ず入る） */
+export type StoredBoardBody = Required<BoardInput>;
+export type ValidateResult = { ok: true; board: StoredBoardBody } | { ok: false; reason: string };
 export function validateBoard(input: unknown): ValidateResult;
 export function boardPathFor(boardsDir: string, sessionId: string): string | null;
 export type WriteResult = { ok: true; path: string } | { ok: false; reason: string };

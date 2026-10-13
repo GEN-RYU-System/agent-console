@@ -32,7 +32,14 @@ const VALID = {
     { title: "実装", status: "doing" },
     { title: "導入", status: "todo" },
   ],
+  tasks: [
+    { title: "試験を書く", status: "done" },
+    { title: "実装する", status: "doing" },
+    { title: "導入する", status: "todo" },
+  ],
 };
+/** 古い形（tasks なし）。tasks の足される前のボード */
+const { tasks: _tasks, ...LEGACY } = VALID;
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const failReason = (input: unknown): string => {
   const r = validateBoard(input);
@@ -47,8 +54,28 @@ describe("K5: validateBoard（入力の検査）", () => {
   });
 
   it("空の配列は通る（まだ決まっていない欄）。KPI の目標・今の値・単位は空でもよい", () => {
-    expect(validateBoard({ theme: "t", kgi: [], kpis: [], roadmap: [] }).ok).toBe(true);
+    expect(validateBoard({ theme: "t", kgi: [], kpis: [], roadmap: [], tasks: [] }).ok).toBe(true);
     expect(validateBoard({ theme: "t", kgi: [], kpis: [{ name: "n", target: "", current: "", unit: "" }], roadmap: [] }).ok).toBe(true);
+  });
+
+  it("K8 tasks は省ける鍵。省いた入力は通り、tasks: [] として返る。tasks があれば title と status だけを写す", () => {
+    expect(validateBoard(LEGACY)).toEqual({ ok: true, board: { ...LEGACY, tasks: [] } });
+    expect(validateBoard(VALID)).toEqual({ ok: true, board: VALID });
+  });
+
+  it("K2 tasks の型と上限: 配列・title は空にできない・status は todo/doing/done・余分な鍵は不可。100 件×200 字ちょうどは通り、超えると拒否", () => {
+    expect(BOARD_LIMITS).toMatchObject({ taskItems: 100, taskChars: 200 });
+    expect(failReason({ ...VALID, tasks: "x" })).toContain("tasks");
+    expect(failReason({ ...VALID, tasks: null })).toContain("tasks は配列にしてください");
+    expect(failReason({ ...VALID, tasks: ["x"] })).toContain("tasks[0]");
+    expect(failReason({ ...VALID, tasks: [{ title: "", status: "todo" }] })).toContain("tasks[0].title");
+    expect(failReason({ ...VALID, tasks: [{ title: "a", status: "finished" }] })).toContain("tasks[0].status");
+    expect(failReason({ ...VALID, tasks: [{ title: "a" }] })).toContain("tasks[0].status");
+    expect(failReason({ ...VALID, tasks: [{ title: "a", status: "todo", extra: 1 }] })).toContain("tasks[0].extra");
+    expect(failReason({ ...VALID, tasks: [{ title: "a\u001b", status: "todo" }] })).toContain("tasks[0].title");
+    expect(validateBoard({ ...VALID, tasks: Array.from({ length: 100 }, () => ({ title: "あ".repeat(200), status: "todo" })) }).ok).toBe(true);
+    expect(failReason({ ...VALID, tasks: Array.from({ length: 101 }, () => ({ title: "a", status: "todo" })) })).toContain("tasks");
+    expect(failReason({ ...VALID, tasks: [{ title: "あ".repeat(201), status: "todo" }] })).toContain("tasks[0].title");
   });
 
   it("オブジェクトでない・欠けている・余分な項目があるものは、理由を付けて拒否する", () => {
@@ -82,7 +109,7 @@ describe("K5: validateBoard（入力の検査）", () => {
   });
 
   it("長さの上限: theme 200 字、kgi 10 件×500 字、kpis 20 件×各項目 200 字、roadmap 50 件×200 字。上限ちょうどは通り、1 つ超えると拒否", () => {
-    expect(BOARD_LIMITS).toEqual({ themeChars: 200, kgiItems: 10, kgiChars: 500, kpiItems: 20, kpiChars: 200, roadmapItems: 50, roadmapChars: 200 });
+    expect(BOARD_LIMITS).toEqual({ themeChars: 200, kgiItems: 10, kgiChars: 500, kpiItems: 20, kpiChars: 200, roadmapItems: 50, roadmapChars: 200, taskItems: 100, taskChars: 200 });
     expect(validateBoard({ ...VALID, theme: "あ".repeat(200) }).ok).toBe(true);
     expect(failReason({ ...VALID, theme: "あ".repeat(201) })).toContain("theme");
     // コードポイントで数える（絵文字 1 つは 1 字）
@@ -130,7 +157,7 @@ describe("K4: 書き込みと読み出し（dataDir/boards/<番号>.json）", ()
     const dataDir = tmp();
     writeBoard(dataDir, OTHER, VALID, NOW);
     writeBoard(dataDir, SID, VALID, NOW);
-    const second = { theme: "新しい", kgi: [], kpis: [], roadmap: [{ title: "だけ", status: "todo" }] };
+    const second = { theme: "新しい", kgi: [], kpis: [], roadmap: [{ title: "だけ", status: "todo" }], tasks: [] };
     writeBoard(dataDir, SID, second, NOW + 5000);
     expect(readBoard(dataDir, SID)).toEqual({ status: "ok", board: { version: 1, ...second, updatedAt: NOW + 5000 } });
     expect(readBoard(dataDir, OTHER)).toEqual({ status: "ok", board: { version: 1, ...VALID, updatedAt: NOW } });
@@ -163,6 +190,22 @@ describe("K4: 書き込みと読み出し（dataDir/boards/<番号>.json）", ()
       expect(readBoard(dataDir, SID)).toEqual({ status: "invalid" });
       expect(readFileSync(file, "utf8")).toBe(body);
     }
+  });
+
+  it("K8 古い形（tasks なし）の保存ファイルは ok のまま読め、tasks: [] を返す。ファイルは書き換えない", () => {
+    const dataDir = tmp();
+    mkdirSync(path.join(dataDir, "boards"), { recursive: true });
+    const file = path.join(dataDir, "boards", `${SID}.json`);
+    const body = JSON.stringify({ version: 1, ...LEGACY, updatedAt: NOW });
+    writeFileSync(file, body);
+    expect(readBoard(dataDir, SID)).toEqual({ status: "ok", board: { version: 1, ...LEGACY, tasks: [], updatedAt: NOW } });
+    expect(readFileSync(file, "utf8")).toBe(body);
+  });
+
+  it("K8 tasks の無い write の入力が通る（書かれたファイルには tasks: [] が入る）", () => {
+    const dataDir = tmp();
+    expect(writeBoard(dataDir, SID, LEGACY, NOW).ok).toBe(true);
+    expect(JSON.parse(readFileSync(path.join(dataDir, "boards", `${SID}.json`), "utf8"))).toEqual({ version: 1, ...LEGACY, tasks: [], updatedAt: NOW });
   });
 
   it("会話の番号が UUID の形でないときは、パスを組み立てない（書かない・読まない）", () => {

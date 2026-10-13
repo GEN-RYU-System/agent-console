@@ -228,6 +228,8 @@ export interface Board {
   kgi: Array<{ text: string }>;
   kpis: Array<{ name: string; target: string; current: string; unit: string }>;
   roadmap: Array<{ title: string; status: BoardRoadmapStatus }>;
+  /** このセッションで進める仕事。古い形のファイルは [] で返る */
+  tasks: Array<{ title: string; status: BoardRoadmapStatus }>;
   /** 最後に書き込んだ時刻（ms） */
   updatedAt: number;
 }

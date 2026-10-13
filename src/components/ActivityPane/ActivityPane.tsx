@@ -6,8 +6,7 @@ import { Card } from "@sa/components/Card";
 import { EmptyState } from "@sa/components/EmptyState";
 import { ProgressBar } from "@sa/components/loading/ProgressBar";
 import { fetchActivity, fetchBoard } from "../../api";
-import type { ActivityAgent, ActivityResponse, Board, BoardResponse, BoardRoadmapStatus, SessionState } from "../../types";
-import { STATE_LABEL_KEY } from "../StatusDot/StatusDot";
+import type { ActivityAgent, ActivityResponse, Board, BoardResponse, BoardRoadmapStatus } from "../../types";
 import { agentLabel, formatDuration } from "./agentLabel";
 import "./ActivityPane.css";
 
@@ -18,15 +17,9 @@ const JUST_NOW_MS = 10_000;
 const PERCENT = 100;
 
 type BadgeVariant = "neutral" | "info" | "success" | "warning" | "danger";
-const STATE_VARIANTS: Record<SessionState, BadgeVariant> = {
-  working: "info",
-  waiting: "warning",
-  idle: "success",
-  "no-claude": "neutral",
-  stopped: "neutral",
-  unknown: "neutral",
-};
 const ROADMAP_VARIANTS: Record<BoardRoadmapStatus, BadgeVariant> = { todo: "neutral", doing: "info", done: "success" };
+/** タスクの組の順（画面の上から） */
+const TASK_GROUPS: BoardRoadmapStatus[] = ["doing", "todo", "done"];
 
 type Loaded = Extract<ActivityResponse, { status: "ok" }>;
 type PaneData = { kind: "data"; value: ActivityResponse } | { kind: "error" };
@@ -36,8 +29,6 @@ interface Props {
   sessionId: string;
   /** セッションの様子の記録の版（進んだら取り直す） */
   rev: number;
-  /** 今の状態（agents --json が正本。一覧と同じ値） */
-  state: SessionState;
 }
 
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }): ReactElement {
@@ -52,11 +43,11 @@ function Section({ id, title, children }: { id: string; title: string; children:
 }
 
 /**
- * 右の欄「作戦ボード」の中身。上から 今の状態・動いている担当・KGI・KPI・ロードマップ（進み具合）・最近の入力。
- * 動いている担当と最近の入力の正本は dataDir/activity の記録、計画（KGI・KPI・ロードマップ）の正本は dataDir/boards/<会話の番号>.json。
+ * 右の欄「作戦ボード」の中身。上から 動いている担当・KGI・KPI・ロードマップ（進み具合）・タスク・最近の入力。今の状態は左の一覧のバッジが正本なのでここには出さない。
+ * 動いている担当と最近の入力の正本は dataDir/activity の記録、計画（KGI・KPI・ロードマップ・タスク）の正本は dataDir/boards/<会話の番号>.json。
  * ここはサーバーが返した写しを出すだけ（計画を書き込めるのは、そのセッションの Claude だけ）。
  */
-export function ActivityPane({ sessionId, rev, state }: Props) {
+export function ActivityPane({ sessionId, rev }: Props) {
   const { t } = useTranslation();
   const [data, setData] = useState<PaneData | null>(null);
   const [board, setBoard] = useState<BoardData | null>(null);
@@ -119,6 +110,65 @@ export function ActivityPane({ sessionId, rev, state }: Props) {
 
   /** 「今の値 → 目標 単位」。空の値は「—」。単位が空なら単位の分の空白は付けない */
   const kpiValue = (kpi: Board["kpis"][number]): string => t("ac.board.kpiValue", { current: kpi.current || t("ac.board.noValue"), target: kpi.target || t("ac.board.noValue"), unit: kpi.unit === "" ? "" : ` ${kpi.unit}` });
+
+  const taskRow = (item: Board["tasks"][number], index: number): ReactElement => (
+    <li key={`${index}-${item.title}`} className="ac-activity__step" data-testid="board-task-item" data-status={item.status}>
+      <span className="ac-activity__step-title">{item.title}</span>
+    </li>
+  );
+
+  const taskGroup = (status: BoardRoadmapStatus, items: Board["tasks"]): ReactElement | null => {
+    if (items.length === 0) return null;
+    const heading = (
+      <>
+        <Badge variant={ROADMAP_VARIANTS[status]} size="sm">
+          {t(`ac.board.tasksGroup.${status}`)}
+        </Badge>{" "}
+        <span className="ac-activity__muted">{items.length}</span>
+      </>
+    );
+    const rows = <ul className="ac-activity__list">{items.map(taskRow)}</ul>;
+    // 完了の組は <details>（SA に開閉の金型が無く、SA 本体も素の details を使う）。最初は閉じる
+    return status === "done" ? (
+      <details key={status} className="ac-activity__task-group" data-testid={`board-tasks-group-${status}`}>
+        <summary className="ac-activity__task-summary">{heading}</summary>
+        {rows}
+      </details>
+    ) : (
+      <div key={status} className="ac-activity__task-group" data-testid={`board-tasks-group-${status}`}>
+        <p className="ac-activity__task-summary">{heading}</p>
+        {rows}
+      </div>
+    );
+  };
+
+  const tasksSection = (tasks: Board["tasks"]): ReactElement => {
+    const done = tasks.filter((item) => item.status === "done").length;
+    return (
+      <Section id="board-tasks" title={t("ac.board.tasksTitle")}>
+        {tasks.length === 0 ? (
+          <p className="ac-activity__muted" data-testid="board-tasks-empty">
+            {t("ac.board.tasksEmpty")}
+          </p>
+        ) : (
+          <>
+            <div data-testid="board-tasks-progress">
+              <ProgressBar value={Math.round((done / tasks.length) * PERCENT)} />
+            </div>
+            <p className="ac-activity__muted" data-testid="board-tasks-progress-text">
+              {t("ac.board.tasksProgress", { done, total: tasks.length })}
+            </p>
+            {TASK_GROUPS.map((status) =>
+              taskGroup(
+                status,
+                tasks.filter((item) => item.status === status),
+              ),
+            )}
+          </>
+        )}
+      </Section>
+    );
+  };
 
   const boardSections = (value: Board): ReactElement => {
     const done = value.roadmap.filter((item) => item.status === "done").length;
@@ -184,6 +234,7 @@ export function ActivityPane({ sessionId, rev, state }: Props) {
             </>
           )}
         </Section>
+        {tasksSection(value.tasks ?? [])}
       </>
     );
   };
@@ -218,14 +269,6 @@ export function ActivityPane({ sessionId, rev, state }: Props) {
     return boardSections(board.value.board);
   };
 
-  const stateSection = (
-    <Section id="activity-state" title={t("ac.activity.stateTitle")}>
-      <Badge variant={STATE_VARIANTS[state]} size="sm">
-        {t(STATE_LABEL_KEY[state])}
-      </Badge>
-    </Section>
-  );
-
   const body = (value: Loaded): ReactElement => (
     <>
       {!value.hooks.ok && (
@@ -235,7 +278,6 @@ export function ActivityPane({ sessionId, rev, state }: Props) {
           </Callout>
         </div>
       )}
-      {stateSection}
       <Section id="activity-running" title={t("ac.activity.runningTitle")}>
         {value.running.length === 0 ? <p className="ac-activity__muted">{t("ac.activity.emptyRunning")}</p> : <ul className="ac-activity__list">{value.running.map((a) => agentItem(a, value.now))}</ul>}
       </Section>

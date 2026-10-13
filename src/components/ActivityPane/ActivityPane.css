@@ -100,6 +100,24 @@
   min-width: 0;
 }
 
+.ac-activity__task-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.ac-activity__task-summary {
+  margin: 0;
+  font-size: var(--font-sm);
+  color: var(--text-primary);
+  cursor: default;
+}
+
+details.ac-activity__task-group > .ac-activity__task-summary {
+  cursor: pointer;
+}
+
 .ac-activity__input {
   display: flex;
   flex-direction: column;
