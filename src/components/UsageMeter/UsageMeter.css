@@ -1,0 +1,36 @@
+.ac-usage {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+  min-width: 0;
+}
+
+.ac-usage__win {
+  display: flex;
+  flex: 1 1 40%;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.ac-usage__label {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.ac-usage__bar {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.ac-usage__pct {
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.ac-usage__text {
+  color: var(--text-muted);
+  white-space: nowrap;
+}

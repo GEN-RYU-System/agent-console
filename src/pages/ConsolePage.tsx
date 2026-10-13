@@ -38,6 +38,7 @@ import { QuickPromptEditor } from "../components/QuickPrompts/QuickPromptEditor"
 import { RenameForm } from "../components/RenameForm/RenameForm";
 import { SessionList } from "../components/SessionList/SessionList";
 import { ThemeToggle } from "../components/ThemeToggle/ThemeToggle";
+import { UsageMeter } from "../components/UsageMeter/UsageMeter";
 import { RoutinesPane } from "../components/Routines/RoutinesPane";
 import { TerminalPane, type PasteResult, type TerminalHandle, type UploadNotice } from "../components/TerminalPane/TerminalPane";
 import type { ConsoleState, LedgerSnapshot, QuickPrompt, ResumeTarget, SessionView } from "../types";
@@ -432,6 +433,7 @@ export function ConsolePage() {
         <span data-testid="claude-version">
           {t("ac.footer.claudeVersion")}: {state.claudeVersion}
         </span>
+        <UsageMeter />
         <Button variant="ghost" size="sm" onClick={() => setMemoryOpen(true)}>
           {t("ac.memory.open")}
         </Button>

@@ -266,3 +266,12 @@ export type ChatResponse =
       lastSeq: number;
       items: ChatItem[];
     };
+
+/** Claude の利用量（statusLine の命令が dataDir/usage.json に書いた写し）。none=まだ無い、invalid=ファイルが壊れている */
+export interface UsageWindow {
+  /** 0〜100 */
+  usedPercentage: number;
+  /** リセットの時刻（Unix 秒） */
+  resetsAt: number;
+}
+export type UsageResponse = { status: "none" } | { status: "invalid" } | { status: "ok"; observedAt: number; fiveHour?: UsageWindow; sevenDay?: UsageWindow };
