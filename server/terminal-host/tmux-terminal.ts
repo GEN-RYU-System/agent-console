@@ -158,9 +158,17 @@ export class TmuxControlTerminal implements TerminalHandle {
       `capture-pane -p -e -a -q -t ${t}`,
       `capture-pane -p -e -t ${t}`,
     ];
-    const pending = commands.map(() => new Promise<ControlBlock>((resolve) => this.queue.enqueue({ resolve })));
+    // 4 本目の応答を受けた同じ同期処理の中で先入れを終える（同じ塊の後ろの %output を捨てず、先入れの後ろに流す）
+    const got: ControlBlock[] = [];
+    for (let i = 0; i < commands.length; i++) {
+      this.queue.enqueue({
+        resolve: (b) => {
+          got.push(b);
+          if (got.length === commands.length) this.finishReplay(got[0], got[1], got[2], got[3]);
+        },
+      });
+    }
     this.client?.stdin?.write(`${commands.join("\n")}\n`);
-    void Promise.all(pending).then(([info, history, altNormal, visible]) => this.finishReplay(info, history, altNormal, visible));
   }
 
   private finishReplay(info: ControlBlock, history: ControlBlock, altNormal: ControlBlock, visible: ControlBlock): void {
