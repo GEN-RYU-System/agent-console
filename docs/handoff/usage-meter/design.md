@@ -150,7 +150,8 @@
 
 ### 10-5 statusLine の設定の形（MEDIUM-5）
 - 公式の設定は `command` の文字列だけが書かれている（statusline-doc-fetch.txt:41-50,69）。args の形は使わない。§3-2 と §9 工程0(b) の args の確認は取り消す。
-- 形: `{"type":"command","command":"\"<nodeの絶対パス>\" \"<dataDir>/bin/ac-statusline.mjs\""}`。2つのパスを、どちらも二重引用符で囲む。パスに `"`・`$`・`` ` ``・`\`・改行が入っているときは、install をしないで理由を出す（引用の崩れを避ける）。
+- 形: `{"type":"command","command":"\"<nodeの絶対パス>\" \"<dataDir>/bin/ac-statusline.mjs\""}`。2つのパスを、どちらも二重引用符で囲む。パスに `"`・`$`・`` ` ``・`\`・改行が入っているときは、install をしないで理由を出す（引用の崩れを避ける）。このとき hooks の段は入り、statusLine の段だけ失敗として終了コード 1。
+- dataDir を変えたときは、先に旧 dataDir で `ac-hooks.mjs uninstall` を実行する（または settings.json の statusLine を手で外す）。自分の物かは今の dataDir の引用符付きパスで見分けるため。
 - 自分の物かは、command の文字列に `"<dataDir>/bin/ac-statusline.mjs"`（引用符を含む）がそのまま入っているかで見分ける。
 - K9 の試験に、空白を含む dataDir（`.../Application Support/agent-console` の形）を入れる。CI の両方の OS で、その command が shell で動くことを確かめる。
 

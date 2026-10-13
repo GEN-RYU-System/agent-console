@@ -12,7 +12,7 @@ Local console for running parallel Claude Code sessions (Orca-inspired, lightwei
 
 ### 入れる（1 回だけ・実行する人が自分で）
 
-アプリは Claude の設定を書き換えません。次を実行すると、`~/.claude/settings.json` に記録用の hook（9 つのイベント。v0.11.0 で Stop と StopFailure、v0.12.0 で SubagentStart が増えました）を足します。足す前に控え `settings.json.ac-backup-<日時>` を作り（新しい 3 つだけ残します）、足すのは自分の hook だけです。2 回実行しても増えません。
+アプリは Claude の設定を書き換えません。次を実行すると、`~/.claude/settings.json` に記録用の hook（9 つのイベント。v0.11.0 で Stop と StopFailure、v0.12.0 で SubagentStart が増えました）を足します。足す前に控え `settings.json.ac-backup-<日時>` を作り（新しい 6 つだけ残します。1 回の install で控えが 2 つ作られます: hooks の段と statusLine の段）、足すのは自分の hook だけです。2 回実行しても増えません。
 
 ```
 node scripts/ac-hooks.mjs install      # 足す（hook の本体を dataDir/hooks/ に置いてから、設定に足す）
@@ -183,7 +183,9 @@ node scripts/ac-hooks.mjs check
 
 ## 利用量バー（週・5時間）の設定
 
-画面下の帯の利用量バーは、Claude Code の statusLine の命令が書く `dataDir/usage.json` を読みます。`node scripts/ac-hooks.mjs install` が hook に続けて settings.json の `statusLine` を 1 つ足します（`node scripts/ac-hooks.mjs check` で点検、`uninstall` で自分の statusLine だけを外す）。すでに別の statusLine がある場合は足さず、「statusLine: 別の設定があるので足していません」と出して終了コード 0 で終わります（そのときバーは「まだ値がありません」のまま）。値は Claude の最初の API 応答のあとに来るため、起動直後は出ません。
+画面下の帯の利用量バーは、Claude Code の statusLine の命令が書く `dataDir/usage.json` を読みます。`node scripts/ac-hooks.mjs install` が hook に続けて settings.json の `statusLine` を 1 つ足します（`node scripts/ac-hooks.mjs check` で点検、`uninstall` で自分の statusLine だけを外す）。すでに別の statusLine がある場合は足さず、「statusLine: 別の設定があるので足していません」と出して終了コード 0 で終わります（そのときバーは「まだ値がありません」のまま）。値は Claude の最初の API 応答のあとに来るため、起動直後は出ません。パスに `"`・`$`・バッククォート・`\`・改行を含む dataDir では statusLine を足さず、理由を出して終了コード 1 で終わります（hooks は入ります）。
+
+dataDir を変えたときは、先に旧 dataDir で `ac-hooks.mjs uninstall` を実行してください（または settings.json の statusLine を手で外してください）。自分の物かは、今の dataDir の引用符付きパスで見分けるためです。
 
 ## 認証の仕組み（要点）
 

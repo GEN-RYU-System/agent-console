@@ -8,7 +8,7 @@ import path from "node:path";
 export const OWN_HOOK_SUFFIX = "/hooks/activity-hook.mjs";
 export const BACKUP_PREFIX = "settings.json.ac-backup-";
 const BACKUP_NAME = /^settings\.json\.ac-backup-\d{8}T\d{9}Z$/;
-export const BACKUPS_KEPT = 3;
+export const BACKUPS_KEPT = 6;
 const SETTINGS_MODE = 0o600;
 
 export interface HookSpec {

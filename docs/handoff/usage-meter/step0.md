@@ -34,7 +34,7 @@
 - 方法: e2e（tests/e2e/console.spec.ts「利用量」）が実物の dataDir/bin/ac-statusline.mjs を動かして usage.json を作り、footer を撮る（AC_USAGE_SHOT_DIR 指定）。
 - 画像: /tmp/CC報告ファイル/usage-meter/footer-{normal,warning,full}-{1400,1280,1024,800}.png
 - 結果: 読める。
-  - 当初案（footer の 1 行に並べる）は 2 本のバーの幅が 0 になり読めなかったため、footer に flex-wrap を足し、利用量を 1 行まるごと（flex-basis 100%）の自分の行に置いた。footer は 2 行（1024px 以下は 3 行）になる。
+  - 当初案（footer の 1 行に並べる）は 2 本のバーの幅が 0 になり読めなかったため、footer に flex-wrap を足し、利用量を 1 行まるごと（flex-basis 100%）の自分の行に置いた。footer は 3 行（メタ情報・利用量・Memory／テーマ／ログアウト）になる。
   - 1400px: 週・5時間ともバー・N%・Badge・リセット・「N分前」が 1 行で読める。
   - 800px: バーは短くなる（約 6〜8 文字分）が N%・Badge・リセットは読める。
   - 100%（full）: バーを出さず「上限」の danger Badge だけが出る（§10-1）。

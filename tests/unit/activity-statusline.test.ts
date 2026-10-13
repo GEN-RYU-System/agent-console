@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { addStatusLine, buildStatusLine, checkHooks, checkStatusLine, installStatusLine, isOwnStatusLine, removeStatusLine, uninstallStatusLine } from "../../server/activity-hooks.ts";
+import { addStatusLine, buildStatusLine, checkHooks, checkStatusLine, installHooks, installStatusLine, isOwnStatusLine, removeStatusLine, uninstallStatusLine } from "../../server/activity-hooks.ts";
 
 vi.setConfig({ testTimeout: 60000 });
 
@@ -122,10 +122,16 @@ describe("K9: installStatusLine / uninstallStatusLine / checkStatusLine（ファ
     writeFileSync(e.script, "// x\n");
     expect(checkStatusLine({ settingsPath: e.settings, scriptPath: e.script })).toEqual({ ok: true });
   });
-  it("checkHooks（サーバーの 1 時間ごとの点検）は statusLine を見ない", () => {
+  it("checkHooks（サーバーの 1 時間ごとの点検）は statusLine を見ない: hooks が入った設定に別物の statusLine があっても ok のまま", () => {
     const e = makeEnv();
-    writeFileSync(e.settings, JSON.stringify({ statusLine: FOREIGN }));
-    expect(checkHooks({ settingsPath: e.settings, hookPath: path.join(e.dataDir, "hooks", "activity-hook.mjs") })).toMatchObject({ ok: false, reason: "missingHandler" });
+    const hookPath = path.join(e.dataDir, "hooks", "activity-hook.mjs");
+    mkdirSync(path.dirname(hookPath), { recursive: true });
+    writeFileSync(hookPath, "// x\n");
+    writeFileSync(e.settings, JSON.stringify(PO_SETTINGS));
+    installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath });
+    expect(checkHooks({ settingsPath: e.settings, hookPath })).toMatchObject({ ok: true });
+    writeFileSync(e.settings, JSON.stringify({ ...readJson(e.settings), statusLine: FOREIGN }));
+    expect(checkHooks({ settingsPath: e.settings, hookPath })).toMatchObject({ ok: true });
   });
 });
 
@@ -153,7 +159,7 @@ describe("§10-3: コマンド（scripts/ac-hooks.mjs を一時の HOME で）",
 
     const again = cli(e, "install");
     expect(again.status).toBe(0);
-    expect(again.out).toContain("すでに入っています");
+    expect(again.out).toContain("statusLine（利用量の写し取り）はすでに入っています");
 
     const u = cli(e, "uninstall");
     expect(u.status, u.err).toBe(0);
@@ -198,6 +204,19 @@ describe("§10-3: コマンド（scripts/ac-hooks.mjs を一時の HOME で）",
     expect(i.status).toBe(1);
     expect(i.err).toContain("hooks は入りました・statusLine は入っていません");
     expect(i.err).toContain("引用を崩す文字");
+    const s = readJson(e.settings);
+    expect(s.statusLine).toBeUndefined();
+    expect(Object.keys(s.hooks)).toHaveLength(HOOK_EVENTS);
+  });
+
+  it("dataDir/bin が通常のファイルで塞がれている → 命令を置けず、statusLine は入らず、終了コード 1。hooks は入っている", () => {
+    const e = makeEnv();
+    mkdirSync(e.dataDir, { recursive: true });
+    writeFileSync(path.join(e.dataDir, "bin"), "not a directory\n");
+    writeFileSync(e.settings, JSON.stringify(PO_SETTINGS, null, 2) + "\n");
+    const i = cli(e, "install");
+    expect(i.status).toBe(1);
+    expect(i.err).toContain("hooks は入りました・statusLine は入っていません");
     const s = readJson(e.settings);
     expect(s.statusLine).toBeUndefined();
     expect(Object.keys(s.hooks)).toHaveLength(HOOK_EVENTS);
