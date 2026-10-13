@@ -107,6 +107,8 @@ export interface HarnessOptions {
   uploadMaxBytes?: number;
   uploadMaxKeep?: number;
   terminalSmoothScrollMs?: number;
+  /** 貼ってから Enter を送るまでの待ち（ms）。既定は config の既定値 */
+  pasteSubmitDelayMs?: number;
   /** 拡張からの受け取り口の相手。既定は固定 id の拡張と試験用の合言葉。null にすると受け取り口は常に 403 */
   picker?: PickerAccess;
 }
@@ -148,7 +150,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     diffBaseRef: "origin/main",
     diffMaxFileBytes: options.diffMaxFileBytes ?? DEFAULT_DIFF_MAX_FILE_BYTES,
     diffSendMaxBytes: options.diffSendMaxBytes ?? DEFAULT_DIFF_SEND_MAX_BYTES,
-    pasteSubmitDelayMs: DEFAULT_PASTE_SUBMIT_DELAY_MS,
+    pasteSubmitDelayMs: options.pasteSubmitDelayMs ?? DEFAULT_PASTE_SUBMIT_DELAY_MS,
     ghBin: options.ghBin ?? DEFAULT_GH_BIN,
     prPollMs: DEFAULT_PR_POLL_MS,
     prRefreshMinMs: options.prRefreshMinMs ?? DEFAULT_PR_REFRESH_MIN_MS,

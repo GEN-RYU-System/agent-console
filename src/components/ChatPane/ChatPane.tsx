@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { Badge } from "@sa/components/Badge";
 import { Button } from "@sa/components/Button";
 import { Callout } from "@sa/components/Callout";
 import { EmptyState } from "@sa/components/EmptyState";
 import { TextareaControl } from "@sa/components/Textarea";
-import { checkChatSend, fetchChat } from "../../api";
-import type { ChatItem, QuickPrompt, SessionState } from "../../types";
+import { ApiError, cancelChatQueue, fetchChat, queueChat } from "../../api";
+import type { ChatItem, ChatQueueItem, QuickPrompt, SessionState } from "../../types";
 import { QuickPromptBar } from "../QuickPrompts/QuickPromptBar";
 import { ChatMarkdown } from "./ChatMarkdown";
-import { blockedReasonKey, isSendKey, mergeChat, shouldStickToBottom } from "./chatLogic";
+import { isSendBlocked, isSendKey, mergeChat, queueNoticeKey, shouldStickToBottom } from "./chatLogic";
 import "./ChatPane.css";
 
-type PasteResult = "sent" | "notPasted" | "pastedNotSent";
-type PasteFn = (sessionId: string, text: string, delayMs: number) => Promise<PasteResult>;
+/** サーバーの CHAT_QUEUE_MAX と同じ値（超えたときの案内に出す） */
+const CHAT_QUEUE_MAX = 10;
 
 interface Props {
   /** 選んでいるセッション。別のセッションへ切り替えたら、呼び出し側が key を変えて作り直す（会話・入力欄を持ち越さない） */
@@ -25,8 +26,6 @@ interface Props {
   state: SessionState;
   /** 今、端末へ文章を入れてよい状態か（サーバーの判定。セッション一覧と同じ） */
   canInput: boolean;
-  /** 端末へ貼って、待ってから Enter を送る（TerminalPane の pasteSubmitAfter） */
-  paste: PasteFn;
   prompts: QuickPrompt[];
   onEditPrompts: () => void;
   onPromptsChanged: () => void;
@@ -38,8 +37,12 @@ type Load = "loading" | "noSession" | "ok";
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-/** 「チャット」タブ。選んだセッションの会話（hook の記録から作る）を、右にしんごさん・左に Claude の吹き出しで出し、下の入力欄から送る。正本は記録のファイルで、ここは写しだけ。 */
-export function ChatPane({ sessionId, active, rev, state, canInput, paste, prompts, onEditPrompts, onPromptsChanged, onOpenTerminal }: Props) {
+/**
+ * 「チャット」タブ。選んだセッションの会話（hook の記録から作る）を、右にしんごさん・左に Claude の吹き出しで出し、下の入力欄から送る。
+ * 「送る」は、いつでもサーバーの送信の予約に入れるだけ（手が空けばすぐ、作業中なら作業が終わってから、サーバーが端末へ書く）。
+ * 会話の正本は記録のファイル、予約の正本はサーバーのメモリで、ここは写しだけ。
+ */
+export function ChatPane({ sessionId, active, rev, state, canInput, prompts, onEditPrompts, onPromptsChanged, onOpenTerminal }: Props) {
   const { t } = useTranslation();
   const [items, setItems] = useState<ChatItem[]>([]);
   const [load, setLoad] = useState<Load>("loading");
@@ -47,42 +50,42 @@ export function ChatPane({ sessionId, active, rev, state, canInput, paste, promp
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  /** 送ったとき（手元で見えていた最後の seq）。これより新しい user の記録が届くまで「送りました」を出す */
-  const [sentAfterSeq, setSentAfterSeq] = useState<number | null>(null);
+  /** サーバーの送信の予約の写し（古い順） */
+  const [queued, setQueued] = useState<ChatQueueItem[]>([]);
   const cursor = useRef<{ lastSeq: number; epoch: string | null }>({ lastSeq: 0, epoch: null });
   const sendingRef = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
 
-  // 会話を取る: 開いたとき・記録の版が進んだとき。続きだけ（since=最後の seq、epoch つき）
+  // 会話と予約を取る: 開いたとき・記録の版が進んだとき（予約の変化でも版は進む）。続きだけ（since=最後の seq、epoch つき）
+  const alive = useRef(true);
   useEffect(() => {
-    if (!active || sessionId === null) return;
-    let cancelled = false;
-    fetchChat(sessionId, cursor.current.lastSeq, cursor.current.epoch).then(
-      (res) => {
-        if (cancelled) return;
-        setLoadFailed(false);
-        if (res.status === "noSession") {
-          setLoad("noSession");
-          return;
-        }
-        cursor.current = { lastSeq: res.lastSeq, epoch: res.epoch };
-        setItems((prev) => mergeChat(prev, res.items, res.reset));
-        setLoad("ok");
-      },
-      () => {
-        if (!cancelled) setLoadFailed(true);
-      },
-    );
+    alive.current = true;
     return () => {
-      cancelled = true;
+      alive.current = false;
     };
-  }, [active, sessionId, rev]);
-
-  // 送った文章が会話に届いたら（新しい user の記録が来たら）「送りました」を消す
+  }, []);
+  const reload = useCallback(async (): Promise<void> => {
+    if (sessionId === null) return;
+    try {
+      const res = await fetchChat(sessionId, cursor.current.lastSeq, cursor.current.epoch);
+      if (!alive.current) return;
+      setLoadFailed(false);
+      setQueued(res.queued);
+      if (res.status === "noSession") {
+        setLoad("noSession");
+        return;
+      }
+      cursor.current = { lastSeq: res.lastSeq, epoch: res.epoch };
+      setItems((prev) => mergeChat(prev, res.items, res.reset));
+      setLoad("ok");
+    } catch {
+      if (alive.current) setLoadFailed(true);
+    }
+  }, [sessionId]);
   useEffect(() => {
-    if (sentAfterSeq !== null && items.some((i) => i.role === "user" && i.seq > sentAfterSeq)) setSentAfterSeq(null);
-  }, [items, sentAfterSeq]);
+    if (active) void reload();
+  }, [active, rev, reload]);
 
   // 新しいものが来たら一番下まで動かす。上を読んでいるとき（一番下から離れているとき）は動かさない
   useLayoutEffect(() => {
@@ -96,34 +99,43 @@ export function ChatPane({ sessionId, active, rev, state, canInput, paste, promp
 
   const pickPrompt = useCallback((text: string): void => setDraft((prev) => (prev.trim() === "" ? text : `${prev}\n${text}`)), []);
 
-  const blockedKey = blockedReasonKey(state, canInput);
-  const canSendNow = sessionId !== null && blockedKey === null && !sending && draft.trim() !== "";
+  const blocked = isSendBlocked(state);
+  const noticeKey = queueNoticeKey(state, canInput);
+  const canSendNow = sessionId !== null && !blocked && !sending && draft.trim() !== "";
+
+  const errorMessage = (err: unknown): string => {
+    if (err instanceof ApiError && err.status === 409 && /queue is full/.test(err.message)) return t("ac.chat.queue.full", { max: CHAT_QUEUE_MAX });
+    return messageOf(err);
+  };
 
   const send = async (): Promise<void> => {
-    if (sessionId === null || sendingRef.current || blockedKey !== null || draft.trim() === "") return;
+    if (sessionId === null || sendingRef.current || blocked || draft.trim() === "") return;
     const text = draft;
     sendingRef.current = true;
     setSending(true);
     setSendError(null);
     try {
-      // サーバーが本文を検査し、状態を取り直して、手すきのときだけ返す。そのあと画面が端末へ貼って、待ってから Enter を送る
-      const checked = await checkChatSend(sessionId, text);
-      const result = await paste(sessionId, checked.text, checked.submitDelayMs);
-      if (result === "sent") {
-        setDraft("");
-        setSentAfterSeq(cursor.current.lastSeq);
-      } else if (result === "pastedNotSent") {
-        setDraft("");
-        setSendError(t("ac.chat.pastedNotSent"));
-      } else {
-        setSendError(t("ac.chat.switched"));
-      }
+      // サーバーが本文を検査して予約に入れる。端末へ書くのはサーバー（手が空いたとき）
+      await queueChat(sessionId, text);
+      setDraft("");
+      await reload();
     } catch (err) {
-      setSendError(messageOf(err));
+      setSendError(errorMessage(err));
     } finally {
       sendingRef.current = false;
       setSending(false);
     }
+  };
+
+  const cancel = async (queueId: string): Promise<void> => {
+    if (sessionId === null) return;
+    setSendError(null);
+    try {
+      await cancelChatQueue(sessionId, queueId);
+    } catch (err) {
+      setSendError(errorMessage(err));
+    }
+    await reload();
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -151,6 +163,22 @@ export function ChatPane({ sessionId, active, rev, state, canInput, paste, promp
     );
   };
 
+  const queueRow = (q: ChatQueueItem) => (
+    <div key={q.id} className="ac-chat__row ac-chat__row--user" data-testid="chat-queue-item" data-state={q.state}>
+      <div className="ac-chat__queued">
+        <div className="ac-chat__bubble ac-chat__bubble--user ac-chat__bubble--queued">{q.text}</div>
+        <div className="ac-chat__queued-meta">
+          <Badge variant={q.state === "queued" ? "warning" : "info"} size="sm">
+            {t(q.state === "queued" ? "ac.chat.queue.queued" : "ac.chat.queue.sent")}
+          </Badge>
+          <Button variant="ghost" size="sm" onClick={() => void cancel(q.id)}>
+            {t(q.state === "queued" ? "ac.chat.queue.cancel" : "ac.chat.queue.cancelSent")}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
   if (sessionId === null) {
     return (
       <div className="ac-chat" data-testid="chat-pane" hidden={!active}>
@@ -173,13 +201,19 @@ export function ChatPane({ sessionId, active, rev, state, canInput, paste, promp
           </div>
         )}
         {items.map(bubble)}
+        {queued.length > 0 && (
+          <p className="ac-chat__queue-note" data-testid="chat-queue-note">
+            {t("ac.chat.queue.note")}
+          </p>
+        )}
+        {queued.map(queueRow)}
       </div>
       <div className="ac-chat__composer">
         {/* バーは、このタブが開いているときだけ置く（端末の上のバーと同時に DOM に 2 本ある状態を作らない） */}
         {active && <QuickPromptBar prompts={prompts} onPick={pickPrompt} onEdit={onEditPrompts} onChanged={onPromptsChanged} />}
-        {blockedKey !== null && (
+        {noticeKey !== null && (
           <div className="ac-chat__blocked" data-testid="chat-blocked">
-            <span>{t(blockedKey)}</span>
+            <span>{t(noticeKey)}</span>
             {state === "waiting" && (
               <Button variant="outline" size="sm" onClick={onOpenTerminal}>
                 {t("ac.chat.openTerminal")}
@@ -193,11 +227,6 @@ export function ChatPane({ sessionId, active, rev, state, canInput, paste, promp
               {sendError}
             </Callout>
           </div>
-        )}
-        {sentAfterSeq !== null && (
-          <p className="ac-chat__sent" data-testid="chat-sent-notice">
-            {t("ac.chat.sent")}
-          </p>
         )}
         <div className="ac-chat__input-row">
           <TextareaControl

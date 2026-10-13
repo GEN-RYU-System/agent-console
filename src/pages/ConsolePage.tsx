@@ -381,7 +381,6 @@ export function ConsolePage() {
           rev={state.activityRev}
           state={activeSession?.state ?? "unknown"}
           canInput={activeSession?.canInput === true}
-          paste={pasteToTerminal}
           prompts={quickPrompts}
           onEditPrompts={() => setQuickEditorOpen(true)}
           onPromptsChanged={loadQuickPrompts}

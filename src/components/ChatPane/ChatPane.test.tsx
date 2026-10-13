@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../../i18n";
-import type { ChatItem, ChatResponse, QuickPrompt, SessionState } from "../../types";
+import type { ChatItem, ChatQueueItem, ChatResponse, QuickPrompt, SessionState } from "../../types";
 
 class FakeApiError extends Error {
   constructor(
@@ -13,23 +13,24 @@ class FakeApiError extends Error {
   }
 }
 const fetchChat = vi.fn<(id: string, since: number, epoch: string | null) => Promise<ChatResponse>>();
-const checkChatSend = vi.fn<(id: string, text: string) => Promise<{ text: string; submitDelayMs: number }>>();
+const queueChat = vi.fn<(id: string, text: string) => Promise<{ id: string }>>();
+const cancelChatQueue = vi.fn<(id: string, queueId: string) => Promise<{ ok: true }>>();
 const updateQuickPrompt = vi.fn();
 vi.mock("../../api", () => ({
   ApiError: FakeApiError,
   fetchChat: (id: string, since: number, epoch: string | null) => fetchChat(id, since, epoch),
-  checkChatSend: (id: string, text: string) => checkChatSend(id, text),
+  queueChat: (id: string, text: string) => queueChat(id, text),
+  cancelChatQueue: (id: string, queueId: string) => cancelChatQueue(id, queueId),
   updateQuickPrompt: (id: string, i: unknown) => updateQuickPrompt(id, i),
 }));
 
 const { ChatPane } = await import("./ChatPane");
 
-type PasteResult = "sent" | "notPasted" | "pastedNotSent";
-const paste = vi.fn<(id: string, text: string, delayMs: number) => Promise<PasteResult>>();
 const onOpenTerminal = vi.fn();
 
 const item = (seq: number, role: ChatItem["role"], text: string, over: Partial<ChatItem> = {}): ChatItem => ({ seq, ts: 1000 + seq, role, text, ...over });
-const ok = (items: ChatItem[], over: Partial<Extract<ChatResponse, { status: "ok" }>> = {}): ChatResponse => ({ status: "ok", epoch: "e1", reset: false, lastSeq: items.at(-1)?.seq ?? 0, items, ...over });
+const ok = (items: ChatItem[], over: Partial<Extract<ChatResponse, { status: "ok" }>> = {}): ChatResponse => ({ status: "ok", epoch: "e1", reset: false, lastSeq: items.at(-1)?.seq ?? 0, items, queued: [], ...over });
+const queuedItem = (id: string, text: string, state: ChatQueueItem["state"] = "queued"): ChatQueueItem => ({ id, text, createdAt: 1, state });
 
 const prompts: QuickPrompt[] = [
   { id: "p1", label: "テスト実行", text: "テストを実行して", pinned: true },
@@ -44,7 +45,6 @@ function renderPane(over: Partial<Props> = {}) {
     rev: 0,
     state: "idle" as SessionState,
     canInput: true,
-    paste,
     prompts,
     onEditPrompts: vi.fn(),
     onPromptsChanged: vi.fn(),
@@ -57,8 +57,8 @@ function renderPane(over: Partial<Props> = {}) {
 
 beforeEach(() => {
   fetchChat.mockReset().mockResolvedValue(ok([]));
-  checkChatSend.mockReset().mockImplementation(async (_id, text) => ({ text, submitDelayMs: 2000 }));
-  paste.mockReset().mockResolvedValue("sent");
+  queueChat.mockReset().mockResolvedValue({ id: "q1" });
+  cancelChatQueue.mockReset().mockResolvedValue({ ok: true });
   onOpenTerminal.mockReset();
   updateQuickPrompt.mockReset().mockResolvedValue({});
 });
@@ -117,7 +117,7 @@ describe("K2 会話の表示", () => {
   });
 
   it("まだ会話が無い（記録が無い・claudeSessionId がまだ無い）ときは、案内を出す", async () => {
-    fetchChat.mockResolvedValue({ status: "noSession" });
+    fetchChat.mockResolvedValue({ status: "noSession", queued: [] });
     renderPane();
     expect(await screen.findByTestId("chat-empty")).toBeTruthy();
     cleanup();
@@ -177,18 +177,19 @@ describe("会話の取り直し", () => {
   });
 });
 
-describe("K5 入力欄と送る", () => {
-  it("Enter で、送る前の確認 → 端末へ貼る（待ち時間つき）の順に進み、入力欄を空にして「送りました」を出す", async () => {
+describe("K1 入力欄と送る（いつでも予約に入れるだけ）", () => {
+  it("Enter で予約に入れ、入力欄を空にして、予約を取り直す。端末への貼り付けはしない", async () => {
     renderPane();
+    await screen.findByTestId("chat-empty");
+    fetchChat.mockResolvedValueOnce(ok([], { queued: [queuedItem("q1", "こんにちは\n二行目")] }));
     type("こんにちは\n二行目");
     fireEvent.keyDown(input(), { key: "Enter", keyCode: 13 });
-    await waitFor(() => expect(paste).toHaveBeenCalledWith("s1", "こんにちは\n二行目", 2000));
-    expect(checkChatSend).toHaveBeenCalledWith("s1", "こんにちは\n二行目");
+    await waitFor(() => expect(queueChat).toHaveBeenCalledWith("s1", "こんにちは\n二行目"));
     await waitFor(() => expect(input().value).toBe(""));
-    expect(screen.getByTestId("chat-sent-notice").textContent).toBe("送りました（Claude が受け取ると表示されます）");
+    expect((await screen.findByTestId("chat-queue-item")).textContent).toContain("こんにちは\n二行目");
   });
 
-  it("「送る」ボタンでも同じように送る。空（空白だけ）のときは押せない", async () => {
+  it("「送る」ボタンでも同じように予約に入れる。空（空白だけ）のときは押せない", async () => {
     renderPane();
     expect(sendButton().disabled).toBe(true);
     type("   \n ");
@@ -196,7 +197,7 @@ describe("K5 入力欄と送る", () => {
     type("送ります");
     expect(sendButton().disabled).toBe(false);
     fireEvent.click(sendButton());
-    await waitFor(() => expect(paste).toHaveBeenCalledWith("s1", "送ります", 2000));
+    await waitFor(() => expect(queueChat).toHaveBeenCalledWith("s1", "送ります"));
   });
 
   it("Shift+Enter では送らない（改行になる）", async () => {
@@ -204,7 +205,7 @@ describe("K5 入力欄と送る", () => {
     type("書きかけ");
     fireEvent.keyDown(input(), { key: "Enter", keyCode: 13, shiftKey: true });
     await act(async () => undefined);
-    expect(checkChatSend).not.toHaveBeenCalled();
+    expect(queueChat).not.toHaveBeenCalled();
     expect(input().value).toBe("書きかけ");
   });
 
@@ -214,95 +215,135 @@ describe("K5 入力欄と送る", () => {
     fireEvent.keyDown(input(), { key: "Enter", keyCode: 13, isComposing: true });
     fireEvent.keyDown(input(), { key: "Enter", keyCode: 229 });
     await act(async () => undefined);
-    expect(checkChatSend).not.toHaveBeenCalled();
-    expect(paste).not.toHaveBeenCalled();
+    expect(queueChat).not.toHaveBeenCalled();
   });
 
-  it("送った文章が会話に届いたら（新しい user の記録が来たら）、「送りました」を消す", async () => {
-    fetchChat.mockResolvedValueOnce(ok([item(1, "assistant", "前の返事")], { lastSeq: 1 }));
-    const { rerenderWith } = renderPane();
-    await screen.findByText("前の返事");
-    type("送る文");
-    fireEvent.keyDown(input(), { key: "Enter", keyCode: 13 });
-    await screen.findByTestId("chat-sent-notice");
-    // user ではない記録が来ても消えない
-    fetchChat.mockResolvedValueOnce(ok([item(2, "assistant", "別の返事")], { lastSeq: 2 }));
-    rerenderWith({ rev: 1 });
-    await screen.findByText("別の返事");
-    expect(screen.getByTestId("chat-sent-notice")).toBeTruthy();
-    fetchChat.mockResolvedValueOnce(ok([item(3, "user", "送る文")], { lastSeq: 3 }));
-    rerenderWith({ rev: 2 });
-    await waitFor(() => expect(screen.queryByTestId("chat-sent-notice")).toBeNull());
-  });
-
-  it("送る前の確認が断られた（409 など）ときは、理由を出し、入力欄の文章は残す。端末へは貼らない", async () => {
-    checkChatSend.mockRejectedValueOnce(new FakeApiError("claude is busy", 409));
+  it("予約に入れられなかった（検査で断られた・上限）ときは、理由を出し、入力欄の文章は残す", async () => {
+    queueChat.mockRejectedValueOnce(new FakeApiError("text must not be empty", 400));
     renderPane();
     type("残したい文章");
     fireEvent.keyDown(input(), { key: "Enter", keyCode: 13 });
-    expect(await screen.findByTestId("chat-send-error")).toBeTruthy();
-    expect(screen.getByTestId("chat-send-error").textContent).toContain("claude is busy");
+    expect((await screen.findByTestId("chat-send-error")).textContent).toContain("text must not be empty");
     expect(input().value).toBe("残したい文章");
-    expect(paste).not.toHaveBeenCalled();
   });
 
-  it("貼る前に別のセッションへ切り替わった（notPasted）ときは、案内を出し、文章は残す", async () => {
-    paste.mockResolvedValueOnce("notPasted");
+  it("K6 予約がいっぱい（409 queue is full）のときは、上限を伝える案内を出す", async () => {
+    queueChat.mockRejectedValueOnce(new FakeApiError("chat queue is full (max 10)", 409));
     renderPane();
-    type("切り替わった");
+    type("あふれる");
     fireEvent.keyDown(input(), { key: "Enter", keyCode: 13 });
-    expect((await screen.findByTestId("chat-send-error")).textContent).toContain("切り替わった");
-    expect(input().value).toBe("切り替わった");
-  });
-
-  it("貼ったあと Enter の前に切り替わった（pastedNotSent）ときは、端末で Enter を押す案内を出す", async () => {
-    paste.mockResolvedValueOnce("pastedNotSent");
-    renderPane();
-    type("貼っただけ");
-    fireEvent.keyDown(input(), { key: "Enter", keyCode: 13 });
-    expect((await screen.findByTestId("chat-send-error")).textContent).toContain("Enter を押してください");
-    expect(screen.queryByTestId("chat-sent-notice")).toBeNull();
+    expect((await screen.findByTestId("chat-send-error")).textContent).toContain("予約がいっぱいです（最大 10 件）");
+    expect(input().value).toBe("あふれる");
   });
 
   it("送っている間は二重に送らない", async () => {
-    let release: (v: PasteResult) => void = () => undefined;
-    paste.mockReturnValueOnce(new Promise<PasteResult>((resolve) => (release = resolve)));
+    let release: (v: { id: string }) => void = () => undefined;
+    queueChat.mockReturnValueOnce(new Promise<{ id: string }>((resolve) => (release = resolve)));
     renderPane();
     type("一回だけ");
     fireEvent.keyDown(input(), { key: "Enter", keyCode: 13 });
-    await waitFor(() => expect(paste).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(queueChat).toHaveBeenCalledTimes(1));
     fireEvent.keyDown(input(), { key: "Enter", keyCode: 13 });
     expect(sendButton().disabled).toBe(true);
-    await act(async () => release("sent"));
-    expect(checkChatSend).toHaveBeenCalledTimes(1);
+    await act(async () => release({ id: "q1" }));
+    expect(queueChat).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("K6 送れるのは手すきのときだけ", () => {
+describe("K7 予約の表示（会話の一番下・送る順・3 段）", () => {
+  it("予約中・送信済みを送る順に、会話の一番下に出す。それぞれ印（予約中／送信済み）が付き、上に再起動で消える旨の文を出す", async () => {
+    fetchChat.mockResolvedValue(ok([item(1, "assistant", "返事")], { queued: [queuedItem("a", "先に送った", "sent"), queuedItem("b", "次に送る")] }));
+    renderPane();
+    const rows = await screen.findAllByTestId("chat-queue-item");
+    expect(rows.map((r) => [r.getAttribute("data-state"), r.textContent])).toEqual([
+      ["sent", expect.stringContaining("先に送った")],
+      ["queued", expect.stringContaining("次に送る")],
+    ]);
+    expect(rows[0].textContent).toContain("送信済み（受け取り待ち）");
+    expect(rows[1].textContent).toContain("予約中（作業が終わったら送ります）");
+    expect(screen.getByTestId("chat-queue-note").textContent).toContain("アプリを再起動すると予約は消えます");
+    // 会話の後ろに並ぶ
+    const list = screen.getByTestId("chat-list");
+    const order = [...list.querySelectorAll("[data-testid='chat-row'], [data-testid='chat-queue-item']")].map((e) => e.getAttribute("data-testid"));
+    expect(order).toEqual(["chat-row", "chat-queue-item", "chat-queue-item"]);
+  });
+
+  it("予約が無いときは、文も印も出ない。noSession（記録がまだ無い）でも予約は出る", async () => {
+    renderPane();
+    await screen.findByTestId("chat-empty");
+    expect(screen.queryByTestId("chat-queue-note")).toBeNull();
+    cleanup();
+    fetchChat.mockResolvedValue({ status: "noSession", queued: [queuedItem("a", "記録の前の予約")] });
+    renderPane();
+    expect((await screen.findByTestId("chat-queue-item")).textContent).toContain("記録の前の予約");
+  });
+
+  it("予約が届いて会話に出たら（版が進んで予約が外れたら）、予約の表示は消える", async () => {
+    fetchChat.mockResolvedValueOnce(ok([], { queued: [queuedItem("a", "届く文", "sent")] }));
+    const { rerenderWith } = renderPane();
+    await screen.findByTestId("chat-queue-item");
+    fetchChat.mockResolvedValueOnce(ok([item(1, "user", "届く文")], { lastSeq: 1, queued: [] }));
+    rerenderWith({ rev: 1 });
+    await waitFor(() => expect(screen.queryByTestId("chat-queue-item")).toBeNull());
+    expect(screen.getByText("届く文")).toBeTruthy();
+  });
+
+  it("K4 予約中の「取り消す」を押すと取り消し、予約を取り直す", async () => {
+    fetchChat.mockResolvedValueOnce(ok([], { queued: [queuedItem("a", "消す")] }));
+    renderPane();
+    const row = await screen.findByTestId("chat-queue-item");
+    fetchChat.mockResolvedValueOnce(ok([], { queued: [] }));
+    fireEvent.click(within(row).getByRole("button", { name: "取り消す" }));
+    await waitFor(() => expect(cancelChatQueue).toHaveBeenCalledWith("s1", "a"));
+    await waitFor(() => expect(screen.queryByTestId("chat-queue-item")).toBeNull());
+  });
+
+  it("M-c 送信済みの予約にも消すボタンがある（「受け取りを確認できませんでした。消しますか」）", async () => {
+    fetchChat.mockResolvedValueOnce(ok([], { queued: [queuedItem("a", "受け取られない", "sent")] }));
+    renderPane();
+    const row = await screen.findByTestId("chat-queue-item");
+    fetchChat.mockResolvedValueOnce(ok([], { queued: [] }));
+    fireEvent.click(within(row).getByRole("button", { name: "受け取りを確認できませんでした。消しますか" }));
+    await waitFor(() => expect(cancelChatQueue).toHaveBeenCalledWith("s1", "a"));
+  });
+});
+
+describe("K8 状態ごとの扱い", () => {
   it.each([
-    ["working", "Claude が作業中のため送れません"],
-    ["stopped", "このセッションは停止しているため送れません"],
-    ["unknown", "Claude の状態を確認できないため送れません"],
-  ] as const)("%s のときは「送る」を押せず、理由の文を出す。Enter でも送らない", async (state, reason) => {
+    ["working", "Claude が作業中です。送った文章は予約され、作業が終わってから届きます"],
+    ["unknown", "Claude の状態を確認できません。送った文章は予約され、確認できたら届きます"],
+  ] as const)("%s のときも「送る」を押せる（予約になる）。案内の文を出す", async (state, notice) => {
     renderPane({ state, canInput: false });
+    type("作業中に送る");
+    expect(sendButton().disabled).toBe(false);
+    expect(screen.getByTestId("chat-blocked").textContent).toContain(notice);
+    fireEvent.keyDown(input(), { key: "Enter", keyCode: 13 });
+    await waitFor(() => expect(queueChat).toHaveBeenCalledWith("s1", "作業中に送る"));
+  });
+
+  it("stopped のときは「送る」を押せず、理由の文を出す。Enter でも送らない。入力欄には書ける", async () => {
+    renderPane({ state: "stopped", canInput: false });
     type("送りたい");
     expect(sendButton().disabled).toBe(true);
-    expect(screen.getByTestId("chat-blocked").textContent).toContain(reason);
+    expect(screen.getByTestId("chat-blocked").textContent).toContain("このセッションは停止しているため送れません");
     fireEvent.keyDown(input(), { key: "Enter", keyCode: 13 });
     await act(async () => undefined);
-    expect(checkChatSend).not.toHaveBeenCalled();
-    // 入力欄には書ける（作業が終わるまでの下書き）
+    expect(queueChat).not.toHaveBeenCalled();
     expect(input().value).toBe("送りたい");
   });
 
-  it("確認の待ち（waiting）のときは「端末で確認が出ています」と、端末タブへ移るボタンを出す", () => {
+  it("確認の待ち（waiting）のときは「端末で確認が出ています」と端末タブへ移るボタンを出したまま、予約もできる", async () => {
     renderPane({ state: "waiting", canInput: false });
     expect(screen.getByTestId("chat-blocked").textContent).toContain("端末で確認が出ています");
     fireEvent.click(within(screen.getByTestId("chat-blocked")).getByRole("button", { name: "端末を開く" }));
     expect(onOpenTerminal).toHaveBeenCalledTimes(1);
+    type("確認の間に予約");
+    expect(sendButton().disabled).toBe(false);
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(queueChat).toHaveBeenCalledWith("s1", "確認の間に予約"));
   });
 
-  it("手すきのときは理由も端末を開くボタンも出ない", () => {
+  it("手すきのときは案内も端末を開くボタンも出ない", () => {
     renderPane();
     expect(screen.queryByTestId("chat-blocked")).toBeNull();
   });
@@ -322,8 +363,7 @@ describe("K7 よく使う指示", () => {
     fireEvent.click(within(bar).getByRole("button", { name: "テスト実行" }));
     expect(input().value).toBe("テストを実行して");
     await act(async () => undefined);
-    expect(checkChatSend).not.toHaveBeenCalled();
-    expect(paste).not.toHaveBeenCalled();
+    expect(queueChat).not.toHaveBeenCalled();
   });
 
   it("入力欄にすでに文章があるときは、改行を 1 つ挟んで後ろに足す", () => {

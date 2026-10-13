@@ -312,6 +312,11 @@ export class SessionManager {
     this.notify();
   }
 
+  /** 閉じる処理の途中か（終了を待っている間も true） */
+  isClosing(id: string): boolean {
+    return this.closing.has(id);
+  }
+
   write(session: Session, data: string): void {
     if (!session.exited) session.term.write(data);
   }

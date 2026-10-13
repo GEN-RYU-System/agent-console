@@ -128,6 +128,14 @@ export const fetchBoard = (sessionId: string): Promise<BoardResponse> => request
 export const fetchChat = (sessionId: string, since: number, epoch: string | null): Promise<ChatResponse> =>
   request(`${diffBase(sessionId)}/chat?since=${since}${epoch !== null ? `&epoch=${encodeURIComponent(epoch)}` : ""}`);
 /** 送る文章を検査させ、手すきのときだけ本文と待ち時間を返す（サーバーは端末へ書かない。画面が貼って Enter を送る）。 */
+/** 送信の予約を足す（端末へはすぐ書かれない。手が空いたらサーバーが 1 件ずつ書く） */
+export const queueChat = (sessionId: string, text: string): Promise<{ id: string }> =>
+  request(`${diffBase(sessionId)}/chat/queue`, { method: "POST", body: JSON.stringify({ text }) });
+
+/** 予約を取り消す（送信済みで受け取りを確認できていないものも消せる） */
+export const cancelChatQueue = (sessionId: string, queueId: string): Promise<{ ok: true }> =>
+  request(`${diffBase(sessionId)}/chat/queue/${encodeURIComponent(queueId)}`, { method: "DELETE" });
+
 export const checkChatSend = (sessionId: string, text: string): Promise<{ text: string; submitDelayMs: number }> =>
   request(`${diffBase(sessionId)}/chat/send-check`, { method: "POST", body: JSON.stringify({ text }) });
 export const fetchMemory =(): Promise<MemorySnapshot> => request("/api/memory");
