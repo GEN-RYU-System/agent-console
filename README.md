@@ -181,6 +181,10 @@ node scripts/ac-hooks.mjs check
 - 置き場所: `~/Library/Application Support/agent-console/`（`versions/<tag>/`、`current`、`logs/`）、`~/Library/LaunchAgents/local.agent-console.server.plist`、キーチェーンのサービス `agent-console` / アカウント `server`。
 - 新しい版を出す手順: package.json の version を上げる PR → マージ → `vX.Y.Z` タグを付けて push → CHANGELOG に 1 行追記。
 
+## 利用量バー（週・5時間）の設定
+
+画面下の帯の利用量バーは、Claude Code の statusLine の命令が書く `dataDir/usage.json` を読みます。`node scripts/ac-hooks.mjs install` が hook に続けて settings.json の `statusLine` を 1 つ足します（`node scripts/ac-hooks.mjs check` で点検、`uninstall` で自分の statusLine だけを外す）。すでに別の statusLine がある場合は足さず、「statusLine: 別の設定があるので足していません」と出して終了コード 0 で終わります（そのときバーは「まだ値がありません」のまま）。値は Claude の最初の API 応答のあとに来るため、起動直後は出ません。
+
 ## 認証の仕組み（要点）
 
 - サーバー秘密はキーチェーンだけに置く（ファイル・URL・ログに出さない）。**ネットワーク（4319 の相手）にも送らない**。
