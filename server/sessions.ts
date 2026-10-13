@@ -513,6 +513,11 @@ export class SessionManager {
     }
     const gone = (): boolean => session.exited && [...family].every((pid) => pid === session.term.pid || !isAlive(pid));
     if (!(await waitUntil(gone, this.closeGraceMs))) {
+      if (!(session.term.pid > 0)) {
+        // pid が分からない端末は、何も殺さない（kill-session → has-session の結果だけで判断する）
+        this.logger.warn(`terminal: ${session.name} (${session.id}) did not stop and its pid is unknown, nothing was killed`);
+        throw new SessionConflictError("session did not stop");
+      }
       for (const pid of descendantPids(session.term.pid, await readProcessTable().catch(() => []))) family.add(pid);
       for (const pid of family) killQuietly(pid);
       if (!(await waitUntil(gone, CLOSE_FINAL_WAIT_MS))) throw new SessionConflictError("session did not stop");
