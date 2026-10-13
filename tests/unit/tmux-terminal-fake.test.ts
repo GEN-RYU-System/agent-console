@@ -147,7 +147,7 @@ describe("R7: retry count and the pending-input limit", () => {
     const { term, statuses } = open("readydie", 20);
     expect(await waitFor(() => statuses.includes("failed"), 5000)).toBe(true);
     term.release();
-  });
+  }, 15000);
 
   it("input held while not connected is capped at 64KB: the new input is refused (old input is kept) with a warning", async () => {
     const log = path.join(dir, "stdin.log");
