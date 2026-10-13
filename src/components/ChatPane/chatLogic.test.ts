@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatItem } from "../../types";
-import { CHAT_CLIENT_KEEP, blockedReasonKey, isSendKey, mergeChat, shouldStickToBottom } from "./chatLogic";
+import { CHAT_CLIENT_KEEP, isSendBlocked, isSendKey, mergeChat, queueNoticeKey, shouldStickToBottom } from "./chatLogic";
 
 const item = (seq: number, ts: number, over: Partial<ChatItem> = {}): ChatItem => ({ seq, ts, role: "user", text: `m${seq}`, ...over });
 
@@ -39,17 +39,21 @@ describe("mergeChat", () => {
   });
 });
 
-describe("blockedReasonKey（K6）", () => {
-  it("送れる状態（canInput）なら理由は無い", () => {
-    expect(blockedReasonKey("idle", true)).toBeNull();
-    expect(blockedReasonKey("no-claude", true)).toBeNull();
+describe("isSendBlocked / queueNoticeKey（K8）", () => {
+  it("送れない（予約も作れない）のは停止中だけ", () => {
+    expect(isSendBlocked("stopped")).toBe(true);
+    for (const state of ["working", "waiting", "idle", "no-claude", "unknown"] as const) expect(isSendBlocked(state)).toBe(false);
   });
-  it("送れない状態ごとに文言のキーを返す。想定外の状態は other", () => {
-    expect(blockedReasonKey("working", false)).toBe("ac.chat.blocked.working");
-    expect(blockedReasonKey("waiting", false)).toBe("ac.chat.waitingInTerminal");
-    expect(blockedReasonKey("stopped", false)).toBe("ac.chat.blocked.stopped");
-    expect(blockedReasonKey("unknown", false)).toBe("ac.chat.blocked.unknown");
-    expect(blockedReasonKey("idle", false)).toBe("ac.chat.blocked.other");
+  it("すぐ届く状態（canInput）なら案内は無い", () => {
+    expect(queueNoticeKey("idle", true)).toBeNull();
+    expect(queueNoticeKey("no-claude", true)).toBeNull();
+  });
+  it("すぐ届かない状態ごとに、案内の文言のキーを返す。想定外の状態は other", () => {
+    expect(queueNoticeKey("working", false)).toBe("ac.chat.queue.notice.working");
+    expect(queueNoticeKey("waiting", false)).toBe("ac.chat.waitingInTerminal");
+    expect(queueNoticeKey("stopped", false)).toBe("ac.chat.blocked.stopped");
+    expect(queueNoticeKey("unknown", false)).toBe("ac.chat.queue.notice.unknown");
+    expect(queueNoticeKey("idle", false)).toBe("ac.chat.queue.notice.other");
   });
 });
 

@@ -3,6 +3,8 @@ import { jsonBody, readJsonBody, sendJson, type AppDeps } from "./http.ts";
 import { SessionConflictError, SessionInputError, SessionNotFoundError } from "./sessions.ts";
 
 const CHAT_PATH = /^\/api\/sessions\/([^/]+)\/chat$/;
+const QUEUE_PATH = /^\/api\/sessions\/([^/]+)\/chat\/queue$/;
+const QUEUE_ITEM_PATH = /^\/api\/sessions\/([^/]+)\/chat\/queue\/([^/]+)$/;
 const SEND_CHECK_PATH = /^\/api\/sessions\/([^/]+)\/chat\/send-check$/;
 /** チャットから送る 1 回の文章の上限（byte） */
 export const CHAT_SEND_MAX_BYTES = 32 * 1024;
@@ -32,6 +34,8 @@ function parseSince(raw: string | null): number {
  *   epoch が今のサーバーのものと違うとき（アプリが作り直された）は since を使わず全件を返し、reset: true を付ける。
  * - POST /api/sessions/:id/chat/send-check {text}: 本文を検査し、要求の時点で claude agents を取り直して、手すきのときだけ本文と貼ってから待つ時間を返す。
  *   サーバーは端末へ書かない（画面が貼って Enter を送る）。
+ * - POST /api/sessions/:id/chat/queue {text}: 送信の予約を足す（端末へはすぐ書かない。手が空いたら hub が 1 件ずつ書く）。
+ * - DELETE /api/sessions/:id/chat/queue/:qid: 予約を取り消す（送信済みで受け取りを確認できていないものも消せる）。
  */
 export async function handleChat(deps: AppDeps, req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
   const chat = CHAT_PATH.exec(url.pathname);
@@ -40,14 +44,14 @@ export async function handleChat(deps: AppDeps, req: IncomingMessage, res: Serve
     if (!session) throw new SessionNotFoundError("session not found");
     const requestedSince = parseSince(url.searchParams.get("since"));
     if (session.claudeSessionId === undefined) {
-      sendJson(res, 200, { status: "noSession" });
+      sendJson(res, 200, { status: "noSession", queued: deps.hub.chatQueueOf(session.id) });
       return true;
     }
     await deps.activity.refresh();
     const epochParam = url.searchParams.get("epoch");
     const reset = epochParam !== null && epochParam !== deps.activity.epoch;
     const page = deps.activity.chat(session.claudeSessionId, reset ? 0 : requestedSince);
-    sendJson(res, 200, { status: "ok", epoch: deps.activity.epoch, reset, lastSeq: page.lastSeq, items: page.items });
+    sendJson(res, 200, { status: "ok", epoch: deps.activity.epoch, reset, lastSeq: page.lastSeq, items: page.items, queued: deps.hub.chatQueueOf(session.id) });
     return true;
   }
   const check = SEND_CHECK_PATH.exec(url.pathname);
@@ -58,6 +62,21 @@ export async function handleChat(deps: AppDeps, req: IncomingMessage, res: Serve
     const verdict = await deps.hub.checkInput(id);
     if (!verdict.ok) throw new SessionConflictError(verdict.reason ?? "cannot input now");
     sendJson(res, 200, { text, submitDelayMs: deps.config.pasteSubmitDelayMs });
+    return true;
+  }
+  const queue = QUEUE_PATH.exec(url.pathname);
+  if (queue && req.method === "POST") {
+    if (!deps.sessions.get(queue[1])) throw new SessionNotFoundError("session not found");
+    const text = validateChatText(jsonBody(await readJsonBody(req)).text);
+    const item = deps.hub.enqueueChat(queue[1], text);
+    sendJson(res, 201, { id: item.id });
+    return true;
+  }
+  const queueItem = QUEUE_ITEM_PATH.exec(url.pathname);
+  if (queueItem && req.method === "DELETE") {
+    if (!deps.sessions.get(queueItem[1])) throw new SessionNotFoundError("session not found");
+    deps.hub.cancelChat(queueItem[1], queueItem[2]);
+    sendJson(res, 200, { ok: true });
     return true;
   }
   return false;
