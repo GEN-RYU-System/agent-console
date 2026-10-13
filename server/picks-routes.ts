@@ -1,5 +1,5 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { sameSecret } from "./auth.ts";
 import { BodyTooLargeError, jsonBody, readJsonBody, sendJson, type AppDeps } from "./http.ts";
 import { formatPickRequest } from "./picks-format.ts";
 import { PICK_ID_PATTERN, type PickRecord } from "./picks.ts";
@@ -11,9 +11,6 @@ export const PICK_TOKEN_HEADER = "x-ac-picker-token";
 const JSON_CONTENT_TYPE = /^application\/json\s*(;|$)/i;
 const PICK_PATH = /^\/api\/picks\/([^/]+)(\/image)?$/;
 const SEND_CHECK_PATH = /^\/api\/sessions\/([^/]+)\/picks\/send-check$/;
-
-const digest = (s: string): Buffer => createHash("sha256").update(s).digest();
-const sameSecret = (given: unknown, expected: string): boolean => typeof given === "string" && timingSafeEqual(digest(given), digest(expected));
 
 function pickId(raw: string): string {
   if (!PICK_ID_PATTERN.test(raw)) throw new SessionInputError("invalid pick id");
