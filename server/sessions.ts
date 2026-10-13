@@ -49,8 +49,6 @@ export interface Session {
   exited: boolean;
   /** 動いている Claude の sessionId（UUID の形のものだけ。復元に使う） */
   claudeSessionId?: string;
-  /** routine の専用端末。open-sessions.json の対象外で、対応表は routine service のメモリだけに置く。 */
-  routineId?: string;
 }
 
 // eslint-disable-next-line no-control-regex
@@ -203,13 +201,13 @@ export class SessionManager {
    * 前回の続きとして端末を開く（起動時の復元用）。起動コマンドは呼び出し側が決めた config の命令のみ。
    * claudeSessionId（UUID の形のもの）があるときは、環境変数 AC_RESUME_ID で渡す（コマンドの文字列にはつなげない）。
    */
-  restore(input: { role: RoleConfig; name: unknown; cwd: string; branch: string | null; claudeSessionId?: string; routineId?: string }): Session {
+  restore(input: { role: RoleConfig; name: unknown; cwd: string; branch: string | null; claudeSessionId?: string }): Session {
     if (!this.hasCapacity()) throw new SessionInputError("too many sessions");
     const sid = isClaudeSessionId(input.claudeSessionId) ? input.claudeSessionId : undefined;
     const useRestore = sid !== undefined && input.role.restoreCommand !== undefined;
     const command = useRestore ? (input.role.restoreCommand as string[]) : input.role.command;
     // 復元の起動でも、同じ会話の id を引き継ぐ（次の再起動でも続きを開ける）
-    return this.spawnSession(validateName(input.name), input.role, input.branch, input.cwd, command, useRestore ? { AC_RESUME_ID: sid } : {}, useRestore ? sid : undefined, input.routineId);
+    return this.spawnSession(validateName(input.name), input.role, input.branch, input.cwd, command, useRestore ? { AC_RESUME_ID: sid } : {}, useRestore ? sid : undefined);
   }
 
   /** Claude の sessionId を知ったとき。UUID の形でない値は受け付けない。変わったときだけ通知する。 */
@@ -263,7 +261,6 @@ export class SessionManager {
     command: string[] = role.command,
     extraEnv: Record<string, string> = {},
     claudeSessionId?: string,
-    routineId?: string,
   ): Session {
     const term = spawn(command[0], command.slice(1), {
       name: "xterm-256color",
@@ -284,7 +281,6 @@ export class SessionManager {
       clients: new Set(),
       exited: false,
       ...(claudeSessionId !== undefined ? { claudeSessionId } : {}),
-      ...(routineId !== undefined ? { routineId } : {}),
     };
     term.onData((data) => {
       session.ring.push(data);
