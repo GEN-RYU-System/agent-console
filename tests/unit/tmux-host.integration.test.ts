@@ -1,9 +1,12 @@
 import { spawn, spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { Terminal } from "@xterm/headless";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { RoleConfig } from "../../server/config.ts";
+import { restoreHeldFiles } from "../../server/held-merge.ts";
 import { restoreOnStartup } from "../../server/restore.ts";
 import { sessionName } from "../../server/terminal-host/tmux-protocol.ts";
 import { newSession, probeSession } from "../../server/terminal-host/tmux-runner.ts";
@@ -100,6 +103,81 @@ suite("tmux host (real tmux, dedicated socket)", () => {
     h2.sessions.write(h2.sessions.get(ids[0])!, "ping\r");
     expect(await waitFor(() => textOf(h2, ids[0]).includes("ping"))).toBe(true);
     for (const id of ids) await h2.sessions.close(id);
+  });
+
+  it("K13: a session opened the way a routine opens it survives a restart and is counted as reattached", async () => {
+    const socket = testSocket();
+    const h1 = await start(socket);
+    const role = h1.config.roles.find((r) => r.id === "cat") as RoleConfig;
+    // routine は restore({ role, name, cwd, branch }) で開く（server/routines.ts の open）
+    const routine = h1.sessions.restore({ role, name: "routine-0900", cwd: h1.config.salesanchorRoot, branch: null });
+    const ordinary = await mk(h1, "cat", "ordinary");
+    const before = [routine.id, ordinary].map((id) => ({ id, pid: h1.sessions.get(id)!.term.pid, start: processStart(h1.sessions.get(id)!.term.pid) }));
+    await waitFor(() => before.every((b) => textOf(h1, b.id).includes("READY")));
+    await h1.recorder.sync();
+    const dir = h1.dir;
+    await stopServer(h1);
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const h2 = await start(socket, { dir });
+    await restoreOnStartup({ config: h2.config, sessions: h2.sessions, hub: h2.hub, store: h2.store, recorder: h2.recorder });
+    const logged = log.mock.calls.map((c) => String(c[0]));
+    log.mockRestore();
+    expect(logged).toContain("open-sessions: つなぎ直し 2・resume 0");
+    for (const b of before) {
+      const s = h2.sessions.get(b.id)!;
+      expect(s.reattached).toBe(true);
+      expect(s.term.pid).toBe(b.pid);
+      expect(processStart(b.pid)).toBe(b.start);
+    }
+    for (const b of before) await h2.sessions.close(b.id);
+  });
+
+  it("K14: after a rollback round trip (lists held, then merged back) has-session finds the pane alive and new-session is never called", async () => {
+    const socket = testSocket();
+    const bin = mkdtempSync(path.join(os.tmpdir(), "ac-tmux-logger-"));
+    const logFile = path.join(bin, "calls.log");
+    const wrapper = path.join(bin, "tmux");
+    writeFileSync(wrapper, `#!/bin/sh\necho "$@" >> "${logFile}"\nexec "${TMUX as string}" "$@"\n`);
+    chmodSync(wrapper, 0o755);
+    const startLogged = async (dir?: string): Promise<Harness> => {
+      const h = await startHarness({ terminalHost: "tmux", tmuxSocket: socket, tmuxPath: wrapper, recorder: true, extraRoles: ROLES, closeGraceMs: 3000, ...(dir !== undefined ? { dir } : {}) });
+      hosts.push(h);
+      return h;
+    };
+    try {
+      const h1 = await startLogged();
+      const ids = [await mk(h1, "cat", "k14-a"), await mk(h1, "cat", "k14-b")];
+      const before = ids.map((id) => ({ id, pid: h1.sessions.get(id)!.term.pid, start: processStart(h1.sessions.get(id)!.term.pid) }));
+      await waitFor(() => ids.every((id) => textOf(h1, id).includes("READY")));
+      await h1.recorder.sync();
+      const dir = h1.dir;
+      const dataDir = h1.config.dataDir;
+      await stopServer(h1);
+      // 切戻し: 保存リストを退避（scripts/lib/ac-common.sh の ac_hold_file と同じ名前の移動）→ 前の版が動く間 tmux の本体はそのまま
+      renameSync(path.join(dataDir, "open-sessions.json"), path.join(dataDir, "open-sessions.tmux-held.json"));
+      for (const b of before) expect(alive(b.pid)).toBe(true);
+      // 再び tmux を知っている版を起動: 退避を戻してから復元
+      expect(existsSync(path.join(dataDir, "open-sessions.tmux-held.json"))).toBe(true);
+      const mark = readFileSync(logFile, "utf8").split("\n").length;
+      const h2 = await startLogged(dir);
+      await restoreHeldFiles(h2.config.dataDir, { log: () => undefined, error: () => undefined });
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+      await restoreOnStartup({ config: h2.config, sessions: h2.sessions, hub: h2.hub, store: h2.store, recorder: h2.recorder });
+      const logged = logSpy.mock.calls.map((c) => String(c[0]));
+      logSpy.mockRestore();
+      const calls = readFileSync(logFile, "utf8").split("\n").slice(mark - 1).filter(Boolean);
+      expect(calls.some((c) => c.includes("new-session"))).toBe(false);
+      expect(calls.some((c) => c.includes("display") && c.includes("#{pane_pid}"))).toBe(true);
+      expect(logged).toContain("open-sessions: つなぎ直し 2・resume 0");
+      for (const b of before) {
+        expect(h2.sessions.get(b.id)!.term.pid).toBe(b.pid);
+        expect(processStart(b.pid)).toBe(b.start);
+        expect(tmuxRun(socket, ["has-session", "-t", `=${sessionName(b.id)}`]).status).toBe(0);
+      }
+      for (const b of before) await h2.sessions.close(b.id);
+    } finally {
+      rmSync(bin, { recursive: true, force: true });
+    }
   });
 
   it("K4: closing kills the pane and its descendants (with and without a client)", async () => {
