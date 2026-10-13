@@ -26,6 +26,17 @@ describe("parseConfig", () => {
     expect(() => parseConfig(rest)).toThrow(/port/);
   });
 
+  it("accountLoginCommand は省略でき、あれば空でない文字列配列だけ受け付ける", () => {
+    expect(parseConfig(valid).accountLoginCommand).toBeUndefined();
+    expect(parseConfig({ ...valid, accountLoginCommand: ["/bin/zsh", "-ic", "x"] }).accountLoginCommand).toEqual(["/bin/zsh", "-ic", "x"]);
+    expect(() => parseConfig({ ...valid, accountLoginCommand: [] })).toThrow(/accountLoginCommand/);
+    expect(() => parseConfig({ ...valid, accountLoginCommand: "x" })).toThrow(/accountLoginCommand/);
+  });
+
+  it('予約済みの役割 id "account-login" は roles で使えない', () => {
+    expect(() => parseConfig({ ...valid, roles: [{ ...valid.roles[0], id: "account-login" }] })).toThrow(/roles\[0\].id "account-login" is reserved/);
+  });
+
   it("rejects a role with an empty command", () => {
     expect(() => parseConfig({ ...valid, roles: [{ ...valid.roles[0], command: [] }] })).toThrow(/command/);
   });

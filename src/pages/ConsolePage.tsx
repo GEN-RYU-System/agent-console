@@ -24,7 +24,9 @@ import {
   removeSession,
   renameSession,
   resumeSession,
+  startAccountLogin,
 } from "../api";
+import { AccountBadge } from "../components/AccountBadge/AccountBadge";
 import { ChatPane } from "../components/ChatPane/ChatPane";
 import { DiffPane } from "../components/DiffPane/DiffPane";
 import { MemoryPanel } from "../components/MemoryPanel/MemoryPanel";
@@ -41,7 +43,7 @@ import { ThemeToggle } from "../components/ThemeToggle/ThemeToggle";
 import { UsageMeter } from "../components/UsageMeter/UsageMeter";
 import { RoutinesPane } from "../components/Routines/RoutinesPane";
 import { TerminalPane, type PasteResult, type TerminalHandle, type UploadNotice } from "../components/TerminalPane/TerminalPane";
-import type { ConsoleState, LedgerSnapshot, QuickPrompt, ResumeTarget, SessionView } from "../types";
+import { ACCOUNT_LOGIN_ROLE_ID, type ConsoleState, type LedgerSnapshot, type QuickPrompt, type ResumeTarget, type SessionState, type SessionView } from "../types";
 import "./ConsolePage.css";
 
 const LEDGER_POLL_MS = 60000;
@@ -106,6 +108,11 @@ export function ConsolePage() {
   const [resumeBusyPath, setResumeBusyPath] = useState<string | null>(null);
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [accountConfirmOpen, setAccountConfirmOpen] = useState(false);
+  const [accountError, setAccountError] = useState<string | null>(null);
+  // アカウント切り替えの端末が「停止」に変わったら（一覧に初めて載ったときにもう停止していた場合を含む）、下の帯のアカウント表示を取り直す
+  const [accountRefreshKey, setAccountRefreshKey] = useState(0);
+  const prevStatesRef = useRef<Map<string, SessionState>>(new Map());
   // 最初に開くタブはチャット（端末は隠れた状態で開き、端末タブを押すと見える。大きさは見えたときに合う）
   const [centerTab, setCenterTab] = useState<CenterTab>("chat");
   const [diffCount, setDiffCount] = useState<number | null>(null);
@@ -250,11 +257,36 @@ export function ConsolePage() {
     }
   };
 
+  const handleSwitchAccount = async (): Promise<void> => {
+    setAccountConfirmOpen(false);
+    setAccountError(null);
+    try {
+      const { id } = await startAccountLogin();
+      setSelectedId(id);
+      setCenterTab("terminal");
+    } catch (err) {
+      setAccountError(err instanceof ApiError && err.status === 409 ? t("ac.account.busy") : t("ac.account.switchError"));
+    }
+  };
+
   const handleLogout = (): void => {
     void logout()
       .catch(() => undefined)
       .finally(() => setLoadFailed("unauthorized"));
   };
+
+  useEffect(() => {
+    const prev = prevStatesRef.current;
+    const next = new Map<string, SessionState>();
+    let loginStopped = false;
+    for (const s of state?.sessions ?? []) {
+      next.set(s.id, s.state);
+      const before = prev.get(s.id);
+      if (s.roleId === ACCOUNT_LOGIN_ROLE_ID && s.state === "stopped" && before !== "stopped") loginStopped = true;
+    }
+    prevStatesRef.current = next;
+    if (loginStopped) setAccountRefreshKey((k) => k + 1);
+  }, [state?.sessions]);
 
   if (loadFailed === "unauthorized") {
     return (
@@ -433,6 +465,12 @@ export function ConsolePage() {
         <span data-testid="claude-version">
           {t("ac.footer.claudeVersion")}: {state.claudeVersion}
         </span>
+        <AccountBadge refreshKey={accountRefreshKey} switchEnabled={state.accountSwitchEnabled} onSwitch={() => setAccountConfirmOpen(true)} />
+        {accountError !== null && (
+          <span className="ac-page__footer-error" data-testid="account-error">
+            {accountError}
+          </span>
+        )}
         <UsageMeter />
         <Button variant="ghost" size="sm" onClick={() => setMemoryOpen(true)}>
           {t("ac.memory.open")}
@@ -451,6 +489,15 @@ export function ConsolePage() {
         danger
         onConfirm={handleConfirmClose}
         onCancel={() => setCloseTargetId(null)}
+      />
+      <ConfirmModal
+        open={accountConfirmOpen}
+        title={t("ac.account.confirmTitle")}
+        message={t("ac.account.confirmBody")}
+        confirmLabel={t("ac.account.confirm")}
+        cancelLabel={t("ac.account.cancel")}
+        onConfirm={() => void handleSwitchAccount()}
+        onCancel={() => setAccountConfirmOpen(false)}
       />
       <Modal open={renameTarget !== undefined} onClose={() => setRenameTargetId(null)} title={t("ac.rename.title")} size="sm">
         {renameTarget !== undefined && (

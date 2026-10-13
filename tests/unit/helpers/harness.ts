@@ -87,6 +87,8 @@ export interface HarnessOptions {
   restoreStaggerMs?: number;
   /** 閉じるときに SIGKILL へ切り替えるまでの時間（ms）。既定は本番値 */
   closeGraceMs?: number;
+  /** アカウント切り替えの命令（指定すると config.accountLoginCommand が入る） */
+  accountLoginCommand?: string[];
   /** 試験用に足す役割 */
   extraRoles?: RoleConfig[];
   /** 1 ファイルの変更の表示上限（byte）。既定は config の既定値 */
@@ -162,6 +164,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     terminalSmoothScrollMs: options.terminalSmoothScrollMs ?? DEFAULT_TERMINAL_SMOOTH_SCROLL_MS,
     uploadMaxBytes: options.uploadMaxBytes ?? DEFAULT_UPLOAD_MAX_BYTES,
     uploadMaxKeep: options.uploadMaxKeep ?? DEFAULT_UPLOAD_MAX_KEEP,
+    ...(options.accountLoginCommand !== undefined ? { accountLoginCommand: options.accountLoginCommand } : {}),
     roles: [
       { id: "echo", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo READY; cat"], needsWorktree: false },
       { id: "short", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo bye"], needsWorktree: false },

@@ -76,3 +76,8 @@
   font-size: var(--font-xs);
   color: var(--text-muted);
 }
+
+.ac-page__footer-error {
+  color: var(--danger-text);
+  white-space: nowrap;
+}

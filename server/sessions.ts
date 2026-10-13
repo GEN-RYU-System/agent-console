@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { spawn, type IPty } from "node-pty";
 import type { WebSocket } from "ws";
-import { CHILD_ENV_BLOCKLIST, TERMINAL_ENV_FORBIDDEN, type Config, type RoleConfig } from "./config.ts";
+import { ACCOUNT_LOGIN_ROLE_ID, CHILD_ENV_BLOCKLIST, TERMINAL_ENV_FORBIDDEN, type Config, type RoleConfig } from "./config.ts";
 import { descendantPids, readProcessTable } from "./process-tree.ts";
 import { RingBuffer } from "./ring-buffer.ts";
 import { createWorktree, isValidBranch, WorktreeError } from "./worktree.ts";
@@ -192,6 +192,21 @@ export class SessionManager {
     if (!role.resumeCommand) throw new SessionInputError("role cannot resume sessions");
     if (this.sessions.size + this.pending >= this.maxSessions) throw new SessionInputError("too many sessions");
     return this.spawnSession(validateName(input.name), role, null, input.cwd, role.resumeCommand);
+  }
+
+  /**
+   * アカウント切り替えの端末を開く。命令は config の accountLoginCommand（固定）。画面の文字列は受け取らない。
+   * 動いているものがあれば 409。再開の記録には入らない（restore.ts）。
+   */
+  createAccountLogin(): Session {
+    const command = this.config.accountLoginCommand;
+    if (command === undefined) throw new SessionInputError("account switching is not configured");
+    if ([...this.sessions.values()].some((s) => s.roleId === ACCOUNT_LOGIN_ROLE_ID && !s.exited)) {
+      throw new SessionConflictError("account login is already running");
+    }
+    if (!this.hasCapacity()) throw new SessionInputError("too many sessions");
+    const role: RoleConfig = { id: ACCOUNT_LOGIN_ROLE_ID, labelKey: "role.accountLogin", command, needsWorktree: false };
+    return this.spawnSession(ACCOUNT_LOGIN_ROLE_ID, role, null, this.config.salesanchorRoot);
   }
 
   /** 新しい端末を開く余裕があるか（作成途中の分を含む）。 */
