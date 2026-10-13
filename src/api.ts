@@ -1,4 +1,4 @@
-import type { ActivityResponse, BoardResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, ResumeTarget, Routine, RoutineInput, UsageResponse } from "./types";
+import type { AccountResponse, ActivityResponse, BoardResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, ResumeTarget, Routine, RoutineInput, UsageResponse } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -125,6 +125,10 @@ export const fetchActivity = (sessionId: string): Promise<ActivityResponse> => r
 /** 右の欄「作戦ボード」の計画（テーマ・KGI・KPI・ロードマップ）。 */
 export const fetchBoard = (sessionId: string): Promise<BoardResponse> => request(`${diffBase(sessionId)}/board`);
 /** Claude の利用量（週・5 時間）。サーバーはファイルを読むだけで、Claude には何も送らない。 */
+/** 今の Claude ログイン（サーバーが Claude Code に聞く。画面は保存しない）。 */
+export const fetchAccount = (): Promise<AccountResponse> => request("/api/account");
+/** アカウント切り替えの端末を開く（本文なし。命令はサーバーの config 固定）。 */
+export const startAccountLogin = (): Promise<{ id: string }> => request("/api/account/login", { method: "POST" });
 export const fetchUsage = (): Promise<UsageResponse> => request("/api/usage");
 /** チャットの会話（since より後の分。epoch がサーバーのものと違えば全件が返り reset: true）。 */
 export const fetchChat = (sessionId: string, since: number, epoch: string | null): Promise<ChatResponse> =>

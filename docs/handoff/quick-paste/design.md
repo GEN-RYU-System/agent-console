@@ -1,4 +1,4 @@
-# 設計: 端末の「よく使う指示」は貼るだけ（Enter を送らない）v0.16.0
+# 設計: 端末の「よく使う指示」は貼るだけ（Enter を送らない）v0.17.0
 
 - 現在地: [recon.md](recon.md)（基準 origin/main f897ff6）
 - 状態: 設計案（設計者 Opus）。PO の y（2026-10-13）は方向の合意。
@@ -8,7 +8,7 @@
 - 変更後: 押すと文章が Claude の入力欄に入るだけで、送られない。しんごさんが手を直してから端末で Enter を押すと送られる。押したあとは端末にカーソルが移るので、そのまま打てる。
 
 ## 2. 対象と対象外
-- 対象: `TerminalHandle.pasteAndEnter` を `pasteOnly` に置き換える（`\r` を送らない）。呼び出し元 `src/pages/ConsolePage.tsx:191`、試験、e2e、ja.json の `ac.quick.textHint`、README、QuickPromptBar のコメント（:26）、版 0.16.0（package.json・package-lock.json・extension/manifest.json・docs/CHANGELOG.md）。
+- 対象: `TerminalHandle.pasteAndEnter` を `pasteOnly` に置き換える（`\r` を送らない）。呼び出し元 `src/pages/ConsolePage.tsx:191`、試験、e2e、ja.json の `ac.quick.textHint`、README、QuickPromptBar のコメント（:26）、版 0.17.0（package.json・package-lock.json・extension/manifest.json・docs/CHANGELOG.md）。
 - 対象（コメント・試験名）: 「Enter を送る」前提を消す。`server/http.ts:276` のコメント→「画面が xterm の paste() で入れるだけ。Enter は人が端末で押す」、`src/components/QuickPrompts/QuickPromptBar.tsx:15`→「その指示を選択中の端末の入力欄に入れる（id を渡す）」、`:26` も同じ趣旨、`tests/e2e/console.spec.ts:619` の試験名→「ボタン 1 回で選択中の端末の入力欄に入り（Enter は送らない）」、`src/components/TerminalPane/TerminalPane.test.tsx:84` の試験名→「pasteOnly pastes through xterm paste(), moves focus to the terminal, and never sends Enter」。
 - 対象外（触らない）: `pasteSubmitAfter`（変更・部品・チャット）、ChatPane の `onPick`、サーバーの send-check（`server/http.ts:276`。409 の判定もそのまま）、`canSend` による押せる・押せないの判定、ほかの文言（`ac.quick.text`「送る文章」・`ac.quick.switched` は意味が変わらないので残す）。
 
@@ -74,4 +74,4 @@ pasteOnly(expectedSessionId: string, text: string): boolean {
 ## 維持の仕組み
 - 守り手: 設計者（Opus）。
 - 単体試験（K1〜K4）と e2e（K5）が CI の両 OS で毎回走る。
-- 正本: この design.md と CHANGELOG 0.16.0 の 1 行。
+- 正本: この design.md と CHANGELOG 0.17.0 の 1 行。

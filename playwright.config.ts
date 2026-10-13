@@ -38,6 +38,8 @@ export default defineConfig({
       STUB_GH_DIR: process.env.AC_E2E_GH_DIR as string,
       STUB_GH_LOG: process.env.AC_E2E_GH_LOG as string,
       STUB_UUID_FILE: process.env.AC_E2E_UUID_FILE as string,
+      STUB_AUTH_FILE: process.env.AC_E2E_AUTH_FILE as string,
+      STUB_AUTH_LOG: process.env.AC_E2E_AUTH_LOG as string,
     },
   },
 });

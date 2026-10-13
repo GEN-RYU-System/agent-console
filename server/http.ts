@@ -8,6 +8,7 @@ import type { HookCheck } from "./activity-hooks.ts";
 import { handleActivity } from "./activity-routes.ts";
 import { handleBoard } from "./board-routes.ts";
 import { handleUsage } from "./usage-routes.ts";
+import { handleAccount } from "./account-routes.ts";
 import { handleChat } from "./chat-routes.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
@@ -141,6 +142,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
       commit: meta.commit,
       terminalSmoothScrollMs: config.terminalSmoothScrollMs,
       uploadMaxBytes: config.uploadMaxBytes,
+      accountSwitchEnabled: config.accountLoginCommand !== undefined,
     });
     return;
   }
@@ -180,6 +182,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   if (await handleActivity(deps, req, res, url)) return;
   if (await handleBoard(deps, req, res, url)) return;
   if (await handleUsage(deps, req, res, url)) return;
+  if (await handleAccount(deps, req, res, url)) return;
   if (await handleChat(deps, req, res, url)) return;
   if (await handleUploads(deps, req, res, url)) return;
   if (await handleDailyUse(deps, req, res, url)) return;

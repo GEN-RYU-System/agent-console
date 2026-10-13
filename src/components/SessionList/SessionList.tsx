@@ -5,7 +5,7 @@ import { Badge } from "@sa/components/Badge";
 import { Button } from "@sa/components/Button";
 import { EmptyState } from "@sa/components/EmptyState";
 import { Stack } from "@sa/components/Stack";
-import type { RoleView, SessionView } from "../../types";
+import { ACCOUNT_LOGIN_ROLE_ID, type RoleView, type SessionView } from "../../types";
 import { STATE_LABEL_KEY, StatusDot } from "../StatusDot/StatusDot";
 import "./SessionList.css";
 
@@ -37,6 +37,7 @@ export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, o
     return <EmptyState size="compact" title={t("ac.noSessions")} description={t("ac.noSessionsHint")} />;
   }
   const roleLabel = (id: string): string => {
+    if (id === ACCOUNT_LOGIN_ROLE_ID) return t("role.accountLogin");
     const role = roles.find((r) => r.id === id);
     return role ? t(role.labelKey) : id;
   };
