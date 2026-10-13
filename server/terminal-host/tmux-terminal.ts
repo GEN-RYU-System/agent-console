@@ -22,6 +22,8 @@ import type { TerminalHandle, TerminalLogger, TmuxContext } from "./types.ts";
 const MAX_ATTACH_ATTEMPTS = 3;
 const REATTACH_INTERVAL_MS = 500;
 const RELEASE_GRACE_MS = 2000;
+/** つながるまで（つながらない間も）溜めておく入力の上限 */
+const MAX_PENDING_WRITE_BYTES = 64 * 1024;
 
 export interface TmuxTerminalOptions {
   ctx: TmuxContext;
@@ -53,6 +55,7 @@ export class TmuxControlTerminal implements TerminalHandle {
   /** 先入れの最後の応答を受けるまでは true（その前の %output は先入れの中に入っているので捨てる） */
   private replaying = false;
   private pendingWrites: string[] = [];
+  private pendingBytes = 0;
   private pendingSize: { cols: number; rows: number } | null = null;
   private attempts = 0;
   private released = false;
@@ -141,15 +144,7 @@ export class TmuxControlTerminal implements TerminalHandle {
     // notice（%exit など）は client の終了で扱う
   }
 
-  private send(line: string): Promise<ControlBlock> {
-    return new Promise((resolve) => {
-      this.queue.enqueue({ resolve });
-      this.client?.stdin?.write(`${line}\n`);
-    });
-  }
-
   private onReady(): void {
-    this.attempts = 0;
     this.replaying = true;
     const t = paneTarget(this.opts.name);
     // 先入れの命令は 1 回の write で詰めて送る（途中に出力が割り込まない）
@@ -174,6 +169,8 @@ export class TmuxControlTerminal implements TerminalHandle {
 
   private finishReplay(info: ControlBlock, history: ControlBlock, altNormal: ControlBlock, visible: ControlBlock): void {
     const parsed = info.ok && info.lines.length > 0 ? parsePaneInfo(decodeLine(info.lines[0])) : null;
+    // つなぎ直しが済んだ（先入れまで届いた）ので、再試行の回数を戻す。最初の応答だけでは戻さない
+    this.attempts = 0;
     // 先入れが作れなくても、ここから先の出力は流す
     this.replaying = false;
     if (!parsed) {
@@ -202,6 +199,7 @@ export class TmuxControlTerminal implements TerminalHandle {
     if (size) this.sendNow(resizeCommand(size.cols, size.rows));
     const writes = this.pendingWrites;
     this.pendingWrites = [];
+    this.pendingBytes = 0;
     for (const w of writes) this.writeNow(w);
   }
 
@@ -221,6 +219,13 @@ export class TmuxControlTerminal implements TerminalHandle {
   write(data: string): void {
     if (this.exited || this.released) return;
     if (!this.ready || this.replaying || !this.client) {
+      const size = Buffer.byteLength(data);
+      if (this.pendingBytes + size > MAX_PENDING_WRITE_BYTES) {
+        // 古い入力は捨てず、新しい入力を断る
+        this.opts.logger.warn(`tmux: pending input is over ${MAX_PENDING_WRITE_BYTES} bytes, new input refused (${this.opts.name})`);
+        return;
+      }
+      this.pendingBytes += size;
       this.pendingWrites.push(data);
       return;
     }

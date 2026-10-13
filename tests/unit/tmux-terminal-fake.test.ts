@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -9,6 +9,7 @@ import { sleep, waitFor } from "./helpers/tmux-env.ts";
 /**
  * 偽の tmux（control mode の応答を台本どおりに返す）で TmuxControlTerminal を動かす。本物の tmux・ソケットには触れない。
  * FAKE_MODE: "tail" = 4本目の %end と同じ塊に %output が続く / "stale" = 番号が古い応答が先に来る
+ *   "readydie" = 最初の応答だけ返して終わる（has-session は alive） / "plain" = 先入れに普通に答える
  * FAKE_LOG: 受けた命令を書き出すファイル
  */
 const FAKE = `
@@ -17,13 +18,14 @@ if (process.argv.includes("has-session")) process.exit(0);
 const mode = process.env.FAKE_MODE;
 const block = (num, lines) => "%begin 1 " + num + " 1\\n" + lines.map((l) => l + "\\n").join("") + "%end 1 " + num + " 1\\n";
 process.stdout.write("%begin 1 100 0\\n%end 1 100 0\\n");
+if (mode === "readydie") setTimeout(() => process.exit(0), 30);
 let buf = "";
 let answered = false;
 process.stdin.on("data", (d) => {
   buf += d;
   if (process.env.FAKE_LOG) fs.writeFileSync(process.env.FAKE_LOG, buf);
   const lines = buf.split("\\n").filter(Boolean);
-  if (!answered && lines.length >= 4) {
+  if (!answered && lines.length >= 4 && mode !== "readydie") {
     answered = true;
     let out = "";
     if (mode === "stale") out += block(50, ["stale"]);
@@ -50,19 +52,22 @@ beforeAll(() => {
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-function open(mode: string) {
+function open(mode: string, reattachIntervalMs?: number, extraEnv: Record<string, string> = {}) {
   const events: string[] = [];
   const warns: string[] = [];
   const term = new TmuxControlTerminal({
     ctx: { tmux: tmuxPath, socket: "ac-test-fake", conf: "/dev/null" },
     name: "ac-00000000-0000-0000-0000-000000000000",
     pid: 0,
-    env: { PATH: process.env.PATH ?? "", FAKE_MODE: mode },
+    env: { PATH: process.env.PATH ?? "", FAKE_MODE: mode, ...extraEnv },
     logger: { info: () => undefined, warn: (m) => warns.push(m) },
+    ...(reattachIntervalMs !== undefined ? { reattachIntervalMs } : {}),
   });
   term.onReplay(() => events.push("replay"));
   term.onData((d) => events.push(`data:${JSON.stringify(d)}`));
-  return { term, events, warns };
+  const statuses: string[] = [];
+  term.onStatus((st) => statuses.push(st));
+  return { term, events, warns, statuses };
 }
 
 describe("TmuxControlTerminal with a scripted tmux", () => {
@@ -97,5 +102,34 @@ describe("CommandQueue numbering (R3)", () => {
     expect(q.take(105)).toBeUndefined();
     expect(q.take(107)).toBe("b");
     expect(q.take(108)).toBeUndefined();
+  });
+});
+
+describe("R7: retry count and the pending-input limit", () => {
+  it("a client that answers once and then dies every time still stops after 3 attempts (the count is not reset by the first answer)", async () => {
+    const { term, statuses } = open("readydie", 20);
+    expect(await waitFor(() => statuses.includes("failed"), 5000)).toBe(true);
+    term.release();
+  });
+
+  it("input held while not connected is capped at 64KB: the new input is refused (old input is kept) with a warning", async () => {
+    const log = path.join(dir, "stdin.log");
+    const { term, warns } = open("plain", undefined, { FAKE_LOG: log });
+    term.write("a".repeat(40000));
+    term.write("b".repeat(40000)); // 合計 80000 > 65536 → 断る
+    expect(warns.some((w) => w.includes("pending input"))).toBe(true);
+    // 接続後に溜めた物が流れる: 古い入力（a）は届き、断った入力（b）は届かない
+    const read = (): string => {
+      try {
+        return readFileSync(log, "utf8");
+      } catch {
+        return "";
+      }
+    };
+    expect(await waitFor(() => (read().match(/send-keys/g) ?? []).length >= 40, 8000)).toBe(true);
+    const sent = read();
+    expect(sent).toContain(" 61 ");
+    expect(sent).not.toContain(" 62 ");
+    term.release();
   });
 });
