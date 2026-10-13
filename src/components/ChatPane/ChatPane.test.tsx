@@ -44,7 +44,7 @@ function renderPane(over: Partial<Props> = {}) {
     active: true,
     rev: 0,
     state: "idle" as SessionState,
-    canInput: true,
+    canChat: true,
     prompts,
     onEditPrompts: vi.fn(),
     onPromptsChanged: vi.fn(),
@@ -260,7 +260,7 @@ describe("K7 予約の表示（会話の一番下・送る順・3 段）", () =>
       ["queued", expect.stringContaining("次に送る")],
     ]);
     expect(rows[0].textContent).toContain("送信済み（受け取り待ち）");
-    expect(rows[1].textContent).toContain("予約中（作業が終わったら送ります）");
+    expect(rows[1].textContent).toContain("予約中（確認が終わったら送ります）");
     expect(screen.getByTestId("chat-queue-note").textContent).toContain("アプリを再起動すると予約は消えます");
     // 会話の後ろに並ぶ
     const list = screen.getByTestId("chat-list");
@@ -312,8 +312,8 @@ describe("K8 状態ごとの扱い", () => {
   it.each([
     ["working", "Claude が作業中です。送った文章は予約され、作業が終わってから届きます"],
     ["unknown", "Claude の状態を確認できません。送った文章は予約され、確認できたら届きます"],
-  ] as const)("%s のときも「送る」を押せる（予約になる）。案内の文を出す", async (state, notice) => {
-    renderPane({ state, canInput: false });
+  ] as const)("%s のとき（canChat:false）も「送る」を押せる（予約になる）。案内の文を出す", async (state, notice) => {
+    renderPane({ state, canChat: false });
     type("作業中に送る");
     expect(sendButton().disabled).toBe(false);
     expect(screen.getByTestId("chat-blocked").textContent).toContain(notice);
@@ -321,8 +321,17 @@ describe("K8 状態ごとの扱い", () => {
     await waitFor(() => expect(queueChat).toHaveBeenCalledWith("s1", "作業中に送る"));
   });
 
+  it("working でも canChat:true（作業中で待ちなし）なら予約の案内は出ない。「送る」は押せる", async () => {
+    renderPane({ state: "working", canChat: true });
+    type("作業中にすぐ送る");
+    expect(sendButton().disabled).toBe(false);
+    expect(screen.queryByTestId("chat-blocked")).toBeNull();
+    fireEvent.keyDown(input(), { key: "Enter", keyCode: 13 });
+    await waitFor(() => expect(queueChat).toHaveBeenCalledWith("s1", "作業中にすぐ送る"));
+  });
+
   it("stopped のときは「送る」を押せず、理由の文を出す。Enter でも送らない。入力欄には書ける", async () => {
-    renderPane({ state: "stopped", canInput: false });
+    renderPane({ state: "stopped", canChat: false });
     type("送りたい");
     expect(sendButton().disabled).toBe(true);
     expect(screen.getByTestId("chat-blocked").textContent).toContain("このセッションは停止しているため送れません");
@@ -333,7 +342,7 @@ describe("K8 状態ごとの扱い", () => {
   });
 
   it("確認の待ち（waiting）のときは「端末で確認が出ています」と端末タブへ移るボタンを出したまま、予約もできる", async () => {
-    renderPane({ state: "waiting", canInput: false });
+    renderPane({ state: "waiting", canChat: false });
     expect(screen.getByTestId("chat-blocked").textContent).toContain("端末で確認が出ています");
     fireEvent.click(within(screen.getByTestId("chat-blocked")).getByRole("button", { name: "端末を開く" }));
     expect(onOpenTerminal).toHaveBeenCalledTimes(1);
@@ -374,7 +383,7 @@ describe("K7 よく使う指示", () => {
   });
 
   it("送れない状態でも押せる（入力欄に入れるだけなので）", () => {
-    renderPane({ state: "working", canInput: false });
+    renderPane({ state: "working", canChat: false });
     const button = within(screen.getByTestId("quick-prompt-bar")).getByRole("button", { name: "テスト実行" }) as HTMLButtonElement;
     expect(button.disabled).toBe(false);
     fireEvent.click(button);

@@ -96,16 +96,15 @@ describe("POST /chat/queue と DELETE /chat/queue/:qid の入口", () => {
   });
 });
 
-describe("K2: busy・waiting・unknown の間は端末に何も書かない", () => {
-  it("busy・waiting・待ち理由あり・状態が読めない（unknown）の間、予約を作っても poll しても書かれない。予約は queued のまま残る", async () => {
+describe("K2: waiting・待ち理由あり・unknown の間は端末に何も書かない", () => {
+  it("waiting・待ち理由あり・状態が読めない（unknown）の間、予約を作っても poll しても書かれない。予約は queued のまま残る", async () => {
     const s = newSession();
-    setRows([row(s.pid, "busy", s.claudeId)]);
+    setRows([row(s.pid, "waiting", s.claudeId)]);
     await poll();
     const made1 = await queue(s.id, "作業中に送る");
     expect(made1.status).toBe(201);
     expect(typeof made1.json.id).toBe("string");
     for (const rows of [
-      [row(s.pid, "busy", s.claudeId)],
       [row(s.pid, "waiting", s.claudeId)],
       [row(s.pid, "idle", s.claudeId, { waitingFor: "permission prompt" })],
     ]) {
@@ -121,11 +120,11 @@ describe("K2: busy・waiting・unknown の間は端末に何も書かない", ()
     expect(items.map((i) => [i.text, i.state])).toEqual([["作業中に送る", "queued"]]);
   });
 
-  it("定期取得では手すきでも、書く直前の取り直しで作業中なら書かない（L-a）", async () => {
+  it("定期取得では手すきでも、書く直前の取り直しで確認待ちなら書かない（L-a）", async () => {
     const s = newSession();
     setRows([row(s.pid, "idle", s.claudeId)]);
     await poll();
-    setRows([row(s.pid, "busy", s.claudeId)]); // poll の値は idle のまま、実際は busy
+    setRows([row(s.pid, "waiting", s.claudeId)]); // poll の値は idle のまま、実際は waiting
     expect((await queue(s.id, "取り直しで止まる")).status).toBe(201);
     await settle();
     expect(written(s.id)).toEqual([]);
@@ -133,8 +132,58 @@ describe("K2: busy・waiting・unknown の間は端末に何も書かない", ()
   });
 });
 
+describe("K1/K3/K3b: busy（待ちなし）でもすぐ送る。1 件ずつ順に届く", () => {
+  it("K1 busy・待ちなしで予約した文は、端末に貼られて Enter が送られる", async () => {
+    const s = newSession();
+    setRows([row(s.pid, "busy", s.claudeId)]);
+    await poll();
+    expect((await queue(s.id, "b1")).status).toBe(201);
+    await until(() => written(s.id).length >= 2);
+    expect(written(s.id)).toEqual([pasted("b1"), "\r"]);
+    expect((await queued(s.id)).map((i) => [i.text, i.state])).toEqual([["b1", "sent"]]);
+  });
+
+  it("K3 busy 中に 2 件予約→1 件目の user 記録が届くまで 2 件目は書かれない。届くと 2 件目が書かれ、1 件目は消える", async () => {
+    const s = newSession();
+    setRows([row(s.pid, "busy", s.claudeId)]);
+    await poll();
+    await queue(s.id, "b1");
+    await queue(s.id, "b2");
+    await until(() => written(s.id).length >= 2);
+    await poll();
+    await poll();
+    await settle();
+    await new Promise((r) => setTimeout(r, 1000));
+    expect(written(s.id)).toEqual([pasted("b1"), "\r"]);
+    writeEvents([{ ts: Date.now(), session_id: s.claudeId, event: "UserPromptSubmit", prompt: "b1" }]);
+    await h.activity.refresh();
+    await poll();
+    await until(() => written(s.id).length >= 4);
+    expect(written(s.id)).toEqual([pasted("b1"), "\r", pasted("b2"), "\r"]);
+    expect((await queued(s.id)).map((i) => i.text)).not.toContain("b1");
+  });
+
+  it("K3b user 記録が来なくても、idle を観測したら次へ進む（sentSeq が null でも同じ）", async () => {
+    for (const withClaudeId of [true, false]) {
+      const s = newSession(withClaudeId);
+      setRows([row(s.pid, "busy", s.claudeId)]);
+      await poll();
+      await queue(s.id, "b1");
+      await queue(s.id, "b2");
+      await until(() => written(s.id).length >= 2);
+      await poll();
+      await settle();
+      expect(written(s.id)).toHaveLength(2);
+      setRows([row(s.pid, "idle", s.claudeId)]);
+      await poll();
+      await until(() => written(s.id).length >= 4);
+      expect(written(s.id)).toEqual([pasted("b1"), "\r", pasted("b2"), "\r"]);
+    }
+  });
+});
+
 describe("K3: 送るのは idle かつ待ちなしのときだけ。1 件送ったら、受け取りを観測するまで次を送らない", () => {
-  it("idle→1 件目を貼って Enter→idle のまま（2 件目は送らない）→busy を観測→idle→2 件目を送る", async () => {
+  it("idle→1 件目を貼って Enter→idle のまま（2 件目は送らない）→busy を観測→2 件目を送る", async () => {
     const s = newSession();
     setRows([row(s.pid, "idle", s.claudeId)]);
     await poll();
@@ -151,14 +200,10 @@ describe("K3: 送るのは idle かつ待ちなしのときだけ。1 件送っ�
       ["一件目", "sent"],
       ["二件目", "queued"],
     ]);
-    // busy を観測しても、その間は書かない
+    // idle で送った分は、busy を観測したら見張りが外れる。busy（待ちなし）は送ってよい状態なので、2 件目を送る
     setRows([row(s.pid, "busy", s.claudeId)]);
     await poll();
-    await settle();
-    expect(written(s.id)).toHaveLength(2);
-    // 再び idle を観測したら、2 件目を送る
-    setRows([row(s.pid, "idle", s.claudeId)]);
-    await poll();
+    await until(() => written(s.id).length >= 4);
     expect(written(s.id)).toEqual([pasted("一件目"), "\r", pasted("二件目"), "\r"]);
   });
 

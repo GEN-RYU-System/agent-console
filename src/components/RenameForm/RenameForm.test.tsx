@@ -5,7 +5,7 @@ import "../../i18n";
 import type { SessionView } from "../../types";
 import { RenameForm } from "./RenameForm";
 
-const session: SessionView = { id: "s1", name: "old", roleId: "shell", branch: null, cwd: "/", state: "idle", createdAt: 1, unread: 0, hasClaude: true, canInput: true };
+const session: SessionView = { id: "s1", name: "old", roleId: "shell", branch: null, cwd: "/", state: "idle", createdAt: 1, unread: 0, hasClaude: true, canInput: true, canChat: true };
 
 describe("RenameForm", () => {
   it("submits the new name while Claude is waiting or idle", () => {

@@ -87,6 +87,21 @@ export function inputVerdict(session: SessionProcessInfo, rows: AgentRow[] | nul
   return { ok: true, hasClaude: true };
 }
 
+/**
+ * チャットの送信（予約の払い出し）専用の判定。inputVerdict と同じだが、Claude が作業中（busy）で
+ * 許可・質問の待ちが無いときも ok（Claude Code 本体の順番待ちに入る）。確認待ち・状態不明は不可。
+ * inputVerdict は他の経路（名前変更・部品・よく使う指示・定期実行）が使うので変えない。
+ */
+export function chatVerdict(session: SessionProcessInfo, rows: AgentRow[] | null): InputVerdict & { mode?: "idle" | "busy" } {
+  if (session.exited) return { ok: false, reason: "session is stopped", hasClaude: false };
+  if (rows === null) return { ok: false, reason: "claude state is unknown", hasClaude: false };
+  const agent = agentForSession(session, rows);
+  if (!agent) return { ok: true, hasClaude: false };
+  if (agent.status !== "idle" && agent.status !== "busy") return { ok: false, reason: `claude is ${agent.status}`, hasClaude: true };
+  if (agent.waitingFor !== undefined) return { ok: false, reason: "claude is waiting for input", hasClaude: true };
+  return { ok: true, hasClaude: true, mode: agent.status };
+}
+
 export function stateForSession(session: SessionProcessInfo, rows: AgentRow[] | null): SessionState {
   if (session.exited) return "stopped";
   if (rows === null) return "unknown";

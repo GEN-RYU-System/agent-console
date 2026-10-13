@@ -413,7 +413,7 @@ export function ConsolePage() {
           active={centerTab === "chat"}
           rev={state.activityRev}
           state={activeSession?.state ?? "unknown"}
-          canInput={activeSession?.canInput === true}
+          canChat={activeSession?.canChat === true}
           prompts={quickPrompts}
           onEditPrompts={() => setQuickEditorOpen(true)}
           onPromptsChanged={loadQuickPrompts}
