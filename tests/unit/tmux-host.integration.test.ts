@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { Terminal } from "@xterm/headless";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { RoleConfig } from "../../server/config.ts";
 import { restoreOnStartup } from "../../server/restore.ts";
@@ -19,6 +20,16 @@ const ROLES: RoleConfig[] = [
   { id: "count", labelKey: "role.shell", command: ["/bin/sh", "-c", "i=0; while :; do i=$((i+1)); echo L$i; sleep 0.004; done"], needsWorktree: false },
   { id: "env", labelKey: "role.shell", command: ["/bin/sh", "-c", "printf 'LANG_IS=[%s] TOKEN_IS=[%s]\\n' \"$LANG\" \"$AGENT_CONSOLE_TOKEN\"; cat"], needsWorktree: false },
   { id: "big", labelKey: "role.shell", command: ["/bin/sh", "-c", "stty raw -echo; read x; yes ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 | head -c 10485760; echo; echo BIGDONE; cat"], needsWorktree: false },
+  {
+    id: "paint",
+    labelKey: "role.shell",
+    command: [
+      "/bin/sh",
+      "-c",
+      "printf '\\033[?2004h\\033[?1h'; printf '\\033[31mRED\\033[0m \\033[1;44mBOLDBLUE\\033[0m \\033[38;5;208mORANGE\\033[0m \\033[48;2;10;20;30mTRUE\\033[0m \\033[7mREV\\033[0m\\n'; printf 'plain line\\n'; cat",
+    ],
+    needsWorktree: false,
+  },
   { id: "kids", labelKey: "role.shell", command: ["/bin/sh", "-c", "sleep 300 & sleep 301 & wait"], needsWorktree: false },
 ];
 
@@ -244,6 +255,54 @@ suite("tmux host (real tmux, dedicated socket)", () => {
       for (let i = 1; i < nums.length; i++) expect(nums[i], `round ${round} index ${i}`).toBe(nums[i - 1] + 1);
     }
     await h.sessions.close(id);
+  });
+
+  it("K17 (screen): after reattaching, the xterm.js screen (chars, colors, attributes), cursor and modes equal tmux's own capture-pane -p -e and pane_private_modes", async () => {
+    const socket = testSocket();
+    const h1 = await start(socket);
+    const id = await mk(h1, "paint", "paint");
+    expect(await waitFor(() => textOf(h1, id).includes("plain line"))).toBe(true);
+    await sleep(300);
+    const dir = h1.dir;
+    await stopServer(h1);
+    const h2 = await start(socket, { dir });
+    await restoreOnStartup({ config: h2.config, sessions: h2.sessions, hub: h2.hub, store: h2.store, recorder: h2.recorder });
+    expect(await waitFor(() => textOf(h2, id).includes("plain line"))).toBe(true);
+    await sleep(300);
+    const target = `=${sessionName(id)}:`;
+    const COLS = 120;
+    const ROWS = 30;
+    const feed = async (data: string): Promise<Terminal> => {
+      const t = new Terminal({ cols: COLS, rows: ROWS, allowProposedApi: true, scrollback: 1000 });
+      await new Promise<void>((resolve) => t.write(data, resolve));
+      return t;
+    };
+    const ours = await feed(textOf(h2, id));
+    const cap = tmuxRun(socket, ["capture-pane", "-p", "-e", "-t", target]).stdout;
+    const theirs = await feed(`\x1b[H\x1b[2J${cap.replace(/\n/g, "\r\n")}`);
+    const cellOf = (t: Terminal, y: number, x: number): string => {
+      const c = t.buffer.active.getLine(y)?.getCell(x);
+      if (!c) return "none";
+      return [c.getChars() || " ", c.getFgColorMode(), c.getFgColor(), c.getBgColorMode(), c.getBgColor(), c.isBold(), c.isInverse()].join("|");
+    };
+    // 内容のある 2 行を、文字・前景・背景・太字・反転まで 1 セルずつ比べる
+    for (let y = 0; y < 2; y++) for (let x = 0; x < 60; x++) expect(cellOf(ours, y, x), `cell ${y},${x}`).toBe(cellOf(theirs, y, x));
+    expect(ours.buffer.active.getLine(0)?.translateToString(true)).toContain("RED BOLDBLUE ORANGE TRUE REV");
+    // 色が実際に付いている（比べる相手が全部空でないこと）
+    expect(cellOf(ours, 0, 0)).not.toBe(cellOf(ours, 0, 4));
+    // カーソル位置とモード
+    const info = tmuxRun(socket, ["display", "-p", "-t", target, "#{cursor_x} #{cursor_y} #{pane_private_modes}"]).stdout.trim();
+    const m = /^(\d+) (\d+) \[?([^\]]*)\]?$/.exec(info);
+    expect(m, info).not.toBeNull();
+    expect(ours.buffer.active.cursorX).toBe(Number(m![1]));
+    expect(ours.buffer.active.cursorY).toBe(Number(m![2]));
+    const modes = m![3].split(",").map((v) => Number(v.replace(/^\?/, "")));
+    expect(modes).toContain(2004);
+    expect(ours.modes.bracketedPasteMode).toBe(modes.includes(2004));
+    expect(ours.modes.applicationCursorKeysMode).toBe(modes.includes(1));
+    expect(ours.modes.bracketedPasteMode).toBe(true);
+    expect(ours.modes.applicationCursorKeysMode).toBe(true);
+    await h2.sessions.close(id);
   });
 
   it("tmux missing: falls back to direct with a one-time notice", async () => {
