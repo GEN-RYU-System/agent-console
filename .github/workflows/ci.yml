@@ -49,6 +49,11 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      # 所要時間の閾値（設計 §7）は並列実行だと揺れるので、tmux の統合試験だけをファイル並列なしで 1 回、AC_TMUX_TIMING=1 で判定する
+      - name: tmux timing check (single file, no file parallelism)
+        env:
+          AC_TMUX_TIMING: "1"
+        run: npx vitest run tests/unit/tmux-host.integration.test.ts --no-file-parallelism
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

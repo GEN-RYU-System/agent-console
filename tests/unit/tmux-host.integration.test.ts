@@ -36,6 +36,12 @@ const ROLES: RoleConfig[] = [
   { id: "kids", labelKey: "role.shell", command: ["/bin/sh", "-c", "sleep 300 & sleep 301 & wait"], needsWorktree: false },
 ];
 
+/** AC_TMUX_TIMING=1 の時だけ、設計 §7 の所要時間の閾値を判定する（単独実行用）。全試験の並列実行では数倍に揺れるので、値はログに出すだけ（参考値） */
+const TIMING = process.env.AC_TMUX_TIMING === "1";
+const ESC_MEDIAN_MAX_MS = 20;
+const BIG_OUTPUT_MAX_MS = 1000;
+const REATTACH_X12_MAX_MS = 1000;
+
 const tmuxAvailable = TMUX !== null;
 const suite = tmuxAvailable || REQUIRE_TMUX ? describe : describe.skip;
 if (!tmuxAvailable && !REQUIRE_TMUX) console.warn("[tmux-host.integration] tmux not found: tests skipped (set CI=true to make this a failure)");
@@ -236,8 +242,8 @@ suite("tmux host (real tmux, dedicated socket)", () => {
     }
     times.sort((x, y) => x - y);
     const median = times[Math.floor(times.length / 2)];
-    console.log(`[K6] esc median=${median.toFixed(1)}ms max=${times[times.length - 1].toFixed(1)}ms`);
-    expect(median).toBeLessThanOrEqual(20);
+    console.log(`[K6] esc median=${median.toFixed(1)}ms max=${times[times.length - 1].toFixed(1)}ms (timing check ${TIMING ? "on" : "off"})`);
+    if (TIMING) expect(median).toBeLessThanOrEqual(ESC_MEDIAN_MAX_MS);
     await h.sessions.close(id);
   });
 
@@ -392,7 +398,7 @@ suite("tmux host (real tmux, dedicated socket)", () => {
     await h.sessions.close(id);
   });
 
-  it("10MB of output arrives intact (sha256); time is logged (design target 1s when run alone)", async () => {
+  it("10MB of output arrives intact (sha256); time is judged only with AC_TMUX_TIMING=1 (design target 1s when run alone)", async () => {
     const socket = testSocket();
     const h = await start(socket);
     const id = await mk(h, "big", "big");
@@ -413,13 +419,13 @@ suite("tmux host (real tmux, dedicated socket)", () => {
     const ms = performance.now() - t0;
     const got = chunks.join("");
     const body = got.slice(0, got.indexOf("BIGDONE") - 1);
-    console.log(`[10MB] ${ms.toFixed(0)}ms, received ${total} bytes`);
+    console.log(`[10MB] ${ms.toFixed(0)}ms, received ${total} bytes (timing check ${TIMING ? "on" : "off"})`);
     expect(createHash("sha256").update(body).digest("hex")).toBe(createHash("sha256").update(expected).digest("hex"));
-    // 設計の目安は 1 秒（単独実行で約 1 秒弱）。全試験の並列実行では十数倍になり揺れるため、所要時間は判定せず（sha256 の一致だけを見る）ログに出す
+    if (TIMING) expect(ms).toBeLessThanOrEqual(BIG_OUTPUT_MAX_MS);
     await h.sessions.close(id);
   }, 90000);
 
-  it("12 reattaches: the synchronous part is timed (design target 1s when run alone)", async () => {
+  it("12 reattaches: the time is judged only with AC_TMUX_TIMING=1 (design target 1s when run alone)", async () => {
     const socket = testSocket();
     const h1 = await start(socket);
     const ids: string[] = [];
@@ -437,10 +443,11 @@ suite("tmux host (real tmux, dedicated socket)", () => {
     const t0 = performance.now();
     for (const id of ids) h2.sessions.restore({ role, name: id, cwd: h2.config.salesanchorRoot, branch: null, id });
     const ms = performance.now() - t0;
-    console.log(`[reattach x12] probe(spawnSync) ${probeMs.toFixed(0)}ms, restore total ${ms.toFixed(0)}ms`);
-    // 設計の目安は合計 1 秒（単独実行で probe 約 0.14 秒）。全試験の並列実行では数倍になるため、ここでは退行の検出用に余裕を持たせる。実測値はログに出す
-    expect(probeMs).toBeLessThan(4000);
-    expect(ms).toBeLessThan(6000);
+    console.log(`[reattach x12] probe(spawnSync) ${probeMs.toFixed(0)}ms, restore total ${ms.toFixed(0)}ms (timing check ${TIMING ? "on" : "off"})`);
+    if (TIMING) {
+      expect(probeMs).toBeLessThanOrEqual(REATTACH_X12_MAX_MS);
+      expect(ms).toBeLessThanOrEqual(REATTACH_X12_MAX_MS);
+    }
     for (const id of ids) await h2.sessions.close(id);
   });
 });
