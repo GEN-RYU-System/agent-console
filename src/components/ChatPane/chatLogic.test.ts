@@ -44,7 +44,7 @@ describe("isSendBlocked / queueNoticeKey（K8）", () => {
     expect(isSendBlocked("stopped")).toBe(true);
     for (const state of ["working", "waiting", "idle", "no-claude", "unknown"] as const) expect(isSendBlocked(state)).toBe(false);
   });
-  it("すぐ届く状態（canInput）なら案内は無い", () => {
+  it("すぐ届く状態（canChat）なら案内は無い", () => {
     expect(queueNoticeKey("idle", true)).toBeNull();
     expect(queueNoticeKey("no-claude", true)).toBeNull();
   });

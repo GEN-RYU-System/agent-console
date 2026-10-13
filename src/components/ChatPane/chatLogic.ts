@@ -35,9 +35,9 @@ const NOTICE_KEY: Partial<Record<SessionState, string>> = {
   unknown: "ac.chat.queue.notice.unknown",
 };
 
-/** 入力欄の上の案内の文言のキー。すぐ届く状態（canInput）なら null。サーバーの判定（canInput）をそのまま使い、画面では作り直さない */
-export function queueNoticeKey(state: SessionState, canInput: boolean): string | null {
-  if (canInput) return null;
+/** 入力欄の上の案内の文言のキー。すぐ届く状態（canChat）なら null。サーバーの判定（canChat）をそのまま使い、画面では作り直さない */
+export function queueNoticeKey(state: SessionState, canChat: boolean): string | null {
+  if (canChat) return null;
   return NOTICE_KEY[state] ?? "ac.chat.queue.notice.other";
 }
 

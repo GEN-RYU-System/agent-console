@@ -6,7 +6,7 @@ import "../i18n";
 import type { ConsoleState } from "../types";
 
 const state: ConsoleState = {
-  sessions: [{ id: "s1", name: "dead", roleId: "shell", branch: null, cwd: "/", state: "stopped", createdAt: 1, unread: 0, hasClaude: false, canInput: false }],
+  sessions: [{ id: "s1", name: "dead", roleId: "shell", branch: null, cwd: "/", state: "stopped", createdAt: 1, unread: 0, hasClaude: false, canInput: false, canChat: false }],
   agentsAvailable: true,
   restoreNotices: [],
   picksUnsent: 3,

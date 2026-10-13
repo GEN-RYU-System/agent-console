@@ -12,6 +12,8 @@ export interface SessionView {
   hasClaude: boolean;
   /** 今、名前の変更・よく使う指示を入れてよい状態か（Claude 起動中は idle のときだけ） */
   canInput: boolean;
+  /** 今、チャットの文がすぐ端末に届く状態か（idle・作業中で待ちなし。確認待ち・状態不明は予約になる） */
+  canChat: boolean;
   /** 名前の変更を予約中のとき、その名前（待機になったら自動で変わる） */
   pendingName?: string;
   /** そのセッションのブランチの PR の検査の要約（PR が無い・検査が無い・まだ取れていないときは項目ごと無い） */

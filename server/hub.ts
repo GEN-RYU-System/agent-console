@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { WebSocket } from "ws";
-import { agentForSession, fetchAgents, inputVerdict, stateForSession, type AgentRow, type InputVerdict, type SessionState } from "./agents.ts";
+import { agentForSession, chatVerdict, fetchAgents, inputVerdict, stateForSession, type AgentRow, type InputVerdict, type SessionState } from "./agents.ts";
 import type { Config } from "./config.ts";
 import { loadLedger, type LedgerSnapshot } from "./ledger.ts";
 import { ciOfResponse, fetchPr, isSettled, resolveTarget, type CiState, type PrResponse, type PrTarget } from "./pr-status.ts";
@@ -25,6 +25,8 @@ export interface SessionView {
   hasClaude: boolean;
   /** 今、人の指示（名前の変更・よく使う指示）を入れてよい状態か（要求時にサーバーが取り直して再判定する） */
   canInput: boolean;
+  /** 今、チャットの文がすぐ端末に届く状態か（idle・作業中で待ちなし。確認待ち・状態不明は予約になる） */
+  canChat: boolean;
   /** 名前の変更を予約中のとき、その名前（待機になったら自動で送る）。予約が無ければ項目ごと無い */
   pendingName?: string;
   /** そのセッションのブランチの PR の検査の要約（PR が無い・検査が 0 件・まだ取れていないときは項目ごと無い） */
@@ -86,8 +88,8 @@ export class Hub {
   private activityRev = 0;
   /** 送信の予約（セッション id → 古い順）。メモリだけ。アプリを再起動すると消える。正本はここ */
   private chatQueue = new Map<string, ChatQueueItem[]>();
-  /** 1 件送った後、Claude が受け取ったと観測するまで次を送らないための印。sentSeq は送った時点の会話の最後の seq（分からなければ null） */
-  private readonly chatSentGuard = new Map<string, { sentSeq: number | null }>();
+  /** 1 件送った後、Claude が受け取ったと観測するまで次を送らないための印。sentSeq は送った時点の会話の最後の seq（分からなければ null）。sentWhile は送った時点の状態（busy で送った分は、作業中の観測では外さない） */
+  private readonly chatSentGuard = new Map<string, { sentSeq: number | null; sentWhile: "idle" | "busy" }>();
   /** 送信済みの予約を外すのに、すでに使った user の記録の seq（同じ記録で 2 件外さない） */
   private readonly chatConsumedSeq = new Map<string, number>();
   /** セッションごとの、flush の同時実行を防ぐ印 */
@@ -352,11 +354,14 @@ export class Hub {
     const info = { exited: false, pids: descendantPids(session.term.pid, table) };
     // 送った後の見張り (a): 作業中か確認待ちを観測したら外す
     const status = agentForSession(info, this.agents)?.status;
-    if (status === "busy" || status === "waiting") this.chatSentGuard.delete(sessionId);
+    const guard = this.chatSentGuard.get(sessionId);
+    if (status === "waiting" || (status === "busy" && guard?.sentWhile !== "busy")) this.chatSentGuard.delete(sessionId);
+    // busy で送った分は、idle を観測したら外す（user の記録が来なくても次へ進める）
+    if (status === "idle" && guard?.sentWhile === "busy") this.chatSentGuard.delete(sessionId);
     const next = (this.chatQueue.get(sessionId) ?? []).find((i) => i.state === "queued");
     if (next === undefined || this.chatSentGuard.has(sessionId)) return;
-    if (!inputVerdict(info, this.agents).ok) return;
-    const verdict = await this.checkInput(sessionId);
+    if (!chatVerdict(info, this.agents).ok) return;
+    const verdict = await this.checkChat(sessionId);
     if (!verdict.ok) return;
     // 取り直している間に、取り消し・差し替わり・見張りの再設定があれば尊重する
     const current = (this.chatQueue.get(sessionId) ?? []).find((i) => i.id === next.id);
@@ -365,7 +370,7 @@ export class Hub {
     const sentSeq = verdict.hasClaude && claudeId !== undefined && this.chatSource !== null ? this.chatSource.chat(claudeId, Number.MAX_SAFE_INTEGER).lastSeq : null;
     // await の前に同期で sent にする（同時の実行・取り消しとの競合を避ける）
     this.setChatItems(sessionId, (this.chatQueue.get(sessionId) ?? []).map((i) => (i.id === next.id ? { ...i, state: "sent", ...(sentSeq !== null ? { sentAtSeq: sentSeq } : {}) } : i)));
-    if (verdict.hasClaude) this.chatSentGuard.set(sessionId, { sentSeq });
+    if (verdict.hasClaude) this.chatSentGuard.set(sessionId, { sentSeq, sentWhile: verdict.mode === "busy" ? "busy" : "idle" });
     this.bumpChat();
     this.sessions.write(session, verdict.hasClaude ? `${BRACKETED_PASTE_START}${next.text}${BRACKETED_PASTE_END}` : next.text);
     await new Promise<void>((resolve) => setTimeout(resolve, this.config.pasteSubmitDelayMs));
@@ -421,6 +426,14 @@ export class Hub {
     if (!session) return { ok: false, reason: "session not found", hasClaude: false };
     const [rows, table] = await Promise.all([fetchAgents(this.config.claudeBin), readProcessTable().catch(() => [])]);
     return inputVerdict({ exited: session.exited, pids: descendantPids(session.term.pid, table) }, rows);
+  }
+
+  /** チャットの払い出し用。checkInput と同じ取り直しだが、作業中（待ちなし）も可（chatVerdict） */
+  private async checkChat(sessionId: string): Promise<ReturnType<typeof chatVerdict>> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return { ok: false, reason: "session not found", hasClaude: false };
+    const [rows, table] = await Promise.all([fetchAgents(this.config.claudeBin), readProcessTable().catch(() => [])]);
+    return chatVerdict({ exited: session.exited, pids: descendantPids(session.term.pid, table) }, rows);
   }
 
   /** 一覧と同じ表示名（Claude の name 優先）。直近の snapshot の値で、ps は走らせない。まだ無いセッションは含まない。 */
@@ -544,6 +557,7 @@ export class Hub {
         unread: this.tracker.unreadOf(s.id),
         hasClaude: agent !== undefined,
         canInput: inputVerdict(info, this.agents).ok,
+        canChat: chatVerdict(info, this.agents).ok,
         ...(this.pendingRenames.has(s.id) ? { pendingName: this.pendingRenames.get(s.id) } : {}),
         ...(ci !== undefined ? { ci } : {}),
         ...(s.claudeSessionId !== undefined ? { claudeSessionId: s.claudeSessionId } : {}),
