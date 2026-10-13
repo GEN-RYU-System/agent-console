@@ -72,6 +72,12 @@ export interface Config {
   terminalEnv: Record<string, string>;
   /** 起動時の復元で、1 件ずつ開く間隔（ms） */
   restoreStaggerMs: number;
+  /** 端末の置き場。tmux（既定。更新しても切れない）か direct（node-pty。今までの方式）。parseConfig は既定 tmux、未指定の手組み設定は direct として扱う */
+  terminalHost?: "tmux" | "direct";
+  /** tmux の場所。無ければ PATH と /opt/homebrew/bin・/usr/local/bin から探す */
+  tmuxPath?: string;
+  /** tmux の専用ソケット名（-L）。既定 agent-console */
+  tmuxSocket?: string;
   /** 変更の基準にする git の参照（既定 origin/main。最後に取得した値で、アプリは fetch しない） */
   diffBaseRef: string;
   /** 1 ファイルの変更をこの大きさ（byte）まで表示する */
@@ -266,6 +272,9 @@ export function parseConfig(raw: unknown): Config {
     notify: parseNotify(o.notify),
     terminalEnv: parseTerminalEnv(o.terminalEnv),
     restoreStaggerMs: parseStagger(o.restoreStaggerMs),
+    terminalHost: parseTerminalHost(o.terminalHost),
+    ...(o.tmuxPath !== undefined ? { tmuxPath: parseTmuxPath(o.tmuxPath) } : {}),
+    tmuxSocket: parseTmuxSocket(o.tmuxSocket),
     diffBaseRef: parseDiffBaseRef(o.diffBaseRef),
     diffMaxFileBytes: parsePositive(o.diffMaxFileBytes, "diffMaxFileBytes", DEFAULT_DIFF_MAX_FILE_BYTES),
     diffSendMaxBytes: parsePositive(o.diffSendMaxBytes, "diffSendMaxBytes", DEFAULT_DIFF_SEND_MAX_BYTES),
@@ -282,6 +291,25 @@ export function parseConfig(raw: unknown): Config {
     uploadMaxBytes: parsePositive(o.uploadMaxBytes, "uploadMaxBytes", DEFAULT_UPLOAD_MAX_BYTES),
     uploadMaxKeep: parsePositive(o.uploadMaxKeep, "uploadMaxKeep", DEFAULT_UPLOAD_MAX_KEEP),
   };
+}
+
+const TMUX_SOCKET = /^[A-Za-z0-9_-]+$/;
+
+function parseTerminalHost(raw: unknown): "tmux" | "direct" {
+  if (raw === undefined) return "tmux";
+  if (raw === "tmux" || raw === "direct") return raw;
+  throw new Error('config: terminalHost must be "tmux" or "direct"');
+}
+
+function parseTmuxPath(raw: unknown): string {
+  if (typeof raw !== "string" || raw.length === 0 || !path.isAbsolute(raw)) throw new Error("config: tmuxPath must be an absolute path");
+  return raw;
+}
+
+function parseTmuxSocket(raw: unknown): string {
+  if (raw === undefined) return "agent-console";
+  if (typeof raw !== "string" || !TMUX_SOCKET.test(raw)) throw new Error("config: tmuxSocket must match [A-Za-z0-9_-]+");
+  return raw;
 }
 
 export function defaultConfigPath(): string {
