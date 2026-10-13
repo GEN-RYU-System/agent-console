@@ -20,6 +20,8 @@ import { createRequestHandler } from "../../../server/http.ts";
 import { OpenSessionStore } from "../../../server/session-store.ts";
 import { OpenSessionRecorder } from "../../../server/restore.ts";
 import { RoutineService, RoutineStore } from "../../../server/routines.ts";
+import { ReservationService, ReservationStore } from "../../../server/reservations.ts";
+import type { ReserveAccess } from "../../../server/reserve-token.ts";
 import type { RoleConfig } from "../../../server/config.ts";
 import { SessionManager } from "../../../server/sessions.ts";
 import { attachWebSockets } from "../../../server/ws.ts";
@@ -27,6 +29,7 @@ import { attachWebSockets } from "../../../server/ws.ts";
 export const TOKEN = "t".repeat(40);
 export const PICKER_ORIGIN = "chrome-extension://cifnedlggndeehoejlfapbhepekgikao";
 export const PICKER_TOKEN = "ab".repeat(32);
+export const RESERVE_TOKEN = "cd".repeat(32);
 export const COMMIT = "0123456789abcdef0123456789abcdef01234567";
 
 export interface Clock {
@@ -52,6 +55,7 @@ export interface Harness {
   activity: ActivityStore;
   uploads: UploadStore;
   auth: Auth;
+  reservations: ReservationService;
   close: () => Promise<void>;
 }
 
@@ -113,6 +117,8 @@ export interface HarnessOptions {
   pasteSubmitDelayMs?: number;
   /** 拡張からの受け取り口の相手。既定は固定 id の拡張と試験用の合言葉。null にすると受け取り口は常に 403 */
   picker?: PickerAccess;
+  /** AI 用の予約の合言葉。既定は試験用の合言葉。token を null にすると AI 用の口は常に 401 */
+  reserve?: ReserveAccess;
 }
 
 /** 実 HTTP/WS/PTY（ダミー役割 sh）を 127.0.0.1 の空きポートで起動する。 */
@@ -185,6 +191,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const store = new OpenSessionStore(config.dataDir);
   const recorder = new OpenSessionRecorder(sessions, hub, store);
   const routines = new RoutineService(config, sessions, hub, new RoutineStore(config.dataDir));
+  const reservations = new ReservationService(config, sessions, hub, new ReservationStore(config.dataDir));
   if (options.recorder === true) recorder.start();
   const clock: Clock = { t: Date.now(), advance(ms) { this.t += ms; } };
   const auth = createAuth(TOKEN, port, { now: () => clock.t });
@@ -194,8 +201,9 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   hub.watchActivity(activity);
   const uploads = new UploadStore(config.dataDir, config.uploadMaxBytes, config.uploadMaxKeep);
   const picker: PickerAccess = options.picker ?? { extensionOrigin: PICKER_ORIGIN, token: PICKER_TOKEN, extensionDir: path.join(config.dataDir, "chrome-extension") };
+  const reserve: ReserveAccess = options.reserve ?? { token: RESERVE_TOKEN };
   const server = createServer(
-    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines }),
+    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines, reservations, reserve }),
   );
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
@@ -216,6 +224,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     activity,
     uploads,
     auth,
+    reservations,
     close: async () => {
       sessions.killAll();
       server.closeAllConnections();
