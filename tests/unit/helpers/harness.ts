@@ -122,6 +122,12 @@ export interface HarnessOptions {
 }
 
 /** 実 HTTP/WS/PTY（ダミー役割 sh）を 127.0.0.1 の空きポートで起動する。 */
+/** terminalHost "tmux" ではソケット名の指定を必須にする（既定で本番ソケット agent-console に落ちる経路を塞ぐ） */
+function tmuxSocketFor(host: "tmux" | "direct", socket: string | undefined): { tmuxSocket?: string } {
+  if (host === "tmux" && socket === undefined) throw new Error('startHarness: terminalHost "tmux" requires tmuxSocket (never default to the production socket)');
+  return socket !== undefined ? { tmuxSocket: socket } : {};
+}
+
 export async function startHarness(options: HarnessOptions = {}): Promise<Harness> {
   const dir = options.dir ?? realpathSync(mkdtempSync(path.join(os.tmpdir(), "ac-it-")));
   const root = path.join(dir, "root");
@@ -155,7 +161,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     notify: { macos: false, osascriptBin: "/nonexistent/osascript" },
     terminalEnv: options.terminalEnv ?? { LANG: "ja_JP.UTF-8" },
     restoreStaggerMs: options.restoreStaggerMs ?? 0,
-    ...(options.terminalHost !== undefined ? { terminalHost: options.terminalHost, tmuxSocket: options.tmuxSocket ?? "agent-console", ...(options.tmuxPath !== undefined ? { tmuxPath: options.tmuxPath } : {}) } : {}),
+    ...(options.terminalHost !== undefined ? { terminalHost: options.terminalHost, ...tmuxSocketFor(options.terminalHost, options.tmuxSocket), ...(options.tmuxPath !== undefined ? { tmuxPath: options.tmuxPath } : {}) } : {}),
     diffBaseRef: "origin/main",
     diffMaxFileBytes: options.diffMaxFileBytes ?? DEFAULT_DIFF_MAX_FILE_BYTES,
     diffSendMaxBytes: options.diffSendMaxBytes ?? DEFAULT_DIFF_SEND_MAX_BYTES,
