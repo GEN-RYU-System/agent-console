@@ -45,7 +45,7 @@
 |K7 文言|ja.json :406・:407 と README v0.13.0 節が §3 のとおり|
 |K8 CI|macOS・Ubuntu で成功|
 
-## 7. 外部事例
+## 7. 外部・過去事例の参照と我々への応用
 - 不要。根拠は Claude Code 公式 interactive-mode（作業中の Enter は順番待ちに入り同ターン内で渡される。/tmp/CC報告ファイル/agent-console-bugs-20261013/9-interactive-mode.md:357-372）と chat2 recon C-1 の実測。
 
 ## 審査の記録
