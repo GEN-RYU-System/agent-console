@@ -71,7 +71,7 @@ export class OpenSessionRecorder {
       const names = new Map(snap.sessions.map((v) => [v.id, v.name]));
       const items: OpenSessionItem[] = this.sessions
         .list()
-        .filter((s) => !s.exited && s.routineId === undefined && s.roleId !== ACCOUNT_LOGIN_ROLE_ID)
+        .filter((s) => !s.exited && s.roleId !== ACCOUNT_LOGIN_ROLE_ID)
         .map((s) =>
           normalizeItem({
             roleId: s.roleId,

@@ -22,6 +22,7 @@ export function RoutineEditor({ routine, roles, onSave }: Props) {
     <TextField label={t("ac.routines.time")} value={timeHHmm} onChange={(e) => setTime(e.target.value)} helperText={t("ac.routines.timeHint")} required fullWidth />
     <div className="ac-routines__days">{DAYS.map((day, index) => <Button key={day} type="button" size="sm" variant={weekdays.includes(index) ? "primary" : "outline"} aria-pressed={weekdays.includes(index)} onClick={() => setWeekdays((v) => v.includes(index) ? v.filter((x) => x !== index) : [...v, index])}>{t(`ac.routines.days.${day}`)}</Button>)}</div>
     <Textarea label={t("ac.routines.prompt")} value={promptText} onChange={(e) => setPrompt(e.target.value)} maxLength={8192} rows={5} required fullWidth />
+    <Callout variant="info" title={t("ac.routines.newSessionTitle")}>{t("ac.routines.newSessionNotice")}</Callout>
     {error && <Callout variant="warning" title={t("ac.routines.error")}>{error}</Callout>}
     <Button type="submit" loading={busy} loadingText={t("ac.routines.saving")}>{t("ac.routines.save")}</Button>
   </Stack></form>;

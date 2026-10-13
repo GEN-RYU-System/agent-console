@@ -223,8 +223,13 @@
       "disable": "無効にする",
       "noEvents": "実行履歴はありません",
       "history": "実行履歴",
+      "newSessionTitle": "実行のしかた",
+      "newSessionNotice": "時刻になると新しいセッションを開いて、この指示を送ります。開いたセッションは自動では閉じません。",
       "outcomes": {
         "sent": "送信済み",
+        "not_ready": "準備できず送らなかった",
+        "full": "上限のため開かなかった",
+        "cwd_invalid": "作業場所が無い",
         "busy": "使用中",
         "waiting": "待機中",
         "unknown": "状態不明",

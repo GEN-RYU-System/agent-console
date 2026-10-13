@@ -86,8 +86,8 @@ export interface QuickPrompt {
   pinned: boolean;
 }
 
-export interface RoutineEvent { at: number; slot: string; outcome: "sent" | "busy" | "waiting" | "unknown" | "stopped" | "missing" | "failed"; }
-export interface Routine { id: string; name: string; enabled: boolean; roleId: string; cwd: string; branch?: string; timeZone: "Asia/Tokyo"; weekdays: number[]; timeHHmm: string; promptText: string; claudeSessionId?: string; createdAt: number; updatedAt: number; events: RoutineEvent[]; }
+export interface RoutineEvent { at: number; slot: string; outcome: "sent" | "not_ready" | "full" | "cwd_invalid" | "failed" | "busy" | "waiting" | "unknown" | "stopped" | "missing"; sessionName?: string; }
+export interface Routine { id: string; name: string; enabled: boolean; roleId: string; cwd: string; branch?: string; timeZone: "Asia/Tokyo"; weekdays: number[]; timeHHmm: string; promptText: string; lastSlot?: string; createdAt: number; updatedAt: number; events: RoutineEvent[]; }
 export type RoutineInput = Pick<Routine, "name" | "enabled" | "roleId" | "cwd" | "weekdays" | "timeHHmm" | "promptText"> & { branch?: string };
 
 /** 再開先の1行（本店=Opus 設計役 / 本店の worktree=Sonnet 実装役）。会話の一覧は持たない。 */
