@@ -16,7 +16,7 @@
 - チャット送信（v0.13.0）は、括弧付き貼り付けの後に `pasteSubmitDelayMs` 待ってから "\r" を送る: `server/hub.ts:41-42,370-374`。
 - `hub.checkInput`（`server/hub.ts:405-410`）は毎回 `claude agents --json` を取り直して判定する。idle かつ待ち無しのときだけ ok（`server/agents.ts:80-88`）。Claude が居なければ ok:true, hasClaude:false。
 - セッション名は 1〜40 文字（`server/sessions.ts:10,59-62`）。
-- 画面: `src/components/Routines/RoutinesPane.tsx`（55行）・`RoutineEditor.tsx`（28行）・`Routines.css`（13行）。部品は @sa/components の Badge/Button/Callout/EmptyState/Modal/Select/Stack/Textarea/TextField。CSS は var(--space-N) 等のトークンだけで、色の直書きは無い。文言は `src/locales/ja.json:193-` の `ac.routines.*`（言語ファイルは ja.json だけ。`src/i18n.ts:19`）。
+- 画面: `src/components/Routines/RoutinesPane.tsx`（55行）・`src/components/Routines/RoutineEditor.tsx`（28行）・`src/components/Routines/Routines.css`（13行）。部品は @sa/components の Badge/Button/Callout/EmptyState/Modal/Select/Stack/Textarea/TextField。CSS は var(--space-N) 等のトークンだけで、色の直書きは無い。文言は `src/locales/ja.json:193-` の `ac.routines.*`（言語ファイルは ja.json だけ。`src/i18n.ts:19`）。
 - routineId を使う試験: `tests/unit/routines.test.ts:128-132`、`tests/unit/session-restore.integration.test.ts:426-434`。
 - セッションの上限 16: `server/sessions.ts:9`。
 - 試験: `tests/unit/routines.test.ts`（151行、13件）。

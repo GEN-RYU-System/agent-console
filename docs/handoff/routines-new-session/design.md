@@ -97,7 +97,12 @@
 ## 12. 維持の仕組み
 - 単体試験 K1〜K12 が CI（両 OS）で毎回走る。
 - 正本は routines.json だけ（§5）。セッションの続きは open-sessions.json だけ。
+- 守り手: 単体試験 K1〜K12（CI 両 OS）と pr-body-guard。正本は routines.json だけ。
 - 外部事例: 使わない（PO の指示で外部サイトは参照しない。根拠は手元のコードと既存の設計だけ）。
+
+## 外部・過去事例の参照と我々への応用
+- 外部事例: 参照しない（PO 指示 2026-10-13）。
+- 過去事例（手元）: ①docs/handoff/v0.7.0-routines/design.md（routines.json だけが正本・取りこぼしは追い付かない）を引き継ぎ、L5・L7 だけ置き換える。②v0.13.0 のチャット送信（server/hub.ts の括弧付き貼り付け → pasteSubmitDelayMs 待つ → Enter）を、同じ順で定期実行の送信に応用する。
 
 ## 審査
 - 第1回（Fable）: REVISE。HIGH-1 routineId の試験2件の漏れ・HIGH-2 en.json は無い、MEDIUM-1 lastSlot の同期更新・MEDIUM-2 有効の読み直し・MEDIUM-3 終了の判定手段・MEDIUM-4 上限16、LOW-1〜4 → すべて本文に反映した。
