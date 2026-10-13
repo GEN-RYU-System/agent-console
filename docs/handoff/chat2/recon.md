@@ -20,7 +20,7 @@
 - 判定（サーバー応答）から Enter までの窓: send-check の応答 → paste → 2000ms → Enter。
 
 【事実】hook の記録（チャットの会話の元）
-- `server/activity.ts:318,321,386` のとおり chat の user/assistant は hook の記録（`rec.last_assistant_message` など）から作る。`server/*.ts` に `queued_command` の処理は無い（grep 0 件）。
+- `server/activity.ts:318,321,386` のとおり chat の user/assistant は hook の記録（`rec.last_assistant_message` など）から作る。server 配下の ts ファイルに `queued_command` の処理は無い（grep 0 件）。
 
 ## B. 公式文書（https://code.claude.com/docs/en/interactive-mode.md, permissions.md を curl。取得ファイルは本リポジトリ外 /tmp/cc2_*.md）
 
