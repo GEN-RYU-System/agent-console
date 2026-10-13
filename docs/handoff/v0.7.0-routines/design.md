@@ -1,5 +1,7 @@
 # v0.7.0 Routine Tasks — Design
 
+> L5「Claude UUID を控える」・L7「登録時に専用セッションを1つ開き、起動時に同じ会話を開き直す」は docs/handoff/routines-new-session/design.md で置き換え。
+
 ## SSOT and lifecycle
 
 `dataDir/routines.json` is the only persisted routine source (`server/routines.ts`). It contains identity, role/cwd/optional branch, `Asia/Tokyo`, weekdays/time, prompt, optional Claude UUID, timestamps and events. `open-sessions.json` excludes `Session.routineId` (`server/restore.ts`). The routine-to-live-session map, current Claude state and evaluated slots are memory-only.

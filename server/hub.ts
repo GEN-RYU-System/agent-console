@@ -379,6 +379,20 @@ export class Hub {
     }
   }
 
+  /**
+   * 定期実行が開いたセッションへ指示を送る。括弧付き貼り付けで本文 → pasteSubmitDelayMs 待つ → Enter。
+   * 待つ間にセッションが終わった・閉じ始めたときは Enter を送らず false。
+   */
+  async submitText(sessionId: string, text: string): Promise<boolean> {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.exited) return false;
+    this.sessions.write(session, `${BRACKETED_PASTE_START}${text}${BRACKETED_PASTE_END}`);
+    await new Promise<void>((resolve) => setTimeout(resolve, this.config.pasteSubmitDelayMs));
+    if (session.exited || this.sessions.get(sessionId) !== session || this.sessions.isClosing(sessionId)) return false;
+    this.sessions.write(session, "\r");
+    return true;
+  }
+
   /** 前回の status と比べ、区切りがあれば未読を増やして macOS 通知を出す。取得失敗の間は何も判定しない。 */
   private async detectBreaks(): Promise<void> {
     if (this.agents === null) return;

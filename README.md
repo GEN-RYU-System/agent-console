@@ -2,9 +2,9 @@
 
 Local console for running parallel Claude Code sessions (Orca-inspired, lightweight).
 
-## v0.7.0 Routine tasks
+## 定期実行（v0.7.0、v0.18.0 で「毎回新しいセッション」に変更）
 
-「定期実行」タブは、専用 Claude Code セッションに Asia/Tokyo の曜日・時刻で指示を一度だけ送ります。定義と実行履歴は `dataDir/routines.json` のみへ保存され、通常の復元リストには混ぜません。詳細は [routine design](docs/handoff/v0.7.0-routines/design.md) を参照してください。
+「定期実行」タブは、Asia/Tokyo の曜日・時刻になると新しい Claude Code セッションを1つ開き、Claude が入力待ちになったら登録した指示を一度だけ送ります（登録しただけではセッションは開きません）。開いたセッションはふつうのセッションと同じで、自動では閉じません（不要になったら自分で閉じてください）。定義・`lastSlot`・実行履歴（結果と開いたセッション名）は `dataDir/routines.json`（version 2）のみへ保存されます。設計は [routines-new-session](docs/handoff/routines-new-session/design.md)（v0.7.0 の [routine design](docs/handoff/v0.7.0-routines/design.md) の一部を置き換え）を参照してください。
 
 ## v0.9.0 セッションの様子の記録
 

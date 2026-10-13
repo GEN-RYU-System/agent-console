@@ -413,7 +413,7 @@ describe("AGENT_CONSOLE_RESTORE=off (self-diagnosis server must not touch the re
   });
 });
 
-describe("routine dedicated sessions are excluded from open-sessions.json", () => {
+describe("sessions opened by a routine are ordinary sessions in open-sessions.json", () => {
   let h: Harness;
   beforeAll(async () => {
     h = await startHarness({ recorder: true, closeGraceMs: CLOSE_GRACE_MS, extraRoles: EXTRA_ROLES });
@@ -423,13 +423,13 @@ describe("routine dedicated sessions are excluded from open-sessions.json", () =
     await h.close();
   });
 
-  it("records an ordinary session but not a routine session", async () => {
+  it("K8 records a session opened the way a routine opens it, like any other", async () => {
     const role = h.config.roles.find((r) => r.id === "restorable") as RoleConfig;
     const ordinary = await newSession(h, "restorable", "ordinary");
-    h.sessions.restore({ role, name: "routine", cwd: h.config.salesanchorRoot, branch: null, routineId: "r1" });
+    h.sessions.restore({ role, name: "routine", cwd: h.config.salesanchorRoot, branch: null });
     await h.recorder.sync();
     const names = readList(h).items.map((i) => i.name);
-    expect(names).toEqual(["ordinary"]);
+    expect(names).toEqual(["ordinary", "routine"]);
     expect(h.sessions.get(ordinary)).toBeDefined();
   });
 });

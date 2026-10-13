@@ -2,6 +2,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { Hub } from "../../server/hub.ts";
 import { ROUTINES_FILE, RoutineService, RoutineStore, jstSlot, type Routine } from "../../server/routines.ts";
 
 const routine = (overrides: Partial<Routine> = {}): Routine => ({ id: "r1", name: "daily", enabled: true, roleId: "echo", cwd: "/tmp", timeZone: "Asia/Tokyo", weekdays: [1], timeHHmm: "09:00", promptText: "hello", createdAt: 1, updatedAt: 1, events: [], ...overrides });
@@ -19,92 +20,160 @@ describe("routine persistence and clock", () => {
     await expect(store.save([routine({ name: "replacement" })])).rejects.toThrow();
     expect(await readFile(file, "utf8")).toBe("not json");
   });
-
-  it("evaluates a matching slot once and does not retry a failed fresh guard", async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), "ac-routine-"));
-    const session = { id: "s1", exited: false };
-    const sessions = { get: vi.fn(() => session), write: vi.fn(), onChange: vi.fn(), restore: vi.fn(), };
-    const hub = { checkInput: vi.fn().mockResolvedValue({ ok: false, reason: "claude is busy", hasClaude: true }) };
-    const now = () => new Date("2026-10-12T00:00:10.000Z"); // 09:00 JST Monday
-    const service = new RoutineService({} as never, sessions as never, hub as never, new RoutineStore(dir), now);
-    (service as unknown as { routines: Routine[] }).routines = [routine({ weekdays: [1], timeHHmm: "09:00" })];
-    (service as unknown as { live: Map<string, string> }).live.set("r1", "s1");
-    await service.tick(); await service.tick();
-    expect(hub.checkInput).toHaveBeenCalledTimes(1);
-    expect(sessions.write).not.toHaveBeenCalled();
-    expect((service.list()[0].events)).toEqual([expect.objectContaining({ outcome: "busy" })]);
-  });
-
-  it("writes prompt plus one CR only after a fresh idle guard", async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), "ac-routine-")); const session = { id: "s1", exited: false };
-    const sessions = { get: vi.fn(() => session), write: vi.fn(), onChange: vi.fn(), restore: vi.fn() };
-    const hub = { checkInput: vi.fn().mockResolvedValue({ ok: true, hasClaude: true }) };
-    const service = new RoutineService({} as never, sessions as never, hub as never, new RoutineStore(dir), () => new Date("2026-10-12T00:00:10.000Z"));
-    (service as unknown as { routines: Routine[] }).routines = [routine({ weekdays: [1], timeHHmm: "09:00", promptText: "go" })]; (service as unknown as { live: Map<string, string> }).live.set("r1", "s1");
-    await service.tick();
-    expect(hub.checkInput).toHaveBeenCalledWith("s1"); expect(sessions.write).toHaveBeenCalledWith(session, "go\r");
-  });
 });
 
-describe("routine dispatch boundaries", () => {
-  const setup = (verdict: object, routineOverrides: Partial<Routine> = {}, session: object | null = { id: "s1", exited: false }) => {
-    const sessions = { get: vi.fn(() => session ?? undefined),write: vi.fn(), onChange: vi.fn(), restore: vi.fn() };
-    const hub = { checkInput: vi.fn().mockResolvedValue(verdict) };
-    return mkdtemp(path.join(os.tmpdir(), "ac-routine-")).then((dir) => {
-      const service = new RoutineService({} as never, sessions as never, hub as never, new RoutineStore(dir), () => new Date("2026-10-12T00:00:10.000Z"));
-      (service as unknown as { routines: Routine[] }).routines = [routine(routineOverrides)];
-      (service as unknown as { live: Map<string, string> }).live.set("r1", "s1");
-      return { service, sessions, hub, dir };
-    });
+type Verdict = { ok: boolean; hasClaude: boolean; reason?: string };
+const NOW = () => new Date("2026-10-12T00:00:10.000Z"); // 09:00 JST Monday
+const TIMING = { pollMs: 5, timeoutMs: 80 };
+const cfg = { salesanchorRoot: os.tmpdir(), roles: [{ id: "echo", needsWorktree: false, command: ["echo"] }], pasteSubmitDelayMs: 0 };
+
+/** hub.submitText は本物（Hub.prototype）を、偽の sessions/config で動かす */
+const makeHub = (sessions: unknown, verdicts: Verdict[] | (() => Verdict)) => {
+  const queue = Array.isArray(verdicts) ? [...verdicts] : null;
+  const checkInput = vi.fn(async () => (queue ? (queue.length > 1 ? queue.shift() : queue[0]) : (verdicts as () => Verdict)()));
+  const hub = { checkInput, sessions, config: cfg, submitText: (id: string, text: string) => Hub.prototype.submitText.call(hub, id, text) };
+  return hub;
+};
+
+const setup = async (opts: { verdicts?: Verdict[] | (() => Verdict); routines?: Partial<Routine>[]; capacity?: boolean; saveFails?: boolean } = {}) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "ac-routine-"));
+  const created: { id: string; exited: boolean }[] = [];
+  const sessions = {
+    get: vi.fn((id: string) => created.find((s) => s.id === id)),
+    write: vi.fn(),
+    onChange: vi.fn(),
+    isClosing: vi.fn(() => false),
+    hasCapacity: vi.fn(() => opts.capacity ?? true),
+    restore: vi.fn(() => { const s = { id: `s${created.length + 1}`, exited: false }; created.push(s); return s; }),
+    close: vi.fn().mockResolvedValue(undefined),
   };
+  const hub = makeHub(sessions, opts.verdicts ?? [{ ok: true, hasClaude: true }]);
+  const store = new RoutineStore(dir);
+  if (opts.saveFails) vi.spyOn(store, "save").mockRejectedValue(new Error("disk"));
+  const service = new RoutineService(cfg as never, sessions as never, hub as never, store, NOW, TIMING);
+  (service as unknown as { routines: Routine[] }).routines = (opts.routines ?? [{}]).map((o, i) => routine({ id: `r${i + 1}`, cwd: os.tmpdir(), ...o }));
+  return { service, sessions, hub, dir, store, created };
+};
+const run = async (service: RoutineService) => { await service.tick(); await service.settled(); };
+const outcomes = (service: RoutineService, i = 0) => service.list()[i].events.map((e) => e.outcome);
 
-  it("does not write into a terminal where Claude is not running", async () => {
-    const { service, sessions } = await setup({ ok: true, hasClaude: false });
-    await service.tick();
-    expect(sessions.write).not.toHaveBeenCalled();
-    expect(service.list()[0].events).toEqual([expect.objectContaining({ outcome: "missing" })]);
+describe("routine dispatch opens a new session", () => {
+  it("K2 opens one new session without resuming at the slot", async () => {
+    const { service, sessions } = await setup();
+    await run(service);
+    expect(sessions.restore).toHaveBeenCalledTimes(1);
+    const arg = (sessions.restore.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+    expect(arg.claudeSessionId).toBeUndefined();
+    expect(arg.routineId).toBeUndefined();
+    expect(arg.name).toBe("daily 10/12 09:00");
   });
 
-  it.each([
-    ["claude is waiting for input", "waiting"],
-    ["claude state is unknown", "unknown"],
-    ["session is stopped", "stopped"],
-    ["session not found", "missing"],
-  ])("records %s as %s without writing", async (reason, outcome) => {
-    const { service, sessions } = await setup({ ok: false, reason, hasClaude: false });
-    await service.tick();
-    expect(sessions.write).not.toHaveBeenCalled();
-    expect(service.list()[0].events.map((e) => e.outcome)).toEqual([outcome]);
+  it("cuts the session name on a character boundary and keeps it within 40 units", async () => {
+    const { service, sessions } = await setup({ routines: [{ name: "😀".repeat(40) }] });
+    await run(service);
+    const name = (sessions.restore.mock.calls[0] as unknown as [{ name: string }])[0].name;
+    expect(name.length).toBeLessThanOrEqual(40);
+    expect(name).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/);
   });
 
-  it("records missing when no dedicated session is live", async () => {
-    const { service, hub } = await setup({ ok: true, hasClaude: true }, {}, null);
-    await service.tick();
-    expect(hub.checkInput).not.toHaveBeenCalled();
-    expect(service.list()[0].events.map((e) => e.outcome)).toEqual(["missing"]);
+  it("K3 sends once with bracketed paste, then CR, after the second ready check", async () => {
+    const { service, sessions, hub } = await setup({ verdicts: [{ ok: false, hasClaude: false }, { ok: true, hasClaude: true }], routines: [{ promptText: "go" }] });
+    await run(service);
+    expect(hub.checkInput).toHaveBeenCalledTimes(2);
+    expect(sessions.write.mock.calls.map((c) => c[1])).toEqual(["\u001b[200~go\u001b[201~", "\r"]);
+    expect(outcomes(service)).toEqual(["sent"]);
+    expect(service.list()[0].events[0].sessionName).toBe("daily 10/12 09:00");
   });
 
-  it("records failed when the guard throws and does not retry", async () => {
-    const { service, hub, sessions } = await setup({});
-    hub.checkInput.mockRejectedValue(new Error("boom"));
-    await service.tick(); await service.tick();
+  it("K4 does not send when the session never becomes ready, and keeps the session", async () => {
+    const { service, sessions } = await setup({ verdicts: [{ ok: false, hasClaude: true, reason: "claude is busy" }] });
+    await run(service);
     expect(sessions.write).not.toHaveBeenCalled();
-    expect(service.list()[0].events.map((e) => e.outcome)).toEqual(["failed"]);
+    expect(sessions.close).not.toHaveBeenCalled();
+    expect(outcomes(service)).toEqual(["not_ready"]);
+  });
+
+  it("records failed when the session exits while waiting", async () => {
+    const { service, sessions, created } = await setup({ verdicts: () => { created[0].exited = true; return { ok: false, hasClaude: false, reason: "session is stopped" }; } });
+    await run(service);
+    expect(sessions.write).not.toHaveBeenCalled();
+    expect(outcomes(service)).toEqual(["failed"]);
+  });
+
+  it("K5 does not run the same slot again after a restart", async () => {
+    const { service, dir } = await setup();
+    await run(service);
+    const second = await setup();
+    const reloaded = new RoutineService(cfg as never, second.sessions as never, second.hub as never, new RoutineStore(dir), NOW, TIMING);
+    await reloaded.start(); reloaded.stop();
+    await run(reloaded);
+    expect(second.sessions.restore).not.toHaveBeenCalled();
+  });
+
+  it("K6 does not open a session when lastSlot cannot be saved, and does not retry the slot", async () => {
+    const { service, sessions } = await setup({ saveFails: true });
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await run(service); await run(service);
+    err.mockRestore();
+    expect(sessions.restore).not.toHaveBeenCalled();
+  });
+
+  it("K7 records full when there is no capacity and cwd_invalid when the cwd is gone", async () => {
+    const full = await setup({ capacity: false });
+    await run(full.service);
+    expect(full.sessions.restore).not.toHaveBeenCalled();
+    expect(outcomes(full.service)).toEqual(["full"]);
+    const bad = await setup({ routines: [{ cwd: "/nonexistent-ac-dir" }] });
+    await run(bad.service);
+    expect(bad.sessions.restore).not.toHaveBeenCalled();
+    expect(outcomes(bad.service)).toEqual(["cwd_invalid"]);
+  });
+
+  it("K10 a waiting routine does not block another routine in the same minute", async () => {
+    const { service, sessions } = await setup({ verdicts: [{ ok: false, hasClaude: true }], routines: [{}, {}] });
+    await service.tick();
+    await vi.waitFor(() => expect(sessions.restore).toHaveBeenCalledTimes(2));
+    await service.settled();
+  });
+
+  it("K11 does not send when the routine is disabled while waiting", async () => {
+    const { service, sessions } = await setup({ verdicts: [{ ok: false, hasClaude: false }, { ok: true, hasClaude: true }] });
+    await service.tick();
+    await service.setEnabled("r1", false);
+    await service.settled();
+    expect(sessions.write).not.toHaveBeenCalled();
+    expect(outcomes(service)).toEqual(["not_ready"]);
   });
 
   it("skips disabled routines and non-matching weekday or time, and does not catch up", async () => {
-    const { service, hub } = await setup({ ok: true, hasClaude: true }, { enabled: false });
-    await service.tick();
-    (service as unknown as { routines: Routine[] }).routines = [routine({ weekdays: [2] }), routine({ id: "r2", timeHHmm: "08:59" })];
-    await service.tick();
-    expect(hub.checkInput).not.toHaveBeenCalled();
+    const { service, sessions } = await setup({ routines: [{ enabled: false }, { id: "r2", weekdays: [2] }, { id: "r3", timeHHmm: "08:59" }] });
+    await run(service);
+    expect(sessions.restore).not.toHaveBeenCalled();
   });
 
-  it("persists the single event to routines.json", async () => {
-    const { service, dir } = await setup({ ok: true, hasClaude: true });
-    await service.tick();
+  it("persists lastSlot and the event with its session name to routines.json", async () => {
+    const { service, dir } = await setup();
+    await run(service);
     const saved = JSON.parse(await readFile(path.join(dir, ROUTINES_FILE), "utf8"));
-    expect(saved.items[0].events).toEqual([expect.objectContaining({ outcome: "sent", slot: "2026-10-12T09:00+09:00" })]);
+    expect(saved.version).toBe(2);
+    expect(saved.items[0].lastSlot).toBe("2026-10-12T09:00+09:00");
+    expect(saved.items[0].events).toEqual([expect.objectContaining({ outcome: "sent", slot: "2026-10-12T09:00+09:00", sessionName: "daily 10/12 09:00" })]);
+  });
+});
+
+describe("routines.json version 1", () => {
+  it("K9 reads a v1 file (claudeSessionId, old outcomes) and rewrites it as v2", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "ac-routine-"));
+    const v1 = { ...routine(), claudeSessionId: "11111111-1111-4111-8111-111111111111", events: [{ at: 1, slot: "s", outcome: "busy" }] };
+    await writeFile(path.join(dir, ROUTINES_FILE), JSON.stringify({ version: 1, items: [v1] }));
+    const store = new RoutineStore(dir);
+    const items = await store.list();
+    expect(items[0].events[0].outcome).toBe("busy");
+    expect("claudeSessionId" in items[0]).toBe(false);
+    await store.save(items);
+    const saved = JSON.parse(await readFile(path.join(dir, ROUTINES_FILE), "utf8"));
+    expect(saved.version).toBe(2);
+    expect(saved.items[0].claudeSessionId).toBeUndefined();
   });
 });
 
@@ -125,20 +194,20 @@ describe("routine registration", () => {
     expect(sessions.restore).not.toHaveBeenCalled();
   });
 
-  it("does not leave routine sessions in open-sessions.json (routineId is passed on restore)", async () => {
+  it("K1 creating a routine does not open a session", async () => {
     const { service, sessions } = await make();
-    (service as unknown as { routines: Routine[] }).routines = [routine()];
-    await (service as unknown as { restore: () => Promise<void> }).restore();
-    expect(sessions.restore).toHaveBeenCalledWith(expect.objectContaining({ routineId: "r1", cwd: "/tmp", branch: null }));
+    (service as unknown as { validate: (i: unknown) => Promise<unknown> }).validate = async (i) => i;
+    const created = await service.create(input);
+    expect(service.list()).toEqual([expect.objectContaining({ id: created.id })]);
+    expect(sessions.restore).not.toHaveBeenCalled();
   });
 
   it("caps stored events", async () => {
     const { service } = await make();
     const old = Array.from({ length: 150 }, (_, i) => ({ at: i, slot: `s${i}`, outcome: "busy" as const }));
     (service as unknown as { routines: Routine[] }).routines = [routine({ events: old })];
-    (service as unknown as { live: Map<string, string> }).live.set("r1", "s1");
     (service as unknown as { now: () => Date }).now = () => new Date("2026-10-12T00:00:10.000Z");
-    await service.tick();
+    await service.tick(); await service.settled();
     expect(service.list()[0].events).toHaveLength(100);
   });
 
