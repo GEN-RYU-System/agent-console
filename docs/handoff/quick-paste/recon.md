@@ -9,7 +9,7 @@
 - `handleSendPrompt`（`src/pages/ConsolePage.tsx:183-195`）は `checkQuickPromptSend` でサーバーに状態を取り直させ、返った本文を `terminalRef.current?.pasteAndEnter(checkedId, text)`（:191）で入れる。false なら `ac.quick.switched` を出す。
 - `pasteAndEnter` は `src/components/TerminalPane/TerminalPane.tsx:18-25` で型を宣言、`:69-75` で実装: 表示中の端末が確認したセッションと違えば false、同じなら `term.paste(text)` の後に `term.input("\r", true)` を送る。**この `\r` が「自動で送信」の原因。**
 - `pasteAndEnter` の呼び出し元は `src/pages/ConsolePage.tsx:191` の 1 か所だけ（試験の mock を除く）。
-- `pasteSubmitAfter`（`TerminalPane.tsx:76-85`）は変更タブ・部品タブ・チャットが使う別の口で、今回は触らない。
+- `pasteSubmitAfter`（`src/components/TerminalPane/TerminalPane.tsx:76-85`）は変更タブ・部品タブ・チャットが使う別の口で、今回は触らない。
 - チャットの入力欄の上のバーは、すでに `onPick`（入力欄に入れるだけ）で動く（`src/components/ChatPane/ChatPane.tsx:213`）。
 - サーバーの `POST /api/sessions/:id/send-check`（`server/http.ts:276`）は本文を返すだけで、端末には書かない。作業中・確認の待ちは 409。
 - 試験: `src/components/TerminalPane/TerminalPane.test.tsx:84-110`（pasteAndEnter）、`src/pages/ConsolePage.test.tsx:28,96-98,137,320,337,349,423`（pasteAndEnter の mock）、`tests/e2e/console.spec.ts:634-653`（バーを押すと端末に echo-quick-prompt-v2 が出る）。
