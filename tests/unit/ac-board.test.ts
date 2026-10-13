@@ -66,6 +66,7 @@ describe("K5: validateBoard（入力の検査）", () => {
   it("K2 tasks の型と上限: 配列・title は空にできない・status は todo/doing/done・余分な鍵は不可。100 件×200 字ちょうどは通り、超えると拒否", () => {
     expect(BOARD_LIMITS).toMatchObject({ taskItems: 100, taskChars: 200 });
     expect(failReason({ ...VALID, tasks: "x" })).toContain("tasks");
+    expect(failReason({ ...VALID, tasks: null })).toContain("tasks は配列にしてください");
     expect(failReason({ ...VALID, tasks: ["x"] })).toContain("tasks[0]");
     expect(failReason({ ...VALID, tasks: [{ title: "", status: "todo" }] })).toContain("tasks[0].title");
     expect(failReason({ ...VALID, tasks: [{ title: "a", status: "finished" }] })).toContain("tasks[0].status");

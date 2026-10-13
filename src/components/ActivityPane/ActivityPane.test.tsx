@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "../../i18n";
@@ -191,7 +191,7 @@ describe("K3 / K4 / K5 / K6 / K8: タスク", () => {
     expect(done.tagName).toBe("DETAILS");
     expect((done as HTMLDetailsElement).open).toBe(false);
     expect(screen.getByTestId("board-tasks-group-doing").tagName).not.toBe("DETAILS");
-    (done as HTMLDetailsElement).open = true;
+    fireEvent.click(within(done).getByText("完了", { selector: "summary *, summary" }));
     expect((done as HTMLDetailsElement).open).toBe(true);
   });
 

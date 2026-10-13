@@ -79,7 +79,7 @@ export function validateBoard(input) {
   if (!isObject(input)) return fail("入力は JSON のオブジェクトにしてください");
   const keyIssue = keyProblem(input, "", TOP_KEYS, TOP_HINT, OPTIONAL_TOP_KEYS);
   if (keyIssue !== null) return fail(keyIssue);
-  const rawTasks = input.tasks ?? [];
+  const rawTasks = "tasks" in input ? input.tasks : [];
   const statusItem = (limitChars) => (v, label) =>
     objectItemProblem(v, label, ["title", "status"], (key, field, fieldLabel) => {
       if (key === "title") return stringProblem(field, fieldLabel, limitChars);

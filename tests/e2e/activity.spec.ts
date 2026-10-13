@@ -235,6 +235,7 @@ test("K3/K6/K7: 命令（dataDir/bin/ac-board.mjs）で書いた計画が、5 �
   await expect(road.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "100");
   await expect(road).not.toContainText("Done");
   await expect(pane.getByTestId("board-kpi")).not.toContainText("試験の数");
+  await expect(pane.getByTestId("board-tasks-empty")).toBeVisible();
 
   // 別のセッションには出ない（ボードは会話の番号ごと）
   const otherName = `board-other-${Date.now().toString(36)}`;

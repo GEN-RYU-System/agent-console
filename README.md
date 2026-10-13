@@ -8,7 +8,7 @@ Local console for running parallel Claude Code sessions (Orca-inspired, lightwei
 
 ## v0.9.0 セッションの様子の記録
 
-左でセッションを選ぶと、右の欄の「作戦ボード」（v0.11.0 までは「このセッション」）に、動いている担当・計画（KGI・KPI・ロードマップ。v0.12.0 から）・タスク（v0.14.0 から）・最近の入力が出ます。v0.14.0 で「今の状態」の欄はなくなりました（左の一覧のバッジが正本）（台帳は隣の「台帳」タブ）。v0.12.0 で「終わった担当」と「やること」の欄はなくなりました。Claude Code の hook が `dataDir/activity/events-YYYYMMDD.jsonl`（UTC の日付、権限 600）に 1 行ずつ追記した記録を、アプリが読んでまとめます。設計は [design](docs/handoff/v0.8.0-activity/design.md)、工程0の実測は [step0](docs/handoff/v0.8.0-activity/step0.md)。
+左でセッションを選ぶと、右の欄の「作戦ボード」（v0.11.0 までは「このセッション」）に、動いている担当・計画（KGI・KPI・ロードマップ。v0.12.0 から）・タスク（v0.14.0 から）・最近の入力が出ます（台帳は隣の「台帳」タブ）。v0.14.0 で「今の状態」の欄はなくなりました（左の一覧のバッジが正本）。v0.12.0 で「終わった担当」と「やること」の欄はなくなりました。Claude Code の hook が `dataDir/activity/events-YYYYMMDD.jsonl`（UTC の日付、権限 600）に 1 行ずつ追記した記録を、アプリが読んでまとめます。設計は [design](docs/handoff/v0.8.0-activity/design.md)、工程0の実測は [step0](docs/handoff/v0.8.0-activity/step0.md)。
 
 ### 入れる（1 回だけ・実行する人が自分で）
 
