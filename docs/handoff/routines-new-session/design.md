@@ -14,7 +14,7 @@
 - 対象外: 削除の機能、前回の会話を自動で閉じること、取りこぼした回の追い付き、権限モードの引数を足すこと、役割の command の変更、チャット送信（hub の flushChatQueueOnce）の変更。
 
 ## 3. 変更の前後
-| 項目 | 前（v0.16.0） | 後 |
+| 項目 | 前（v0.17.0） | 後 |
 |---|---|---|
 | 登録したとき | 専用セッションを開く（routines.ts:68,71） | 開かない。routines.json に保存するだけ |
 | アプリ起動時 | 専用セッションを同じ会話で開き直す（routines.ts:54,72） | 定期実行のためには何も開かない（開いたセッションは、ふつうの復元で開き直る） |
@@ -86,7 +86,7 @@
 ## 10. 実装の約束（Sonnet 向け）
 - 作業場所: ~/agent-console-wt/routines-new-session（ブランチ release/routines-new-session、origin/main f897ff6 起点）。
 - 試験を先に書く（K1〜K12）。試験は `env -u AC_RESUME_ID` を付けて実行する。
-- 版は package.json を次の空き番号に上げる（この時点の予定は 0.17.0（#31 が 0.16.0 を使用済み）。マージ順でずれたら直す）。CHANGELOG に1行、README の定期実行の説明を直す。
+- 版は package.json を次の空き番号に上げる（この時点の予定は 0.18.0（#31 が 0.16.0、#33 が 0.17.0 を使用済み）。マージ順でずれたら直す）。CHANGELOG に1行、README の定期実行の説明を直す。
 - PR は GEN-RYU-System/agent-console へ、本文は pr-body-guard の書式（PR #30 が見本）。
 - この設計に無いこと・合わないことが出たら、止まって報告する（DONE / BLOCKED: / NEEDS_DECISION:）。
 

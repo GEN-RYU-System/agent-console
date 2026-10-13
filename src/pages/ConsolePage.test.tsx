@@ -26,7 +26,7 @@ const fetchState = vi.fn();
 const logout = vi.fn();
 const markRead = vi.fn();
 const checkQuickPromptSend = vi.fn();
-const pasteAndEnter = vi.fn();
+const pasteOnly = vi.fn();
 const fetchQuickPrompts = vi.fn();
 const renameSession = vi.fn();
 const fetchResumeTargets = vi.fn();
@@ -96,9 +96,9 @@ vi.mock("../components/TerminalPane/TerminalPane", async () => {
       useImperativeHandle(
         ref,
         () => ({
-          pasteAndEnter: (id: string, t: string) => {
+          pasteOnly: (id: string, t: string) => {
             if (id !== props.sessionId) return false;
-            pasteAndEnter(t);
+            pasteOnly(t);
             return true;
           },
           pasteSubmitAfter: async () => "notPasted" as const,
@@ -137,7 +137,7 @@ beforeEach(() => {
   markRead.mockResolvedValue({ read: true });
   checkQuickPromptSend.mockReset();
   checkQuickPromptSend.mockResolvedValue({ text: "run tests" });
-  pasteAndEnter.mockReset();
+  pasteOnly.mockReset();
   renameSession.mockReset();
   fetchResumeTargets.mockReset();
   fetchResumeTargets.mockResolvedValue({ items: [{ kind: "worktree", path: "/wt/release-a", branch: "release/a", roleId: "sonnet-impl" }] });
@@ -320,7 +320,7 @@ describe("ConsolePage daily use", () => {
     await waitFor(() => expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "テスト実行" }));
     await waitFor(() => expect(checkQuickPromptSend).toHaveBeenCalledWith("s1", "p1"));
-    await waitFor(() => expect(pasteAndEnter).toHaveBeenCalledWith("run tests"));
+    await waitFor(() => expect(pasteOnly).toHaveBeenCalledWith("run tests"));
   });
 
   it("discards the text and says so when the selection changed while the server was checking", async () => {
@@ -337,7 +337,7 @@ describe("ConsolePage daily use", () => {
     fireEvent.click(screen.getByText("other"));
     release({ text: "run tests" });
     expect((await screen.findByRole("alert")).textContent).toContain("切り替わった");
-    expect(pasteAndEnter).not.toHaveBeenCalled();
+    expect(pasteOnly).not.toHaveBeenCalled();
   });
 
   it("does not paste and shows the server's reason when the state check is refused (409)", async () => {
@@ -349,7 +349,7 @@ describe("ConsolePage daily use", () => {
     await waitFor(() => expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "テスト実行" }));
     expect((await screen.findByRole("alert")).textContent).toContain("claude is busy");
-    expect(pasteAndEnter).not.toHaveBeenCalled();
+    expect(pasteOnly).not.toHaveBeenCalled();
   });
 
   it("disables the quick prompt buttons while input is not allowed", async () => {
@@ -423,7 +423,7 @@ describe("ConsolePage チャット tab (v0.11.0 K1, K6, K7)", () => {
     fireEvent.click(within(bar).getByRole("button", { name: "テスト実行" }));
     expect((screen.getByTestId("chat-input") as HTMLTextAreaElement).value).toBe("run tests");
     expect(checkQuickPromptSend).not.toHaveBeenCalled();
-    expect(pasteAndEnter).not.toHaveBeenCalled();
+    expect(pasteOnly).not.toHaveBeenCalled();
   });
 
   it("K6 確認の待ち（waiting）のとき、「端末を開く」で端末タブへ移る", async () => {

@@ -276,7 +276,7 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
     sendJson(res, 200, { mode: await hub.requestRename(id, name) });
     return true;
   }
-  // send-check: サーバーは端末へ書かない。入れてよい状態なら本文を返し、画面が xterm の paste() で入れてから Enter を送る
+  // send-check: サーバーは端末へ書かない。入れてよい状態なら本文を返し、画面が xterm の paste() で入れるだけ。Enter は人が端末で押す
   const prompt = await quickPrompts.get(str(jsonBody(await readJsonBody(req)).promptId));
   const verdict = await hub.checkInput(id);
   if (!verdict.ok) throw new SessionConflictError(verdict.reason ?? "cannot input now");
