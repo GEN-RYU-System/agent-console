@@ -88,7 +88,7 @@ suite("tmux host (real tmux, dedicated socket)", () => {
     for (const b of before) expect(String(b.pid)).toBe(paneOf(socket, b.id)); // K9
     await waitFor(() => ids.every((id) => textOf(h1, id).includes("READY")));
     const dir = h1.dir;
-    await sleep(300); // 保存リストの書き込み
+    await h1.recorder.sync(); // 保存リストの書き込み
     await stopServer(h1);
     for (const b of before) expect(alive(b.pid)).toBe(true);
 
@@ -346,7 +346,7 @@ suite("tmux host (real tmux, dedicated socket)", () => {
     const h1 = await start(socket);
     const id = await mk(h1, "paint", "paint");
     expect(await waitFor(() => textOf(h1, id).includes("plain line"))).toBe(true);
-    await sleep(300);
+    await h1.recorder.sync();
     const dir = h1.dir;
     await stopServer(h1);
     const h2 = await start(socket, { dir });
