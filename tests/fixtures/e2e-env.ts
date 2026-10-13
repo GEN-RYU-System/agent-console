@@ -115,6 +115,8 @@ export function prepareE2eEnv(): void {
     ledgerPollMs: 60000,
     ringBufferBytes: 1048576,
     dataDir,
+    // 本番の tmux サーバー（-L agent-console）に試験のセッションを作らない
+    terminalHost: "direct",
     notify: { macos: true, osascriptBin },
     ghBin,
     prPollMs: 1000,
