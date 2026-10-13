@@ -31,7 +31,7 @@
   - 出力「Opening browser to sign in」「If the browser didn't open, visit: https://claude.com/cai/oauth/authorize?...」「Paste code here if prompted >」
 - ログインの共有（https://code.claude.com/docs/en/errors 「Not logged in」）: 「If you sign in with your claude.ai account in another Claude Code window that uses the same configuration directory, an interactive session showing this message starts using that login on its own.」
 - 複数会話の共有（https://code.claude.com/docs/en/troubleshoot-install）: 「Parallel sessions on one machine share a saved login and coordinate its renewal」
-- 2 アカウントを同時に保つ公式の方法は設定フォルダを分けること（https://code.claude.com/docs/en/authentication 「give each account its own configuration directory」）。ただし `CLAUDE_CONFIG_DIR` を変えると「every `~/.claude` path on this page lives under that directory instead」（https://code.claude.com/docs/en/claude-directory）＝ CLAUDE.md・rules・agents・skills・settings.json（hooks）・記憶・履歴がすべて別になる。仮フォルダの実測でも `.claude.json` が新フォルダ側に作られた。
+- 2 アカウントを同時に保つ公式の方法は設定フォルダを分けること（https://code.claude.com/docs/en/authentication 「give each account its own configuration directory」）。ただし `CLAUDE_CONFIG_DIR` を変えると「every `~/.claude` path on this page lives under that directory instead」（https://code.claude.com/docs/en/claude-directory）＝ CLAUDE.md・rules・agents・skills・settings.json（hooks）・記憶・履歴がすべて別になる。仮フォルダの実測でも、ログイン設定のファイル（ホームの .claude.json にあたるもの）が新フォルダ側に作られた。
 - 今の ~/.claude にあるもの: settings.json の hooks 8 イベント・個別 hook 23 本、agents 7、rules 2、skills 2、plugins 10、MCP（~/.claude.json）2。
 - 長期トークン（`claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN`）: 「can only make model requests, so it can't establish Remote Control sessions or fetch claude.ai connectors」。保存はしない（利用者が環境変数に置く）。
 - statusLine に渡る JSON にはアカウントのキーは無い（https://code.claude.com/docs/en/statusline）。
