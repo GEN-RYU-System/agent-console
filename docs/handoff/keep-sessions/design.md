@@ -379,3 +379,27 @@
   - 戻す先の版の dist-server に、server/terminal-host/ の tmux の実装ファイルがあるかで判定する。
   - ファイル名は実装で決め、単体試験で固定する。
 - #6 held が既にある時: 上書きしない。今のリストと合わせてから held に書く。K14 に1件足す。
+
+## 12. コード審査（Fable、PR #35 HEAD 17938ca、REVISE）を受けた決め（Opus、2026-10-14）
+審査記録: /tmp/CC報告ファイル/keep-sessions/review-code/review.md。設計 §3・§7・§8 の範囲での補い。PO 承認済みの目的・受入条件は変えない。
+- R1（審査 #1・#10、高）pid が 0 以下の端末に対してプロセスの木を辿らない。
+  - server/process-tree.ts の descendantPids は root <= 0 なら空の集合を返す。
+  - closeRunning は pid <= 0 のとき SIGKILL の走査をしない。kill-session → has-session の結果だけで判断する。gone なら閉じる。unreachable のままなら何も殺さず、今の「止まらない」エラーとログで返す（何も消さない側に倒す）。
+  - hub・memory も同じ関数を通るので、pid 0 の端末は「子孫なし」になる。
+  - 単体試験: pid 0 の端末を閉じても process.kill が呼ばれないこと（spy）。descendantPids(0, …) が空であること。
+- R2（審査 #2、中）先入れの4本目の %end を受けた同じ同期処理の中で replaying を下げ、同じ塊の後ろの %output を捨てない。単体試験: 1つの data に「4本目の %end の直後に %output」を入れ、出力が落ちないこと。
+- R3（審査 #3、中）§3-2 の「応答を番号で対応させる」を実装する。送った順の期待番号と %begin の番号を照合し、合わなければ warn ログを出して捨てる。番号は attach ごとに数え直す（control client ごとの通し番号）。単体試験を足す。
+- R4（審査 #4、中）
+  - K17 に、xterm-headless の画面（文字と前景・背景の色）と capture-pane -p -e、pane のモードの比較を足す。
+  - e2e を少なくとも1本、terminalHost "tmux" と試験用ソケット ac-test-<pid>-<乱数> で通す。他の e2e は direct のままでよい（本番ソケットに触れないための既定）。
+- R5（審査 #5・#6、中・低）所要時間の判定は消さずに、環境変数 AC_TMUX_TIMING=1 のときだけ §7 の閾値（10MB 1秒、12件のつなぎ直し 1秒、K6 Esc 中央値 20ms）で判定する。CI に、tmux の統合試験だけをファイル並列なしで AC_TMUX_TIMING=1 で走らせる段を1つ足す。全試験の並列実行では閾値を判定せず、ログだけを出す（並列時の値は参考値）。
+- R6（審査 #7、低）K13（routine で1件開いて再起動しても続く）を1本足す。K14 は「切戻しのあとで has-session が alive で、new-session が呼ばれない」ことを、試験用ソケットの本物の tmux で1本確かめる。
+- R7（審査 #8・#9、低）
+  - 使っていない send() と冗長な式を消す。
+  - 再試行回数は、先入れが終わった時に 0 へ戻す（attach 直後ではない）。
+  - 送れずに溜めた入力には 64KB の上限を置く。超えたら古い物を捨てずに新しい入力を断り、warn ログを出す。
+- R8（設計に無い振る舞い2件。受け入れる）
+  - tmux.conf が無い時に tmuxMissing の案内を出して direct で開く。
+  - new-session が失敗した時に warn ログを出して direct で開く。
+  - どちらも会話は開けるが、更新で保たれない。後者でも tmuxMissing と同じ案内を出す（黙って続けない）。
+- 審査記録 #11 は記載のみで、変えない。
