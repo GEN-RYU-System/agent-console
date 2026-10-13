@@ -12,7 +12,7 @@ interface Props {
   prompts: QuickPrompt[];
   /** 選択中のセッションが送れる状態か（無い・停止中は false）。onPick を渡したときは使わない */
   canSend?: boolean;
-  /** 端末の上のバー: 押したときに、その指示を選択中の端末へ送る（id を渡す） */
+  /** 端末の上のバー: 押したときに、その指示を選択中の端末の入力欄に入れる（id を渡す） */
   onSend?: (promptId: string) => void;
   /** チャットのバー: 押したときに、本文を渡す（入力欄に入れるだけ。送らないので、送れない状態でも押せる） */
   onPick?: (text: string) => void;
@@ -23,7 +23,7 @@ interface Props {
 
 /**
  * 「よく使う指示」のバー（1 行）。常に表示にした指示だけを並べ、全件は左のボタンで開く一覧から使う。
- * 端末の上では、人が押したときだけ選択中の端末へ送る（onSend）。チャットでは、押すと本文を入力欄に入れるだけ（onPick）。部品は 1 つ。
+ * 端末の上では、人が押したときだけ選択中の端末の入力欄に入れる（onSend。Enter は送らない）。チャットでは、押すと本文を入力欄に入れるだけ（onPick）。部品は 1 つ。
  */
 export function QuickPromptBar({ prompts, canSend = false, onSend, onPick, onEdit, onChanged }: Props) {
   const { t } = useTranslation();

@@ -616,7 +616,7 @@ test("段階2 K2: /rename を送っても Claude 側の名前が 10 秒変わら
   await expect(page.getByText("名前がまだ反映されていません")).toBeVisible({ timeout: 15000 });
 });
 
-test("段階2 K3: よく使う指示を登録・編集・削除でき、ボタン 1 回で選択中の端末に送られ、再読込後も残る（保存は 1 ファイル・権限 600）", async ({ page }) => {
+test("段階2 K3: よく使う指示を登録・編集・削除でき、ボタン 1 回で選択中の端末の入力欄に入り（Enter は送らない）、再読込後も残る（保存は 1 ファイル・権限 600）", async ({ page }) => {
   const id = await apiCreate("quick-target", "e2e-plain");
   await openPaired(page);
   await page.getByRole("button", { name: "指示を編集", exact: true }).click();
@@ -650,7 +650,15 @@ test("段階2 K3: よく使う指示を登録・編集・削除でき、ボタ�
   writeFileSync(STATUS_FILE, "idle");
   await expect(rowOf(page, id).getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: STATE_DEADLINE_MS });
   await bar.getByRole("button", { name: "テスト実行", exact: true }).click();
-  await expect(page.getByTestId("terminal")).toContainText("echo-quick-prompt-v2");
+  // 貼るだけなら端末の反響で 1 回だけ出る。Enter は送られていない
+  const countEcho = (): Promise<number> => page.getByTestId("terminal").innerText().then((s) => (s.match(/echo-quick-prompt-v2/g) ?? []).length);
+  await expect.poll(countEcho).toBe(1);
+  await page.waitForTimeout(1000);
+  expect(await countEcho()).toBe(1);
+  await expect(page.locator(".xterm-helper-textarea")).toBeFocused();
+  // 人が端末で Enter を押すと、行が渡されて素通しの偽シェルが別の行に書き戻す
+  await page.keyboard.press("Enter");
+  await expect.poll(countEcho).toBe(2);
 
   const file = path.join(DATA_DIR, "quick-prompts.json");
   // 保存先は 6 つだけ（よく使う指示・v0.3.8 の復元リスト・v0.6.0 の拡張の合言葉と拡張のフォルダ・v0.9.0 の記録用 hook の本体の写し hooks/・v0.12.0 の作戦ボードの命令の写し bin/）。
@@ -692,7 +700,7 @@ test("v0.3.4 K4: 「↑」「↓」で指示を並べ替えると、編集画面
   for (const item of saved.items) await fetch(`${BASE}/api/quick-prompts/${item.id}`, { method: "DELETE", headers: BEARER });
 });
 
-test("段階2 K3: 複数行の指示は、括弧付き貼付モードの端末へ ESC[200~ ... ESC[201~ で包まれて入り、その直後に Enter が届く", async ({ page }) => {
+test("段階2 K3: 複数行の指示は、括弧付き貼付モードの端末へ ESC[200~ ... ESC[201~ で包まれて入り、Enter は届かない", async ({ page }) => {
   const id = await apiCreate("bracketed-target", "e2e-bracketed");
   const created = await fetch(`${BASE}/api/quick-prompts`, {
     method: "POST",
@@ -708,8 +716,11 @@ test("段階2 K3: 複数行の指示は、括弧付き貼付モードの端末�
   await page.getByTestId("quick-prompt-bar").getByRole("button", { name: "複数行", exact: true }).click();
   const terminal = page.getByTestId("terminal");
   await expect(terminal).toContainText('ALL:"\\u001b[200~first-line');
-  // 届いたバイト列の全体（読み取りの区切りは問わない）で、本文は括弧で包まれ（改行は \r）、閉じ括弧のすぐ後に Enter（\r）が来る。間に他の入力は無い
-  await expect(terminal).toContainText('first-line\\rsecond-line\\u001b[201~\\r"');
+  // 届いたバイト列の全体（読み取りの区切りは問わない）で、本文は括弧で包まれ（改行は \r）、閉じ括弧で終わる。Enter（\r）は続かない
+  await expect(terminal).toContainText('first-line\\rsecond-line\\u001b[201~"');
+  // 遅れて届く \r を見逃さないために待ってから確かめる
+  await page.waitForTimeout(1000);
+  await expect(terminal).not.toContainText('\\u001b[201~\\r');
   await fetch(`${BASE}/api/quick-prompts/${promptId}`, { method: "DELETE", headers: BEARER });
 });
 
