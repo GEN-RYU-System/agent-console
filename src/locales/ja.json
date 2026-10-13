@@ -398,7 +398,6 @@
       }
     },
     "activity": {
-      "stateTitle": "今の状態",
       "runningTitle": "動いている担当",
       "inputsTitle": "最近の入力",
       "emptyRunning": "動いている担当はいません",
@@ -437,6 +436,14 @@
       "emptyKgi": "KGI はまだありません",
       "emptyKpi": "KPI はまだありません",
       "emptyRoadmap": "ロードマップはまだありません",
+      "tasksTitle": "タスク",
+      "tasksEmpty": "タスクはまだ書き込まれていません",
+      "tasksProgress": "完了 {{done}} / {{total}}",
+      "tasksGroup": {
+        "doing": "進行中",
+        "todo": "これから",
+        "done": "完了"
+      },
       "updated": "最後に更新: {{when}}",
       "progress": "完了 {{done}} / {{total}}",
       "kpiValue": "{{current}} → {{target}}{{unit}}",
@@ -448,7 +455,7 @@
       },
       "noneTitle": "計画",
       "noneBody": "まだ計画が書き込まれていません",
-      "noneHint": "このセッションの Claude が、テーマ・KGI・KPI・ロードマップを決めて書き込むと、ここに出ます",
+      "noneHint": "このセッションの Claude が、テーマ・KGI・KPI・ロードマップ・タスクを決めて書き込むと、ここに出ます",
       "invalidTitle": "計画",
       "invalidBody": "計画のファイルを読めません",
       "invalidHint": "壊れている可能性があります。Claude に、ac-board の命令で計画を書き直すよう頼んでください（README の「作戦ボード」）",

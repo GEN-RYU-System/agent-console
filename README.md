@@ -8,7 +8,7 @@ Local console for running parallel Claude Code sessions (Orca-inspired, lightwei
 
 ## v0.9.0 セッションの様子の記録
 
-左でセッションを選ぶと、右の欄の「作戦ボード」（v0.11.0 までは「このセッション」）に、今の状態・動いている担当・計画（KGI・KPI・ロードマップ。v0.12.0 から）・最近の入力が出ます（台帳は隣の「台帳」タブ）。v0.12.0 で「終わった担当」と「やること」の欄はなくなりました。Claude Code の hook が `dataDir/activity/events-YYYYMMDD.jsonl`（UTC の日付、権限 600）に 1 行ずつ追記した記録を、アプリが読んでまとめます。設計は [design](docs/handoff/v0.8.0-activity/design.md)、工程0の実測は [step0](docs/handoff/v0.8.0-activity/step0.md)。
+左でセッションを選ぶと、右の欄の「作戦ボード」（v0.11.0 までは「このセッション」）に、動いている担当・計画（KGI・KPI・ロードマップ。v0.12.0 から）・タスク（v0.14.0 から）・最近の入力が出ます。v0.14.0 で「今の状態」の欄はなくなりました（左の一覧のバッジが正本）（台帳は隣の「台帳」タブ）。v0.12.0 で「終わった担当」と「やること」の欄はなくなりました。Claude Code の hook が `dataDir/activity/events-YYYYMMDD.jsonl`（UTC の日付、権限 600）に 1 行ずつ追記した記録を、アプリが読んでまとめます。設計は [design](docs/handoff/v0.8.0-activity/design.md)、工程0の実測は [step0](docs/handoff/v0.8.0-activity/step0.md)。
 
 ### 入れる（1 回だけ・実行する人が自分で）
 
@@ -55,7 +55,7 @@ node scripts/ac-hooks.mjs check
 
 ## v0.12.0 作戦ボード
 
-右の欄の「作戦ボード」に、そのセッションで決めた計画（テーマ・KGI・KPI・ロードマップ）と進み具合が出ます。上から 今の状態・動いている担当・KGI・KPI・ロードマップ・最近の入力 の順です。計画を書き込めるのは、そのセッションの Claude だけです（画面から書き換える口はありません。設計書から自動で読み取ることもしません）。画面は計画を 5 秒ごとに取り直すので、書き込んだ内容は 5 秒以内に出ます。最後に書き込んだ時刻（「最後に更新: 3分前」）は KGI の枠の下に出ます。まだ書き込まれていないセッション（Sonnet の役割のセッションや、`/clear` のあと）には「まだ計画が書き込まれていません」と出ます。設計は [design](docs/handoff/board/design.md)、調査は [recon](docs/handoff/board/recon.md)、工程0の実測は [step0](docs/handoff/board/step0.md)。
+右の欄の「作戦ボード」に、そのセッションで決めた計画（テーマ・KGI・KPI・ロードマップ）と進み具合、そのセッションで進めるタスクが出ます。上から 動いている担当・KGI・KPI・ロードマップ・タスク・最近の入力 の順です。タスクは「進行中」「これから」「完了」の 3 つの組に分かれ（0 件の組は出ません）、上に「完了 N / M」の進み具合が出ます。「完了」の組は最初は閉じていて、押すと開きます。計画を書き込めるのは、そのセッションの Claude だけです（画面から書き換える口はありません。設計書から自動で読み取ることもしません）。画面は計画を 5 秒ごとに取り直すので、書き込んだ内容は 5 秒以内に出ます。最後に書き込んだ時刻（「最後に更新: 3分前」）は KGI の枠の下に出ます。まだ書き込まれていないセッション（Sonnet の役割のセッションや、`/clear` のあと）には「まだ計画が書き込まれていません」と出ます。設計は [design](docs/handoff/board/design.md)、調査は [recon](docs/handoff/board/recon.md)、工程0の実測は [step0](docs/handoff/board/step0.md)。
 
 ### 動いている担当（再開したときも出る）
 
@@ -75,16 +75,21 @@ node "$HOME/Library/Application Support/agent-console/bin/ac-board.mjs" write <<
     { "title": "設計", "status": "done" },
     { "title": "実装", "status": "doing" },
     { "title": "導入", "status": "todo" }
+  ],
+  "tasks": [
+    { "title": "試験を書く", "status": "done" },
+    { "title": "実装する", "status": "doing" },
+    { "title": "導入する", "status": "todo" }
   ]
 }
 JSON
 ```
 
 - 自分の会話の番号は、Claude Code の環境変数 `CLAUDE_CODE_SESSION_ID`（Bash の子プロセスと hook に自動で入ります）から取ります。引数では受け取りません（別のセッションのボードに間違って書かないため）。書き込み先は `dataDir/boards/<会話の番号>.json` の 1 か所です（ディレクトリ 700・ファイル 600）。アプリを再起動・更新しても残ります。
-- 形（version 1）: `theme`（文字列）・`kgi`（`{text}` の配列）・`kpis`（`{name, target, current, unit}` の配列。値はすべて文字列）・`roadmap`（`{title, status}` の配列。`status` は `todo`・`doing`・`done` のどれか）。4 つとも必須で、これ以外の項目は書けません（`version` と `updatedAt` は命令が付けます）。
-- 上限（文字数は 1 文字を 1 と数えます）: `theme` 200 字、`kgi` 10 件で各 500 字、`kpis` 20 件で各項目 200 字、`roadmap` 50 件で各 200 字、入力全体 256KiB。`theme`・`kgi.text`・`kpis.name`・`roadmap.title` は空にできません（`target`・`current`・`unit` は空でも構いません）。改行とタブ以外の制御文字は拒否されます。
+- 形（version 1）: `theme`（文字列）・`kgi`（`{text}` の配列）・`kpis`（`{name, target, current, unit}` の配列。値はすべて文字列）・`roadmap`（`{title, status}` の配列。`status` は `todo`・`doing`・`done` のどれか）。`tasks`（`{title, status}` の配列。このセッションで進める仕事の単位。担当に任せた仕事も含める）。`tasks` だけは省けます（省いたら 0 件。v0.14.0 から。version は 1 のまま）。ほかの 4 つは必須で、これ以外の項目は書けません。v0.14.0 以降が書いた `tasks` 付きのファイルは、v0.13.0 以前では読めません（前の版へ戻すときは `tasks` を外して書き直します）（`version` と `updatedAt` は命令が付けます）。
+- 上限（文字数は 1 文字を 1 と数えます）: `theme` 200 字、`kgi` 10 件で各 500 字、`kpis` 20 件で各項目 200 字、`roadmap` 50 件で各 200 字、`tasks` 100 件で各 200 字、入力全体 256KiB。`theme`・`kgi.text`・`kpis.name`・`roadmap.title`・`tasks.title` は空にできません（`target`・`current`・`unit` は空でも構いません）。改行とタブ以外の制御文字は拒否されます。
 - 形が違う・長すぎる・制御文字があるときは、何も書かずに理由を標準エラーに出して、終了コード 1 で終わります。書き込めたときは終了コード 0 です。
-- 進み具合は「`done` の数 / `roadmap` の数」です。KPI の「今の値」が変わったとき、段階の状態が変わったときも、同じ命令で全部を書き直します。
+- ロードマップの進み具合は「`done` の数 / `roadmap` の数」、タスクの進み具合は「`done` の数 / `tasks` の数」です。KPI の「今の値」が変わったとき、段階の状態が変わったときも、同じ命令で全部を書き直します。
 
 ### /clear のときと、番号を付けずに再開したとき
 

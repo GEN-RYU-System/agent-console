@@ -21,14 +21,14 @@ const selected = (): string[] => screen.getAllByRole("tab").filter((t) => t.getA
 
 describe("K1: 右の欄のタブ", () => {
   it("セッションを選んでいないときは「台帳」だけ。台帳が開いている", () => {
-    render(<RightPane sessionId={null} rev={0} state="unknown" ledger={LEDGER} onRefresh={() => undefined} />);
+    render(<RightPane sessionId={null} rev={0} ledger={LEDGER} onRefresh={() => undefined} />);
     expect(tabs()).toEqual(["台帳"]);
     expect(screen.getByTestId("ledger-board-stub")).toBeTruthy();
     expect(screen.queryByTestId("activity-pane-stub")).toBeNull();
   });
 
   it("セッションを選ぶと「作戦ボード」と「台帳」が出て、「作戦ボード」が先に開く", () => {
-    render(<RightPane sessionId="s1" rev={3} state="working" ledger={LEDGER} onRefresh={() => undefined} />);
+    render(<RightPane sessionId="s1" rev={3} ledger={LEDGER} onRefresh={() => undefined} />);
     expect(tabs()).toEqual(["作戦ボード", "台帳"]);
     expect(selected()).toEqual(["作戦ボード"]);
     expect(screen.getByTestId("activity-pane-stub").textContent).toBe("s1:3");
@@ -36,18 +36,18 @@ describe("K1: 右の欄のタブ", () => {
   });
 
   it("「台帳」を押すと台帳に切り替わる。別のセッションを選ぶと、また「作戦ボード」が先に開く", () => {
-    const { rerender } = render(<RightPane sessionId="s1" rev={0} state="working" ledger={LEDGER} onRefresh={() => undefined} />);
+    const { rerender } = render(<RightPane sessionId="s1" rev={0} ledger={LEDGER} onRefresh={() => undefined} />);
     fireEvent.click(screen.getByRole("tab", { name: "台帳" }));
     expect(selected()).toEqual(["台帳"]);
     expect(screen.getByTestId("ledger-board-stub")).toBeTruthy();
-    rerender(<RightPane sessionId="s2" rev={0} state="working" ledger={LEDGER} onRefresh={() => undefined} />);
+    rerender(<RightPane sessionId="s2" rev={0} ledger={LEDGER} onRefresh={() => undefined} />);
     expect(selected()).toEqual(["作戦ボード"]);
     expect(screen.getByTestId("activity-pane-stub").textContent).toBe("s2:0");
   });
 
   it("セッションの選択が外れたら「台帳」だけに戻る", () => {
-    const { rerender } = render(<RightPane sessionId="s1" rev={0} state="working" ledger={LEDGER} onRefresh={() => undefined} />);
-    rerender(<RightPane sessionId={null} rev={0} state="unknown" ledger={LEDGER} onRefresh={() => undefined} />);
+    const { rerender } = render(<RightPane sessionId="s1" rev={0} ledger={LEDGER} onRefresh={() => undefined} />);
+    rerender(<RightPane sessionId={null} rev={0} ledger={LEDGER} onRefresh={() => undefined} />);
     expect(tabs()).toEqual(["台帳"]);
     expect(screen.getByTestId("ledger-board-stub")).toBeTruthy();
   });

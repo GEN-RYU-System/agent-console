@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Tabs } from "@sa/components/Tabs";
-import type { LedgerSnapshot, SessionState } from "../../types";
+import type { LedgerSnapshot } from "../../types";
 import { ActivityPane } from "../ActivityPane/ActivityPane";
 import { LedgerBoard } from "../LedgerBoard/LedgerBoard";
 import "./RightPane.css";
@@ -13,13 +13,12 @@ interface Props {
   sessionId: string | null;
   /** セッションの様子の記録の版 */
   rev: number;
-  state: SessionState;
   ledger: LedgerSnapshot | null;
   onRefresh: () => void;
 }
 
 /** 右の欄。セッションを選ぶと「このセッション」と「台帳」のタブが出て、「このセッション」が先に開く。 */
-export function RightPane({ sessionId, rev, state, ledger, onRefresh }: Props) {
+export function RightPane({ sessionId, rev, ledger, onRefresh }: Props) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<RightTab>("session");
   // 別のセッションを選んだら、また「このセッション」を先に開く
@@ -31,7 +30,7 @@ export function RightPane({ sessionId, rev, state, ledger, onRefresh }: Props) {
     <div className="ac-right">
       <Tabs variant="underline" size="sm" activeKey={active} onChange={setTab} items={items} />
       <div className="ac-right__body">
-        {active === "session" && sessionId !== null ? <ActivityPane sessionId={sessionId} rev={rev} state={state} /> : <LedgerBoard snapshot={ledger} onRefresh={onRefresh} />}
+        {active === "session" && sessionId !== null ? <ActivityPane sessionId={sessionId} rev={rev} /> : <LedgerBoard snapshot={ledger} onRefresh={onRefresh} />}
       </div>
     </div>
   );
