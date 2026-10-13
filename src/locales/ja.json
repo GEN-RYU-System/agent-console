@@ -40,6 +40,19 @@
       "version": "版",
       "commit": "コミット"
     },
+    "account": {
+      "label": "Claude ログイン",
+      "loggedOut": "Claude: 未ログイン",
+      "error": "Claude: アカウントを確認できません",
+      "hint": "この Mac に保存されたログインです。会話ごとの確認は /status で行います。",
+      "switch": "アカウントを切り替える",
+      "confirmTitle": "アカウントを切り替える",
+      "confirmBody": "この Mac の Claude からいったんログアウトして、別のアカウントでログインし直します。途中でやめると、ログインし直すまで、新しい会話は使えず、開いている会話も止まることがあります。開いている会話は、閉じて開き直すと新しいアカウントで動きます。開いた端末の案内に沿って、ブラウザでログインしてください。",
+      "confirm": "切り替える",
+      "cancel": "やめる",
+      "busy": "すでに切り替え中です",
+      "switchError": "切り替えを始められませんでした"
+    },
     "usage": {
       "week": "週",
       "fiveHour": "5時間",
@@ -488,6 +501,7 @@
   "role": {
     "opusDesigner": "Opus 設計",
     "sonnetImpl": "Sonnet 実装",
-    "shell": "シェル"
+    "shell": "シェル",
+    "accountLogin": "アカウント切り替え"
   }
 }

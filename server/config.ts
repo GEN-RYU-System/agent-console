@@ -18,6 +18,9 @@ export interface RoleConfig {
   restoreCommand?: string[];
 }
 
+/** アカウント切り替えの端末に付ける予約済みの役割 id（config の roles では使えない） */
+export const ACCOUNT_LOGIN_ROLE_ID = "account-login";
+
 export type ResumeScope = "main" | "worktree";
 const RESUME_SCOPES: readonly string[] = ["main", "worktree"];
 
@@ -60,6 +63,8 @@ export interface Config {
   ledgerPollMs: number;
   ringBufferBytes: number;
   roles: RoleConfig[];
+  /** 「アカウントを切り替える」で動かす命令（config 固定）。無ければ切り替えボタンを出さない。roles には入れない */
+  accountLoginCommand?: string[];
   /** よく使う指示などアプリが保存するデータの置き場 */
   dataDir: string;
   notify: NotifyConfig;
@@ -238,6 +243,7 @@ export function parseConfig(raw: unknown): Config {
   const ids = new Set<string>();
   const scopes = new Set<string>();
   for (const role of roles) {
+    if (role.id === ACCOUNT_LOGIN_ROLE_ID) throw new Error(`config: roles[${roles.indexOf(role)}].id "${ACCOUNT_LOGIN_ROLE_ID}" is reserved`);
     if (ids.has(role.id)) throw new Error(`config: duplicate role id ${role.id}`);
     ids.add(role.id);
     if (role.resumeScope === undefined) continue;
@@ -255,6 +261,7 @@ export function parseConfig(raw: unknown): Config {
     ledgerPollMs: o.ledgerPollMs as number,
     ringBufferBytes: o.ringBufferBytes as number,
     roles,
+    ...(o.accountLoginCommand !== undefined ? { accountLoginCommand: parseCommand(o.accountLoginCommand, "accountLoginCommand") } : {}),
     dataDir: parseDataDir(o.dataDir),
     notify: parseNotify(o.notify),
     terminalEnv: parseTerminalEnv(o.terminalEnv),
