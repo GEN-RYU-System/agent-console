@@ -447,6 +447,11 @@ export class SessionManager {
         return { term: new TmuxControlTerminal({ ...base, pid }), reattached: false };
       } catch (err) {
         this.logger.warn(`terminal: tmux session could not be created, using direct: ${err instanceof Error ? err.message : String(err)}`);
+        // 黙って続けない: 更新で保たれない会話になるので、tmux が使えない時と同じ案内を出す
+        if (!this.tmuxMissing) {
+          this.tmuxMissing = true;
+          this.notify();
+        }
       }
     }
     const pty = spawn(command[0], command.slice(1), {
