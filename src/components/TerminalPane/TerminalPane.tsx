@@ -15,14 +15,15 @@ const INPUT_CHUNK_CHARS = 16 * 1024;
 
 export interface TerminalHandle {
   /**
-   * sessionId の端末に、文章を xterm の paste() で入れ、その後 Enter（\r）を送る。
+   * sessionId の端末に、文章を xterm の paste() で入れるだけ。Enter は送らない。入れたあと端末に入力の焦点を移す
+   * （焦点がボタンに残ると、続けて押した Enter でボタンが押し直されるため）。
    * sessionId は「状態を確認したセッション」。今表示している端末がそれと違う（確認中に別のセッションへ切り替わった）ときは
    * 何も入れずに false を返す。入れたら true。
    * paste() は、端末側が括弧付き貼付モードを有効にしていればそれで包み、そうでなければ改行を \r に直して入れる
    * （@xterm/xterm の d.ts: 「Writes text to the terminal, performing the necessary transformations for pasted text」）。
    * どちらも onData を通って WebSocket の人の入力経路に出る。
    */
-  pasteAndEnter(sessionId: string, text: string): boolean;
+  pasteOnly(sessionId: string, text: string): boolean;
   /**
    * 文章を貼ってから delayMs 待ち、その後に Enter を送る（複数行を 1 つの依頼として受け取らせるため。本物の claude で 2 秒待つと
    * `[Pasted text #N]` の 1 つの依頼になることを実測した）。
@@ -66,11 +67,11 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
   useImperativeHandle(
     ref,
     () => ({
-      pasteAndEnter(expectedSessionId: string, text: string): boolean {
+      pasteOnly(expectedSessionId: string, text: string): boolean {
         const current = termRef.current;
         if (!current || current.sessionId !== expectedSessionId) return false;
         current.term.paste(text);
-        current.term.input("\r", true);
+        current.term.focus();
         return true;
       },
       async pasteSubmitAfter(expectedSessionId: string, text: string, delayMs: number): Promise<PasteResult> {

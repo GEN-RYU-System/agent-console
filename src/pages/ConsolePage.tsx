@@ -191,11 +191,11 @@ export function ConsolePage() {
     if (selectedId === null) return;
     const checkedId = selectedId;
     setQuickError(null);
-    // サーバーが状態を取り直して入れてよければ本文を返す。本文は xterm の paste() で入れてから Enter を送る。
+    // サーバーが状態を取り直して入れてよければ本文を返す。本文は xterm の paste() で入れるだけで Enter は送らない（送るのは人が端末で Enter を押したとき）。
     // 確認している間に別のセッションへ切り替わっていたら、確認したセッションの端末ではないので何も入れない
     checkQuickPromptSend(checkedId, promptId).then(
       ({ text }) => {
-        if (selectedIdRef.current !== checkedId || terminalRef.current?.pasteAndEnter(checkedId, text) !== true) setQuickError(t("ac.quick.switched"));
+        if (selectedIdRef.current !== checkedId || terminalRef.current?.pasteOnly(checkedId, text) !== true) setQuickError(t("ac.quick.switched"));
       },
       (err: unknown) => setQuickError(err instanceof Error ? err.message : String(err)),
     );

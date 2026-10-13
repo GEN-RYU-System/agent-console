@@ -18,6 +18,7 @@ vi.mock("@xterm/xterm", () => ({
     open = vi.fn();
     write = vi.fn();
     paste = vi.fn((t: string) => calls.push(`paste:${t}`));
+    focus = vi.fn(() => calls.push("focus"));
     input = vi.fn((d: string) => calls.push(`input:${d}`));
     options: Record<string, unknown> = {};
     onData = vi.fn(() => ({ dispose: vi.fn() }));
@@ -81,12 +82,12 @@ describe("TerminalPane", () => {
     document.documentElement.style.removeProperty("--bg-surface");
   });
 
-  it("pasteAndEnter pastes the text through xterm paste() and then sends Enter, in that order", async () => {
+  it("pasteOnly pastes through xterm paste(), moves focus to the terminal, and never sends Enter", async () => {
     const { TerminalPane } = await import("./TerminalPane");
     const ref = createRef<TerminalHandle>();
     render(<TerminalPane ref={ref} sessionId="a" />);
-    expect(ref.current?.pasteAndEnter("a", "line1\nline2")).toBe(true);
-    expect(calls).toEqual(["paste:line1\nline2", "input:\r"]);
+    expect(ref.current?.pasteOnly("a", "line1\nline2")).toBe(true);
+    expect(calls).toEqual(["paste:line1\nline2", "focus"]);
     expect(lastTerm?.paste).toHaveBeenCalledOnce();
   });
 
@@ -96,10 +97,10 @@ describe("TerminalPane", () => {
     const { rerender } = render(<TerminalPane ref={ref} sessionId="a" />);
     // 確認したのは a。表示が b に切り替わった後に a の確認結果が届いても、b の端末には入れない
     rerender(<TerminalPane ref={ref} sessionId="b" />);
-    expect(ref.current?.pasteAndEnter("a", "secret")).toBe(false);
+    expect(ref.current?.pasteOnly("a", "secret")).toBe(false);
     expect(calls).toEqual([]);
-    expect(ref.current?.pasteAndEnter("b", "for-b")).toBe(true);
-    expect(calls).toEqual(["paste:for-b", "input:\r"]);
+    expect(ref.current?.pasteOnly("b", "for-b")).toBe(true);
+    expect(calls).toEqual(["paste:for-b", "focus"]);
   });
 
   it("does nothing after the terminal was disposed", async () => {
@@ -107,7 +108,7 @@ describe("TerminalPane", () => {
     const ref = createRef<TerminalHandle>();
     const { unmount } = render(<TerminalPane ref={ref} sessionId="a" />);
     unmount();
-    expect(ref.current?.pasteAndEnter("a", "x") ?? false).toBe(false);
+    expect(ref.current?.pasteOnly("a", "x") ?? false).toBe(false);
     expect(calls).toEqual([]);
   });
 
