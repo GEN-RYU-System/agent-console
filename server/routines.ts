@@ -57,7 +57,12 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 /** 「MM/DD HH:mm」（JST）。jstSlot の key（YYYY-MM-DDTHH:mm+09:00）から作る */
 const stamp = (key: string): string => `${key.slice(5, 10).replace("-", "/")} ${key.slice(11, 16)}`;
-const sessionNameFor = (name: string, key: string): string => `${name.slice(0, MAX_SESSION_NAME_BASE)} ${stamp(key)}`;
+/** 先頭 28 文字（コードポイント単位。文字の途中で切らない）。セッション名の上限 40 は UTF-16 の長さなので、超えるときは文字単位で縮める */
+const sessionNameFor = (name: string, key: string): string => {
+  const chars = Array.from(name).slice(0, MAX_SESSION_NAME_BASE);
+  while (chars.join("").length > MAX_SESSION_NAME_BASE) chars.pop();
+  return `${chars.join("")} ${stamp(key)}`;
+};
 
 export class RoutineService {
   private routines: Routine[] = [];
@@ -109,7 +114,7 @@ export class RoutineService {
   private async open(routine: Routine, slot: string): Promise<{ outcome: RoutineOutcome; sessionName?: string }> {
     const role = this.config.roles.find((x) => x.id === routine.roleId);
     if (!role) return { outcome: "failed" };
-    const entries = await listWorktreeEntries(this.config.salesanchorRoot).catch(() => []);
+    const entries = await listWorktreeEntries(this.config.salesanchorRoot).catch((e) => { console.error("routines: worktree list failed:", e instanceof Error ? e.message : e); return []; });
     const verdict = await classifyCwd(routine.cwd, this.config.salesanchorRoot, entries.map((e) => e.path));
     if (verdict.real === null || verdict.block !== null) return { outcome: "cwd_invalid" };
     if (!this.sessions.hasCapacity()) return { outcome: "full" };

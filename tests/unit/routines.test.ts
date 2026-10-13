@@ -68,6 +68,14 @@ describe("routine dispatch opens a new session", () => {
     expect(arg.name).toBe("daily 10/12 09:00");
   });
 
+  it("cuts the session name on a character boundary and keeps it within 40 units", async () => {
+    const { service, sessions } = await setup({ routines: [{ name: "😀".repeat(40) }] });
+    await run(service);
+    const name = (sessions.restore.mock.calls[0] as unknown as [{ name: string }])[0].name;
+    expect(name.length).toBeLessThanOrEqual(40);
+    expect(name).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/);
+  });
+
   it("K3 sends once with bracketed paste, then CR, after the second ready check", async () => {
     const { service, sessions, hub } = await setup({ verdicts: [{ ok: false, hasClaude: false }, { ok: true, hasClaude: true }], routines: [{ promptText: "go" }] });
     await run(service);
