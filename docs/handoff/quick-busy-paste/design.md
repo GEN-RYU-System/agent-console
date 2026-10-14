@@ -1,6 +1,7 @@
 # 設計: 端末の「よく使う指示」を Claude の作業中でも押せるようにする（quick-busy-paste）
 
 - 現在地: [recon.md](recon.md)（基準 origin/main 658de91）
+- PO 承認: 2026-10-14 PO「y」（Opus の問い「実装してよいですか。y ならファイル表示の次・白い画面の前に割り込ませて導入まで進める」への返事）。Fable 再審査 APPROVE（/tmp/CC報告ファイル/quick-disabled/review-design2/review.md）。
 - 状態: 設計案 第2版（設計者 Opus）。第1版は Fable 審査 REVISE（/tmp/CC報告ファイル/quick-disabled/review-design1/review.md、高1・中3・低6）を全件反映。実装は PO の y の後。
 
 ## 0. KGI（○×で判定）
