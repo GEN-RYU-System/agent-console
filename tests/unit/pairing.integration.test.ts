@@ -1,5 +1,8 @@
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { request } from "node:http";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { CHALLENGE_TTL_MS, PAIRING_TTL_MS, SESSION_MAX_MS } from "../../server/auth.ts";
 import { clientProof, serverProof } from "../../server/pair-proof.ts";
@@ -398,5 +401,97 @@ describe("security headers", () => {
     expect((await raw("/pair?code=x")).headers["content-security-policy"]).toBe(csp);
     expect((await raw("/some/route")).headers["content-security-policy"]).toBe(csp);
     expect((await raw("/healthz")).headers["content-security-policy"]).toBeUndefined();
+  });
+});
+
+// ---- ログインの記録（auth-sessions.json）: サーバーを作り直しても効く（keep-login K1・K2・K5） ----
+describe("sessions survive a server restart (keep-login)", () => {
+  const authFile = (dir: string): string => path.join(dir, "data", "auth-sessions.json");
+  const waitForFile = (file: string) => vi.waitFor(() => expect(existsSync(file)).toBe(true));
+
+  /** 指定のサーバーでペアリングし、セッショントークンを返す（launcher と同じ手順）。 */
+  async function pairOn(harness: Harness): Promise<string> {
+    const saved = h;
+    h = harness;
+    try {
+      return await sessionToken();
+    } finally {
+      h = saved;
+    }
+  }
+  const stateStatus = async (harness: Harness, token: string): Promise<number> => {
+    const saved = h;
+    h = harness;
+    try {
+      return (await raw("/api/state", { headers: { Authorization: `Bearer ${token}` } })).status;
+    } finally {
+      h = saved;
+    }
+  };
+
+  it("K1: a token issued before the restart still works on the next server with the same dataDir and secret", async () => {
+    const first = await startHarness({ persistSessions: true });
+    const token = await pairOn(first);
+    await waitForFile(authFile(first.dir));
+    await first.close();
+    const second = await startHarness({ persistSessions: true, dir: first.dir });
+    try {
+      expect(await stateStatus(second, token)).toBe(200);
+      expect((await raw("/api/state", { headers: { Authorization: "Bearer nope" } })).status).toBe(401);
+    } finally {
+      await second.close();
+    }
+  });
+
+  it("K2: expired and logged-out tokens stay 401 after the restart; a different secret invalidates every token", async () => {
+    const first = await startHarness({ persistSessions: true });
+    const kept = await pairOn(first);
+    const loggedOut = await pairOn(first);
+    const expiring = await pairOn(first);
+    const saved = h;
+    h = first;
+    try {
+      expect((await raw("/api/logout", { method: "POST", headers: { Authorization: `Bearer ${loggedOut}`, Origin: first.base } })).status).toBe(200);
+    } finally {
+      h = saved;
+    }
+    // 書き込みは順に行われる。ログアウトしたトークンの印が消え、残りの 2 つが入るまで待つ
+    const digestOf = (t: string): string => createHash("sha256").update(t).digest("hex");
+    await vi.waitFor(() => {
+      const digests = (JSON.parse(readFileSync(authFile(first.dir), "utf8")) as { items: Array<{ digest: string }> }).items.map((i) => i.digest);
+      expect(digests.sort()).toEqual([digestOf(kept), digestOf(expiring)].sort());
+    });
+    await first.close();
+
+    // 12 時間を過ぎた先で起動した 2 つ目: 全部期限切れ
+    const later = await startHarness({ persistSessions: true, dir: first.dir });
+    try {
+      expect(await stateStatus(later, kept)).toBe(200);
+      expect(await stateStatus(later, loggedOut)).toBe(401);
+      later.clock.advance(SESSION_MAX_MS + 1);
+      expect(await stateStatus(later, expiring)).toBe(401);
+    } finally {
+      await later.close();
+    }
+
+    const otherSecret = await startHarness({ persistSessions: true, dir: first.dir, secret: "z".repeat(40) });
+    try {
+      expect(await stateStatus(otherSecret, kept)).toBe(401);
+      expect(await stateStatus(otherSecret, expiring)).toBe(401);
+    } finally {
+      await otherSecret.close();
+    }
+  });
+
+  it("K5: a server started without persistSessions (the port-override path) never creates auth-sessions.json", async () => {
+    const plain = await startHarness();
+    try {
+      const token = await pairOn(plain);
+      expect(await stateStatus(plain, token)).toBe(200);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(existsSync(authFile(plain.dir))).toBe(false);
+    } finally {
+      await plain.close();
+    }
   });
 });

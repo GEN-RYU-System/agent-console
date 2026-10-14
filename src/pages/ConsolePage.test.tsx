@@ -23,6 +23,7 @@ const state: ConsoleState = {
 
 const removeSession = vi.fn();
 const fetchState = vi.fn();
+const clearSessionToken = vi.fn();
 const logout = vi.fn();
 const markRead = vi.fn();
 const checkQuickPromptSend = vi.fn();
@@ -51,6 +52,7 @@ vi.mock("../api", () => ({
   createSession: vi.fn(),
   removeSession: (id: string) => removeSession(id),
   getSessionToken: () => "session-token",
+  clearSessionToken: () => clearSessionToken(),
   logout: () => logout(),
   markRead: (id: string) => markRead(id),
   checkQuickPromptSend: (id: string, promptId: string) => checkQuickPromptSend(id, promptId),
@@ -120,18 +122,23 @@ vi.mock("../components/TerminalPane/TerminalPane", async () => {
 const { ConsolePage } = await import("./ConsolePage");
 
 let lastSocket: FakeWebSocket | null = null;
+const sockets: FakeWebSocket[] = [];
 class FakeWebSocket {
   constructor() {
     lastSocket = this;
+    sockets.push(this);
   }
   static OPEN = 1;
   readyState = 0;
+  onopen: unknown = null;
   onmessage: unknown = null;
   onclose: unknown = null;
   close = vi.fn();
 }
 
 beforeEach(() => {
+  sockets.length = 0;
+  clearSessionToken.mockReset();
   removeSession.mockReset();
   fetchState.mockReset();
   logout.mockReset();
@@ -587,5 +594,135 @@ describe("ConsolePage 部品 tab (K3, §3-8)", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("ファイルを貼れませんでした");
     expect(alert.textContent).toContain("ファイルが大きすぎます（1つ 5 MB まで）");
+  });
+});
+
+// ---- keep-login: 更新（サーバーの再起動）の後も画面が止まらない（K6・K7・K9・K10） ----
+describe("ConsolePage after the server restarts", () => {
+  const fire = (socket: FakeWebSocket | undefined, name: "onopen" | "onclose"): void => {
+    const handler = socket?.[name] as (() => void) | null | undefined;
+    act(() => handler?.());
+  };
+  const advance = async (ms: number): Promise<void> => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  };
+  /** 一覧が出た後に setTimeout だけ偽物にする（画面の読み込みは本物の時間で待つ） */
+  const withFakeTimers = async (run: () => Promise<void>): Promise<void> => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await run();
+    } finally {
+      vi.useRealTimers();
+    }
+  };
+
+  it("K6: refetches the state when /ws/events reconnects (version and commit become new)", async () => {
+    render(<ConsolePage />);
+    await screen.findByText("dead");
+    expect(screen.getByTestId("app-version").textContent).toContain("0.3.6");
+    fetchState.mockClear();
+    fetchState.mockResolvedValue({ ...state, appVersion: "0.4.0", commit: "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" });
+    await withFakeTimers(async () => {
+      fire(sockets[0], "onopen");
+      expect(fetchState).not.toHaveBeenCalled(); // 最初のつながりでは取り直さない
+      fire(sockets[0], "onclose");
+      await advance(1000);
+      expect(sockets).toHaveLength(2);
+      fire(sockets[1], "onopen");
+    });
+    await waitFor(() => expect(screen.getByTestId("app-version").textContent).toContain("0.4.0"));
+    expect(fetchState).toHaveBeenCalledOnce();
+    expect(screen.getByTestId("commit").textContent).toContain("1111111");
+  });
+
+  it("K7: after 3 connections in a row without onopen it calls fetchState; a 401 shows the login guide and stops reconnecting", async () => {
+    const { ApiError } = await import("../api");
+    render(<ConsolePage />);
+    await screen.findByText("dead");
+    fetchState.mockClear();
+    fetchState.mockRejectedValue(new ApiError("unauthorized", 401));
+    await withFakeTimers(async () => {
+      fire(sockets[0], "onclose");
+      await advance(1000);
+      fire(sockets[1], "onclose");
+      expect(fetchState).not.toHaveBeenCalled();
+      await advance(1000);
+      fire(sockets[2], "onclose");
+    });
+    expect((await screen.findByRole("alert")).textContent).toContain("ログインが必要です");
+    expect(fetchState).toHaveBeenCalledOnce();
+    expect(clearSessionToken).toHaveBeenCalledOnce();
+    const count = sockets.length;
+    await withFakeTimers(async () => {
+      await advance(5000);
+      fire(sockets[count - 1], "onclose");
+      await advance(5000);
+    });
+    expect(sockets).toHaveLength(count);
+  });
+
+  it.each([
+    ["500", () => Promise.reject(new Error("HTTP 500"))],
+    ["cannot connect", () => Promise.reject(new TypeError("Failed to fetch"))],
+  ])("K7: a non-401 failure (%s) keeps the screen and keeps reconnecting", async (_name, failure) => {
+    render(<ConsolePage />);
+    await screen.findByText("dead");
+    fetchState.mockClear();
+    fetchState.mockImplementation(failure);
+    await withFakeTimers(async () => {
+      fire(sockets[0], "onclose");
+      await advance(1000);
+      fire(sockets[1], "onclose");
+      await advance(1000);
+      fire(sockets[2], "onclose");
+      await advance(0);
+      await advance(1000);
+      expect(sockets).toHaveLength(4);
+    });
+    expect(fetchState).toHaveBeenCalledOnce();
+    expect(screen.getByText("dead")).toBeTruthy();
+    expect(screen.queryByText("ログインが必要です")).toBeNull();
+    expect(clearSessionToken).not.toHaveBeenCalled();
+  });
+
+  it("K9: shows a loading state (not a blank page) while the first state is loading", async () => {
+    fetchState.mockReturnValue(new Promise(() => undefined));
+    const { container } = render(<ConsolePage />);
+    expect(await screen.findByText("読み込み中")).toBeTruthy();
+    expect(container.textContent).not.toBe("");
+  });
+
+  it("K10: shows a reload banner when the refetched commit differs from the first one, and never reloads by itself", async () => {
+    const reload = vi.fn();
+    vi.stubGlobal("location", { ...window.location, reload });
+    render(<ConsolePage />);
+    await screen.findByText("dead");
+    expect(screen.queryByTestId("new-version")).toBeNull();
+    fetchState.mockResolvedValue({ ...state, commit: "2222222bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" });
+    await withFakeTimers(async () => {
+      fire(sockets[0], "onclose");
+      await advance(1000);
+      fire(sockets[1], "onopen");
+    });
+    const banner = await screen.findByTestId("new-version");
+    expect(banner.textContent).toContain("新しい版が入りました");
+    expect(reload).not.toHaveBeenCalled();
+    fireEvent.click(within(banner).getByRole("button", { name: "再読み込み" }));
+    expect(reload).toHaveBeenCalledOnce();
+    vi.unstubAllGlobals();
+  });
+
+  it("K10: no banner when the refetched commit is the same", async () => {
+    render(<ConsolePage />);
+    await screen.findByText("dead");
+    await withFakeTimers(async () => {
+      fire(sockets[0], "onclose");
+      await advance(1000);
+      fire(sockets[1], "onopen");
+    });
+    await waitFor(() => expect(fetchState).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId("new-version")).toBeNull();
   });
 });
