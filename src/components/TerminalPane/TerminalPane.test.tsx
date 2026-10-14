@@ -26,6 +26,9 @@ vi.mock("@xterm/xterm", () => ({
     focus = vi.fn(() => calls.push("focus"));
     input = vi.fn((d: string) => calls.push(`input:${d}`));
     options: Record<string, unknown> = {};
+    modes = { mouseTrackingMode: "none" };
+    element = document.createElement("div");
+    attachCustomWheelEventHandler = vi.fn();
     onData = vi.fn(() => ({ dispose: vi.fn() }));
     dispose = disposeTerm;
     constructor() {

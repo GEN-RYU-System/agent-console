@@ -3,7 +3,12 @@ import { act, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const calls: string[] = [];
-let lastTerm: { options: Record<string, unknown> } | null = null;
+let lastTerm: {
+  options: Record<string, unknown>;
+  modes: { mouseTrackingMode: string };
+  element: HTMLElement;
+  wheelHandler: ((e: WheelEvent) => boolean) | null;
+} | null = null;
 let currentUpload: (file: Blob) => Promise<{ path: string }> = async () => ({ path: "/unset" });
 let currentFileUpload: (file: Blob) => Promise<{ path: string }> = async () => ({ path: "/unset" });
 
@@ -18,10 +23,21 @@ vi.mock("@xterm/xterm", () => ({
     paste = vi.fn((t: string) => calls.push(`paste:${t}`));
     input = vi.fn((d: string) => calls.push(`input:${d}`));
     options: Record<string, unknown>;
+    modes = { mouseTrackingMode: "none" };
+    element: HTMLElement;
+    wheelHandler: ((e: WheelEvent) => boolean) | null = null;
+    attachCustomWheelEventHandler = vi.fn((h: (e: WheelEvent) => boolean) => {
+      this.wheelHandler = h;
+    });
     onData = vi.fn(() => ({ dispose: vi.fn() }));
     dispose = vi.fn();
     constructor(opts: Record<string, unknown>) {
       this.options = { ...opts };
+      // xterm が作る要素の代役（行高を出すための .xterm-screen だけ持つ）
+      this.element = document.createElement("div");
+      const screen = document.createElement("div");
+      screen.className = "xterm-screen";
+      this.element.appendChild(screen);
       lastTerm = this;
     }
   },
@@ -100,6 +116,81 @@ describe("K2: smoothScrollDuration follows the input device", () => {
     for (let i = 0; i < 5; i++) notch(hostOf(container));
     rerender(<TerminalPane sessionId="a" smoothScrollMs={50} />);
     expect(smooth()).toBe(50);
+  });
+});
+
+describe("K3: wheel lines while the app tracks the mouse", () => {
+  const ROWS = 24;
+  const CELL = 17;
+  beforeEach(() => {
+    // 行高 = .xterm-screen の clientHeight / rows = 17（TerminalPane.test.tsx と同じ prototype 定義）
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => ROWS * CELL });
+  });
+  afterEach(() => {
+    delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientHeight;
+  });
+
+  /** 合成イベントを数える（.xterm-screen に届いた deltaMode 1 の wheel）。frame は本物の rAF（約 16ms）なので vi.waitFor で待つ */
+  function collect(): WheelEvent[] {
+    const got: WheelEvent[] = [];
+    lastTerm?.element.querySelector(".xterm-screen")?.addEventListener("wheel", (e) => got.push(e as WheelEvent));
+    return got;
+  }
+  const real = (deltaY: number, extra: WheelEventInit = {}): WheelEvent => new WheelEvent("wheel", { deltaY, cancelable: true, ...extra });
+
+  it("returns true and emits nothing when the mouse is not tracked", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    render(<TerminalPane sessionId="a" />);
+    const got = collect();
+    expect(lastTerm?.wheelHandler?.(real(100))).toBe(true);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(got).toHaveLength(0);
+  });
+
+  it("returns false and emits one synthetic wheel per line when tracked (deltaY=100 at 17px => 5), and lets the synthetic ones through", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    render(<TerminalPane sessionId="a" />);
+    const term = lastTerm!;
+    term.modes.mouseTrackingMode = "any";
+    const got = collect();
+    expect(term.wheelHandler?.(real(100, { ctrlKey: true, clientX: 30, clientY: 40 }))).toBe(false);
+    await vi.waitFor(() => expect(got).toHaveLength(5));
+    expect(got.every((e) => e.deltaMode === 1 && e.deltaY === 1 && e.ctrlKey && e.clientX === 30 && e.clientY === 40)).toBe(true);
+    expect(term.wheelHandler?.(got[0]!)).toBe(true);
+  });
+
+  it("returns false for a real wheel that is less than one line (0 lines) and emits no synthetic wheel", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    render(<TerminalPane sessionId="a" />);
+    const term = lastTerm!;
+    term.modes.mouseTrackingMode = "any";
+    const got = collect();
+    expect(term.wheelHandler?.(real(4))).toBe(false);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(got).toHaveLength(0);
+  });
+
+  it("lets Shift-wheel, horizontal-only wheel and a mode without wheel (x10) through to xterm", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    render(<TerminalPane sessionId="a" />);
+    const term = lastTerm!;
+    term.modes.mouseTrackingMode = "any";
+    expect(term.wheelHandler?.(real(100, { shiftKey: true }))).toBe(true);
+    expect(term.wheelHandler?.(real(0))).toBe(true);
+    term.modes.mouseTrackingMode = "x10";
+    expect(term.wheelHandler?.(real(100))).toBe(true);
+  });
+
+  it("drops the queued lines when tracking ends before they are sent", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    render(<TerminalPane sessionId="a" />);
+    const term = lastTerm!;
+    term.modes.mouseTrackingMode = "any";
+    const got = collect();
+    term.wheelHandler?.(real(17 * 20));
+    term.modes.mouseTrackingMode = "none";
+    await new Promise((r) => setTimeout(r, 80));
+    expect(got).toHaveLength(0);
   });
 });
 
