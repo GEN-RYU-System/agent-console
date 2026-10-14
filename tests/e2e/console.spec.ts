@@ -496,7 +496,14 @@ async function expectLargeCenterTabs(page: Page): Promise<void> {
         rightFont: rightTab ? getComputedStyle(rightTab).fontSize : null,
       };
     });
-  await expect.poll(async () => (await measure()).tabs.length, { timeout: 5000 }).toBe(7);
+  await expect.poll(async () => (await measure()).tabs.length, { timeout: 5000 }).toBe(8);
+  // 1400px の画面で、最後のタブの右端がタブ枠の右端以内（タブを足してもはみ出さない。横スクロールでしか見えないタブを作らない）
+  expect(page.viewportSize()?.width).toBe(1400);
+  const frame = await page.locator(".ac-center-tabs").boundingBox();
+  const lastTab = await page.locator('.ac-center-tabs [role="tab"]').last().boundingBox();
+  expect(frame).not.toBeNull();
+  expect(lastTab).not.toBeNull();
+  expect((lastTab as { x: number; width: number }).x + (lastTab as { x: number; width: number }).width).toBeLessThanOrEqual((frame as { x: number; width: number }).x + (frame as { x: number; width: number }).width);
   let m = await measure();
   await expect.poll(async () => (m = await measure()).tabs[0].height, { timeout: 5000 }).toBe("56px");
   const large = await probe("font-size:var(--font-2xl)");
@@ -635,16 +642,18 @@ test("段階2 K3: よく使う指示を登録・編集・削除でき、ボタ�
   await expect(bar.getByRole("button", { name: "テスト実行", exact: true })).toBeDisabled();
   await rowOf(page, id).click();
   await expect(page.getByTestId("terminal")).toContainText("READY");
-  // Claude が作業中・許可待ちの間は送れない（ボタンは無効、サーバーも 409）。idle になってから送る
+  // Claude が作業中の間は押せる（サーバーも 200）。許可待ちの間は送れない（ボタンは無効で理由が出る、サーバーも 409）。idle になってから押して確認する
   writeFileSync(STATUS_FILE, "busy");
   await expect(rowOf(page, id).getByTestId("status")).toHaveAttribute("data-state", "working", { timeout: STATE_DEADLINE_MS });
-  await expect(bar.getByRole("button", { name: "テスト実行", exact: true })).toBeDisabled();
+  await expect(bar.getByRole("button", { name: "テスト実行", exact: true })).toBeEnabled();
   const promptId = ((JSON.parse(readFileSync(path.join(DATA_DIR, "quick-prompts.json"), "utf8")) as { items: Array<{ id: string }> }).items[0]).id;
   const check = (): Promise<Response> =>
     fetch(`${BASE}/api/sessions/${id}/send-check`, { method: "POST", headers: { ...BEARER, "Content-Type": "application/json" }, body: JSON.stringify({ promptId }) });
-  expect((await check()).status).toBe(409);
+  expect((await check()).status).toBe(200);
   writeFileSync(STATUS_FILE, "waiting");
   await expect(rowOf(page, id).getByTestId("status")).toHaveAttribute("data-state", "waiting", { timeout: STATE_DEADLINE_MS });
+  await expect(bar.getByRole("button", { name: "テスト実行", exact: true })).toBeDisabled();
+  await expect(bar).toContainText("許可・質問への返事を待っている");
   expect((await check()).status).toBe(409);
   await expect(page.getByTestId("terminal")).not.toContainText("echo-quick-prompt-v2");
   writeFileSync(STATUS_FILE, "idle");
@@ -1271,19 +1280,28 @@ test("v0.7.0 K3: 端末の書体の並びに明朝が入っている。日本語
 });
 
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
-const uploadedFiles = (): string[] => (existsSync(UPLOADS_DIR) ? readdirSync(UPLOADS_DIR).sort() : []);
+/** 画像の数: uploads 直下の <UUID>.png|jpg だけを数える（files フォルダは数えない） */
+const uploadedFiles = (): string[] => (existsSync(UPLOADS_DIR) ? readdirSync(UPLOADS_DIR).filter((n) => /^[0-9a-f-]{36}\.(png|jpg)$/.test(n)).sort() : []);
+/** 画像以外の保存: uploads/files/<UUID>/<名前> の相対パスを返す */
+const FILES_DIR = path.join(UPLOADS_DIR, "files");
+const savedOtherFiles = (): string[] =>
+  existsSync(FILES_DIR) ? readdirSync(FILES_DIR).flatMap((d) => readdirSync(path.join(FILES_DIR, d)).map((n) => path.join(d, n))).sort() : [];
+const CSV_TEXT = "品名,数量\nりんご,3\n";
 const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
 /** ブラウザの中で、画像の File を持つ paste / drop を起こす（合成の DataTransfer）。defaultPrevented を返す */
-async function fireImageEvent(page: Page, kind: "paste" | "drop" | "dragover", opts: { text?: string; file?: "png" | "pdf" } = {}): Promise<boolean> {
+async function fireImageEvent(page: Page, kind: "paste" | "drop" | "dragover", opts: { text?: string; file?: "png" | "pdf" | "csv" } = {}): Promise<boolean> {
   return page.evaluate(
-    ([k, b64, o]) => {
+    ([k, b64, o, csv]) => {
       const dt = new DataTransfer();
       if (o.file === "png") {
         const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
         dt.items.add(new File([bytes], "shot.png", { type: "image/png" }));
       } else if (o.file === "pdf") {
         dt.items.add(new File(["%PDF-1.4"], "doc.pdf", { type: "application/pdf" }));
+      }
+      else if (o.file === "csv") {
+        dt.items.add(new File([csv], "売上 10月.csv", { type: "text/csv" }));
       }
       if (o.text) dt.setData("text/plain", o.text);
       if (k === "paste") {
@@ -1295,11 +1313,11 @@ async function fireImageEvent(page: Page, kind: "paste" | "drop" | "dragover", o
       (document.querySelector(".xterm-screen") as HTMLElement).dispatchEvent(e);
       return e.defaultPrevented;
     },
-    [kind, PNG_B64, opts] as const,
+    [kind, PNG_B64, opts, CSV_TEXT] as const,
   );
 }
 
-test("v0.7.0 K4/K5/K6: 画像の貼り付け・ドロップで保存され、その絶対パスが端末に入る（Enter なし）。文字つきの貼り付け・画像以外のドロップでは保存されない", async ({ page }) => {
+test("v0.7.0 K4/K5/K6: 画像の貼り付け・ドロップで保存され、その絶対パスが端末に入る（Enter なし）。文字つきの貼り付け・画像以外のドロップは別の口で保存される", async ({ page }) => {
   await ensureRoom(1);
   const id = await apiCreate("upload-target", "e2e-plain");
   await openPaired(page);
@@ -1312,11 +1330,30 @@ test("v0.7.0 K4/K5/K6: 画像の貼り付け・ドロップで保存され、そ
   expect(await fireImageEvent(page, "dragover", { file: "png" })).toBe(true);
   expect(await fireImageEvent(page, "dragover", { file: "pdf" })).toBe(true);
 
-  // 画像以外のドロップ: 保存されず、案内が出て、ページは変わらない
+  // 画像以外（pdf）のドロップ: 画像の数は変わらず、files/<UUID>/doc.pdf に保存され、パスが端末に入る。ページは変わらない
   const urlBefore = page.url();
+  const otherBefore = savedOtherFiles().length;
   expect(await fireImageEvent(page, "drop", { file: "pdf" })).toBe(true);
-  await expect(page.getByRole("alert").filter({ hasText: "貼れるのは PNG と JPEG の画像だけです" })).toBeVisible();
+  await expect.poll(() => savedOtherFiles().length, { timeout: 10000 }).toBe(otherBefore + 1);
+  const pdfRel = savedOtherFiles().find((n) => n.endsWith("doc.pdf")) as string;
+  const pdfSaved = path.join(FILES_DIR, pdfRel);
+  expect(readFileSync(pdfSaved).toString("utf8")).toBe("%PDF-1.4");
+  expect(statSync(pdfSaved).mode & 0o777).toBe(0o600);
+  expect(statSync(path.dirname(pdfSaved)).mode & 0o777).toBe(0o700);
+  expect(statSync(FILES_DIR).mode & 0o777).toBe(0o700);
   expect(page.url()).toBe(urlBefore);
+  expect(uploadedFiles().length).toBe(before);
+  const squashAll = async (): Promise<string> => (await terminal.innerText()).replace(/\s+/g, "");
+  await expect.poll(squashAll, { timeout: 10000 }).toContain(pdfSaved);
+
+  // csv（日本語の中身・名前の空白は _ に直る）: バイト一致で保存され、パスが端末に入る
+  expect(await fireImageEvent(page, "drop", { file: "csv" })).toBe(true);
+  await expect.poll(() => savedOtherFiles().length, { timeout: 10000 }).toBe(otherBefore + 2);
+  const csvRel = savedOtherFiles().find((n) => n.endsWith("売上_10月.csv")) as string;
+  expect(csvRel).toBeTruthy();
+  const csvSaved = path.join(FILES_DIR, csvRel);
+  expect(readFileSync(csvSaved).equals(Buffer.from(CSV_TEXT, "utf8"))).toBe(true);
+  await expect.poll(squashAll, { timeout: 10000 }).toContain(csvSaved);
   expect(uploadedFiles().length).toBe(before);
 
   // 文字つきの貼り付けは xterm に任せる（止めない・保存しない）

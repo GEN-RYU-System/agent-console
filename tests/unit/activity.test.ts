@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ActivityStore, RUNNING_MAX_AGE_MS } from "../../server/activity.ts";
+import { ActivityStore, FILES_KEEP, RUNNING_MAX_AGE_MS } from "../../server/activity.ts";
 
 const SID = "11111111-2222-4333-8444-555555555555";
 const OTHER = "99999999-2222-4333-8444-555555555555";
@@ -466,5 +466,74 @@ describe("K4: 古いファイルの掃除", () => {
     writeFileSync(path.join(actDir, "events-20260101.jsonl.bak"), "x\n");
     await store.pruneOldFiles();
     expect(readdirSync(actDir)).toEqual(["events-20260101.jsonl.bak"]);
+  });
+});
+
+describe("file-viewer §3-3: セッションが書いたファイル", () => {
+  const DAY = 24 * 60 * MIN;
+  const wrote = (p: string, over: Rec = {}): Rec => rec({ event: "PostToolUse", tool: "Write", path: p, ...over });
+
+  it("K2/K7 セッションごとに新しい順。別のセッションの分は入らない。担当（agent_id）の書き込みは byAgent", async () => {
+    write([wrote("/a/1.md", { ts: T0 }), wrote("/a/2.md", { ts: T0 + 1000, tool: "Edit", agent_id: "ag" }), wrote("/b/other.md", { ts: T0 + 2000, session_id: OTHER })]);
+    await store.refresh();
+    expect(store.files(SID)).toEqual([
+      { path: "/a/2.md", tool: "Edit", lastAt: T0 + 1000, byAgent: true },
+      { path: "/a/1.md", tool: "Write", lastAt: T0, byAgent: false },
+    ]);
+    expect(store.files(OTHER).map((f) => f.path)).toEqual(["/b/other.md"]);
+  });
+
+  it("当て方は順序に依存しない: lastAt は新しい方、tool は lastAt が新しい方、byAgent は OR", async () => {
+    write([wrote("/a/x.md", { ts: T0 + 5000, tool: "Edit" }), wrote("/a/x.md", { ts: T0, tool: "Write", agent_id: "ag" })]);
+    await store.refresh();
+    expect(store.files(SID)).toEqual([{ path: "/a/x.md", tool: "Edit", lastAt: T0 + 5000, byAgent: true }]);
+  });
+
+  it("K3 server 側でも path の条件を見る（古い hook・手で書かれた行）", async () => {
+    write([wrote("/a/../b"), wrote("rel.md"), wrote("/a//b"), wrote("/a/"), wrote("/a/\u0001"), wrote("/ok.md"), rec({ event: "PostToolUse", tool: "Write" })]);
+    await store.refresh();
+    expect(store.files(SID).map((f) => f.path)).toEqual(["/ok.md"]);
+  });
+
+  it(`上限 ${FILES_KEEP} 件。超えたら lastAt の古い順に落とす`, async () => {
+    write(Array.from({ length: FILES_KEEP + 3 }, (_, i) => wrote(`/f/${i}.md`, { ts: T0 + i })));
+    await store.refresh();
+    const files = store.files(SID);
+    expect(files).toHaveLength(FILES_KEEP);
+    expect(files.at(-1)?.path).toBe("/f/3.md");
+  });
+
+  it("Agent の PostToolUse（担当の呼び出し）は今までどおりで、ファイルには入らない", async () => {
+    write([pre("t1", { ts: T0 }), post("t1", "A", { ts: T0 + 1000 })]);
+    await store.refresh();
+    expect(store.view(SID).running).toHaveLength(1);
+    expect(store.files(SID)).toEqual([]);
+  });
+
+  describe("K6 再起動後の復元（keepDays 以内）", () => {
+    it("一昨日のファイルだけを置いた場合も戻る", async () => {
+      write([wrote("/old/2days.md", { ts: nowMs - 2 * DAY })], dayName(nowMs - 2 * DAY));
+      await store.refresh();
+      expect(store.files(SID).map((f) => f.path)).toEqual(["/old/2days.md"]);
+    });
+
+    it("3〜6 日前は戻る。keepDays より前は戻らない。ファイル以外の記録（会話）は当てない", async () => {
+      for (const d of [3, 4, 5, 6]) write([wrote(`/old/${d}.md`, { ts: nowMs - d * DAY }), rec({ ts: nowMs - d * DAY, event: "UserPromptSubmit", prompt: `古い入力 ${d}` })], dayName(nowMs - d * DAY));
+      write([wrote("/old/9.md", { ts: nowMs - 9 * DAY })], dayName(nowMs - 9 * DAY));
+      await store.refresh();
+      expect(store.files(SID).map((f) => f.path)).toEqual(["/old/3.md", "/old/4.md", "/old/5.md", "/old/6.md"]);
+      expect(store.chat(SID).items).toEqual([]);
+    });
+
+    it("今日と昨日は readNew が読む（二重に当たらない）。復元は最初の 1 回だけ", async () => {
+      write([wrote("/t/today.md", { ts: nowMs - 1000 })], dayName(nowMs));
+      write([wrote("/t/yesterday.md", { ts: nowMs - DAY })], dayName(nowMs - DAY));
+      write([wrote("/t/2days.md", { ts: nowMs - 2 * DAY })], dayName(nowMs - 2 * DAY));
+      expect((await store.refresh()).applied).toBe(3);
+      expect(store.files(SID).map((f) => f.path)).toEqual(["/t/today.md", "/t/yesterday.md", "/t/2days.md"]);
+      write([wrote("/t/2days-late.md", { ts: nowMs - 2 * DAY })], dayName(nowMs - 2 * DAY));
+      expect((await store.refresh()).applied).toBe(0);
+      expect(store.files(SID)).toHaveLength(3);
+    });
   });
 });

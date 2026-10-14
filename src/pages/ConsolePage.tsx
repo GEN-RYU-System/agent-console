@@ -29,6 +29,7 @@ import {
 import { AccountBadge } from "../components/AccountBadge/AccountBadge";
 import { ChatPane } from "../components/ChatPane/ChatPane";
 import { DiffPane } from "../components/DiffPane/DiffPane";
+import { FilesPane } from "../components/FilesPane/FilesPane";
 import { MemoryPanel } from "../components/MemoryPanel/MemoryPanel";
 import { PicksPane } from "../components/PicksPane/PicksPane";
 import { PrPane } from "../components/PrPane/PrPane";
@@ -53,7 +54,7 @@ const RENAME_CONFIRM_MS = 10000;
 const UPLOAD_NOTICE_MS = 8000;
 const BYTES_PER_MB = 1024 * 1024;
 
-type CenterTab = "chat" | "terminal" | "changes" | "pr" | "picks" | "routines" | "reservations";
+type CenterTab = "chat" | "terminal" | "changes" | "files" | "pr" | "picks" | "routines" | "reservations";
 
 function useConsoleState() {
   const [state, setState] = useState<ConsoleState | null>(null);
@@ -85,6 +86,13 @@ function useConsoleState() {
   }, []);
 
   return { state, loadFailed, setLoadFailed };
+}
+
+/** 端末のよく使う指示が押せない理由の文言キー（stopped・unknown 以外は確認待ち） */
+function quickBlockedKey(state: SessionState): string {
+  if (state === "stopped") return "ac.quick.blockedStopped";
+  if (state === "unknown") return "ac.quick.blockedUnknown";
+  return "ac.quick.blockedWaiting";
 }
 
 export function ConsolePage() {
@@ -141,6 +149,11 @@ export function ConsolePage() {
   useEffect(() => {
     if (selectedId !== null && selectedUnread > 0 && document.visibilityState === "visible") void markRead(selectedId).catch(() => undefined);
   }, [selectedId, selectedUnread]);
+  // 送信の警告は、別のセッションを選んだとき、または今のセッションが送れる状態に戻ったときに消す
+  const selectedCanChat = state?.sessions.find((s) => s.id === selectedId)?.canChat;
+  useEffect(() => {
+    setQuickError(null);
+  }, [selectedId, selectedCanChat]);
 
   const handleSelect = (id: string): void => {
     setSelectedId(id);
@@ -401,6 +414,7 @@ export function ConsolePage() {
             { key: "chat", label: t("ac.tabs.chat") },
             { key: "terminal", label: t("ac.tabs.terminal") },
             { key: "changes", label: t("ac.tabs.changes"), ...(activeId !== null && diffCount !== null ? { count: diffCount } : {}) },
+            { key: "files", label: t("ac.tabs.files") },
             { key: "pr", label: t("ac.tabs.pr") },
             { key: "picks", label: t("ac.tabs.picks"), ...(state.picksUnsent > 0 ? { count: state.picksUnsent } : {}) },
             { key: "routines", label: t("ac.tabs.routines") },
@@ -410,7 +424,8 @@ export function ConsolePage() {
         {centerTab === "terminal" && (
           <QuickPromptBar
             prompts={quickPrompts}
-            canSend={activeSession?.canInput === true}
+            canSend={activeSession?.canChat === true}
+            {...(activeSession !== undefined && activeSession.canChat !== true ? { blockedHint: t(quickBlockedKey(activeSession.state)) } : {})}
             onSend={handleSendPrompt}
             onEdit={() => setQuickEditorOpen(true)}
             onChanged={loadQuickPrompts}
@@ -455,6 +470,7 @@ export function ConsolePage() {
         ) : (
           centerTab === "changes" && <EmptyState title={t("ac.selectSession")} />
         )}
+        {activeId ? <FilesPane sessionId={activeId} active={centerTab === "files"} rev={state.activityRev} /> : centerTab === "files" && <EmptyState title={t("ac.selectSession")} />}
         {activeId ? <PrPane sessionId={activeId} active={centerTab === "pr"} /> : centerTab === "pr" && <EmptyState title={t("ac.selectSession")} />}
         {/* 部品は、セッションを選んでいなくても見られる（送るときだけ送り先が要る） */}
         <PicksPane

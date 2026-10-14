@@ -83,6 +83,17 @@ function withText(base, key, value, max) {
 
 const isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 
+/** ファイルを書く 4 つのツール（file-viewer 設計 §3-1） */
+export const FILE_TOOLS = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
+const PATH_MAX_CHARS = 4096;
+// eslint-disable-next-line no-control-regex
+const PATH_CONTROL = /[\u0000-\u001f\u007f]/;
+
+/** 記録してよい path か。絶対パスで、4096 文字以下、制御文字なし、normalize しても変わらず、末尾が / でない（server/activity.ts にも同じ判定がある） */
+export function isRecordablePath(p) {
+  return typeof p === "string" && p.startsWith("/") && p.length <= PATH_MAX_CHARS && !PATH_CONTROL.test(p) && path.posix.normalize(p) === p && !p.endsWith("/");
+}
+
 function toolRecord(common, input) {
   const tool = input.tool_name;
   const toolInput = isObject(input.tool_input) ? input.tool_input : {};
@@ -104,6 +115,11 @@ function toolRecord(common, input) {
     rec = withText(rec, "agentId", response.agentId, ID_CHARS);
     rec = withText(rec, "resolvedModel", response.resolvedModel, NAME_CHARS);
     return typeof response.totalDurationMs === "number" && Number.isFinite(response.totalDurationMs) ? { ...rec, totalDurationMs: response.totalDurationMs } : rec;
+  }
+  if (input.hook_event_name === "PostToolUse" && FILE_TOOLS.includes(tool)) {
+    // path は clip を通さず生のまま（完全一致で照合するため）。content・old_string などは読まない
+    const raw = typeof toolInput.file_path === "string" ? toolInput.file_path : toolInput.notebook_path;
+    return isRecordablePath(raw) ? { ...common, tool, path: raw } : null;
   }
   return null;
 }

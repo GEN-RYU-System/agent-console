@@ -10,6 +10,7 @@ import { handleBoard } from "./board-routes.ts";
 import { handleUsage } from "./usage-routes.ts";
 import { handleAccount } from "./account-routes.ts";
 import { handleChat } from "./chat-routes.ts";
+import { handleFiles } from "./files-routes.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
 import type { MemoryCollector } from "./memory.ts";
@@ -20,13 +21,14 @@ import { handlePr } from "./pr-routes.ts";
 import type { PickerAccess } from "./picker-extension.ts";
 import { handlePickIngest, handlePicks } from "./picks-routes.ts";
 import type { PickStore } from "./picks.ts";
-import { handleUploads } from "./uploads-routes.ts";
+import { handleUploadFiles, handleUploads } from "./uploads-routes.ts";
 import type { UploadStore } from "./uploads.ts";
 import { listResumeTargets, resolveResumeTarget } from "./resume-targets.ts";
 import type { QuickPromptStore } from "./quick-prompts.ts";
-import { SessionConflictError, SessionInputError, SessionNotFoundError, validateName, type SessionManager } from "./sessions.ts";
+import { SessionConflictError, SessionInputError, SessionNotFoundError, isClaudeSessionId, validateName, type SessionManager } from "./sessions.ts";
 import { WorktreeError } from "./worktree.ts";
-import type { RoutineService } from "./routines.ts";
+import { RoutineLimitError, validateReason, type RoutineService } from "./routines.ts";
+import { RoutineAudit, type RoutineAuditAction, type RoutineAuditEntry } from "./routine-audit.ts";
 import type { ReservationService } from "./reservations.ts";
 import type { ReserveAccess } from "./reserve-token.ts";
 
@@ -194,7 +196,9 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   if (await handleUsage(deps, req, res, url)) return;
   if (await handleAccount(deps, req, res, url)) return;
   if (await handleChat(deps, req, res, url)) return;
+  if (await handleFiles(deps, req, res, url)) return;
   if (await handleUploads(deps, req, res, url)) return;
+  if (await handleUploadFiles(deps, req, res, url)) return;
   if (await handleDailyUse(deps, req, res, url)) return;
   const removeMatch = /^\/api\/sessions\/([^/]+)$/.exec(url.pathname);
   if (req.method === "DELETE" && removeMatch) {
@@ -288,7 +292,8 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
   }
   // send-check: サーバーは端末へ書かない。入れてよい状態なら本文を返し、画面が xterm の paste() で入れるだけ。Enter は人が端末で押す
   const prompt = await quickPrompts.get(str(jsonBody(await readJsonBody(req)).promptId));
-  const verdict = await hub.checkInput(id);
+  // 作業中（busy）でも可。確認待ち・状態不明・停止は不可（chatVerdict）
+  const verdict = await hub.checkChat(id);
   if (!verdict.ok) throw new SessionConflictError(verdict.reason ?? "cannot input now");
   sendJson(res, 200, { text: prompt.text });
   return true;
@@ -326,6 +331,80 @@ async function handleAgentReservations(deps: AppDeps, req: IncomingMessage, res:
   if (req.method === "POST" && id === undefined) { sendJson(res, 201, await deps.reservations.create(jsonBody(await readJsonBody(req)), "agent")); return; }
   if (req.method === "POST" && id !== undefined) { sendJson(res, 200, await deps.reservations.cancel(safeDecode(id))); return; }
   sendJson(res, 404, { error: "not found" });
+}
+
+const AGENT_ROUTINE_PATH = /^\/api\/agent\/routines(?:\/([^/]+)(\/enabled)?)?$/;
+const FORBIDDEN_ROUTINE_MESSAGE = "ac-routine is limited to manager role sessions (起動直後は数秒〜数十秒待って再試行)";
+const routineAudits = new Map<string, RoutineAudit>();
+
+/** 呼び出し元の照合。正本は SessionManager のメモリ。生きていて claudeSessionId が一致する全セッションの役割が、すべて許可リストにあるときだけ通す */
+function checkRoutineCaller(deps: AppDeps, callerSessionId: string | null): { ok: boolean; roleId?: string } {
+  if (callerSessionId === null) return { ok: false };
+  const matches = deps.sessions.list().filter((s) => !s.exited && s.claudeSessionId === callerSessionId);
+  if (matches.length === 0) return { ok: false };
+  const allowed = new Set(deps.config.routineManagerRoles);
+  return { ok: matches.every((s) => allowed.has(s.roleId)), roleId: matches[0].roleId };
+}
+
+/**
+ * AI 用の定期実行の受け口（/api/agent/routines の GET・POST、/:id の PUT、/:id/enabled の POST だけ）。認証の前に分ける。
+ * 順序は予約と同じ（Origin があれば 403 → 合言葉 → 本文）。そのあと呼び出し元の役割を照合し（403）、reason を検査し（400）、処理する。
+ * 監査に残すのは、成功・403・上限の 400 だけ（入力の不備の 400 は残さない）。
+ */
+async function handleAgentRoutines(deps: AppDeps, req: IncomingMessage, res: ServerResponse, match: RegExpExecArray): Promise<void> {
+  if (req.headers.origin !== undefined) { sendJson(res, 403, { error: "forbidden" }); return; }
+  const presented = (req.headers.authorization ?? "").replace(/^Bearer /, "");
+  if (deps.reserve.token === null || !sameSecret(presented, deps.reserve.token)) { sendJson(res, 401, { error: "unauthorized" }); return; }
+  const id = match[1] === undefined ? undefined : safeDecode(match[1]);
+  const enabledPath = match[2] !== undefined;
+  const method = req.method ?? "";
+  const url = new URL(req.url ?? "/", "http://127.0.0.1");
+  let action: RoutineAuditAction | null = null;
+  if (method === "POST" && id === undefined) action = "add";
+  else if (method === "PUT" && id !== undefined && !enabledPath) action = "update";
+  else if (method === "POST" && id !== undefined && enabledPath) action = "enable";
+  const isList = method === "GET" && id === undefined;
+  if (!isList && action === null) { sendJson(res, 404, { error: "not found" }); return; }
+
+  const body = isList ? {} : jsonBody(await readJsonBody(req));
+  if (action === "enable" && body.enabled === false) action = "disable";
+  const rawCaller = isList ? url.searchParams.get("callerSessionId") : body.callerSessionId;
+  const callerSessionId = isClaudeSessionId(rawCaller) ? rawCaller : null;
+  const caller = checkRoutineCaller(deps, callerSessionId);
+  let audit = routineAudits.get(deps.config.dataDir);
+  if (audit === undefined) { audit = new RoutineAudit(deps.config.dataDir); routineAudits.set(deps.config.dataDir, audit); }
+  const record = async (entry: Omit<RoutineAuditEntry, "at" | "callerSessionId" | "roleId">): Promise<void> => {
+    try { await audit.append({ at: new Date().toISOString(), callerSessionId, ...(caller.roleId !== undefined ? { roleId: caller.roleId } : {}), ...entry }); } catch (e) { console.error("routine-audit: write failed:", e instanceof Error ? e.message : e); }
+  };
+  const reasonText = typeof body.reason === "string" && body.reason.length <= 200 ? body.reason.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "") : undefined;
+  if (!caller.ok) {
+    if (action !== null) await record({ action, outcome: "denied", ...(reasonText !== undefined ? { reason: reasonText } : {}), error: "forbidden: caller is not a routine manager session" });
+    sendJson(res, 403, { error: FORBIDDEN_ROUTINE_MESSAGE });
+    return;
+  }
+  if (isList) { sendJson(res, 200, { items: deps.routines.list() }); return; }
+
+  if (enabledPath && typeof body.enabled !== "boolean") throw new SessionInputError("enabled required");
+  const reason = validateReason(body.reason);
+  const { reason: _reason, callerSessionId: _caller, ...input } = body;
+  const act = action as RoutineAuditAction;
+  const target = id === undefined ? undefined : deps.routines.list().find((r) => r.id === id);
+  const targetCreatedBy: "agent" | "ui" | undefined = target === undefined ? undefined : target.createdBy === "agent" ? "agent" : "ui";
+  const withTarget = (routineId: string | undefined, by: "agent" | "ui" | undefined): Partial<RoutineAuditEntry> => (routineId !== undefined && by !== undefined ? { routineId, targetCreatedBy: by } : {});
+  try {
+    if (act === "add") {
+      const created = await deps.routines.create(input as never, "agent");
+      await record({ action: act, outcome: "ok", reason, ...withTarget(created.id, "agent") });
+      sendJson(res, 201, created);
+      return;
+    }
+    const result = act === "update" ? await deps.routines.update(id as string, input as never, true) : await deps.routines.setEnabled(id as string, act === "enable", true);
+    await record({ action: act, outcome: "ok", reason, ...withTarget(result.id, targetCreatedBy) });
+    sendJson(res, 200, result);
+  } catch (err) {
+    if (err instanceof RoutineLimitError) await record({ action: act, outcome: "denied", reason, error: err.message, ...withTarget(id, targetCreatedBy) });
+    throw err;
+  }
 }
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -423,6 +502,11 @@ export function createRequestHandler(deps: AppDeps) {
       const agentReservation = AGENT_RESERVATION_PATH.exec(url.pathname);
       if (agentReservation) {
         await handleAgentReservations(deps, req, res, agentReservation);
+        return;
+      }
+      const agentRoutine = AGENT_ROUTINE_PATH.exec(url.pathname);
+      if (agentRoutine) {
+        await handleAgentRoutines(deps, req, res, agentRoutine);
         return;
       }
       if (url.pathname.startsWith("/api/")) {
