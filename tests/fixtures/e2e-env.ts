@@ -107,6 +107,8 @@ export function prepareE2eEnv(): void {
   const punctScript = path.join(here, "punct-role.mjs");
   const mouseScript = path.join(here, "mouse-role.mjs");
   const marker = "agent-console-e2e-role";
+  // 引き継ぎ書の置き場（一時の場所。実際の ~/CC報告ファイル-keep には触れない）
+  const relayDir = path.join(base, "relay");
   const config = {
     port: E2E_PORT,
     salesanchorRoot: root,
@@ -129,6 +131,7 @@ export function prepareE2eEnv(): void {
     pickHtmlInPromptChars: 1500,
     activityKeepDays: 7,
     claudeSettingsPath,
+    relayDir,
     terminalSmoothScrollMs: 125,
     uploadMaxBytes: 5242880,
     uploadMaxKeep: 100,
@@ -166,11 +169,15 @@ export function prepareE2eEnv(): void {
   const tmuxClaudeSettings = path.join(base, "claude-home-tmux", ".claude", "settings.json");
   mkdirSync(path.dirname(tmuxClaudeSettings), { recursive: true });
   const tmuxConfigFile = path.join(base, "config-tmux.json");
+  // tmux 側は relayDir を渡さない（「引き継ぎの置き場が無い」場合の 409 を見るため）
+  const { relayDir: _unusedRelayDir, ...tmuxBaseConfig } = config;
+  void _unusedRelayDir;
   writeFileSync(
     tmuxConfigFile,
-    JSON.stringify({ ...config, port: E2E_TMUX_PORT, dataDir: path.join(base, "data-tmux"), claudeSettingsPath: tmuxClaudeSettings, terminalHost: "tmux", tmuxSocket }, null, 2),
+    JSON.stringify({ ...tmuxBaseConfig, port: E2E_TMUX_PORT, dataDir: path.join(base, "data-tmux"), claudeSettingsPath: tmuxClaudeSettings, terminalHost: "tmux", tmuxSocket }, null, 2),
   );
 
+  process.env.AC_E2E_RELAY_DIR = relayDir;
   process.env.AC_E2E_DIR = base;
   process.env.AC_E2E_ROOT = root;
   process.env.AC_E2E_CONFIG = configFile;

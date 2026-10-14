@@ -56,6 +56,7 @@ export const markRead = (id: string): Promise<{ read: boolean }> => request(`/ap
 export const renameSession = (id: string, name: string): Promise<{ mode: "claude" | "app" | "queued" }> =>
   request(`/api/sessions/${encodeURIComponent(id)}/rename`, { method: "POST", body: JSON.stringify({ name }) });
 /** 動いているセッションを閉じる（止まっているものは一覧から外す）。確認は画面側で行ってから呼ぶ。 */
+export const relaySession = (id: string): Promise<{ relayId: string }> => request(`/api/sessions/${encodeURIComponent(id)}/relay`, { method: "POST" });
 export const closeSession = (id: string): Promise<{ closed: boolean }> => request(`/api/sessions/${encodeURIComponent(id)}/close`, { method: "POST" });
 /** セッションの並び順を変える（toIndex は動かしたあとの位置）。画面はサーバーの合図（snapshot）で並び直る。 */
 export const moveSession = (id: string, toIndex: number): Promise<{ moved: boolean }> =>

@@ -55,7 +55,7 @@ let counter = 0;
 function newSession(claudeSessionId = true): { id: string; pid: number; claudeId: string } {
   counter += 1;
   const claudeId = `eeeeeeee-0000-4000-8000-${String(counter).padStart(12, "0")}`;
-  const s = h.sessions.restore({ role: h.config.roles[0], name: `cq-${counter}`, cwd: h.config.salesanchorRoot, branch: null });
+  const s = h.sessions.restore({ role: h.config.roles[0], name: `cq-${counter}`, cwd: h.config.salesanchorRoot, branch: null, manualInitialName: true });
   if (claudeSessionId) h.sessions.setClaudeSessionId(s.id, claudeId);
   made.push(s.id);
   return { id: s.id, pid: s.term.pid, claudeId };
@@ -89,7 +89,7 @@ describe("POST /chat/queue と DELETE /chat/queue/:qid の入口", () => {
     expect((await post({ text: "a".repeat(32 * 1024 + 1) })).status).toBe(400);
     expect((await post({ text: "a\u001bb" })).status).toBe(400);
     // 終了したが一覧に残っているセッション（役割 short は echo して終わる）
-    const ended = h.sessions.restore({ role: h.config.roles[1], name: "cq-ended", cwd: h.config.salesanchorRoot, branch: null });
+    const ended = h.sessions.restore({ role: h.config.roles[1], name: "cq-ended", cwd: h.config.salesanchorRoot, branch: null, manualInitialName: true });
     made.push(ended.id);
     await until(() => ended.exited);
     expect((await queue(ended.id, "x")).status).toBe(409);

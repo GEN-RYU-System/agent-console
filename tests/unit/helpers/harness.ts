@@ -1,3 +1,4 @@
+import { RelayManager, defaultRelayTiming, type RelayTiming } from "../../../server/relay.ts";
 import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
@@ -56,6 +57,7 @@ export interface Harness {
   uploads: UploadStore;
   auth: Auth;
   reservations: ReservationService;
+  relay: RelayManager;
   routines: RoutineService;
   close: () => Promise<void>;
 }
@@ -74,6 +76,10 @@ async function freePort(): Promise<number> {
 export interface HarnessOptions {
   /** 指定すると、そのポートで待ち受ける（launchctl kickstart による起動の再現用）。 */
   port?: number;
+  /** 引き継ぎ書の置き場。未指定なら引き継ぎは使えない（409 relay not configured） */
+  relayDir?: string;
+  /** 引き継ぎの待ち時間（試験用） */
+  relayTiming?: Partial<RelayTiming>;
   ledgerScript?: string;
   maxSessions?: number;
   /** claude 役のスタブ（`agents --json` の出力を返す）。既定は存在しないパス */
@@ -213,6 +219,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const recorder = new OpenSessionRecorder(sessions, hub, store);
   const routines = new RoutineService(config, sessions, hub, new RoutineStore(config.dataDir));
   const reservations = new ReservationService(config, sessions, hub, new ReservationStore(config.dataDir), undefined, undefined, true);
+  const relay = new RelayManager({ config, sessions, hub, relayDir: options.relayDir ?? null }, undefined, { ...defaultRelayTiming(config), ...options.relayTiming });
   if (options.recorder === true) recorder.start();
   const clock: Clock = { t: Date.now(), advance(ms) { this.t += ms; } };
   const auth = createAuth(options.secret ?? TOKEN, port, { now: () => clock.t, sessionsFile: options.persistSessions === true ? path.join(config.dataDir, "auth-sessions.json") : undefined });
@@ -224,7 +231,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const picker: PickerAccess = options.picker ?? { extensionOrigin: PICKER_ORIGIN, token: PICKER_TOKEN, extensionDir: path.join(config.dataDir, "chrome-extension") };
   const reserve: ReserveAccess = options.reserve ?? { token: RESERVE_TOKEN };
   const server = createServer(
-    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines, reservations, reserve }),
+    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines, reservations, relay, reserve }),
   );
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
@@ -246,6 +253,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     uploads,
     auth,
     reservations,
+    relay,
     routines,
     close: async () => {
       sessions.killAll();

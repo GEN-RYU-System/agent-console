@@ -70,6 +70,8 @@ const claudeJsonHashBefore = sha256OrNull(path.join(os.homedir(), ".claude.json"
 test.describe.configure({ mode: "serial" });
 
 test("K2: 新しいセッション -> ワークツリー作成 -> 役割コマンドが端末に出て入力できる", async ({ page }) => {
+  // 新しく作ったセッションには最初の入力待ちで /rename が 1 回書かれ、打鍵に割り込む（initialName）。stub の Claude 側の名前を同じにして書かせない
+  writeFileSync(NAME_FILE, "wt-session");
   await openPaired(page);
   await createViaUi(page, "wt-session", "e2e-wt", "release/e2e-one");
   const terminal = page.getByTestId("terminal");
@@ -79,6 +81,7 @@ test("K2: 新しいセッション -> ワークツリー作成 -> 役割コマ�
   await page.keyboard.type("hello-from-e2e");
   await page.keyboard.press("Enter");
   await expect(terminal).toContainText("hello-from-e2e");
+  writeFileSync(NAME_FILE, "");
   const branches = execFileSync("git", ["-C", ROOT, "branch", "--list", "release/e2e-one"], { encoding: "utf8" });
   expect(branches).toContain("release/e2e-one");
 });
@@ -370,12 +373,15 @@ test("CSP: 画面・端末・モーダルの操作で CSP 違反が 1 件も出�
   expect(response?.headers()["x-content-type-options"]).toBe("nosniff");
   await expect(page.getByRole("button", { name: "新しいセッション", exact: true })).toBeVisible();
   // モーダル（SA 金型）と端末（xterm の style 要素・インライン style）を実際に使う。最初に開くのはチャットなので、端末タブを押す
+  // 新しく作ったセッションには最初の入力待ちで /rename が 1 回書かれ、打鍵に割り込む（initialName）。stub の Claude 側の名前を同じにして書かせない
+  writeFileSync(NAME_FILE, "csp-session");
   await openTerminalTab(page);
   await createViaUi(page, "csp-session", "e2e-plain");
   await expect(page.getByTestId("terminal")).toContainText("READY");
   await page.getByTestId("terminal").click();
   await page.keyboard.type("csp-check");
   await expect(page.getByTestId("terminal")).toContainText("csp-check");
+  writeFileSync(NAME_FILE, "");
   expect(violations).toEqual([]);
 });
 
@@ -561,6 +567,8 @@ test("段階2 K1: busy→idle で未読の印・窓タイトル・macOS 通知�
 });
 
 test("段階2 K2: 名前を変えると /rename が端末に送られ、Claude 側の名前が変われば表示も変わる。作業中は予約され、待機になってから送られる", async ({ page }) => {
+  // 新しく作ったセッションには、最初の入力待ちで /rename <名前> が 1 回書かれる（initialName）。stub の Claude 側の名前を同じにして書かせない
+  writeFileSync(NAME_FILE, "rename-target");
   const id = await apiCreate("rename-target", "e2e-plain");
   await openPaired(page);
   const row = rowOf(page, id);
@@ -710,6 +718,8 @@ test("v0.3.4 K4: 「↑」「↓」で指示を並べ替えると、編集画面
 });
 
 test("段階2 K3: 複数行の指示は、括弧付き貼付モードの端末へ ESC[200~ ... ESC[201~ で包まれて入り、Enter は届かない", async ({ page }) => {
+  // 新しく作ったセッションには最初の入力待ちで /rename が 1 回書かれる（initialName）。stub の Claude 側の名前を同じにして書かせない（貼り付けが最初のバイト）
+  writeFileSync(NAME_FILE, "bracketed-target");
   const id = await apiCreate("bracketed-target", "e2e-bracketed");
   const created = await fetch(`${BASE}/api/quick-prompts`, {
     method: "POST",
@@ -731,6 +741,7 @@ test("段階2 K3: 複数行の指示は、括弧付き貼付モードの端末�
   await page.waitForTimeout(1000);
   await expect(terminal).not.toContainText('\\u001b[201~\\r');
   await fetch(`${BASE}/api/quick-prompts/${promptId}`, { method: "DELETE", headers: BEARER });
+  writeFileSync(NAME_FILE, "");
 });
 
 test("段階2 K3: 状態確認中に別のセッションへ切り替えると、どちらの端末にも入らず案内が出る", async ({ page }) => {
@@ -936,6 +947,8 @@ test("v0.4.0 K1〜K6: 変更タブ -> 一覧と色つき diff -> 行コメント
   test.setTimeout(90000);
   page.setDefaultTimeout(15000);
   await ensureRoom(1);
+  // 新しく作ったセッションには最初の入力待ちで /rename が 1 回書かれる（initialName）。stub の Claude 側の名前を同じにして書かせない（貼り付けが最初のバイト）
+  writeFileSync(NAME_FILE, "diff-target");
   const id = await apiCreate("diff-target", "e2e-bracketed");
   writeFileSync(STATUS_FILE, "idle");
   makeChanges();
@@ -1020,6 +1033,7 @@ test("v0.4.0 K1〜K6: 変更タブ -> 一覧と色つき diff -> 行コメント
     await expect(pane.getByTestId("send-reason")).toHaveText("Claude が作業中のため送れません");
   } finally {
     writeFileSync(STATUS_FILE, "idle");
+    writeFileSync(NAME_FILE, "");
     const list = (await (await fetch(`${BASE}/api/sessions/${id}/diff-comments`, { headers: BEARER })).json()) as { items?: Array<{ id: string }> };
     for (const c of list.items ?? []) await fetch(`${BASE}/api/sessions/${id}/diff-comments/${c.id}`, { method: "DELETE", headers: BEARER });
     restoreChanges();
