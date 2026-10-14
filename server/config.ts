@@ -65,6 +65,8 @@ export interface Config {
   ledgerPollMs: number;
   ringBufferBytes: number;
   roles: RoleConfig[];
+  /** ac-routine（AI による定期実行の登録・変更）を使ってよい役割の id（SSOT）。既定 ["opus-designer"]。roles に無い id は起動時エラー */
+  routineManagerRoles: string[];
   /** 「アカウントを切り替える」で動かす命令（config 固定）。無ければ切り替えボタンを出さない。roles には入れない */
   accountLoginCommand?: string[];
   /** よく使う指示などアプリが保存するデータの置き場 */
@@ -258,6 +260,7 @@ export function parseConfig(raw: unknown): Config {
     if (scopes.has(role.resumeScope)) throw new Error(`config: duplicate resumeScope ${role.resumeScope}`);
     scopes.add(role.resumeScope);
   }
+  const routineManagerRoles = parseRoutineManagerRoles(o.routineManagerRoles, ids);
   return {
     port: o.port as number,
     salesanchorRoot: expandHome(o.salesanchorRoot as string),
@@ -269,6 +272,7 @@ export function parseConfig(raw: unknown): Config {
     ledgerPollMs: o.ledgerPollMs as number,
     ringBufferBytes: o.ringBufferBytes as number,
     roles,
+    routineManagerRoles,
     ...(o.accountLoginCommand !== undefined ? { accountLoginCommand: parseCommand(o.accountLoginCommand, "accountLoginCommand") } : {}),
     dataDir: parseDataDir(o.dataDir),
     notify: parseNotify(o.notify),
@@ -293,6 +297,17 @@ export function parseConfig(raw: unknown): Config {
     uploadMaxBytes: parsePositive(o.uploadMaxBytes, "uploadMaxBytes", DEFAULT_UPLOAD_MAX_BYTES),
     uploadMaxKeep: parsePositive(o.uploadMaxKeep, "uploadMaxKeep", DEFAULT_UPLOAD_MAX_KEEP),
   };
+}
+
+export const DEFAULT_ROUTINE_MANAGER_ROLES: readonly string[] = ["opus-designer"];
+
+function parseRoutineManagerRoles(raw: unknown, roleIds: ReadonlySet<string>): string[] {
+  // 明示が無いときは、既定のうち roles に実在するものだけを使う（無ければ空＝全員 403。起動は止めない）
+  if (raw === undefined) return DEFAULT_ROUTINE_MANAGER_ROLES.filter((id) => roleIds.has(id));
+  const list = raw;
+  if (!Array.isArray(list) || list.some((x) => typeof x !== "string" || x === "")) throw new Error("config: routineManagerRoles must be an array of role ids");
+  for (const id of list as string[]) if (!roleIds.has(id)) throw new Error(`config: routineManagerRoles has unknown role id ${id}`);
+  return [...new Set(list as string[])];
 }
 
 const TMUX_SOCKET = /^[A-Za-z0-9_-]+$/;

@@ -22,6 +22,19 @@ describe("routine persistence and clock", () => {
     await expect(store.save([routine({ name: "replacement" })])).rejects.toThrow();
     expect(await readFile(file, "utf8")).toBe("not json");
   });
+
+  it("S7: reads a routines.json that has createdBy (and unknown keys) without error; unknown keys are not written back; an unknown createdBy value is dropped", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "ac-routine-")); const store = new RoutineStore(dir);
+    const file = path.join(dir, ROUTINES_FILE);
+    await writeFile(file, JSON.stringify({ version: 1, items: [{ ...routine({ id: "a1", createdBy: "agent" }), zzz: "x" }, { ...routine({ id: "u1" }), createdBy: "human" }] }));
+    const items = await store.list();
+    expect(items.map((r) => [r.id, r.createdBy])).toEqual([["a1", "agent"], ["u1", undefined]]);
+    await store.save(items);
+    const raw = await readFile(file, "utf8");
+    expect(raw).not.toContain("zzz");
+    expect(JSON.parse(raw).items[0].createdBy).toBe("agent");
+    expect(JSON.parse(raw).items[1]).not.toHaveProperty("createdBy");
+  });
 });
 
 type Verdict = { ok: boolean; hasClaude: boolean; reason?: string };
