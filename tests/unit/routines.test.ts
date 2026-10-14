@@ -39,14 +39,14 @@ describe("routine persistence and clock", () => {
 
 type Verdict = { ok: boolean; hasClaude: boolean; reason?: string };
 const NOW = () => new Date("2026-10-12T00:00:10.000Z"); // 09:00 JST Monday
-const TIMING = { pollMs: 5, timeoutMs: 80 };
+const TIMING = { pollMs: 5, timeoutMs: 80, namePollMs: 5, nameTimeoutMs: 20 };
 const cfg = { salesanchorRoot: os.tmpdir(), roles: [{ id: "echo", needsWorktree: false, command: ["echo"] }], pasteSubmitDelayMs: 0 };
 
 /** hub.submitText は本物（Hub.prototype）を、偽の sessions/config で動かす */
 const makeHub = (sessions: unknown, verdicts: Verdict[] | (() => Verdict)) => {
   const queue = Array.isArray(verdicts) ? [...verdicts] : null;
   const checkInput = vi.fn(async () => (queue ? (queue.length > 1 ? queue.shift() : queue[0]) : (verdicts as () => Verdict)()));
-  const hub = { checkInput, sessions, config: cfg, submitText: (id: string, text: string) => Hub.prototype.submitText.call(hub, id, text) };
+  const hub = { checkInput, sessions, config: cfg, submitText: (id: string, text: string) => Hub.prototype.submitText.call(hub, id, text), sendName: () => true, displayNames: () => new Map<string, string>(), writing: new Set<string>(), tryBeginWrite: (id: string) => Hub.prototype.tryBeginWrite.call(hub, id), endWrite: (id: string) => Hub.prototype.endWrite.call(hub, id) };
   return hub;
 };
 
@@ -105,7 +105,8 @@ describe("routine dispatch opens a new session", () => {
   it("K3 sends once with bracketed paste, then CR, after the second ready check", async () => {
     const { service, sessions, hub } = await setup({ verdicts: [{ ok: false, hasClaude: false }, { ok: true, hasClaude: true }], routines: [{ promptText: "go" }] });
     await run(service);
-    expect(hub.checkInput).toHaveBeenCalledTimes(2);
+    // 入力待ち（1回目は待ち・2回目で成立）→ /rename の後の入力待ちの確認（1回）。v0.29.0 で名前合わせの確認が増えた
+    expect(hub.checkInput).toHaveBeenCalledTimes(3);
     expect(sessions.write.mock.calls.map((c) => c[1])).toEqual(["\u001b[200~go\u001b[201~", "\r"]);
     expect(outcomes(service)).toEqual(["sent"]);
     expect(service.list()[0].events[0].sessionName).toBe("daily 10/12 09:00");

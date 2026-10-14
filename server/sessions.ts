@@ -71,6 +71,8 @@ export interface Session {
   claudeSessionId?: string;
   /** 起動時に、動いていた tmux のセッションへつなぎ直した（新しく起動していない） */
   reattached?: boolean;
+  /** 起動直後の Claude に /rename で合わせる名前（メモリだけ。合わせ終えた・10 分過ぎた・終了したら Hub が消す） */
+  initialName?: string;
 }
 
 // eslint-disable-next-line no-control-regex
@@ -276,7 +278,9 @@ export class SessionManager {
       const cwd = branch
         ? await createWorktree(this.config.salesanchorRoot, this.config.newWorktreeScript, branch)
         : this.config.salesanchorRoot;
-      return this.spawnSession(name, role, branch, cwd);
+      const session = this.spawnSession(name, role, branch, cwd);
+      session.initialName = name;
+      return session;
     } finally {
       this.pending -= 1;
     }
@@ -317,13 +321,17 @@ export class SessionManager {
    * 前回の続きとして端末を開く（起動時の復元用）。起動コマンドは呼び出し側が決めた config の命令のみ。
    * claudeSessionId（UUID の形のもの）があるときは、環境変数 AC_RESUME_ID で渡す（コマンドの文字列にはつなげない）。
    */
-  restore(input: { role: RoleConfig; name: unknown; cwd: string; branch: string | null; claudeSessionId?: string; id?: string }): Session {
+  restore(input: { role: RoleConfig; name: unknown; cwd: string; branch: string | null; claudeSessionId?: string; id?: string; manualInitialName?: boolean }): Session {
     if (!this.hasCapacity()) throw new SessionInputError("too many sessions");
     const sid = isClaudeSessionId(input.claudeSessionId) ? input.claudeSessionId : undefined;
     const useRestore = sid !== undefined && input.role.restoreCommand !== undefined;
     const command = useRestore ? (input.role.restoreCommand as string[]) : input.role.command;
     // 復元の起動でも、同じ会話の id を引き継ぐ（次の再起動でも続きを開ける）
-    return this.spawnSession(validateName(input.name), input.role, input.branch, input.cwd, command, useRestore ? { AC_RESUME_ID: sid } : {}, useRestore ? sid : undefined, isSessionId(input.id) ? input.id : undefined);
+    const name = validateName(input.name);
+    const session = this.spawnSession(name, input.role, input.branch, input.cwd, command, useRestore ? { AC_RESUME_ID: sid } : {}, useRestore ? sid : undefined, isSessionId(input.id) ? input.id : undefined);
+    // 新しい会話として起動した（会話の id で再開していない・動いていた tmux へのつなぎ直しでない）ときだけ、起動直後の名前合わせを予約する。呼び出し元が自分で名前を送るとき（manualInitialName）は予約しない
+    if (input.manualInitialName !== true && !useRestore && session.reattached !== true) session.initialName = name;
+    return session;
   }
 
   /** Claude の sessionId を知ったとき。UUID の形でない値は受け付けない。変わったときだけ通知する。 */

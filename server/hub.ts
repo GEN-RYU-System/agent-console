@@ -7,6 +7,7 @@ import { ciOfResponse, fetchPr, isSettled, resolveTarget, type CiState, type PrR
 import { BreakTracker, breakBody, osascriptSender, type NotificationSender } from "./notify.ts";
 import { startPolling } from "./poll.ts";
 import { descendantPids, readProcessTable } from "./process-tree.ts";
+import type { RelayView } from "./relay.ts";
 import type { RestoreNotice } from "./restore.ts";
 import { SessionConflictError, SessionNotFoundError, type SessionManager, type TerminalNotice } from "./sessions.ts";
 import { resolveWorkplace } from "./workplace.ts";
@@ -38,6 +39,13 @@ export interface SessionView {
 /** 名前の変更の結果。queued は端末へ何も書かず予約した */
 export type RenameMode = "claude" | "app" | "queued";
 
+/** 端末への 2 回書き（貼り付け → 待つ → Enter）の印が取れないとき、submitText が待つ間隔と上限 */
+export const WRITE_WAIT_POLL_MS = 200;
+export const WRITE_WAIT_MAX_MS = 10000;
+/** 起動直後の名前合わせ（initialName）を試みる期限。作成から数える */
+export const INITIAL_NAME_MAX_MS = 10 * 60 * 1000;
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 /** チャットの送信の予約の上限（1 セッションあたり。送信済みで受け取り待ちのものも数える） */
 export const CHAT_QUEUE_MAX = 10;
 const BRACKETED_PASTE_START = "\u001b[200~";
@@ -65,6 +73,8 @@ export interface Snapshot {
   restoreNotices: RestoreNotice[];
   /** 端末の置き場についての案内（tmux が無い／端末につなげない）。無ければ省く */
   terminalNotices?: TerminalNotice[];
+  /** 引き継ぎの進行（メモリだけ）。空のときは項目ごと無い */
+  relays?: RelayView[];
   /** 部品タブの件数: まだ Claude に送っていない部品の数 */
   picksUnsent: number;
   /** セッションの様子の記録の版。進んだら、画面は右の欄を取り直す */
@@ -86,6 +96,9 @@ export class Hub {
   /** 名前の変更の予約（セッション id → 名前）。メモリだけ。送るか捨てるまでの正本はここ */
   private readonly pendingRenames = new Map<string, string>();
   private restoreNotices: RestoreNotice[] = [];
+  private relays: RelayView[] = [];
+  /** 端末へ書いている最中のセッション id（書き込みの印）。2 回書きの間に別の書き込みが入って入力が連結されるのを防ぐ */
+  readonly writing = new Set<string>();
   private picksUnsent = 0;
   private activityRev = 0;
   /** 送信の予約（セッション id → 古い順）。メモリだけ。アプリを再起動すると消える。正本はここ */
@@ -119,6 +132,7 @@ export class Hub {
     sessions.onRemoved((id) => {
       this.tracker.forget(id);
       this.pendingRenames.delete(id);
+      this.writing.delete(id);
       this.prKeyOfSession.delete(id);
       this.dropChatState(id);
     });
@@ -156,6 +170,7 @@ export class Hub {
     this.agents = await fetchAgents(this.config.claudeBin);
     await this.detectBreaks();
     await this.flushPendingRenames();
+    await this.flushInitialNames();
     await this.publish();
     await this.flushChatQueues();
   }
@@ -195,26 +210,82 @@ export class Hub {
     void this.publish().catch((err) => this.onPollError("publish", err));
   }
 
+  /** 引き継ぎの進行を配信に載せる。 */
+  setRelays(relays: readonly RelayView[]): void {
+    this.relays = [...relays];
+    void this.publish().catch((err) => this.onPollError("publish", err));
+  }
+
+  /** 書き込みの印を取る。付いていれば false（取れなかった）。書く直前に同期で呼ぶこと（await を挟まない）。 */
+  tryBeginWrite(sessionId: string): boolean {
+    if (this.writing.has(sessionId)) return false;
+    this.writing.add(sessionId);
+    return true;
+  }
+
+  /** 書き込みの印を外す。 */
+  endWrite(sessionId: string): void {
+    this.writing.delete(sessionId);
+  }
+
+  /** 送信の予約か名前の変更の予約が残っているか（引き継ぎの 409 判定用） */
+  hasPendingWork(sessionId: string): boolean {
+    return (this.chatQueue.get(sessionId)?.length ?? 0) > 0 || this.pendingRenames.has(sessionId);
+  }
+
+  /** claude agents を走らせず、直近の取得結果で入力してよい状態かを見る。取得結果が無いときは ok でない。 */
+  async peekInput(sessionId: string): Promise<InputVerdict> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return { ok: false, reason: "session not found", hasClaude: false };
+    const table = await readProcessTable().catch(() => null);
+    if (table === null) return { ok: false, reason: "process list unavailable", hasClaude: false };
+    return inputVerdict({ exited: session.exited, pids: descendantPids(session.term.pid, table) }, this.agents);
+  }
+
   /** 名前の変更の要求。待機中ならすぐ反映し、作業中・許可待ち・状態不明なら端末に書かず予約する。 */
   async requestRename(sessionId: string, name: string): Promise<RenameMode> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new SessionConflictError("session not found");
     const verdict = await this.checkInput(sessionId);
     if (session.exited) throw new SessionConflictError(verdict.reason ?? "session is stopped");
-    if (verdict.ok) return this.applyRename(sessionId, name, verdict.hasClaude);
+    if (verdict.ok) {
+      const mode = this.applyRename(sessionId, name, verdict.hasClaude);
+      if (mode === "queued") await this.publish();
+      return mode;
+    }
     this.pendingRenames.set(sessionId, name);
+    this.dropInitialName(sessionId);
     await this.publish();
     return "queued";
   }
 
-  /** 判定が ok のときの反映。Claude 起動中は /rename を送り、いなければアプリの名前を変える。予約は消す。 */
-  private applyRename(sessionId: string, name: string, hasClaude: boolean): "claude" | "app" {
-    this.pendingRenames.delete(sessionId);
+  /** 後から来た名前の変更が、起動直後の名前合わせより優先する（予約が先に反映されても、初回の名前を重ねて書かない） */
+  private dropInitialName(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (session) delete session.initialName;
+  }
+
+  /**
+   * 判定が ok のときの反映。Claude 起動中は /rename を送り、いなければアプリの名前を変える。予約は消す。
+   * 端末に書く道では、書く直前に同期で書き込みの印を取る（取れなければ書かず、予約に入れて "queued"）。
+   */
+  private applyRename(sessionId: string, name: string, hasClaude: boolean): RenameMode {
+    this.dropInitialName(sessionId);
     if (hasClaude) {
-      const session = this.sessions.get(sessionId);
-      if (session) this.sessions.write(session, `/rename ${name}\r`);
+      if (!this.tryBeginWrite(sessionId)) {
+        this.pendingRenames.set(sessionId, name);
+        return "queued";
+      }
+      try {
+        this.pendingRenames.delete(sessionId);
+        const session = this.sessions.get(sessionId);
+        if (session) this.sessions.write(session, `/rename ${name}\r`);
+      } finally {
+        this.endWrite(sessionId);
+      }
       return "claude";
     }
+    this.pendingRenames.delete(sessionId);
     this.sessions.rename(sessionId, name);
     return "app";
   }
@@ -230,6 +301,7 @@ export class Hub {
           this.pendingRenames.delete(id);
           continue;
         }
+        if (this.writing.has(id)) continue;
         const polled = inputVerdict({ exited: false, pids: descendantPids(session.term.pid, table) }, this.agents);
         if (!polled.ok) continue;
         const verdict = await this.checkInput(id);
@@ -239,6 +311,62 @@ export class Hub {
         this.onPollError("rename", err);
       }
     }
+  }
+
+  /**
+   * 起動直後の名前合わせ。initialName を持つセッションに、Claude が入力待ちになってから /rename を 1 回だけ送る。
+   * 先に定期取得の値（this.agents）だけで見て、書く見込みがあるときだけ checkInput で取り直す。
+   */
+  private async flushInitialNames(): Promise<void> {
+    const targets = this.sessions.list().filter((s) => s.initialName !== undefined);
+    if (targets.length === 0) return;
+    // ps が失敗したときは、子孫の判定が当てにならないので書かない（送信の予約と同じ扱い）
+    const table = await readProcessTable().catch(() => null);
+    if (table === null) return;
+    for (const session of targets) {
+      try {
+        const initialName = session.initialName;
+        if (initialName === undefined) continue;
+        if (session.exited || this.pendingRenames.has(session.id) || Date.now() - session.createdAt > INITIAL_NAME_MAX_MS) {
+          delete session.initialName;
+          continue;
+        }
+        if (this.writing.has(session.id)) continue;
+        const info = { exited: false, pids: descendantPids(session.term.pid, table) };
+        const agent = agentForSession(info, this.agents);
+        if (agent === undefined || !inputVerdict(info, this.agents).ok) continue;
+        if (agent.name === initialName) {
+          delete session.initialName;
+          continue;
+        }
+        const verdict = await this.checkInput(session.id);
+        // 取り直している間に、予約・終了・差し替えがあれば尊重する
+        if (session.initialName !== initialName || session.exited || this.pendingRenames.has(session.id)) continue;
+        if (!verdict.ok || !verdict.hasClaude) continue;
+        if (!this.tryBeginWrite(session.id)) continue;
+        try {
+          this.sessions.write(session, `/rename ${initialName}\r`);
+        } finally {
+          this.endWrite(session.id);
+        }
+        delete session.initialName;
+      } catch (err) {
+        this.onPollError("initial-name", err);
+      }
+    }
+  }
+
+  /** 新しく開いたセッションへ /rename を 1 回書く（書き込みの印を取れなければ書かず false）。 */
+  sendName(sessionId: string, name: string): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.exited) return false;
+    if (!this.tryBeginWrite(sessionId)) return false;
+    try {
+      this.sessions.write(session, `/rename ${name}\r`);
+    } finally {
+      this.endWrite(sessionId);
+    }
+    return true;
   }
 
   /** そのセッションの送信の予約（古い順）。画面の写し用 */
@@ -370,19 +498,25 @@ export class Hub {
     if (current === undefined || current.state !== "queued" || this.chatSentGuard.has(sessionId) || session.exited) return;
     const claudeId = session.claudeSessionId;
     const sentSeq = verdict.hasClaude && claudeId !== undefined && this.chatSource !== null ? this.chatSource.chat(claudeId, Number.MAX_SAFE_INTEGER).lastSeq : null;
-    // await の前に同期で sent にする（同時の実行・取り消しとの競合を避ける）
-    this.setChatItems(sessionId, (this.chatQueue.get(sessionId) ?? []).map((i) => (i.id === next.id ? { ...i, state: "sent", ...(sentSeq !== null ? { sentAtSeq: sentSeq } : {}) } : i)));
-    if (verdict.hasClaude) this.chatSentGuard.set(sessionId, { sentSeq, sentWhile: verdict.mode === "busy" ? "busy" : "idle" });
-    this.bumpChat();
-    this.sessions.write(session, verdict.hasClaude ? `${BRACKETED_PASTE_START}${next.text}${BRACKETED_PASTE_END}` : next.text);
-    await new Promise<void>((resolve) => setTimeout(resolve, this.config.pasteSubmitDelayMs));
-    const stillThere = (this.chatQueue.get(sessionId) ?? []).some((i) => i.id === next.id);
-    if (!stillThere || session.exited || this.sessions.get(sessionId) !== session || this.sessions.isClosing(sessionId)) return;
-    this.sessions.write(session, "\r");
-    // 素のシェルには「受け取りの記録」が来ないので、Enter を送ったら予約から外す
-    if (!verdict.hasClaude) {
-      this.setChatItems(sessionId, (this.chatQueue.get(sessionId) ?? []).filter((i) => i.id !== next.id));
+    // 書き込みの印を取れなければ、予約も見張りも触らずに戻る（次の定期取得で再び試す）
+    if (!this.tryBeginWrite(sessionId)) return;
+    try {
+      // await の前に同期で sent にする（同時の実行・取り消しとの競合を避ける）
+      this.setChatItems(sessionId, (this.chatQueue.get(sessionId) ?? []).map((i) => (i.id === next.id ? { ...i, state: "sent", ...(sentSeq !== null ? { sentAtSeq: sentSeq } : {}) } : i)));
+      if (verdict.hasClaude) this.chatSentGuard.set(sessionId, { sentSeq, sentWhile: verdict.mode === "busy" ? "busy" : "idle" });
       this.bumpChat();
+      this.sessions.write(session, verdict.hasClaude ? `${BRACKETED_PASTE_START}${next.text}${BRACKETED_PASTE_END}` : next.text);
+      await new Promise<void>((resolve) => setTimeout(resolve, this.config.pasteSubmitDelayMs));
+      const stillThere = (this.chatQueue.get(sessionId) ?? []).some((i) => i.id === next.id);
+      if (!stillThere || session.exited || this.sessions.get(sessionId) !== session || this.sessions.isClosing(sessionId)) return;
+      this.sessions.write(session, "\r");
+      // 素のシェルには「受け取りの記録」が来ないので、Enter を送ったら予約から外す
+      if (!verdict.hasClaude) {
+        this.setChatItems(sessionId, (this.chatQueue.get(sessionId) ?? []).filter((i) => i.id !== next.id));
+        this.bumpChat();
+      }
+    } finally {
+      this.endWrite(sessionId);
     }
   }
 
@@ -393,11 +527,22 @@ export class Hub {
   async submitText(sessionId: string, text: string): Promise<boolean> {
     const session = this.sessions.get(sessionId);
     if (!session || session.exited) return false;
-    this.sessions.write(session, `${BRACKETED_PASTE_START}${text}${BRACKETED_PASTE_END}`);
-    await new Promise<void>((resolve) => setTimeout(resolve, this.config.pasteSubmitDelayMs));
-    if (session.exited || this.sessions.get(sessionId) !== session || this.sessions.isClosing(sessionId)) return false;
-    this.sessions.write(session, "\r");
-    return true;
+    // 書き込みの印が取れるまで待つ（200ms ごと・最大 10 秒）。取れなければ書かず false
+    const deadline = Date.now() + WRITE_WAIT_MAX_MS;
+    while (!this.tryBeginWrite(sessionId)) {
+      if (Date.now() >= deadline) return false;
+      await sleep(WRITE_WAIT_POLL_MS);
+      if (session.exited || this.sessions.get(sessionId) !== session || this.sessions.isClosing(sessionId)) return false;
+    }
+    try {
+      this.sessions.write(session, `${BRACKETED_PASTE_START}${text}${BRACKETED_PASTE_END}`);
+      await new Promise<void>((resolve) => setTimeout(resolve, this.config.pasteSubmitDelayMs));
+      if (session.exited || this.sessions.get(sessionId) !== session || this.sessions.isClosing(sessionId)) return false;
+      this.sessions.write(session, "\r");
+      return true;
+    } finally {
+      this.endWrite(sessionId);
+    }
   }
 
   /** 前回の status と比べ、区切りがあれば未読を増やして macOS 通知を出す。取得失敗の間は何も判定しない。 */
@@ -568,7 +713,7 @@ export class Hub {
     const previous = this.lastNames;
     this.lastNames = new Map(views.map((v) => [v.id, v.name]));
     if (views.some((v) => previous.has(v.id) && previous.get(v.id) !== v.name)) for (const l of this.nameListeners) l();
-    return { sessions: views, agentsAvailable: this.agents !== null, restoreNotices: this.restoreNotices, ...terminalNoticesField(this.sessions.terminalNotices()), picksUnsent: this.picksUnsent, activityRev: this.activityRev + this.chatRev };
+    return { sessions: views, agentsAvailable: this.agents !== null, restoreNotices: this.restoreNotices, ...terminalNoticesField(this.sessions.terminalNotices()), picksUnsent: this.picksUnsent, activityRev: this.activityRev + this.chatRev, ...(this.relays.length > 0 ? { relays: this.relays } : {}) };
   }
 
   subscribe(ws: WebSocket): void {

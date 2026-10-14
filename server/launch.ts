@@ -9,12 +9,15 @@ export const MAX_NAME = 40;
 export const MAX_PROMPT = 8192;
 export const READY_POLL_MS = 3000;
 export const READY_TIMEOUT_MS = 120000;
+export const NAME_POLL_MS = 3000;
+export const NAME_TIMEOUT_MS = 15000;
 const MAX_SESSION_NAME_BASE = 28;
 // eslint-disable-next-line no-control-regex
 export const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]/;
 
 export type LaunchOutcome = "sent" | "not_ready" | "full" | "cwd_invalid" | "failed";
-export interface LaunchTiming { pollMs: number; timeoutMs: number }
+/** pollMs・timeoutMs は入力待ちを待つ間隔と上限。namePollMs・nameTimeoutMs は /rename が一覧の表示名に出るのを待つ間隔と上限 */
+export interface LaunchTiming { pollMs: number; timeoutMs: number; namePollMs: number; nameTimeoutMs: number }
 export interface LaunchDeps { config: Config; sessions: SessionManager; hub: Hub; timing: LaunchTiming }
 export interface LaunchRequest {
   roleId: string;
@@ -69,13 +72,24 @@ function isGone(deps: LaunchDeps, sessionId: string): boolean {
 }
 
 /** Claude が入力待ちになるまで待つ。終了したら・時間切れなら false */
-async function waitReady(deps: LaunchDeps, sessionId: string): Promise<boolean> {
+export async function waitReady(deps: LaunchDeps, sessionId: string): Promise<boolean> {
   const deadline = Date.now() + deps.timing.timeoutMs;
   while (Date.now() < deadline) {
     if (isGone(deps, sessionId)) return false;
     const verdict = await deps.hub.checkInput(sessionId);
     if (verdict.ok && verdict.hasClaude) return true;
     await sleep(deps.timing.pollMs);
+  }
+  return false;
+}
+
+/** /rename の結果が一覧の表示名（直近の snapshot）に出るまで待つ。終了したら・時間切れなら false（呼び出し側は構わず次へ進む） */
+export async function waitName(deps: LaunchDeps, sessionId: string, name: string): Promise<boolean> {
+  const deadline = Date.now() + deps.timing.nameTimeoutMs;
+  while (Date.now() < deadline) {
+    if (isGone(deps, sessionId)) return false;
+    if (deps.hub.displayNames().get(sessionId) === name) return true;
+    await sleep(deps.timing.namePollMs);
   }
   return false;
 }
@@ -89,7 +103,11 @@ export async function launchAndSend(deps: LaunchDeps, req: LaunchRequest): Promi
   if (verdict.real === null || verdict.block !== null) return { outcome: "cwd_invalid" };
   if (!deps.sessions.hasCapacity()) return { outcome: "full" };
   const name = sessionNameFor(req.name, req.slotKey);
-  const session = deps.sessions.restore({ role, name, cwd: verdict.real, branch: req.branch ?? null });
+  // 名前はこの関数が /rename で 1 回送る（起動直後の自動の名前合わせはさせない）
+  const session = deps.sessions.restore({ role, name, cwd: verdict.real, branch: req.branch ?? null, manualInitialName: true });
+  if (!(await waitReady(deps, session.id))) return { outcome: isGone(deps, session.id) ? "failed" : "not_ready", sessionName: name };
+  if (deps.hub.sendName(session.id, name)) await waitName(deps, session.id, name);
+  else console.warn("launch: could not send /rename (write in progress); sending the prompt anyway");
   if (!(await waitReady(deps, session.id))) return { outcome: isGone(deps, session.id) ? "failed" : "not_ready", sessionName: name };
   if (!req.stillWanted()) return { outcome: "not_ready", sessionName: name };
   return { outcome: (await deps.hub.submitText(session.id, req.promptText)) ? "sent" : "failed", sessionName: name };
