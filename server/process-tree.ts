@@ -27,8 +27,9 @@ export function sumRssKb(pids: ReadonlySet<number>, rows: PsRow[]): number {
   return total;
 }
 
-/** root 自身を含む子孫 pid の集合。 */
+/** root 自身を含む子孫 pid の集合。root が 0 以下（まだ分からない）なら空（pid 0 の子は launchd 配下の全プロセスになってしまう）。 */
 export function descendantPids(root: number, rows: PsRow[]): Set<number> {
+  if (!(root > 0)) return new Set<number>();
   const children = new Map<number, number[]>();
   for (const r of rows) {
     const list = children.get(r.ppid) ?? [];

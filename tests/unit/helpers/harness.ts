@@ -111,18 +111,30 @@ export interface HarnessOptions {
   terminalSmoothScrollMs?: number;
   /** 貼ってから Enter を送るまでの待ち（ms）。既定は config の既定値 */
   pasteSubmitDelayMs?: number;
+  /** 端末の置き場（既定 direct。tmux の試験だけ指定する）と専用ソケット名 */
+  terminalHost?: "tmux" | "direct";
+  tmuxSocket?: string;
+  tmuxPath?: string;
+  /** 既存の dataDir を使う（再起動の再現用。指定した場合は close で消さない前提で、同じ dir を引き継ぐ） */
+  dir?: string;
   /** 拡張からの受け取り口の相手。既定は固定 id の拡張と試験用の合言葉。null にすると受け取り口は常に 403 */
   picker?: PickerAccess;
 }
 
 /** 実 HTTP/WS/PTY（ダミー役割 sh）を 127.0.0.1 の空きポートで起動する。 */
+/** terminalHost "tmux" ではソケット名の指定を必須にする（既定で本番ソケット agent-console に落ちる経路を塞ぐ） */
+function tmuxSocketFor(host: "tmux" | "direct", socket: string | undefined): { tmuxSocket?: string } {
+  if (host === "tmux" && socket === undefined) throw new Error('startHarness: terminalHost "tmux" requires tmuxSocket (never default to the production socket)');
+  return socket !== undefined ? { tmuxSocket: socket } : {};
+}
+
 export async function startHarness(options: HarnessOptions = {}): Promise<Harness> {
-  const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "ac-it-")));
+  const dir = options.dir ?? realpathSync(mkdtempSync(path.join(os.tmpdir(), "ac-it-")));
   const root = path.join(dir, "root");
   const staticDir = path.join(dir, "static");
   mkdirSync(path.join(root, "scripts"), { recursive: true });
   mkdirSync(path.join(root, "ledger"), { recursive: true });
-  mkdirSync(staticDir);
+  mkdirSync(staticDir, { recursive: true });
   mkdirSync(path.join(dir, "home", ".claude"), { recursive: true });
   writeFileSync(path.join(staticDir, "index.html"), "<html>index</html>");
   const secretPath = path.join(dir, "secret.txt");
@@ -149,6 +161,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     notify: { macos: false, osascriptBin: "/nonexistent/osascript" },
     terminalEnv: options.terminalEnv ?? { LANG: "ja_JP.UTF-8" },
     restoreStaggerMs: options.restoreStaggerMs ?? 0,
+    ...(options.terminalHost !== undefined ? { terminalHost: options.terminalHost, ...tmuxSocketFor(options.terminalHost, options.tmuxSocket), ...(options.tmuxPath !== undefined ? { tmuxPath: options.tmuxPath } : {}) } : {}),
     diffBaseRef: "origin/main",
     diffMaxFileBytes: options.diffMaxFileBytes ?? DEFAULT_DIFF_MAX_FILE_BYTES,
     diffSendMaxBytes: options.diffSendMaxBytes ?? DEFAULT_DIFF_SEND_MAX_BYTES,

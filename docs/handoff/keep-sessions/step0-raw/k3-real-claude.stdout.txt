@@ -1,0 +1,72 @@
+05:04:34.810 new-session done. pane_pid=48149
+05:04:34.837 attach A pid=48189
+05:05:04.744 sleep 30 visible on screen: true
+05:05:05.029 ps pane_pid before: 48149 48096 火 10/13 14:04:34 2026      claude --model sonnet --setting-sources project,local Use the Bash tool to run exactly: sleep 30 && e
+05:05:06.064 children of pane_pid before: 
+05:05:08.227 attach A killed (SIGHUP) = server shutdown
+05:05:08.292 attach A exited {"exitCode":1,"signal":0}
+05:05:09.001 pane_pid after kill = 48149 (before 48149); list-clients=[]
+05:05:13.425 attach B pid=52610
+05:05:13.426 attach B connected (new server)
+05:06:10.364 FINISHED visible: true
+05:06:12.541 ps pane_pid after: 48149 48096 火 10/13 14:04:34 2026      claude --model sonnet --setting-sources project,local Use the Bash tool to run exactly: sleep 30 && e
+05:06:14.285 pane_pid now = 48149; children after: 
+{
+  "events": [
+    "05:04:34.810 new-session done. pane_pid=48149",
+    "05:04:34.837 attach A pid=48189",
+    "05:05:04.744 sleep 30 visible on screen: true",
+    "05:05:05.029 ps pane_pid before: 48149 48096 火 10/13 14:04:34 2026      claude --model sonnet --setting-sources project,local Use the Bash tool to run exactly: sleep 30 && e",
+    "05:05:06.064 children of pane_pid before: ",
+    "05:05:08.224 attach A killed (SIGHUP) = server shutdown",
+    "05:05:08.292 attach A exited {\"exitCode\":1,\"signal\":0}",
+    "05:05:09.001 pane_pid after kill = 48149 (before 48149); list-clients=[]",
+    "05:05:13.425 attach B pid=52610",
+    "05:05:13.426 attach B connected (new server)",
+    "05:06:10.364 FINISHED visible: true",
+    "05:06:12.541 ps pane_pid after: 48149 48096 火 10/13 14:04:34 2026      claude --model sonnet --setting-sources project,local Use the Bash tool to run exactly: sleep 30 && e",
+    "05:06:14.285 pane_pid now = 48149; children after: "
+  ],
+  "pane": "48149",
+  "tmuxVersion": "tmux 3.8",
+  "xtermAfterFinish": {
+    "type": "normal",
+    "baseY": 0,
+    "viewportY": 0,
+    "length": 30,
+    "top": "  99",
+    "bottom": "  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents",
+    "mouseTrackingMode": "any",
+    "bracketedPasteMode": true
+  },
+  "xtermAfterWheelUp": {
+    "type": "normal",
+    "baseY": 0,
+    "viewportY": 0,
+    "length": 30,
+    "top": "❯ Use the Bash tool to run exactly: sleep 30 && echo DONE . After it finishes, print the numbers 1 to 120 as plain tex… ",
+    "bottom": "  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents",
+    "mouseTrackingMode": "any",
+    "bracketedPasteMode": true
+  },
+  "bytesSentByWheel": [
+    "\u001b[<64;23;12M"
+  ],
+  "paneInMode": "0",
+  "xtermAfterWheelDown": {
+    "type": "normal",
+    "baseY": 0,
+    "viewportY": 0,
+    "length": 30,
+    "top": "❯ Use the Bash tool to run exactly: sleep 30 && echo DONE . After it finishes, print the numbers 1 to 120 as plain tex… ",
+    "bottom": "  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents",
+    "mouseTrackingMode": "any",
+    "bracketedPasteMode": true
+  },
+  "psBefore": "48149 48096 火 10/13 14:04:34 2026      claude --model sonnet --setting-sources project,local Use the Bash tool to run exactly: sleep 30 && e",
+  "psAfter": "48149 48096 火 10/13 14:04:34 2026      claude --model sonnet --setting-sources project,local Use the Bash tool to run exactly: sleep 30 && e",
+  "samePanePidAndStartTime": true,
+  "sameClaudeChildren": true,
+  "sameSleepHistoryInTmux": false
+}
+05:06:16.953 attach B exited {"exitCode":1,"signal":0}

@@ -1,0 +1,13 @@
+ENV TERM=xterm-256color LANG=ja_JP.UTF-8 AC_RESUME_ID=demo-resume TOKEN=[] COLUMNS=100 ROWS=30
+\e[?2004h\e[?1000h\e[?1006h\e]52;c;aGVsbG8=\a日本語OK
+KEYS-READY
+HEX:1b
+HEX:1b
+HEX:1b
+HEX:1b
+HEX:1b
+HEX:1b
+HEX:1b
+HEX:1b
+HEX:1b
+HEX:1b

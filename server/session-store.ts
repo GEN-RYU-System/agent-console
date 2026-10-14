@@ -3,6 +3,9 @@ import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isClaudeSessionId } from "./sessions.ts";
 
+// 端末の本体（tmux のセッション）を見つけるための id
+// 形は UUID のみ（sessions.ts の isClaudeSessionId と同じ判定）
+
 export const OPEN_SESSIONS_FILE = "open-sessions.json";
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
@@ -10,6 +13,8 @@ const FORMAT_VERSION = 1;
 
 /** 復元リストの1件。Claude の sessionId は取れたときだけ（UUID の形のものだけ）。 */
 export interface OpenSessionItem {
+  /** このアプリのセッション id（tmux のセッション名 ac-<id> になる）。古い保存には無い */
+  id?: string;
   roleId: string;
   name: string;
   cwd: string;
@@ -23,6 +28,7 @@ function parseItem(raw: unknown): OpenSessionItem {
   const r = (raw ?? {}) as Record<string, unknown>;
   if (!isNonEmptyString(r.roleId) || !isNonEmptyString(r.name) || !isNonEmptyString(r.cwd)) throw new Error("open-sessions.json: item needs roleId, name and cwd");
   return normalizeItem({
+    ...(r.id !== undefined ? { id: r.id as string } : {}),
     roleId: r.roleId,
     name: r.name,
     cwd: r.cwd,
@@ -34,6 +40,7 @@ function parseItem(raw: unknown): OpenSessionItem {
 /** UUID の形でない sessionId は捨てる（保存しない・使わない）。余計なキーは持たない。 */
 export function normalizeItem(item: OpenSessionItem): OpenSessionItem {
   return {
+    ...(isClaudeSessionId(item.id) ? { id: item.id } : {}),
     roleId: item.roleId,
     name: item.name,
     cwd: item.cwd,

@@ -1,5 +1,5 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createServer } from "node:http";
@@ -251,6 +251,120 @@ describe("ac-rollback.sh", () => {
     expect(r.status).not.toBe(0);
     expect(currentTag(e)).toBe("v1.0.0");
   }, 60000);
+});
+
+describe("K14: reverting keeps the tmux sessions (design §3-4, §11)", () => {
+  const ID1 = "11111111-1111-4111-8111-111111111111";
+  const ID2 = "22222222-2222-4222-8222-222222222222";
+  const CS_X = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const CS_Y = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const item = (id: string | undefined, cs: string | undefined, name: string) => ({ ...(id ? { id } : {}), roleId: "dev", name, cwd: "/tmp", ...(cs ? { claudeSessionId: cs } : {}) });
+  const routine = (id: string, name: string) => ({ id, name, enabled: true, roleId: "dev", cwd: "/tmp", timeZone: "Asia/Tokyo", weekdays: [1], timeHHmm: "09:00", promptText: "p", createdAt: 1, updatedAt: 1, events: [] });
+  const write = (e: AcEnv, file: string, items: unknown[], version = 1) => writeFileSync(path.join(e.home, file), JSON.stringify({ version, items }));
+  const read = (e: AcEnv, file: string) => JSON.parse(readFileSync(path.join(e.home, file), "utf8")) as { items: Array<Record<string, string>> };
+  const sessions = (e: AcEnv, names: string[]) => writeFileSync(e.tmuxSessions, names.join("\n") + "\n");
+  const FAIL = { FAKE_FAIL_MAIN_TAGS: "v8.8.8" };
+
+  it("#1 update failure back to a version without tmux: open-sessions and routines move to *.tmux-held.json, the count and how to look are printed", async () => {
+    const e = await installed("v1.0.0");
+    sessions(e, ["ac-aaa", "ac-bbb"]);
+    write(e, "open-sessions.json", [item(ID1, CS_X, "one"), item(ID2, undefined, "two")]);
+    write(e, "routines.json", [routine("r1", "daily")], 2);
+    const r = e.run("ac-update.sh", ["v8.8.8"], FAIL);
+    expect(r.status).not.toBe(0);
+    expect(currentTag(e)).toBe("v1.0.0");
+    expect(existsSync(path.join(e.home, "open-sessions.json"))).toBe(false);
+    expect(existsSync(path.join(e.home, "routines.json"))).toBe(false);
+    expect(read(e, "open-sessions.tmux-held.json").items.map((i) => i.name)).toEqual(["one", "two"]);
+    expect(read(e, "routines.tmux-held.json").items.map((i) => i.name)).toEqual(["daily"]);
+    expect(r.stderr).toContain("裏で 2 件が動いています。この間は会話を開き直さないでください");
+    expect(r.stderr).toContain("tmux -L agent-console attach -t =<名前>");
+    expect(r.stderr).toContain("ac-aaa");
+    // 順番: 止める（kill）→ 移す → 起動し直す（kickstart）。戻す側の kill は kickstart の前
+    const log = e.log();
+    expect(log.lastIndexOf("launchctl kill SIGTERM")).toBeGreaterThan(-1);
+    expect(log.lastIndexOf("launchctl kill SIGTERM")).toBeLessThan(log.lastIndexOf("launchctl kickstart"));
+  }, 90000);
+
+  it("#2 the server pid is gone before the files move (the server stops slowly)", async () => {
+    // 動いている版（v1.1.0）から手で戻す。止まりきるまで 1 秒かかる偽の launchctl
+    const e = await installed("v1.0.0");
+    expect(e.run("ac-update.sh", ["v1.1.0"], { FAKE_TMUX_TAGS: "v1.1.0" }).status).toBe(0);
+    sessions(e, ["ac-aaa"]);
+    write(e, "open-sessions.json", [item(ID1, undefined, "one")]);
+    const r = e.run("ac-rollback.sh", [], { FAKE_KILL_DELAY: "1" });
+    expect(r.status, r.stderr).toBe(0);
+    const held = statSync(path.join(e.home, "open-sessions.tmux-held.json")).mtimeMs;
+    const stopped = statSync(path.join(e.base, "server-stopped")).mtimeMs;
+    expect(stopped).toBeLessThanOrEqual(held);
+  }, 150000);
+
+  it("ac-rollback.sh also holds (the second place that reverts)", async () => {
+    const e = await installed("v1.0.0");
+    expect(e.run("ac-update.sh", ["v1.1.0"], { FAKE_TMUX_TAGS: "v1.1.0" }).status).toBe(0);
+    sessions(e, ["ac-aaa"]);
+    write(e, "open-sessions.json", [item(ID1, CS_X, "one")]);
+    const r = e.run("ac-rollback.sh");
+    expect(r.status, r.stderr).toBe(0);
+    expect(currentTag(e)).toBe("v1.0.0");
+    expect(read(e, "open-sessions.tmux-held.json").items).toHaveLength(1);
+    expect(existsSync(path.join(e.home, "open-sessions.json"))).toBe(false);
+    expect(r.stderr).toContain("裏で 1 件が動いています");
+  }, 150000);
+
+  it("no ac-* sessions: nothing moves and nothing is printed", async () => {
+    const e = await installed("v1.0.0");
+    write(e, "open-sessions.json", [item(ID1, undefined, "one")]);
+    const r = e.run("ac-update.sh", ["v8.8.8"], FAIL);
+    expect(r.status).not.toBe(0);
+    expect(existsSync(path.join(e.home, "open-sessions.json"))).toBe(true);
+    expect(existsSync(path.join(e.home, "open-sessions.tmux-held.json"))).toBe(false);
+    expect(r.stderr).not.toContain("裏で");
+    expect(e.log()).not.toContain("launchctl kill");
+  }, 90000);
+
+  it("#5 the target version already knows tmux (the implementation file exists): revert as-is, nothing moves", async () => {
+    const e = await installed("v1.0.0");
+    expect(e.run("ac-update.sh", ["v1.1.0"], { FAKE_TMUX_TAGS: "v1.1.0" }).status).toBe(0);
+    sessions(e, ["ac-aaa"]);
+    write(e, "open-sessions.json", [item(ID1, undefined, "one")]);
+    const r = e.run("ac-update.sh", ["v8.8.8"], FAIL);
+    expect(r.status).not.toBe(0);
+    expect(currentTag(e)).toBe("v1.1.0");
+    expect(existsSync(path.join(e.home, "open-sessions.json"))).toBe(true);
+    expect(existsSync(path.join(e.home, "open-sessions.tmux-held.json"))).toBe(false);
+    expect(r.stderr).not.toContain("裏で");
+  }, 150000);
+
+  it("#5 the file name used for the judgement exists in the source tree and is where tsc puts it", () => {
+    expect(existsSync(path.join(REPO, "server/terminal-host/tmux-terminal.ts"))).toBe(true);
+    expect(readFileSync(path.join(REPO, "scripts/lib/ac-common.sh"), "utf8")).toContain('AC_TMUX_IMPL_REL="dist-server/server/terminal-host/tmux-terminal.js"');
+    expect(readFileSync(path.join(REPO, "tsconfig.server.json"), "utf8")).toContain("dist-server");
+  });
+
+  it("#3 same claudeSessionId in the held and current lists: the held (tmux) item wins, the current one is dropped, items without ids stay", async () => {
+    const e = await installed("v1.0.0");
+    sessions(e, ["ac-aaa"]);
+    write(e, "open-sessions.tmux-held.json", [item(ID1, CS_X, "held-x")]);
+    write(e, "open-sessions.json", [item(ID2, CS_X, "current-same-conversation"), item(undefined, undefined, "no-ids"), item(undefined, CS_Y, "other")]);
+    const r = e.run("ac-update.sh", ["v8.8.8"], FAIL);
+    expect(r.status).not.toBe(0);
+    expect(read(e, "open-sessions.tmux-held.json").items.map((i) => i.name)).toEqual(["held-x", "no-ids", "other"]);
+    expect(existsSync(path.join(e.home, "open-sessions.json"))).toBe(false);
+  }, 90000);
+
+  it("#6 a held file that already exists is not overwritten: merged with the current list, then written; routine matches by id", async () => {
+    const e = await installed("v1.0.0");
+    sessions(e, ["ac-aaa"]);
+    write(e, "open-sessions.tmux-held.json", [item(ID1, undefined, "old-held")]);
+    write(e, "open-sessions.json", [item(ID2, undefined, "new-current")]);
+    write(e, "routines.tmux-held.json", [routine("r1", "held-r1")], 2);
+    write(e, "routines.json", [routine("r1", "current-r1"), routine("r2", "current-r2")], 2);
+    const r = e.run("ac-update.sh", ["v8.8.8"], FAIL);
+    expect(r.status).not.toBe(0);
+    expect(read(e, "open-sessions.tmux-held.json").items.map((i) => i.name)).toEqual(["old-held", "new-current"]);
+    expect(read(e, "routines.tmux-held.json").items.map((i) => i.name)).toEqual(["held-r1", "current-r2"]);
+  }, 90000);
 });
 
 describe("ac-uninstall.sh", () => {

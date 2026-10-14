@@ -1,0 +1,27 @@
+# has-session stderr strings (tmux tmux 3.8)
+--- A. server absent
+no server running on /private/tmp/tmux-501/acstep0
+rc=1
+--- B. server up, session absent
+can't find session: ac-x
+rc=1
+--- B2. prefix-match check: =ac-ke must NOT match ac-keep
+can't find session: ac-ke
+rc=1
+--- B3. without '=' ac-ke (prefix match) matches
+rc=0
+--- C. present
+rc=0
+--- D. socket path unreachable (EACCES): chmod 000 dir
+error connecting to /tmp/kspr-eacces.4eUo/sub/sock (Permission denied)
+rc=1
+--- E. socket path is a regular file (not a socket)
+error connecting to /tmp/kspr-notsock.phji (Socket operation on non-socket)
+rc=1
+--- F. socket directory missing (ENOENT)
+error connecting to /tmp/kspr-nodir-xyz/sock (No such file or directory)
+rc=1
+--- G. stale socket file (ECONNREFUSED): bind a unix socket then close without unlink
+srwxr-xr-x  1 tanizawashingo  wheel  0 10月 13 13:49 /tmp/kspr-stale.sock
+no server running on /tmp/kspr-stale.sock
+rc=1

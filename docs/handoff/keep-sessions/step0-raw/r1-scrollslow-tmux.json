@@ -1,0 +1,57 @@
+{
+  "mode": "tmux",
+  "scenario": "scrollslow",
+  "tmuxVersion": "tmux 3.8",
+  "afterOutput": {
+    "type": "normal",
+    "baseY": 272,
+    "viewportY": 272,
+    "length": 302,
+    "line0": "line 1",
+    "lineLast": "",
+    "viewportTop": "line 273",
+    "viewportBottom": "",
+    "mouseTrackingMode": "none",
+    "bracketedPasteMode": true
+  },
+  "afterWheelUp": {
+    "type": "normal",
+    "baseY": 272,
+    "viewportY": 269,
+    "length": 302,
+    "line0": "line 1",
+    "lineLast": "",
+    "viewportTop": "line 270",
+    "viewportBottom": "line 299",
+    "mouseTrackingMode": "none",
+    "bracketedPasteMode": true
+  },
+  "bytesSentToPtyByWheel": [],
+  "afterWheelDown": {
+    "type": "normal",
+    "baseY": 272,
+    "viewportY": 272,
+    "length": 302,
+    "line0": "line 1",
+    "lineLast": "",
+    "viewportTop": "line 273",
+    "viewportBottom": "",
+    "mouseTrackingMode": "none",
+    "bracketedPasteMode": true
+  },
+  "paneInMode": "0",
+  "selectAllLength": 2604,
+  "selectAllHasLine1": true,
+  "afterResize": {
+    "type": "normal",
+    "baseY": 278,
+    "viewportY": 278,
+    "length": 302,
+    "line0": "line 1",
+    "lineLast": "",
+    "viewportTop": "line 279",
+    "viewportBottom": "",
+    "mouseTrackingMode": "none",
+    "bracketedPasteMode": true
+  }
+}

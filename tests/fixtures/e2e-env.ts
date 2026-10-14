@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 
 export const E2E_PORT = 4329;
+/** tmux 経由の e2e だけが使う 2 つ目のサーバー（terminalHost "tmux"・試験用ソケット）。他の e2e は direct のまま */
+export const E2E_TMUX_PORT = 4330;
 export const E2E_TOKEN = "e2e-token-0123456789abcdef0123456789abcdef";
 
 const here = path.dirname(new URL(import.meta.url).pathname);
@@ -115,6 +117,8 @@ export function prepareE2eEnv(): void {
     ledgerPollMs: 60000,
     ringBufferBytes: 1048576,
     dataDir,
+    // 本番の tmux サーバー（-L agent-console）に試験のセッションを作らない
+    terminalHost: "direct",
     notify: { macos: true, osascriptBin },
     ghBin,
     prPollMs: 1000,
@@ -155,10 +159,21 @@ export function prepareE2eEnv(): void {
   };
   const configFile = path.join(base, "config.json");
   writeFileSync(configFile, JSON.stringify(config, null, 2));
+  // tmux 経由の e2e 用（1 本）。本番のソケット（agent-console）・既定ソケットには触れず、試験用ソケットだけを使う
+  const tmuxSocket = `ac-test-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+  const tmuxClaudeSettings = path.join(base, "claude-home-tmux", ".claude", "settings.json");
+  mkdirSync(path.dirname(tmuxClaudeSettings), { recursive: true });
+  const tmuxConfigFile = path.join(base, "config-tmux.json");
+  writeFileSync(
+    tmuxConfigFile,
+    JSON.stringify({ ...config, port: E2E_TMUX_PORT, dataDir: path.join(base, "data-tmux"), claudeSettingsPath: tmuxClaudeSettings, terminalHost: "tmux", tmuxSocket }, null, 2),
+  );
 
   process.env.AC_E2E_DIR = base;
   process.env.AC_E2E_ROOT = root;
   process.env.AC_E2E_CONFIG = configFile;
+  process.env.AC_E2E_TMUX_CONFIG = tmuxConfigFile;
+  process.env.AC_E2E_TMUX_SOCKET = tmuxSocket;
   process.env.AC_E2E_STATUS_FILE = statusFile;
   process.env.AC_E2E_NAME_FILE = nameFile;
   process.env.AC_E2E_SLOW_FILE = slowFile;

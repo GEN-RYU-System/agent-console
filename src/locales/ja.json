@@ -90,6 +90,12 @@
       "overLimit": "開き直せなかったセッション：{{name}}（セッション数の上限を超えます）",
       "unreadable": "復元リストを読めませんでした"
     },
+    "terminalNotice": {
+      "title": "端末についてのお知らせ",
+      "dismiss": "案内を閉じる",
+      "tmuxMissing": "tmux が見つからないため、今までどおりの方式で動いています（アプリを更新するとセッションは閉じます。tmux を入れて開き直すと、更新しても続きます）",
+      "cannotAttach": "端末につなげません：{{name}}"
+    },
     "pairing": {
       "failedTitle": "ペアリングできませんでした",
       "failedBody": "コードが無効・使用済み・期限切れです。Dock の Agent Console アプリからもう一度開いてください。"

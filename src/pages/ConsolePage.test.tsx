@@ -249,6 +249,24 @@ describe("ConsolePage restore notices (K5, K8 screen side)", () => {
   });
 });
 
+describe("ConsolePage terminal notices (K15 screen side)", () => {
+  it("shows the tmux-missing notice and the cannot-attach notice, and hides them after dismissing", async () => {
+    fetchState.mockResolvedValue({ ...state, terminalNotices: [{ reason: "tmuxMissing" }, { reason: "cannotAttach", name: "work-1" }] });
+    render(<ConsolePage />);
+    const box = await screen.findByTestId("terminal-notices");
+    expect(box.textContent).toContain("tmux が見つからないため、今までどおりの方式で動いています");
+    expect(box.textContent).toContain("端末につなげません：work-1");
+    fireEvent.click(within(box).getByRole("button", { name: "案内を閉じる" }));
+    await waitFor(() => expect(screen.queryByTestId("terminal-notices")).toBeNull());
+  });
+
+  it("shows nothing when the field is absent", async () => {
+    render(<ConsolePage />);
+    await screen.findAllByTestId("session-row");
+    expect(screen.queryByTestId("terminal-notices")).toBeNull();
+  });
+});
+
 describe("ConsolePage resume picker (K1-K3 screen side)", () => {
   it("opens the picker, lists the worktree row and sends only kind and path when 再開 is pressed", async () => {
     render(<ConsolePage />);
