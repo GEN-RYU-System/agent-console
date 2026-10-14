@@ -1,6 +1,6 @@
 # セッションが作ったファイルを開く（file-viewer）設計 第3版
 
-- 状態: 設計案 第3版（Opus 2026-10-14）。第1版 REVISE（高3・中7・低6、/tmp/CC報告ファイル/file-viewer/review-design1/review.md）→ 第2版 REVISE（中4・低6、/tmp/CC報告ファイル/file-viewer/review-design2/review.md）→ 第3版で全件に対応（§12・§13 に対応表）。実装済み（v0.24.0、release/file-viewer。PR 審査・K10・K12・K13 は未）。
+- 状態: 設計案 第3版（Opus 2026-10-14）。第1版 REVISE（高3・中7・低6、/tmp/CC報告ファイル/file-viewer/review-design1/review.md）→ 第2版 REVISE（中4・低6、/tmp/CC報告ファイル/file-viewer/review-design2/review.md）→ 第3版で全件に対応（§12・§13 に対応表）。実装済み（v0.25.0、release/file-viewer。PR 審査・K10・K12・K13 は未）。
 - 根拠: 同じフォルダの recon.md（R1〜R7）。生出力 /tmp/CC報告ファイル/file-viewer/。
 
 ## 0. PO の言葉と目的

@@ -2,10 +2,9 @@ import { expect, test } from "@playwright/test";
 import { E2E_PORT } from "../fixtures/e2e-env";
 import { newPairingCode } from "../fixtures/e2e-pairing";
 
-// 予約タブ（v0.21.0）。画面で予約を作り、「これから」に出て、取消すと「済み」に「取消」で出るまでを通す。
+// 予約タブ（v0.21.0。v0.24.0 で作業場所は入力欄をやめ、本店型の役割は「本店で動きます」の一文）。画面で予約を作り、「これから」に出て、取消すと「済み」に「取消」で出るまでを通す。
 // 予約日時は実行日の 2 日後（日本時間）なので、この試験の間に送信は起きない。
 const BASE = `http://127.0.0.1:${E2E_PORT}`;
-const ROOT = process.env.AC_E2E_ROOT as string;
 
 const dayAfterTomorrowJst = (): string => new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
 
@@ -19,7 +18,7 @@ test("R15: 画面で予約を作ると「これから」に出て、取消すと
 
   await page.getByRole("button", { name: "予約を登録", exact: true }).click();
   await page.getByLabel("名前").fill(name);
-  await page.getByLabel("作業場所").fill(ROOT);
+  await expect(page.getByText("本店（いつもの作業場所）で動きます")).toBeVisible();
   await page.getByLabel("日付").fill(date);
   await page.getByLabel("時刻").fill("10:00");
   await page.getByLabel("Claude に送る指示").fill("予約の試験です");

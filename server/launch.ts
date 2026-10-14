@@ -42,9 +42,11 @@ export function validateLaunchText(input: LaunchTextInput, label: string): { nam
 export async function validateLaunchTarget(config: Config, input: LaunchTargetInput, label: string): Promise<{ cwd: string }> {
   const role = config.roles.find((r) => r.id === input.roleId);
   if (!role) throw new SessionInputError("unknown role");
-  if (typeof input.cwd !== "string") throw new SessionInputError(`${label} cwd invalid`);
+  // 本店で動く役割（needsWorktree=false）は cwd を省ける。省いたときだけ本店（config.salesanchorRoot）を使う（本店の正本は config の1か所）
+  const cwdIn = input.cwd === undefined && !role.needsWorktree ? config.salesanchorRoot : input.cwd;
+  if (typeof cwdIn !== "string") throw new SessionInputError(`${label} cwd invalid`);
   const entries = await listWorktreeEntries(config.salesanchorRoot);
-  const verdict = await classifyCwd(input.cwd, config.salesanchorRoot, entries.map((e) => e.path));
+  const verdict = await classifyCwd(cwdIn, config.salesanchorRoot, entries.map((e) => e.path));
   if (verdict.real === null || verdict.block !== null) throw new SessionInputError(`${label} cwd invalid`);
   if (role.needsWorktree && typeof input.branch !== "string") throw new SessionInputError(`${label} branch required`);
   return { cwd: verdict.real };

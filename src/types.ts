@@ -96,7 +96,7 @@ export interface QuickPrompt {
 
 export interface RoutineEvent { at: number; slot: string; outcome: "sent" | "not_ready" | "full" | "cwd_invalid" | "failed" | "busy" | "waiting" | "unknown" | "stopped" | "missing"; sessionName?: string; }
 export interface Routine { id: string; name: string; enabled: boolean; roleId: string; cwd: string; branch?: string; timeZone: "Asia/Tokyo"; weekdays: number[]; timeHHmm: string; promptText: string; lastSlot?: string; createdAt: number; updatedAt: number; events: RoutineEvent[]; }
-export type RoutineInput = Pick<Routine, "name" | "enabled" | "roleId" | "cwd" | "weekdays" | "timeHHmm" | "promptText"> & { branch?: string };
+export type RoutineInput = Pick<Routine, "name" | "enabled" | "roleId" | "weekdays" | "timeHHmm" | "promptText"> & { cwd?: string; branch?: string };
 
 export type ReservationStatus = "pending" | "dispatching" | "done" | "cancelled";
 export type ReservationOutcome = "sent" | "not_ready" | "full" | "cwd_invalid" | "failed" | "interrupted";
@@ -107,7 +107,7 @@ export interface Reservation {
   startedAt?: number; lateMinutes?: number; finishedAt?: number; outcome?: ReservationOutcome; sessionName?: string;
   purpose?: "measure"; measureNote?: string;
 }
-export interface ReservationInput { name: string; roleId: string; cwd: string; branch?: string; date: string; time: string; promptText: string; }
+export interface ReservationInput { name: string; roleId: string; cwd?: string; branch?: string; date: string; time: string; promptText: string; }
 
 /** 再開先の1行（本店=Opus 設計役 / 本店の worktree=Sonnet 実装役）。会話の一覧は持たない。 */
 export interface ResumeTarget {
