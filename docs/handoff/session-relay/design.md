@@ -209,3 +209,9 @@
 - (c) lucide-react 1.55.0 に ArrowRightLeft あり（c-ls.txt・c-types.txt）。設計どおり使う。
 - (a) tmux 内の claude v2.1.299 で、入力待ちの直後に `/rename relay-stage0-test` を送ると「Session renamed to」が出て、次の指示の後も名前が残った（a-03・a-04、画面表示で確認）。§4 の方式のまま進める。
 - (b) auto mode の下では、作業フォルダの外の HANDOFF.md への書き込みで許可を求められなかった（b-01）。auto mode でない場合は未確認。§7 のとおり、許可待ちは失敗にせず時間切れまで待つ設計で両方に対応できるので、設計は変えない。
+
+## 17 #44（v0.29.0）との合流の決め（Opus 2026-10-14）
+- 事実: 実装中に main へ #44（c67cb0e、タグ v0.29.0）が入った。launch.ts の launchAndSend で、予約・定期実行が開いた会話に `hub.requestRename` で Claude 側の名前を付け、snapshot の名前が一致して入力待ちに戻るまで待ってから送る（waitReady に extra を足す）。本設計 §4 の launchAndSend の変更（sendName → waitName → waitReady）と同じ目的を、別の経路で実装している。
+- 決め: 経路は1つにする（配線の SSOT）。本設計 §4 の形（restore に manualInitialName: true、sendName → waitName → waitReady → stillWanted → submitText）を残し、#44 の requestRename の塊と waitReady の extra 引数は取り除く。理由: §4 は手で作ったセッション・引き継ぎ・予約・定期実行の4つを同じ仕組み（initialName と sendName）で扱い、審査済み。#44 の形を残すと名前を2回送る。
+- #44 の振る舞いの約束（①名前を付けてから指示を送る ②名前が上限まで一致しなくても指示は送り、ログに1行残す）は §4 でも守られる（②は waitName が false でも進み、sendName が false なら console.warn）。#44 の試験2件（routines.test.ts の "(v0.29.0)" の2件）は、同じ約束を sendName・waitName（displayNames）で確かめる形に書き換えて残す。
+- 版は 0.30.0 にする（0.29.0 は #44 が使用済み）。CHANGELOG の 0.29.0 の行は残し、0.30.0 の行に「0.29.0 の予約・定期実行の名前付けを、初回の名前合わせと同じ経路に揃えた」と書く。
