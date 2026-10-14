@@ -147,3 +147,8 @@ handler の種類を表にする。
 - 決め6: §11 の `activity-start.ts:117` は f255892 でも存在しない誤記（ファイルは72行）。e2e の :117 の意味で、§3-2 の check を変えない方針は決め2で取り消したので、この引用は使わない。
 - 版: いま最新のタグは v0.31.0。次の空き番号（0.32.0 の見込み）を、マージの直前に `git tag` で確かめてから決める。§8 の「v0.21.0 の予定」は古い。
 - 変えないもの: §3-1（board-guard.mjs の手順）、§3-3、§4〜§7、K1〜K8（ただし K7 の「activity の handler は変わらない」は「既存の handler（記録用9・guard）は変わらない」と読む）。
+- §13 の審査（Fable REVISE、/tmp/CC報告ファイル/board-guard/review-s13.md）を受けた追記（Opus 2026-10-15）:
+  - 決め4の補い（高2・中1）: tests/unit/activity-hooks.test.ts の makeEnv（:48-52）で、:51 の隣に board-guard.mjs の空ファイルも置く（無いと checkHooks の :282 が hookFileMissing を返す）。:112 と :174 の `after.hooks.Stop` の期待の末尾に `{ hooks: [{ type: "command", command: <node>, args: [<hooks>/board-guard.mjs], timeout: 15 }] }` を足す。:154・:168 の missingEvents の末尾にも "Stop(board-guard.mjs)" を足す。
+  - 決め3の行番号の訂正（中）: scripts/ac-hooks.mjs の install は :66-71（:67 installHookFile・:68 installGuardFile・:69 installHooks・:70 案内文）。installBoardGuardFile と installBoardCommand は :68 の後・:69 の前に呼ぶ。:73-75 は uninstall なので触らない。
+  - 試験の形（中）: ac-routine-guard と同じ形にする（tests/unit/ac-routine-guard.test.ts:1-4・:35。判定の関数を import で試し、本体は spawnSync で stdin→stdout・終了コードを試す）。import するので hooks/board-guard.d.mts を作る（hooks/ac-routine-guard.d.mts と同じ作法）。触るファイルに hooks/board-guard.d.mts と tests/unit/board-guard.test.ts を足す。
+  - 文言（低）: 本数 10 → 11 を activity-hooks.ts:13,34,137,255、ac-hooks.mjs:3、README.md:55、試験 :74,:101 で直す。README の新しい版の節に「更新したあとにやること（hook を入れ直す）」を、既存の節（README.md:154 付近・:181 付近）と同じ型で足す。install までは右の欄に「記録の仕組みが外れています」と出るが、記録と guard は動いていること、ボードの案内（board-guard）は install まで働かないことを書く。src/locales/ja.json:581 の案内文は変えない（全体の文言で、この期間だけのずれは README で補う）。
