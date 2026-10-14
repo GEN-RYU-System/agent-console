@@ -98,6 +98,22 @@ describe("reservation create and dispatch", () => {
     expect(await late(120_000)).toBe(2);
   });
 
+  it("R-name prefixes the session name with [予約] and keeps it within 40 units", async () => {
+    const { service, sessions, clock, input } = await setup();
+    await service.create(input({ name: "measure" }), "ui");
+    clock.t = BASE_MS + 30 * MIN;
+    await run(service);
+    expect((sessions.restore.mock.calls[0] as unknown as [{ name: string }])[0].name).toBe("[予約] measure 10/12 09:10");
+    expect(service.list().find((r) => r.name === "measure")?.sessionName).toBe("[予約] measure 10/12 09:10");
+    const long = await setup();
+    await long.service.create(long.input({ name: "あ".repeat(40) }), "ui");
+    long.clock.t = BASE_MS + 30 * MIN;
+    await run(long.service);
+    const n = (long.sessions.restore.mock.calls[0] as unknown as [{ name: string }])[0].name;
+    expect(n).toBe(`[予約] ${"あ".repeat(23)} 10/12 09:10`);
+    expect(n.length).toBeLessThanOrEqual(40);
+  });
+
   it("R3b with three overdue reservations sends oldest first, one per 3 seconds or more", async () => {
     const { service, sessions, clock, input } = await setup();
     await service.create(input({ name: "c", time: "09:12" }), "ui");
@@ -113,7 +129,7 @@ describe("reservation create and dispatch", () => {
     clock.t += STAGGER; await run(service);
     expect(sessions.restore).toHaveBeenCalledTimes(3);
     const names = sessions.restore.mock.calls.map((c) => (c as unknown as [{ name: string }])[0].name);
-    expect(names.map((n) => n.split(" ")[0])).toEqual(["a", "b", "c"]);
+    expect(names.map((n) => n.split(" ")[1])).toEqual(["a", "b", "c"]);
   });
 
   it("R4 does not send when the dispatching save fails, and retries only after 60 seconds", async () => {
