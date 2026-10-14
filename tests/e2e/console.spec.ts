@@ -634,7 +634,7 @@ test("段階2 K2: /rename を送っても Claude 側の名前が 10 秒変わら
 test("段階2 K3: よく使う指示を登録・編集・削除でき、ボタン 1 回で選択中の端末の入力欄に入り（Enter は送らない）、再読込後も残る（保存は 1 ファイル・権限 600）", async ({ page }) => {
   const id = await apiCreate("quick-target", "e2e-plain");
   await openPaired(page);
-  await page.getByRole("button", { name: "指示を編集", exact: true }).click();
+  await page.getByTestId("quick-prompt-bar").getByRole("button", { name: "よく使う指示", exact: true }).click();
   const form = page.getByTestId("quick-prompt-form");
   await form.getByLabel("ボタンの名前", { exact: false }).fill("テスト実行");
   await form.getByLabel("送る文章", { exact: false }).fill("echo-quick-prompt");
@@ -686,7 +686,7 @@ test("段階2 K3: よく使う指示を登録・編集・削除でき、ボタ�
   await openTerminalTab(page);
   await expect(page.getByTestId("quick-prompt-bar").getByRole("button", { name: "テスト実行", exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "指示を編集", exact: true }).click();
+  await page.getByTestId("quick-prompt-bar").getByRole("button", { name: "よく使う指示", exact: true }).click();
   await page.getByTestId("quick-prompt-item").getByRole("button", { name: "削除", exact: true }).click();
   await expect(page.getByTestId("quick-prompt-item")).toHaveCount(0);
   const saved = JSON.parse(readFileSync(file, "utf8")) as { version: number; items: unknown[] };
@@ -703,15 +703,15 @@ test("v0.3.4 K4: 「↑」「↓」で指示を並べ替えると、編集画面
   }
   await openPaired(page);
   const bar = page.getByTestId("quick-prompt-bar");
-  await expect(bar.getByRole("button")).toHaveText(["よく使う指示", "並び一", "並び二", "指示を編集"]);
-  await page.getByRole("button", { name: "指示を編集", exact: true }).click();
+  await expect(bar.getByRole("button")).toHaveText(["よく使う指示", "並び一", "並び二"]);
+  await bar.getByRole("button", { name: "よく使う指示", exact: true }).click();
   const items = page.getByTestId("quick-prompt-item");
   await expect(items.first().getByRole("button", { name: "上へ", exact: true })).toBeDisabled();
   await expect(items.last().getByRole("button", { name: "下へ", exact: true })).toBeDisabled();
   await items.last().getByRole("button", { name: "上へ", exact: true }).click();
   await expect(items.first()).toContainText("並び二");
   await page.keyboard.press("Escape");
-  await expect(bar.getByRole("button")).toHaveText(["よく使う指示", "並び二", "並び一", "指示を編集"]);
+  await expect(bar.getByRole("button")).toHaveText(["よく使う指示", "並び二", "並び一"]);
   const saved = JSON.parse(readFileSync(path.join(DATA_DIR, "quick-prompts.json"), "utf8")) as { items: Array<{ id: string; label: string }> };
   expect(saved.items.map((i) => i.label)).toEqual(["並び二", "並び一"]);
   for (const item of saved.items) await fetch(`${BASE}/api/quick-prompts/${item.id}`, { method: "DELETE", headers: BEARER });
@@ -1447,11 +1447,22 @@ test("v0.10.0 K3・K4: よく使う指示のバーは1行で折り返さず、�
     expect(geometry.flex).toEqual(["0"]);
     expect(geometry.barHeight).toBeLessThan(80);
 
+    // v0.33.0 K5: 右端に他の部品が無い（列の右端がバーの内側の右端と 1px 以内）。バーのボタンは「よく使う指示」と常に表示の指示だけ
+    const edge = await bar.evaluate((el) => {
+      const strip = el.querySelector(".ac-quick__buttons") as HTMLElement;
+      const cs = getComputedStyle(el);
+      const inner = el.getBoundingClientRect().right - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth);
+      return { stripRight: strip.getBoundingClientRect().right, innerRight: inner };
+    });
+    console.log(`v0.33.0 K5 edge: ${JSON.stringify(edge)}`);
+    expect(Math.abs(edge.stripRight - edge.innerRight)).toBeLessThanOrEqual(1);
+    await expect(bar.getByRole("button", { name: "指示を編集" })).toHaveCount(0);
+
     // 一覧: 全件が出る。切り替えで「常に表示」を外すと、バーからその指示が消える
     await bar.getByRole("button", { name: "よく使う指示", exact: true }).click();
     const dialog = page.getByRole("dialog");
-    await expect(dialog.getByTestId("quick-prompt-list-item")).toHaveCount(labels.length + 1);
-    const first = dialog.getByTestId("quick-prompt-list-item").filter({ hasText: labels[0] });
+    await expect(dialog.getByTestId("quick-prompt-item")).toHaveCount(labels.length + 1);
+    const first = dialog.getByTestId("quick-prompt-item").filter({ hasText: labels[0] });
     const toggle = first.getByRole("button", { name: "常に表示", exact: true });
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
     await toggle.click();
@@ -1468,7 +1479,7 @@ test("v0.10.0 K3・K4: よく使う指示のバーは1行で折り返さず、�
     await expect(bar.getByRole("button", { name: labels[0], exact: true })).toHaveCount(1);
 
     // 一覧から使う: バーのボタンと同じ動き（端末に入る）。使ったあと一覧は閉じる
-    const usable = dialog.getByTestId("quick-prompt-list-item").filter({ hasText: "一覧から使う" });
+    const usable = dialog.getByTestId("quick-prompt-item").filter({ hasText: "一覧から使う" });
     await usable.getByRole("button", { name: "使う", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page.getByTestId("terminal")).toContainText("echo-used-from-list");
@@ -1487,6 +1498,92 @@ test("v0.10.0 K3・K4: よく使う指示のバーは1行で折り返さず、�
     expect((JSON.parse(readFileSync(file, "utf8")) as Saved).version).toBe(1);
   } finally {
     for (const pid of [...promptIds, useId]) await fetch(`${BASE}/api/quick-prompts/${pid}`, { method: "DELETE", headers: BEARER });
+  }
+});
+
+test("v0.33.0 K2・K3: 「よく使う指示」の1つの画面で、常に表示の切替・↑↓・追加・編集・削除ができ、閉じなくてもバーに出る/消え、保存ファイルに反映される", async ({ page }) => {
+  await closeAllSessionsViaApi();
+  type Item = { id: string; label: string; text: string; pinned?: boolean };
+  const listApi = async (): Promise<Item[]> => ((await (await fetch(`${BASE}/api/quick-prompts`, { headers: BEARER })).json()) as { items: Item[] }).items;
+  const mine = async (): Promise<Item[]> => (await listApi()).filter((i) => i.label.startsWith("統合"));
+  await apiPrompt("統合一", "echo-merge-1");
+  await apiPrompt("統合二", "echo-merge-2");
+  try {
+    await openPaired(page);
+    const bar = page.getByTestId("quick-prompt-bar");
+    await expect(bar.getByRole("button")).toHaveText(["よく使う指示", "統合一", "統合二"]);
+    await bar.getByRole("button", { name: "よく使う指示", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    const rows = dialog.getByTestId("quick-prompt-item");
+    await expect(rows).toHaveCount(2);
+
+    // 常に表示の切替（K3: 閉じずにバーから消える・戻る。保存ファイルの pinned も変わる）
+    const toggle = rows.filter({ hasText: "統合一" }).getByRole("button", { name: "常に表示", exact: true });
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await expect(bar.getByRole("button", { name: "統合一", exact: true })).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    expect((await mine()).find((i) => i.label === "統合一")?.pinned).toBe(false);
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await expect(bar.getByRole("button", { name: "統合一", exact: true })).toHaveCount(1);
+
+    // 追加（閉じずにバーに出る）
+    const form = dialog.getByTestId("quick-prompt-form");
+    await form.getByLabel("ボタンの名前", { exact: false }).fill("統合三");
+    await form.getByLabel("送る文章", { exact: false }).fill("echo-merge-3");
+    await form.getByRole("button", { name: "追加", exact: true }).click();
+    await expect(rows).toHaveCount(3);
+    await expect(bar.getByRole("button", { name: "統合三", exact: true })).toBeVisible();
+    expect((await mine()).map((i) => i.label)).toEqual(["統合一", "統合二", "統合三"]);
+
+    // 並べ替え（↑）。バーの順と保存ファイルの順が変わる
+    await rows.last().getByRole("button", { name: "上へ", exact: true }).click();
+    await expect(rows.nth(1)).toContainText("統合三");
+    await expect(bar.getByRole("button")).toHaveText(["よく使う指示", "統合一", "統合三", "統合二"]);
+    await rows.first().getByRole("button", { name: "下へ", exact: true }).click();
+    await expect(rows.first()).toContainText("統合三");
+    expect((await mine()).map((i) => i.label)).toEqual(["統合三", "統合一", "統合二"]);
+
+    // 編集（名前を直す。pinned は変わらない）
+    await rows.filter({ hasText: "統合二" }).getByRole("button", { name: "編集", exact: true }).click();
+    await form.getByLabel("ボタンの名前", { exact: false }).fill("統合二改");
+    await form.getByRole("button", { name: "保存", exact: true }).click();
+    await expect(bar.getByRole("button", { name: "統合二改", exact: true })).toBeVisible();
+    await expect(bar.getByRole("button", { name: "統合二", exact: true })).toHaveCount(0);
+    expect((await mine()).find((i) => i.label === "統合二改")?.pinned).toBe(true);
+
+    // 削除（閉じずにバーから消える）
+    await rows.filter({ hasText: "統合三" }).getByRole("button", { name: "削除", exact: true }).click();
+    await expect(rows).toHaveCount(2);
+    await expect(bar.getByRole("button", { name: "統合三", exact: true })).toHaveCount(0);
+    expect((await mine()).map((i) => i.label)).toEqual(["統合一", "統合二改"]);
+    await expect(dialog).toBeVisible();
+  } finally {
+    for (const item of await mine()) await fetch(`${BASE}/api/quick-prompts/${item.id}`, { method: "DELETE", headers: BEARER });
+  }
+});
+
+test("v0.33.0 K6: 指示5件・常に表示3件のバーと、開いた「よく使う指示」の画面を、明・暗で撮る（AC_SHOT_DIR のときだけ保存。行の6つの操作が1行に入る）", async ({ page }) => {
+  await closeAllSessionsViaApi();
+  const ids: string[] = [];
+  for (const label of ["写真用 テスト実行", "写真用 ビルド", "写真用 リント", "写真用 差分を確認", "写真用 要約して"]) ids.push(await apiPrompt(label, `echo-${label}`));
+  try {
+    for (const pid of ids.slice(3)) await fetch(`${BASE}/api/quick-prompts/${pid}`, { method: "PUT", headers: { ...BEARER, "Content-Type": "application/json" }, body: JSON.stringify({ pinned: false }) });
+    await openPaired(page);
+    const bar = page.getByTestId("quick-prompt-bar");
+    await expect(bar.getByRole("button")).toHaveText(["よく使う指示", "写真用 テスト実行", "写真用 ビルド", "写真用 リント"]);
+    await shoot(page, "quick-merge-bar");
+    await bar.getByRole("button", { name: "よく使う指示", exact: true }).click();
+    const rows = page.getByRole("dialog").getByTestId("quick-prompt-item");
+    await expect(rows.filter({ hasText: "写真用" })).toHaveCount(5);
+    // 6つの操作が1行に入る（全ボタンの上端がそろう）
+    const tops = await rows.first().evaluate((el) => [...new Set([...el.querySelectorAll<HTMLElement>(".ac-quick-editor__actions button")].map((b) => Math.round(b.getBoundingClientRect().top)))]);
+    expect(tops).toHaveLength(1);
+    await shoot(page, "quick-merge-dialog");
+  } finally {
+    for (const pid of ids) await fetch(`${BASE}/api/quick-prompts/${pid}`, { method: "DELETE", headers: BEARER });
   }
 });
 

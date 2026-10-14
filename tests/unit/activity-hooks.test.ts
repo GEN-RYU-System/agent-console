@@ -16,7 +16,7 @@ const OLD_EVENTS = EVENTS.slice(0, 6);
 const V0_11_EVENTS = EVENTS.slice(0, 8);
 /** 記録用 hook（activity-hook.mjs）の handler 数 */
 const ACTIVITY_HANDLER_COUNT = EVENTS.length;
-/** guard の規則（handler）の数。v0.33.0 で 1 から 6 に増えた */
+/** guard の規則（handler）の数。v0.34.0 で 1 から 6 に増えた */
 const GUARD_COUNT = GUARD_IFS.length;
 /** 自分の handler の総数（記録用 9 ＋ ac-routine-guard 6 ＋ board-guard 1 ＝ 16） */
 const OWN_HANDLER_COUNT = EVENTS.length + GUARD_COUNT + 1;
@@ -82,7 +82,7 @@ const PO_SETTINGS = {
 };
 
 describe("K6: 設定の定義", () => {
-  it("16 本の handler（9 つのイベント＋ ac-routine-guard 6 規則＋ board-guard）と matcher は設計のとおり（v0.11.0 で Stop と StopFailure、v0.12.0 で SubagentStart、v0.25.0 で guard、v0.32.0 で board-guard を足し、v0.33.0 で guard を 6 規則に分けた）", () => {
+  it("16 本の handler（9 つのイベント＋ ac-routine-guard 6 規則＋ board-guard）と matcher は設計のとおり（v0.11.0 で Stop と StopFailure、v0.12.0 で SubagentStart、v0.25.0 で guard、v0.32.0 で board-guard を足し、v0.34.0 で guard を 6 規則に分けた）", () => {
     expect(HOOK_SPECS).toEqual([
       { event: "PreToolUse", matcher: "Agent|SubagentHandback" },
       { event: "PostToolUse", matcher: "Agent|Write|Edit|MultiEdit|NotebookEdit" },

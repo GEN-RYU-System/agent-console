@@ -17,10 +17,16 @@ interface Props {
   prompts: QuickPrompt[];
   /** 追加・更新・削除のあとに一覧を読み直す */
   onChanged: () => void;
+  /** 渡すと各行に「常に表示」の切替を出す。Promise を返し、失敗は下のエラー欄に出る */
+  onTogglePinned?: (prompt: QuickPrompt) => Promise<unknown>;
+  /** 渡すと各行に「使う」を出す */
+  onUse?: (prompt: QuickPrompt) => void;
+  /** 「使う」を押せるか（渡さないときは押せる） */
+  usable?: boolean;
 }
 
-/** よく使う指示の登録・編集・削除。保存先はサーバーの 1 ファイルだけ（画面は保存しない）。 */
-export function QuickPromptEditor({ prompts, onChanged }: Props) {
+/** よく使う指示の使う・常に表示・並べ替え・登録・編集・削除。保存先はサーバーの 1 ファイルだけ（画面は保存しない）。 */
+export function QuickPromptEditor({ prompts, onChanged, onTogglePinned, onUse, usable = true }: Props) {
   const { t } = useTranslation();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [label, setLabel] = useState("");
@@ -72,6 +78,23 @@ export function QuickPromptEditor({ prompts, onChanged }: Props) {
                 <span className="ac-quick-editor__preview">{p.text}</span>
               </div>
               <div className="ac-quick-editor__actions">
+                {onTogglePinned !== undefined && (
+                  <Button
+                    variant="tab"
+                    size="sm"
+                    active={p.pinned}
+                    disabled={busy}
+                    title={t("ac.quick.pinnedTitle")}
+                    onClick={() => void run(() => onTogglePinned(p), true)}
+                  >
+                    {t("ac.quick.pinned")}
+                  </Button>
+                )}
+                {onUse !== undefined && (
+                  <Button variant="outline" size="sm" disabled={busy || !usable} onClick={() => onUse(p)}>
+                    {t("ac.quick.use")}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
