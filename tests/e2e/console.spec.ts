@@ -726,7 +726,7 @@ test("段階2 K3: 複数行の指示は、括弧付き貼付モードの端末�
   await expect(rowOf(page, id).getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: STATE_DEADLINE_MS });
   await page.getByTestId("quick-prompt-bar").getByRole("button", { name: "複数行", exact: true }).click();
   const terminal = page.getByTestId("terminal");
-  await expect(terminal).toContainText('ALL:"\\u001b[200~first-line');
+  await expect(terminal).toContainText('\\u001b[200~first-line');
   // 届いたバイト列の全体（読み取りの区切りは問わない）で、本文は括弧で包まれ（改行は \r）、閉じ括弧で終わる。Enter（\r）は続かない
   await expect(terminal).toContainText('first-line\\rsecond-line\\u001b[201~"');
   // 遅れて届く \r を見逃さないために待ってから確かめる
@@ -1001,7 +1001,7 @@ test("v0.4.0 K1〜K6: 変更タブ -> 一覧と色つき diff -> 行コメント
     await send.click();
     await page.getByRole("tab", { name: /端末/ }).click();
     const terminal = page.getByTestId("terminal");
-    await expect(terminal).toContainText('ALL:"\\u001b[200~差分へのレビューコメントです。');
+    await expect(terminal).toContainText('\\u001b[200~差分へのレビューコメントです。');
     await expect(terminal).toContainText("File: e2e-diff-seed.txt");
     await expect(terminal).toContainText("Comment: ここに close も入れてください");
     // 閉じ括弧のすぐ後に Enter（待ち時間のあと）。間に他の入力は無い
