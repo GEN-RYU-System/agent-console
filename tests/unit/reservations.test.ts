@@ -94,7 +94,8 @@ describe("reservation create and dispatch", () => {
     };
     expect(await late(10 * MIN)).toBe(10);
     expect(await late(30_000)).toBeUndefined();
-    expect(await late(90_000)).toBe(2);
+    expect(await late(90_000)).toBe(1);
+    expect(await late(120_000)).toBe(2);
   });
 
   it("R3b with three overdue reservations sends oldest first, one per 3 seconds or more", async () => {

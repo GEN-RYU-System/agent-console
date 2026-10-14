@@ -197,7 +197,7 @@ export class ReservationService {
     const due = this.items.filter((r) => r.status === "pending" && r.runAt <= at && (this.notBefore.get(r.id) ?? 0) <= at).sort((a, b) => a.runAt - b.runAt);
     const picked = due[0];
     if (!picked) return;
-    const late = at - picked.runAt > LATE_THRESHOLD_MS ? Math.ceil((at - picked.runAt) / 60_000) : undefined;
+    const late = at - picked.runAt > LATE_THRESHOLD_MS ? Math.floor((at - picked.runAt) / 60_000) : undefined;
     const started: Reservation = { ...picked, status: "dispatching", startedAt: at, ...(late !== undefined ? { lateMinutes: late } : {}), updatedAt: at };
     this.items = this.items.map((r) => r.id === picked.id ? started : r);
     this.lastStartedAt = at;
