@@ -219,7 +219,8 @@ test("file-viewer K1/K4: ファイルタブを開いたまま、本物の hook �
   // タブを開いたまま、hook に記録を流す（K1: 取り直しの操作なしで出る）
   fireHook({ session_id: s.claudeSessionId, transcript_path: "/not/kept/transcript.jsonl", cwd: dir, hook_event_name: "PostToolUse", tool_name: "Write", tool_input: { file_path: file, content: "x" }, tool_response: {} });
   const name = path.basename(file);
-  await expect(page.getByText(name)).toBeVisible({ timeout: SETTLE_MS });
+  // K1: 5 秒以内（サーバーは記録を 2 秒ごとに読み、画面は rev の合図で取り直す）
+  await expect(page.getByText(name)).toBeVisible({ timeout: 5000 });
   await page.getByRole("button", { name: new RegExp(name) }).click();
   const view = page.locator(".ac-files__view .ac-md");
   await expect(view.locator("h1")).toHaveText("調べた結果");
