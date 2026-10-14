@@ -426,3 +426,9 @@
 - S7（審査 #7、低）tests/unit/helpers/harness.ts の terminalHost "tmux" で、ソケットの既定 "agent-console" を外す。未指定なら throw にする。
 - S8（R3 の改版）§3-2 と §12 R3 の「送った順の期待番号と照合」を次に改める: 「各 control client の応答は送った命令の順に1つずつ返る（番号はサーバー全体の通し番号で、送る前に予測できない。実測 r3probe.txt）。応答は送った順に対応させ、%begin の番号が直前に受けた番号より大きいことを確かめる。大きくなければ warn ログを出して捨てる」。
 - 完了条件: 手元で typecheck・lint・build・governance が rc0。CI の両 OS が緑（ubuntu は tmux 3.8 で K17(screen) のモード比較まで通る）。Fable の再審査で APPROVE。
+
+## 14. 3回目のコード審査（Fable、HEAD ade12ce、REVISE 中1・低2）を受けた決め（Opus、2026-10-14）
+審査記録: /tmp/CC報告ファイル/keep-sessions/review-code3/review.md。CI run 38484923006 は両 OS 緑（ubuntu は tmux 3.8 でモード比較まで通過）。S3 はどちらの分岐にも当たらないので waitFor は延ばさない。
+- S9（#1、中）S1 の偽 tmux 試験が旧コードでも通る。偽 tmux は `-E -1` を含む capture-pane には履歴の行だけ（可視の行を除く）を返すようにし、旧コード（b5765fc の tmux-terminal.ts）で赤・新コードで緑になることを生出力で示す。
+- S10（#2、低）alt 画面中でも `-S -` の先頭 history_size 行は通常画面の履歴（実測 tmux-probe2.txt）。tmux-terminal.ts の `history: parsed.alternateOn ? [] : history` を `history` に戻す。単体試験を1本足す。
+- S11（#3、低）S6 の試験の内側の waitFor を 15000 にする。
