@@ -67,7 +67,7 @@ try {
     installHookFile(path.join(root, "hooks"), dataDir);
     installGuardFile(path.join(root, "hooks"), dataDir);
     const r = installHooks({ settingsPath, nodePath: process.execPath, hookPath });
-    console.log(r.changed ? `記録用 hook を ${settingsPath} に足しました（控えは同じフォルダの settings.json.ac-backup-*）` : "記録用 hook はすでに入っています（変更なし）");
+    console.log(r.changed ? `記録用 hook と ac-routine の guard hook を ${settingsPath} に足しました（控えは同じフォルダの settings.json.ac-backup-*）` : "記録用 hook はすでに入っています（変更なし）");
     process.exitCode = installStatusLineStage();
   } else if (command === "uninstall") {
     const r = uninstallHooks({ settingsPath });

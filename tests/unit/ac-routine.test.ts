@@ -205,3 +205,21 @@ describe("ac-routine command and server", () => {
     expect(r.stderr).toContain("403");
   });
 });
+
+describe("routineManagerRoles is empty (no opus-designer in roles and nothing written in the config)", () => {
+  it("the app can start and every caller is refused with 403", async () => {
+    const h2 = await startHarness({ routineManagerRoles: [] });
+    try {
+      const dir = tmp();
+      writeFileSync(path.join(dir, "reserve-token"), JSON.stringify({ port: h2.port, token: RESERVE_TOKEN }));
+      const s = await h2.sessions.create({ name: "any", roleId: "echo" });
+      h2.sessions.setClaudeSessionId(s.id, OPUS_SID);
+      const r = await runCommand({ argv: ["list"], dataDir: dir, callerSessionId: OPUS_SID });
+      expect(r.code).toBe(1);
+      expect(r.stderr).toContain("403");
+      expect(h2.routines.list()).toEqual([]);
+    } finally {
+      await h2.close();
+    }
+  });
+});

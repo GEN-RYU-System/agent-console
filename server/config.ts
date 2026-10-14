@@ -300,7 +300,9 @@ export function parseConfig(raw: unknown): Config {
 export const DEFAULT_ROUTINE_MANAGER_ROLES: readonly string[] = ["opus-designer"];
 
 function parseRoutineManagerRoles(raw: unknown, roleIds: ReadonlySet<string>): string[] {
-  const list = raw === undefined ? [...DEFAULT_ROUTINE_MANAGER_ROLES] : raw;
+  // 明示が無いときは、既定のうち roles に実在するものだけを使う（無ければ空＝全員 403。起動は止めない）
+  if (raw === undefined) return DEFAULT_ROUTINE_MANAGER_ROLES.filter((id) => roleIds.has(id));
+  const list = raw;
   if (!Array.isArray(list) || list.some((x) => typeof x !== "string" || x === "")) throw new Error("config: routineManagerRoles must be an array of role ids");
   for (const id of list as string[]) if (!roleIds.has(id)) throw new Error(`config: routineManagerRoles has unknown role id ${id}`);
   return [...new Set(list as string[])];

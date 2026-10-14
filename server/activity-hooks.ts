@@ -45,7 +45,7 @@ export const HOOK_SPECS: readonly HookSpec[] = [
   { event: "Stop" },
   { event: "StopFailure" },
   { event: "SubagentStart" },
-  // ac-routine を実行しようとするサブエージェントを止める同期の guard（v0.24.0。設計 ac-routine §4-1-2）。async を付けると拒否できない。
+  // ac-routine を実行しようとするサブエージェントを止める同期の guard（v0.25.0。設計 ac-routine §4-1-2）。async を付けると拒否できない。
   { event: "PreToolUse", matcher: "Bash", file: GUARD_HOOK_FILE, async: false, timeout: 5, if: "Bash(*/bin/ac-routine.mjs*)" },
 ];
 

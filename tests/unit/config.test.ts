@@ -18,11 +18,13 @@ const valid = {
 };
 
 describe("parseConfig: routineManagerRoles (ac-routine)", () => {
-  it("defaults to opus-designer, and an id that is not in roles is a startup error", () => {
-    const { routineManagerRoles: _r, ...rest } = valid;
+  const { routineManagerRoles: _r, ...rest } = valid;
+  it("when not written: uses the default opus-designer only if it exists in roles; otherwise empty (everyone is refused) and startup is not blocked", () => {
     const withOpus = { ...rest, roles: [...valid.roles, { id: "opus-designer", labelKey: "role.opus", command: ["/bin/zsh", "-i"], needsWorktree: false }] };
     expect(parseConfig(withOpus).routineManagerRoles).toEqual(["opus-designer"]);
-    expect(() => parseConfig(rest)).toThrow(/routineManagerRoles/);
+    expect(parseConfig(rest).routineManagerRoles).toEqual([]);
+  });
+  it("when written, an id that is not in roles is a startup error; so is a wrong shape", () => {
     expect(() => parseConfig({ ...valid, routineManagerRoles: ["nope"] })).toThrow(/routineManagerRoles has unknown role id nope/);
     expect(() => parseConfig({ ...valid, routineManagerRoles: "shell" })).toThrow(/routineManagerRoles/);
   });
