@@ -4,8 +4,14 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-/** 自分の handler の目印: args[0] がこの文字列で終わる */
-export const OWN_HOOK_SUFFIX = "/hooks/activity-hook.mjs";
+/** 記録用 hook（activity-hook）の本体のファイル名。HookSpec に file が無いものはこれ */
+export const ACTIVITY_HOOK_FILE = "activity-hook.mjs";
+/** ac-routine のサブエージェント拒否 hook（同期）の本体のファイル名 */
+export const GUARD_HOOK_FILE = "ac-routine-guard.mjs";
+/** 自分の handler の目印: args[0] がこの文字列で終わる（記録用 hook） */
+export const OWN_HOOK_SUFFIX = `/hooks/${ACTIVITY_HOOK_FILE}`;
+/** 自分の handler の目印（記録用 hook と guard の 2 本） */
+export const OWN_HOOK_SUFFIXES: readonly string[] = [OWN_HOOK_SUFFIX, `/hooks/${GUARD_HOOK_FILE}`];
 export const BACKUP_PREFIX = "settings.json.ac-backup-";
 const BACKUP_NAME = /^settings\.json\.ac-backup-\d{8}T\d{9}Z$/;
 export const BACKUPS_KEPT = 6;
@@ -14,10 +20,18 @@ const SETTINGS_MODE = 0o600;
 export interface HookSpec {
   event: string;
   matcher?: string;
+  /** handler の本体のファイル名（dataDir/hooks/ に置く）。省略は activity-hook.mjs */
+  file?: string;
+  /** false なら同期（async を書かない）。省略は true（非同期） */
+  async?: boolean;
+  /** 秒。省略は書かない（Claude の既定） */
+  timeout?: number;
+  /** Claude の permission rule 形式の絞り込み（best-effort。公式資料の if 項目） */
+  if?: string;
 }
 
 /**
- * 記録する 9 つのイベント。Notification は使わない（状態は claude agents --json が正本）。
+ * 記録する 9 つのイベント（＋ guard の 1 本、計 10 本の handler）。Notification は使わない（状態は claude agents --json が正本）。
  * Stop（返事）と StopFailure（API エラー）はチャット画面の会話の記録のため（v0.11.0）。状態の判定には使わない。
  * SubagentStart は担当の呼び出しと再開の印（v0.12.0 作戦ボード）。再開した担当を「動いている担当」に戻すために使う。
  */
@@ -31,6 +45,8 @@ export const HOOK_SPECS: readonly HookSpec[] = [
   { event: "Stop" },
   { event: "StopFailure" },
   { event: "SubagentStart" },
+  // ac-routine を実行しようとするサブエージェントを止める同期の guard（v0.25.0。設計 ac-routine §4-1-2）。async を付けると拒否できない。
+  { event: "PreToolUse", matcher: "Bash", file: GUARD_HOOK_FILE, async: false, timeout: 5, if: "Bash(*/bin/ac-routine.mjs*)" },
 ];
 
 type Json = Record<string, unknown>;
@@ -42,22 +58,42 @@ export interface Handler {
   type: "command";
   command: string;
   args: string[];
-  async: true;
+  async?: true;
+  timeout?: number;
+  if?: string;
 }
 
-/** exec の形（args に 1 要素ずつ渡す。引用符は要らず、空白を含むパスでも壊れない） */
-export function buildHandler(nodePath: string, hookPath: string): Handler {
-  return { type: "command", command: nodePath, args: [hookPath], async: true };
+const specFile = (spec: HookSpec | undefined): string => spec?.file ?? ACTIVITY_HOOK_FILE;
+
+/** spec の hook の本体のパス。activity-hook のパス（hookPath）と同じフォルダに置く */
+export function specHookPath(hookPath: string, spec: HookSpec): string {
+  return spec.file === undefined ? hookPath : path.join(path.dirname(hookPath), spec.file);
+}
+
+/** exec の形（args に 1 要素ずつ渡す。引用符は要らず、空白を含むパスでも壊れない）。spec を渡さなければ記録用 hook の形 */
+export function buildHandler(nodePath: string, hookPath: string, spec?: HookSpec): Handler {
+  const handler: Handler = { type: "command", command: nodePath, args: [hookPath] };
+  if (spec?.async !== false) handler.async = true;
+  if (spec?.timeout !== undefined) handler.timeout = spec.timeout;
+  if (spec?.if !== undefined) handler.if = spec.if;
+  return handler;
 }
 
 export function isOwnHandler(handler: unknown): boolean {
   if (!isObject(handler) || handler.type !== "command" || !Array.isArray(handler.args)) return false;
   const first = handler.args[0];
-  return typeof first === "string" && first.endsWith(OWN_HOOK_SUFFIX);
+  return typeof first === "string" && OWN_HOOK_SUFFIXES.some((suffix) => first.endsWith(suffix));
 }
 
-function sameHandler(handler: unknown, nodePath: string, hookPath: string): boolean {
-  return JSON.stringify(handler) === JSON.stringify(buildHandler(nodePath, hookPath));
+/** この spec の本体を指す自分の handler か */
+function isHandlerOf(handler: unknown, spec: HookSpec): boolean {
+  if (!isOwnHandler(handler)) return false;
+  const first = ((handler as Json).args as unknown[])[0];
+  return typeof first === "string" && first.endsWith(`/hooks/${specFile(spec)}`);
+}
+
+function sameHandler(handler: unknown, nodePath: string, hookPath: string, spec: HookSpec): boolean {
+  return JSON.stringify(handler) === JSON.stringify(buildHandler(nodePath, specHookPath(hookPath, spec), spec));
 }
 
 /** settings の hooks をたどる。形が想定外なら理由つきで例外（何も書かない） */
@@ -86,7 +122,7 @@ export interface EditResult {
   changed: boolean;
 }
 
-/** 9 つのイベントに自分の handler を足した新しい設定を返す。すでにあれば足さない。内容が違えば（node のパス変更など）その場で直す */
+/** HOOK_SPECS のすべて（記録用 9 つ＋ guard）に自分の handler を足した新しい設定を返す。すでにあれば足さない。内容が違えば（node のパス変更など）その場で直す */
 export function addHandlers(settings: Json, nodePath: string, hookPath: string): EditResult {
   let next = settings;
   let changed = false;
@@ -96,12 +132,12 @@ export function addHandlers(settings: Json, nodePath: string, hookPath: string):
     let stale = false;
     const rewritten = groups.map((group) => {
       const handlers = groupHandlers(group);
-      if (handlers === null || !handlers.some(isOwnHandler)) return group;
+      if (handlers === null || !handlers.some((h) => isHandlerOf(h, spec))) return group;
       found = true;
       const updated = handlers.map((h) => {
-        if (!isOwnHandler(h) || sameHandler(h, nodePath, hookPath)) return h;
+        if (!isHandlerOf(h, spec) || sameHandler(h, nodePath, hookPath, spec)) return h;
         stale = true;
-        return buildHandler(nodePath, hookPath);
+        return buildHandler(nodePath, specHookPath(hookPath, spec), spec);
       });
       return stale ? { ...(group as Json), hooks: updated } : group;
     });
@@ -111,7 +147,8 @@ export function addHandlers(settings: Json, nodePath: string, hookPath: string):
       next = withEvent(next, spec.event, rewritten);
       continue;
     }
-    const group: Json = spec.matcher === undefined ? { hooks: [buildHandler(nodePath, hookPath)] } : { matcher: spec.matcher, hooks: [buildHandler(nodePath, hookPath)] };
+    const handler = buildHandler(nodePath, specHookPath(hookPath, spec), spec);
+    const group: Json = spec.matcher === undefined ? { hooks: [handler] } : { matcher: spec.matcher, hooks: [handler] };
     next = withEvent(next, spec.event, [...groups, group]);
   }
   return { settings: next, changed };
@@ -157,11 +194,12 @@ export interface HookCheck {
   missingEvents?: string[];
 }
 
-/** この hookPath を指す自分の handler（node のパスも返す）。無ければ null */
-function findHandler(settings: Json, event: string, hookPath: string): Json | null {
-  for (const group of eventGroups(settings, event)) {
+/** この spec の本体（hookPath と同じフォルダ）を指す自分の handler（node のパスも返す）。無ければ null */
+function findHandler(settings: Json, spec: HookSpec, hookPath: string): Json | null {
+  const wanted = specHookPath(hookPath, spec);
+  for (const group of eventGroups(settings, spec.event)) {
     for (const h of groupHandlers(group) ?? []) {
-      if (isOwnHandler(h) && (h as Json).args instanceof Array && ((h as Json).args as unknown[])[0] === hookPath) return h as Json;
+      if (isHandlerOf(h, spec) && ((h as Json).args as unknown[])[0] === wanted) return h as Json;
     }
   }
   return null;
@@ -173,7 +211,7 @@ export interface CheckInput {
   hookPath: string;
 }
 
-/** 設定ファイルを読むだけ（書かない）。9 つのイベントの handler・node・hook のファイルがそろっているか */
+/** 設定ファイルを読むだけ（書かない）。全 handler（記録用 9 つ＋ guard）・node・hook のファイルがそろっているか */
 export function checkHooks(input: CheckInput): HookCheck {
   let raw: string;
   try {
@@ -190,7 +228,7 @@ export function checkHooks(input: CheckInput): HookCheck {
     return { ok: false, reason: "unreadable" };
   }
   try {
-    const found = HOOK_SPECS.map((spec) => ({ event: spec.event, handler: findHandler(settings, spec.event, input.hookPath) }));
+    const found = HOOK_SPECS.map((spec) => ({ event: spec.file === undefined ? spec.event : `${spec.event}(${spec.file})`, handler: findHandler(settings, spec, input.hookPath) }));
     const missingEvents = found.filter((f) => f.handler === null).map((f) => f.event);
     if (missingEvents.length > 0) return { ok: false, reason: "missingHandler", missingEvents };
     const nodePaths = found.map((f) => (f.handler as Json).command);
@@ -198,7 +236,7 @@ export function checkHooks(input: CheckInput): HookCheck {
   } catch {
     return { ok: false, reason: "unreadable" };
   }
-  return existsSync(input.hookPath) ? { ok: true } : { ok: false, reason: "hookFileMissing" };
+  return HOOK_SPECS.every((spec) => existsSync(specHookPath(input.hookPath, spec))) ? { ok: true } : { ok: false, reason: "hookFileMissing" };
 }
 
 function detectIndent(text: string): string | number {
