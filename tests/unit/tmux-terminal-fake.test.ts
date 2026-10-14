@@ -31,7 +31,9 @@ function drift(line) {
   if (!line.startsWith("capture-pane")) return "";
   if (line.includes(" -a ")) return block(nextNum++, []);
   let lines;
-  if (line.includes("-S -")) lines = range(1, total);
+  // 本物の tmux と同じ意味: -E -1 は履歴の行だけ、-S - は履歴＋可視、素のものは可視だけ
+  if (line.includes("-E -1")) lines = range(1, total - 3);
+  else if (line.includes("-S -")) lines = range(1, total);
   else lines = range(total - 2, total);
   total += 3;
   return block(nextNum++, lines);
