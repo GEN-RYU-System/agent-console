@@ -81,7 +81,7 @@
 - 40 字（UTF-16 の長さ、launch.ts:8）を超えるときは、数字より前の部分をコードポイント単位で後ろから縮める（絵文字の途中で切らない）。
 - 最後に validateName（sessions.ts:79-85）を通す。
 ### 5-4 引き継ぎ書の置き場所
-- relayDir を 700 で作る（既にあれば mode を変えない）。1回ごとのフォルダ `<relayDir>/<YYYYMMDD-HHmmss JST>-<古いセッション id の先頭 8 字>/` を 700 で作る。中の `HANDOFF.md` を Claude に書かせる。フォルダは消さない。
+- relayDir を 700 で作る（既にあれば mode を変えない）。1回ごとのフォルダ `<relayDir>/<YYYYMMDD-HHmmss JST>-<古いセッション id の先頭 8 字>/` を 700 で作る。中の HANDOFF.md（実行時に作る名前。リポジトリのファイルではない）を Claude に書かせる。フォルダは消さない。
 ### 5-5 流れ（server/relay.ts の RelayManager。進行は server 側にあり、画面を閉じても続く）
 - RelayManager のコンストラクタは `(deps: { config, sessions, hub, relayDir: string | null }, now: () => Date = () => new Date(), timing: RelayTiming = 本番値)`（routines.ts:50 と同じ作法）。RelayTiming は `{ pollMs: 3000, quietMs: 60000, readyPollMs: 3000, readyTimeoutMs: 120000, namePollMs: 3000, nameTimeoutMs: 15000, handoffTimeoutMs: config.relayHandoffTimeoutMs, doneKeepMs: 600000 }`。下の手順の時間はすべてここから取る（固定値を書かない）。
 - 進行の記録 RelayView: `{ relayId, oldSessionId, oldName, newName, phase, newSessionId?, reason? }`。phase は "handoff" | "launching" | "sending" | "done" | "failed"。phase が変わるたびに `hub.setRelays(list)` を呼ぶ（hub.setRestoreNotices hub.ts:193 と同じ形で、publish する）。
@@ -134,13 +134,16 @@
 ## 8 戻し方
 - 前の版のタグで update-when-idle を実行する。保存の形は変えない（relays はメモリだけ。relayDir のファイルは残っても害が無い）。
 
-## 9 維持する仕組み
-- K1・K2・K4〜K12 の試験を CI で毎回回す。
+## 維持の仕組み
+- 守り手: 設計者（Opus）。K1・K2・K4〜K12 の試験を CI の両 OS で毎回回す。正本: この design.md と CHANGELOG の 0.30.0 の行。
+
+## 外部・過去事例の参照と我々への応用
+- 不要。根拠は工程0の実測（§16。tmux 内の claude で /rename が効くこと、auto mode で作業フォルダ外への書き込みに許可を求めないこと）と、既存の予約送信（chatQueue）の作法。外部の事例で置き換えられる部分が無い。
 
 ## 10 工程
 - 工程0（Sonnet、コードは変えない）:
   (a) 本番（127.0.0.1:4319）には操作せず、ポートを指定して起動した試験用のアプリから tmux の中で開いたセッションで、入力待ちの直後に `/rename 名前` を送ると名前が変わり、次の指示の後も保たれるかを見る。
-  (b) 同じセッションで「`~/CC報告ファイル-keep/relay-stage0/HANDOFF.md` に1行書いて」と頼み、Claude が許可を求めるかを見る（本番の既定の場所の兄弟フォルダ。作ったフォルダは消さずに残し、報告に書く）。
+  (b) 同じセッションで「~/CC報告ファイル-keep/relay-stage0/HANDOFF.md（リポジトリ外。工程0で作成済み・17 バイト）に1行書いて」と頼み、Claude が許可を求めるかを見る（本番の既定の場所の兄弟フォルダ。作ったフォルダは消さずに残し、報告に書く）。
   (c) `ls node_modules/lucide-react/dist/esm/icons/ | grep arrow-right-left` とその export の有無。
   生出力は /tmp/CC報告ファイル/session-relay/stage0/ に置く。
 - 工程1（server）: §3・§4・§5-1〜5-5 と単体試験（K1・K2・K4〜K6・K8〜K10）。
