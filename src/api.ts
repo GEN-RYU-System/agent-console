@@ -154,6 +154,8 @@ export const cancelChatQueue = (sessionId: string, queueId: string): Promise<{ o
 
 export const checkChatSend = (sessionId: string, text: string): Promise<{ text: string; submitDelayMs: number }> =>
   request(`${diffBase(sessionId)}/chat/send-check`, { method: "POST", body: JSON.stringify({ text }) });
+export const fetchRoutineApproval = (sessionId: string): Promise<{ approval: { by: "opus" | "ui"; expiresAt: string } | null }> => request(`/api/sessions/${encodeURIComponent(sessionId)}/routine-approval`);
+export const issueRoutineApproval = (sessionId: string): Promise<{ approved: boolean; expiresAt: string }> => request(`/api/sessions/${encodeURIComponent(sessionId)}/routine-approval`, { method: "POST", body: "{}" });
 export const fetchMemory =(): Promise<MemorySnapshot> => request("/api/memory");
 export const fetchRoutines = (): Promise<{ items: Routine[] }> => request("/api/routines");
 export const createRoutine = (input: RoutineInput): Promise<Routine> => request("/api/routines", { method: "POST", body: JSON.stringify(input) });

@@ -8,6 +8,15 @@ import path from "node:path";
 export const ACTIVITY_HOOK_FILE = "activity-hook.mjs";
 /** ac-routine のサブエージェント拒否 hook（同期）の本体のファイル名 */
 export const GUARD_HOOK_FILE = "ac-routine-guard.mjs";
+/** guard の handler の `if`（規則ごとに 1 本。hooks/ac-routine-guard.mjs の判定と同じ範囲を、起動する前に絞る） */
+export const GUARD_IFS: readonly string[] = [
+  "Bash(*/bin/ac-routine.mjs*)",
+  "Bash(*agent-console/reserve-token*)",
+  "Bash(*Application Support/agent-console*)",
+  "Bash(*127.0.0.1*)",
+  "Bash(*localhost*)",
+  "Read(*Application Support/agent-console*)",
+];
 /** 自分の handler の目印: args[0] がこの文字列で終わる（記録用 hook） */
 export const OWN_HOOK_SUFFIX = `/hooks/${ACTIVITY_HOOK_FILE}`;
 /** 自分の handler の目印（記録用 hook と guard の 2 本） */
@@ -31,7 +40,7 @@ export interface HookSpec {
 }
 
 /**
- * 記録する 9 つのイベント（＋ guard の 1 本、計 10 本の handler）。Notification は使わない（状態は claude agents --json が正本）。
+ * 記録する 9 つのイベント（＋ guard の 6 本、計 15 本の handler）。Notification は使わない（状態は claude agents --json が正本）。
  * Stop（返事）と StopFailure（API エラー）はチャット画面の会話の記録のため（v0.11.0）。状態の判定には使わない。
  * SubagentStart は担当の呼び出しと再開の印（v0.12.0 作戦ボード）。再開した担当を「動いている担当」に戻すために使う。
  */
@@ -45,8 +54,9 @@ export const HOOK_SPECS: readonly HookSpec[] = [
   { event: "Stop" },
   { event: "StopFailure" },
   { event: "SubagentStart" },
-  // ac-routine を実行しようとするサブエージェントを止める同期の guard（v0.25.0。設計 ac-routine §4-1-2）。async を付けると拒否できない。
-  { event: "PreToolUse", matcher: "Bash", file: GUARD_HOOK_FILE, async: false, timeout: 5, if: "Bash(*/bin/ac-routine.mjs*)" },
+  // ac-routine と、その合言葉・宛先を、サブエージェントから触らせない同期の guard（v0.25.0。v0.30.0 で 6 本に増やした。設計 ac-hardening §3-2）。async を付けると拒否できない。
+  // `if` は 1 つの規則しか書けない（recon B7）ので、規則ごとに handler を分ける。第0段 U5: `if` は Bash と Read で効き、Grep と Glob では効かない（Grep・Glob は対象外）。
+  ...GUARD_IFS.map((rule): HookSpec => ({ event: "PreToolUse", matcher: rule.startsWith("Read(") ? "Read" : "Bash", file: GUARD_HOOK_FILE, async: false, timeout: 5, if: rule })),
 ];
 
 type Json = Record<string, unknown>;
@@ -89,7 +99,8 @@ export function isOwnHandler(handler: unknown): boolean {
 function isHandlerOf(handler: unknown, spec: HookSpec): boolean {
   if (!isOwnHandler(handler)) return false;
   const first = ((handler as Json).args as unknown[])[0];
-  return typeof first === "string" && first.endsWith(`/hooks/${specFile(spec)}`);
+  // 同じ本体を指す handler が複数ある（guard）ので、`if` も同じものだけを「その spec の handler」とする
+  return typeof first === "string" && first.endsWith(`/hooks/${specFile(spec)}`) && (handler as Json).if === spec.if;
 }
 
 function sameHandler(handler: unknown, nodePath: string, hookPath: string, spec: HookSpec): boolean {
@@ -269,7 +280,7 @@ export function checkHooks(input: CheckInput): HookCheck {
     return { ok: false, reason: "unreadable" };
   }
   try {
-    const found = HOOK_SPECS.map((spec) => ({ event: spec.file === undefined ? spec.event : `${spec.event}(${spec.file})`, found: findHandler(settings, spec, input.hookPath) }));
+    const found = HOOK_SPECS.map((spec) => ({ event: spec.file === undefined ? spec.event : `${spec.event}(${spec.file}${spec.if !== undefined ? ` ${spec.if}` : ""})`, found: findHandler(settings, spec, input.hookPath) }));
     const missingEvents = found.filter((f) => f.found === null).map((f) => f.event);
     if (missingEvents.length > 0) return { ok: false, reason: "missingHandler", missingEvents };
     const matcherDiffersEvents = found.filter((f) => f.found !== null && !f.found.matcherOk).map((f) => f.event);

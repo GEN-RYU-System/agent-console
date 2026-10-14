@@ -80,6 +80,8 @@ export class Hub {
   private lastPayload = "";
   private stoppers: Array<() => void> = [];
   private readonly tracker = new BreakTracker();
+  /** claude agents の取得ごとに、各セッションの状態を渡す先（自動クローズの標本）。取得失敗のときは null */
+  private readonly sampleListeners = new Set<(states: ReadonlyMap<string, SessionState> | null, at: number) => void>();
   /** 直近の snapshot の表示名（ps を走らせずに名前だけ欲しい呼び出し用） */
   private lastNames = new Map<string, string>();
   private readonly sendNotification: NotificationSender | null;
@@ -158,6 +160,17 @@ export class Hub {
     await this.flushPendingRenames();
     await this.publish();
     await this.flushChatQueues();
+  }
+
+  /** claude agents を取るたびに、アプリのセッション id ごとの状態（取得失敗なら null）を渡す。自動クローズの標本用 */
+  onAgentsSampled(listener: (states: ReadonlyMap<string, SessionState> | null, at: number) => void): () => void {
+    this.sampleListeners.add(listener);
+    return () => this.sampleListeners.delete(listener);
+  }
+
+  private emitSample(states: ReadonlyMap<string, SessionState> | null): void {
+    const at = Date.now();
+    for (const l of this.sampleListeners) { try { l(states, at); } catch (e) { console.error("hub: sample listener failed:", e instanceof Error ? e.message : e); } }
   }
 
   /** 既存のセッションの表示名（Claude 側の名前を優先）が変わったときに呼ばれる（復元リストの保存し直し用）。 */
@@ -402,10 +415,12 @@ export class Hub {
 
   /** 前回の status と比べ、区切りがあれば未読を増やして macOS 通知を出す。取得失敗の間は何も判定しない。 */
   private async detectBreaks(): Promise<void> {
-    if (this.agents === null) return;
+    if (this.agents === null) { this.emitSample(null); return; }
     const table = await readProcessTable().catch(() => []);
+    const states = new Map<string, SessionState>();
     for (const s of this.sessions.list()) {
       const agent = agentForSession({ exited: s.exited, pids: descendantPids(s.term.pid, table) }, this.agents);
+      states.set(s.id, stateForSession({ exited: s.exited, pids: descendantPids(s.term.pid, table) }, this.agents));
       // Claude の sessionId を知ったら控える（再起動のあとに同じ会話を開き直すため。UUID の形でなければ無視される）
       if (agent?.sessionId !== undefined) this.sessions.setClaudeSessionId(s.id, agent.sessionId);
       const isBreak = this.tracker.observe(s.id, agent?.status ?? null);
@@ -413,6 +428,7 @@ export class Hub {
         this.sendNotification?.(breakBody(agent.name ?? s.name, agent.status));
       }
     }
+    this.emitSample(states);
   }
 
   /** 行を選んだとき。変化があれば購読者へ配信する。 */

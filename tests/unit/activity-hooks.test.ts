@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HOOK_SPECS, checkHooks, installHooks, isOwnHandler, uninstallHooks } from "../../server/activity-hooks.ts";
+import { GUARD_IFS, HOOK_SPECS, checkHooks, installHooks, isOwnHandler, uninstallHooks } from "../../server/activity-hooks.ts";
 
 vi.setConfig({ testTimeout: 60000 });
 
@@ -16,9 +16,16 @@ const OLD_EVENTS = EVENTS.slice(0, 6);
 const V0_11_EVENTS = EVENTS.slice(0, 8);
 /** 記録用 hook（activity-hook.mjs）の handler 数 */
 const ACTIVITY_HANDLER_COUNT = EVENTS.length;
-/** 自分の handler の総数（記録用 9 ＋ ac-routine-guard 1） */
-const OWN_HANDLER_COUNT = EVENTS.length + 1;
-const GUARD_MISSING = "PreToolUse(ac-routine-guard.mjs)";
+/** guard の規則（handler）の数。v0.30.0 で 1 から 6 に増えた */
+const GUARD_COUNT = GUARD_IFS.length;
+/** 自分の handler の総数（記録用 9 ＋ ac-routine-guard 6） */
+const OWN_HANDLER_COUNT = EVENTS.length + GUARD_COUNT;
+/** check が欠けとして返す guard の名前（規則ごと） */
+const GUARD_MISSING = GUARD_IFS.map((rule) => `PreToolUse(ac-routine-guard.mjs ${rule})`);
+/** guard 1 規則分の handler（install が書く形） */
+const guardHandler = (e: Env, rule: string): object => ({ type: "command", command: e.nodePath, args: [path.join(path.dirname(e.hookPath), "ac-routine-guard.mjs")], timeout: 5, if: rule });
+/** install 後の PreToolUse: 記録用の group 1 つ＋ guard の group が規則ごとに 1 つ */
+const guardGroups = (e: Env): object[] => GUARD_IFS.map((rule) => ({ matcher: rule.startsWith("Read(") ? "Read" : "Bash", hooks: [guardHandler(e, rule)] }));
 
 const NEW_MATCHER = "Agent|Write|Edit|MultiEdit|NotebookEdit";
 
@@ -71,7 +78,7 @@ const PO_SETTINGS = {
 };
 
 describe("K6: 設定の定義", () => {
-  it("10 本の handler（9 つのイベント＋ ac-routine-guard）と matcher は設計のとおり（v0.11.0 で Stop と StopFailure、v0.12.0 で SubagentStart、v0.25.0 で guard を足した）", () => {
+  it("15 本の handler（9 つのイベント＋ ac-routine-guard 6 規則）と matcher は設計のとおり（v0.11.0 で Stop と StopFailure、v0.12.0 で SubagentStart、v0.25.0 で guard を足し、v0.30.0 で 6 規則に分けた）", () => {
     expect(HOOK_SPECS).toEqual([
       { event: "PreToolUse", matcher: "Agent|SubagentHandback" },
       { event: "PostToolUse", matcher: "Agent|Write|Edit|MultiEdit|NotebookEdit" },
@@ -82,7 +89,16 @@ describe("K6: 設定の定義", () => {
       { event: "Stop" },
       { event: "StopFailure" },
       { event: "SubagentStart" },
-      { event: "PreToolUse", matcher: "Bash", file: "ac-routine-guard.mjs", async: false, timeout: 5, if: "Bash(*/bin/ac-routine.mjs*)" },
+      ...GUARD_IFS.map((rule) => ({ event: "PreToolUse", matcher: rule.startsWith("Read(") ? "Read" : "Bash", file: "ac-routine-guard.mjs", async: false, timeout: 5, if: rule })),
+    ]);
+    // 規則の中身は設計 §3-2 のとおり（Bash 5 本＋ Read 1 本。Grep・Glob は第0段 U5 で `if` が効かないため対象外）
+    expect(GUARD_IFS).toEqual([
+      "Bash(*/bin/ac-routine.mjs*)",
+      "Bash(*agent-console/reserve-token*)",
+      "Bash(*Application Support/agent-console*)",
+      "Bash(*127.0.0.1*)",
+      "Bash(*localhost*)",
+      "Read(*Application Support/agent-console*)",
     ]);
   });
 
@@ -114,7 +130,7 @@ describe("K6: install", () => {
     // 既存の group は先頭にそのまま残り、自分の group が末尾に足される
     expect(after.hooks.PreToolUse.slice(0, 2)).toEqual(PO_SETTINGS.hooks.PreToolUse);
     expect(after.hooks.PreToolUse[2]).toEqual({ matcher: "Agent|SubagentHandback", hooks: [ownHandler(e)] });
-    expect(after.hooks.PreToolUse[3]).toEqual({ matcher: "Bash", hooks: [{ type: "command", command: e.nodePath, args: [path.join(path.dirname(e.hookPath), "ac-routine-guard.mjs")], timeout: 5, if: "Bash(*/bin/ac-routine.mjs*)" }] });
+    expect(after.hooks.PreToolUse.slice(3)).toEqual(guardGroups(e));
     expect(after.hooks.PostToolUse).toEqual([{ matcher: NEW_MATCHER, hooks: [ownHandler(e)] }]);
     expect(after.hooks.UserPromptSubmit).toEqual([...PO_SETTINGS.hooks.UserPromptSubmit, { hooks: [ownHandler(e)] }]);
     for (const ev of EVENTS) expect(JSON.stringify(after.hooks[ev])).toContain("activity-hook.mjs");
@@ -144,14 +160,14 @@ describe("K6: install", () => {
     expect(backups(e)).toHaveLength(1);
     const count = (JSON.stringify(readJson(e.settings)).match(/activity-hook\.mjs/g) ?? []).length;
     expect(count).toBe(ACTIVITY_HANDLER_COUNT);
-    expect((JSON.stringify(readJson(e.settings)).match(/ac-routine-guard\.mjs/g) ?? []).length).toBe(1);
+    expect((JSON.stringify(readJson(e.settings)).match(/ac-routine-guard\.mjs/g) ?? []).length).toBe(GUARD_COUNT);
   });
 
   it("v0.11.0 までの 8 つだけが入っている設定に install し直すと、SubagentStart の 1 つだけが足される（既存の 8 つは変わらない）", () => {
     const e = makeEnv();
     const old8 = { hooks: Object.fromEntries(V0_11_EVENTS.map((ev) => [ev, [HOOK_SPECS.find((s) => s.event === ev)?.matcher ? { matcher: HOOK_SPECS.find((s) => s.event === ev)?.matcher, hooks: [ownHandler(e)] } : { hooks: [ownHandler(e)] }]])) };
     writeFileSync(e.settings, JSON.stringify(old8, null, 2) + "\n");
-    expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toMatchObject({ ok: false, reason: "missingHandler", missingEvents: ["SubagentStart", GUARD_MISSING] });
+    expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toMatchObject({ ok: false, reason: "missingHandler", missingEvents: ["SubagentStart", ...GUARD_MISSING] });
     const before = readJson(e.settings);
     const r = installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath });
     expect(r.changed).toBe(true);
@@ -165,7 +181,7 @@ describe("K6: install", () => {
     const e = makeEnv();
     const oldOnly = { hooks: Object.fromEntries(OLD_EVENTS.map((ev) => [ev, [HOOK_SPECS.find((s) => s.event === ev)?.matcher ? { matcher: HOOK_SPECS.find((s) => s.event === ev)?.matcher, hooks: [ownHandler(e)] } : { hooks: [ownHandler(e)] }]])) };
     writeFileSync(e.settings, JSON.stringify({ ...oldOnly, hooks: { ...oldOnly.hooks, Stop: PO_SETTINGS.hooks.Stop } }, null, 2) + "\n");
-    expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toMatchObject({ ok: false, reason: "missingHandler", missingEvents: ["Stop", "StopFailure", "SubagentStart", GUARD_MISSING] });
+    expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toMatchObject({ ok: false, reason: "missingHandler", missingEvents: ["Stop", "StopFailure", "SubagentStart", ...GUARD_MISSING] });
     const before = readJson(e.settings);
     const r = installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath });
     expect(r.changed).toBe(true);
@@ -266,7 +282,7 @@ describe("K6: uninstall", () => {
 });
 
 describe("K6 / K8: check", () => {
-  it("handler が 10 本そろい、node と hook のファイルがあれば ok", () => {
+  it("handler が 15 本そろい、node と hook のファイルがあれば ok", () => {
     const e = makeEnv();
     installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath });
     expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toEqual({ ok: true });
@@ -278,7 +294,7 @@ describe("K6 / K8: check", () => {
     writeFileSync(e.settings, "{broken");
     expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toMatchObject({ ok: false, reason: "unreadable" });
     writeFileSync(e.settings, JSON.stringify(PO_SETTINGS));
-    expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toMatchObject({ ok: false, reason: "missingHandler", missingEvents: [...EVENTS, GUARD_MISSING] });
+    expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toMatchObject({ ok: false, reason: "missingHandler", missingEvents: [...EVENTS, ...GUARD_MISSING] });
 
     installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath });
     const partial = readJson(e.settings);
@@ -344,19 +360,19 @@ describe("K10: PostToolUse の matcher が古い環境", () => {
 
   it("guard の group（PreToolUse・matcher Bash）は、install・2 回目の install・PostToolUse の matcher 直しの後もそのまま残る（matcher 直しは spec ごと。§16）", () => {
     const e = makeEnv();
-    const guardGroup = { matcher: "Bash", hooks: [{ type: "command", command: e.nodePath, args: [path.join(path.dirname(e.hookPath), "ac-routine-guard.mjs")], timeout: 5, if: "Bash(*/bin/ac-routine.mjs*)" }] };
+    const guardGroup = guardGroups(e);
     const activityPre = { matcher: "Agent|SubagentHandback", hooks: [ownHandler(e)] };
     installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath });
-    expect(readJson(e.settings).hooks.PreToolUse).toEqual([activityPre, guardGroup]);
+    expect(readJson(e.settings).hooks.PreToolUse).toEqual([activityPre, ...guardGroup]);
     expect(installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath }).changed).toBe(false);
-    expect(readJson(e.settings).hooks.PreToolUse).toEqual([activityPre, guardGroup]);
+    expect(readJson(e.settings).hooks.PreToolUse).toEqual([activityPre, ...guardGroup]);
     const s = readJson(e.settings);
     s.hooks.PostToolUse = [{ matcher: OLD_MATCHER, hooks: [ownHandler(e)] }];
     writeFileSync(e.settings, JSON.stringify(s, null, 2) + "\n");
     expect(installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath }).changed).toBe(true);
     const after = readJson(e.settings);
     expect(after.hooks.PostToolUse).toEqual([{ matcher: NEW_MATCHER, hooks: [ownHandler(e)] }]);
-    expect(after.hooks.PreToolUse).toEqual([activityPre, guardGroup]);
+    expect(after.hooks.PreToolUse).toEqual([activityPre, ...guardGroup]);
     expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toEqual({ ok: true });
   });
 

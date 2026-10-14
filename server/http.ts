@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
-import { CHALLENGE_TTL_MS, PAIRING_TTL_MS, SESSION_MAX_MS, sameSecret, type Auth } from "./auth.ts";
+import { CHALLENGE_TTL_MS, PAIRING_TTL_MS, SESSION_MAX_MS, sameSecret, type Auth, type AuthMethod } from "./auth.ts";
 import type { ActivityStore } from "./activity.ts";
 import type { HookCheck } from "./activity-hooks.ts";
 import { handleActivity } from "./activity-routes.ts";
@@ -27,6 +27,7 @@ import { listResumeTargets, resolveResumeTarget } from "./resume-targets.ts";
 import type { QuickPromptStore } from "./quick-prompts.ts";
 import { SessionConflictError, SessionInputError, SessionNotFoundError, isClaudeSessionId, validateName, type SessionManager } from "./sessions.ts";
 import { WorktreeError } from "./worktree.ts";
+import { RoutineApprovals } from "./routine-approvals.ts";
 import { RoutineLimitError, validateReason, type RoutineService } from "./routines.ts";
 import { RoutineAudit, type RoutineAuditAction, type RoutineAuditEntry } from "./routine-audit.ts";
 import type { ReservationService } from "./reservations.ts";
@@ -66,6 +67,8 @@ export interface AppDeps {
   reservations: ReservationService;
   /** AI 用コマンドの合言葉（dataDir/reserve-token）。作れなかった・本番のポートでないときは token が null */
   reserve: ReserveAccess;
+  /** ac-routine の一時承認の保管。無ければ deps ごとにメモリに 1 つ作る（試験では時刻を差し替えたものを渡す） */
+  routineApprovals?: RoutineApprovals;
 }
 
 export function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -137,8 +140,9 @@ async function serveStatic(staticDir: string, pathname: string, res: ServerRespo
   stream.pipe(res);
 }
 
-async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerResponse, url: URL, authKind: AuthMethod): Promise<void> {
   const { sessions, hub, config, meta } = deps;
+  if (await handleRoutineApproval(deps, req, res, url, authKind)) return;
   if (req.method === "GET" && url.pathname === "/api/state") {
     const snap = await hub.snapshot();
     sendJson(res, 200, {
@@ -316,6 +320,33 @@ function uiReservationInput(body: Record<string, unknown>): Record<string, unkno
 
 const safeDecode = (raw: string): string => { try { return decodeURIComponent(raw); } catch { throw new BadRequestError("malformed id"); } };
 
+export const UI_APPROVAL_PATH = /^\/api\/sessions\/([^/]+)\/routine-approval$/;
+
+/**
+ * 画面からの ac-routine の一時承認（設計 ac-hardening §3-3）。POST で発行（30 分・1 回）、GET で今の承認（残り時間の表示用）。
+ * 認証の種類が "session"（画面のトークンと Origin）のときだけ受ける。"bearer"（サーバーの秘密）は 403。結び先は claudeSessionId（未確定なら 400）。
+ */
+async function handleRoutineApproval(deps: AppDeps, req: IncomingMessage, res: ServerResponse, url: URL, authKind: AuthMethod): Promise<boolean> {
+  const m = UI_APPROVAL_PATH.exec(url.pathname);
+  if (!m) return false;
+  const method = req.method ?? "";
+  if (method !== "POST" && method !== "GET") return false;
+  if (authKind !== "session") { sendJson(res, 403, { error: "forbidden" }); return true; }
+  const session = deps.sessions.get(safeDecode(m[1]));
+  if (!session) throw new SessionNotFoundError("session not found");
+  const claudeSessionId = session.claudeSessionId;
+  if (method === "GET") {
+    const current = claudeSessionId === undefined ? null : approvalsOf(deps).peek(claudeSessionId);
+    sendJson(res, 200, { approval: current === null ? null : { by: current.by, expiresAt: new Date(current.expiresAt).toISOString() } });
+    return true;
+  }
+  if (claudeSessionId === undefined) throw new BadRequestError("Claude セッションが未確定です。数秒後に再試行してください");
+  const approval = approvalsOf(deps).issue(claudeSessionId, "ui");
+  await writeAudit(deps, { action: "approvalIssued", outcome: "ok", callerSessionId: claudeSessionId, roleId: session.roleId, by: "ui", expiresAt: new Date(approval.expiresAt).toISOString() });
+  sendJson(res, 200, { approved: true, expiresAt: new Date(approval.expiresAt).toISOString() });
+  return true;
+}
+
 const AGENT_RESERVATION_PATH = /^\/api\/agent\/reservations(?:\/([^/]+)\/cancel)?$/;
 
 /**
@@ -335,7 +366,29 @@ async function handleAgentReservations(deps: AppDeps, req: IncomingMessage, res:
 
 const AGENT_ROUTINE_PATH = /^\/api\/agent\/routines(?:\/([^/]+)(\/enabled)?)?$/;
 const FORBIDDEN_ROUTINE_MESSAGE = "ac-routine is limited to manager role sessions (起動直後は数秒〜数十秒待って再試行)";
+/** 担当が動いている間の書き込みの拒否（設計 ac-hardening S3）。承認の出し方を案内する */
+export const SUBAGENT_RUNNING_MESSAGE = "担当が動いている間は ac-routine の書き込みは使えません。終わってから再試行するか、ac-routine approve --reason <理由> で承認してください（定期実行の中では NEEDS_DECISION: で終える）。PO は画面でも承認できます";
 const routineAudits = new Map<string, RoutineAudit>();
+const routineApprovalStores = new WeakMap<AppDeps, RoutineApprovals>();
+
+/** 一時承認の保管（deps に無ければ deps ごとに 1 つ作る）。メモリだけ */
+function approvalsOf(deps: AppDeps): RoutineApprovals {
+  if (deps.routineApprovals !== undefined) return deps.routineApprovals;
+  let store = routineApprovalStores.get(deps);
+  if (store === undefined) { store = new RoutineApprovals(); routineApprovalStores.set(deps, store); }
+  return store;
+}
+
+function auditOf(deps: AppDeps): RoutineAudit {
+  let audit = routineAudits.get(deps.config.dataDir);
+  if (audit === undefined) { audit = new RoutineAudit(deps.config.dataDir); routineAudits.set(deps.config.dataDir, audit); }
+  return audit;
+}
+
+/** 監査へ 1 行。書けなくても処理は止めない */
+async function writeAudit(deps: AppDeps, entry: Omit<RoutineAuditEntry, "at">): Promise<void> {
+  try { await auditOf(deps).append({ at: new Date().toISOString(), ...entry }); } catch (e) { console.error("routine-audit: write failed:", e instanceof Error ? e.message : e); }
+}
 
 /** 呼び出し元の照合。正本は SessionManager のメモリ。生きていて claudeSessionId が一致する全セッションの役割が、すべて許可リストにあるときだけ通す */
 function checkRoutineCaller(deps: AppDeps, callerSessionId: string | null): { ok: boolean; roleId?: string } {
@@ -360,7 +413,10 @@ async function handleAgentRoutines(deps: AppDeps, req: IncomingMessage, res: Ser
   const method = req.method ?? "";
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   let action: RoutineAuditAction | null = null;
-  if (method === "POST" && id === undefined) action = "add";
+  // Opus の承認（設計 §3-3a）。:id より先に分岐し、"approval" を routine の id として扱わない。POST 以外・/enabled 付きは 404
+  const isApproval = id === "approval";
+  if (isApproval) action = method === "POST" && !enabledPath ? "approvalIssued" : null;
+  else if (method === "POST" && id === undefined) action = "add";
   else if (method === "PUT" && id !== undefined && !enabledPath) action = "update";
   else if (method === "POST" && id !== undefined && enabledPath) action = "enable";
   const isList = method === "GET" && id === undefined;
@@ -371,11 +427,7 @@ async function handleAgentRoutines(deps: AppDeps, req: IncomingMessage, res: Ser
   const rawCaller = isList ? url.searchParams.get("callerSessionId") : body.callerSessionId;
   const callerSessionId = isClaudeSessionId(rawCaller) ? rawCaller : null;
   const caller = checkRoutineCaller(deps, callerSessionId);
-  let audit = routineAudits.get(deps.config.dataDir);
-  if (audit === undefined) { audit = new RoutineAudit(deps.config.dataDir); routineAudits.set(deps.config.dataDir, audit); }
-  const record = async (entry: Omit<RoutineAuditEntry, "at" | "callerSessionId" | "roleId">): Promise<void> => {
-    try { await audit.append({ at: new Date().toISOString(), callerSessionId, ...(caller.roleId !== undefined ? { roleId: caller.roleId } : {}), ...entry }); } catch (e) { console.error("routine-audit: write failed:", e instanceof Error ? e.message : e); }
-  };
+  const record = (entry: Omit<RoutineAuditEntry, "at" | "callerSessionId" | "roleId">): Promise<void> => writeAudit(deps, { callerSessionId, ...(caller.roleId !== undefined ? { roleId: caller.roleId } : {}), ...entry });
   const reasonText = typeof body.reason === "string" && body.reason.length <= 200 ? body.reason.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "") : undefined;
   if (!caller.ok) {
     if (action !== null) await record({ action, outcome: "denied", ...(reasonText !== undefined ? { reason: reasonText } : {}), error: "forbidden: caller is not a routine manager session" });
@@ -384,6 +436,18 @@ async function handleAgentRoutines(deps: AppDeps, req: IncomingMessage, res: Ser
   }
   if (isList) { sendJson(res, 200, { items: deps.routines.list() }); return; }
 
+  if (isApproval) {
+    // 役割の照合は済み。reason は 1〜200 字（400）。承認は claudeSessionId に 1 件（後から出した方が上書き）、10 分・1 回限り
+    const approvalReason = validateReason(body.reason);
+    const claudeSessionId = callerSessionId as string;
+    await deps.activity.refresh();
+    const approval = approvalsOf(deps).issue(claudeSessionId, "opus");
+    const running = deps.activity.view(claudeSessionId).running.map((a) => ({ key: a.key, subagentType: a.subagentType, startedAt: a.startedAt }));
+    await record({ action: "approvalIssued", outcome: "ok", reason: approvalReason, by: "opus", expiresAt: new Date(approval.expiresAt).toISOString(), runningAgents: running });
+    sendJson(res, 200, { approved: true, expiresAt: new Date(approval.expiresAt).toISOString() });
+    return;
+  }
+
   if (enabledPath && typeof body.enabled !== "boolean") throw new SessionInputError("enabled required");
   const reason = validateReason(body.reason);
   const { reason: _reason, callerSessionId: _caller, ...input } = body;
@@ -391,15 +455,25 @@ async function handleAgentRoutines(deps: AppDeps, req: IncomingMessage, res: Ser
   const target = id === undefined ? undefined : deps.routines.list().find((r) => r.id === id);
   const targetCreatedBy: "agent" | "ui" | undefined = target === undefined ? undefined : target.createdBy === "agent" ? "agent" : "ui";
   const withTarget = (routineId: string | undefined, by: "agent" | "ui" | undefined): Partial<RoutineAuditEntry> => (routineId !== undefined && by !== undefined ? { routineId, targetCreatedBy: by } : {});
+  // 第1層（設計 ac-hardening §3-1）: 担当が動いている間の書き込みは 403。承認があればそれを 1 回分使って通す。承認はこの書き込みで（担当がいなくても）消える
+  await deps.activity.refresh();
+  const runningCount = deps.activity.runningCount(callerSessionId as string);
+  const used = approvalsOf(deps).consume(callerSessionId as string);
+  if (runningCount > 0 && used === null) {
+    await record({ action: act, outcome: "denied", reason, runningCount, error: "forbidden: subagent running", ...withTarget(id, targetCreatedBy) });
+    sendJson(res, 403, { error: SUBAGENT_RUNNING_MESSAGE });
+    return;
+  }
+  const approvedBy: Partial<RoutineAuditEntry> = runningCount > 0 && used !== null ? { approvedBy: used.by } : {};
   try {
     if (act === "add") {
       const created = await deps.routines.create(input as never, "agent");
-      await record({ action: act, outcome: "ok", reason, ...withTarget(created.id, "agent") });
+      await record({ action: act, outcome: "ok", reason, ...approvedBy, ...withTarget(created.id, "agent") });
       sendJson(res, 201, created);
       return;
     }
     const result = act === "update" ? await deps.routines.update(id as string, input as never, true) : await deps.routines.setEnabled(id as string, act === "enable", true);
-    await record({ action: act, outcome: "ok", reason, ...withTarget(result.id, targetCreatedBy) });
+    await record({ action: act, outcome: "ok", reason, ...approvedBy, ...withTarget(result.id, targetCreatedBy) });
     sendJson(res, 200, result);
   } catch (err) {
     if (err instanceof RoutineLimitError) await record({ action: act, outcome: "denied", reason, error: err.message, ...withTarget(id, targetCreatedBy) });
@@ -520,7 +594,7 @@ export function createRequestHandler(deps: AppDeps) {
           sendJson(res, 403, { error: "forbidden origin" });
           return;
         }
-        await handleApi(deps, req, res, url);
+        await handleApi(deps, req, res, url, method);
         return;
       }
       if (req.method !== "GET" && req.method !== "HEAD") {

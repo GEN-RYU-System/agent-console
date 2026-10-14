@@ -501,6 +501,11 @@ export class ActivityStore {
     return { running, tasks, inputs: state.inputs.slice(0, INPUTS_MAX), lastEventAt: state.lastEventAt };
   }
 
+  /** そのセッション（claudeSessionId）で動いている担当の数。ac-routine の書き込みを止めるかの判定に使う（設計 ac-hardening §3-1） */
+  runningCount(sessionId: string): number {
+    return this.view(sessionId).running.length;
+  }
+
   /** activityKeepDays より古い日付の events-YYYYMMDD.jsonl だけを消す。消した名前を返す（本番のポートのサーバーだけが呼ぶ） */
   async pruneOldFiles(): Promise<string[]> {
     const now = this.now();

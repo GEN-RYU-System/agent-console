@@ -81,7 +81,7 @@ async function waitReady(deps: LaunchDeps, sessionId: string, extra?: () => Prom
 }
 
 /** cwd 再検査→空き確認→新しいセッションを開く→入力待ちを待つ→送る直前の確認→指示を 1 回送る */
-export async function launchAndSend(deps: LaunchDeps, req: LaunchRequest): Promise<{ outcome: LaunchOutcome; sessionName?: string }> {
+export async function launchAndSend(deps: LaunchDeps, req: LaunchRequest): Promise<{ outcome: LaunchOutcome; sessionName?: string; sessionId?: string }> {
   const role = deps.config.roles.find((x) => x.id === req.roleId);
   if (!role) return { outcome: "failed" };
   const entries = await listWorktreeEntries(deps.config.salesanchorRoot).catch((e) => { console.error("routines: worktree list failed:", e instanceof Error ? e.message : e); return []; });
@@ -90,13 +90,13 @@ export async function launchAndSend(deps: LaunchDeps, req: LaunchRequest): Promi
   if (!deps.sessions.hasCapacity()) return { outcome: "full" };
   const name = sessionNameFor(req.name, req.slotKey);
   const session = deps.sessions.restore({ role, name, cwd: verdict.real, branch: req.branch ?? null });
-  if (!(await waitReady(deps, session.id))) return { outcome: isGone(deps, session.id) ? "failed" : "not_ready", sessionName: name };
-  if (!req.stillWanted()) return { outcome: "not_ready", sessionName: name };
+  if (!(await waitReady(deps, session.id))) return { outcome: isGone(deps, session.id) ? "failed" : "not_ready", sessionName: name, sessionId: session.id };
+  if (!req.stillWanted()) return { outcome: "not_ready", sessionName: name, sessionId: session.id };
   // Claude の自動名で上書きされないように、同じ名前を Claude 側にも付ける（hub.ts:552）。反映に約3秒かかるので、名前が一致して入力待ちに戻るまで待ってから送る
   if ((await deps.hub.requestRename(session.id, name)) === "claude") {
     const named = async (): Promise<boolean> => (await deps.hub.snapshot()).sessions.find((v) => v.id === session.id)?.name === name;
     if (!(await waitReady(deps, session.id, named))) console.error("launch: claude-side name not confirmed in time, sending anyway:", name);
-    if (isGone(deps, session.id)) return { outcome: "failed", sessionName: name };
+    if (isGone(deps, session.id)) return { outcome: "failed", sessionName: name, sessionId: session.id };
   }
-  return { outcome: (await deps.hub.submitText(session.id, req.promptText)) ? "sent" : "failed", sessionName: name };
+  return { outcome: (await deps.hub.submitText(session.id, req.promptText)) ? "sent" : "failed", sessionName: name, sessionId: session.id };
 }
