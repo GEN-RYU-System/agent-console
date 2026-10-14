@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@sa/components/Button";
-import { Callout } from "@sa/components/Callout";
 import { Modal } from "@sa/components/Modal";
-import { Stack } from "@sa/components/Stack";
 import { updateQuickPrompt } from "../../api";
 import type { QuickPrompt } from "../../types";
+import { QuickPromptEditor } from "./QuickPromptEditor";
 import "./QuickPrompts.css";
 
 interface Props {
@@ -18,25 +17,20 @@ interface Props {
   onSend?: (promptId: string) => void;
   /** チャットのバー: 押したときに、本文を渡す（入力欄に入れるだけ。送らないので、送れない状態でも押せる） */
   onPick?: (text: string) => void;
-  onEdit: () => void;
-  /** 「常に表示」を切り替えたあとに一覧を読み直す */
+  /** 「常に表示」の切替・追加・編集・削除・並べ替えのあとに一覧を読み直す */
   onChanged: () => void;
 }
 
 /**
- * 「よく使う指示」のバー（1 行）。常に表示にした指示だけを並べ、全件は左のボタンで開く一覧から使う。
+ * 「よく使う指示」のバー（1 行）。常に表示にした指示だけを並べ、全件の使う・常に表示・並べ替え・登録・編集・削除は左のボタンで開く 1 つの画面で行う。
  * 端末の上では、人が押したときだけ選択中の端末の入力欄に入れる（onSend。Enter は送らない）。チャットでは、押すと本文を入力欄に入れるだけ（onPick）。部品は 1 つ。
  */
-export function QuickPromptBar({ prompts, canSend = false, blockedHint, onSend, onPick, onEdit, onChanged }: Props) {
+export function QuickPromptBar({ prompts, canSend = false, blockedHint, onSend, onPick, onChanged }: Props) {
   const { t } = useTranslation();
   const [listOpen, setListOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const pinned = prompts.filter((p) => p.pinned);
 
-  const handleTogglePinned = (p: QuickPrompt): void => {
-    setError(null);
-    updateQuickPrompt(p.id, { pinned: !p.pinned }).then(onChanged, (err: unknown) => setError(err instanceof Error ? err.message : String(err)));
-  };
+  const handleTogglePinned = (p: QuickPrompt): Promise<unknown> => updateQuickPrompt(p.id, { pinned: !p.pinned });
 
   const usable = onPick !== undefined || canSend;
   const use = (p: QuickPrompt): void => {
@@ -63,34 +57,8 @@ export function QuickPromptBar({ prompts, canSend = false, blockedHint, onSend, 
         ))}
         {!usable && blockedHint !== undefined && pinned.length > 0 && <span className="ac-quick__empty">{blockedHint}</span>}
       </div>
-      <Button variant="ghost" size="sm" layoutClassName="ac-quick__edit-button" onClick={onEdit}>
-        {t("ac.quick.edit")}
-      </Button>
-      <Modal open={listOpen} onClose={() => setListOpen(false)} title={t("ac.quick.listTitle")} size="md">
-        <Stack gap="2">
-          {error !== null && (
-            <Callout variant="warning" title={t("ac.quick.error")}>
-              {error}
-            </Callout>
-          )}
-          {prompts.length === 0 && <span className="ac-quick__empty">{t("ac.quick.empty")}</span>}
-          {prompts.map((p) => (
-            <div key={p.id} className="ac-quick-list__item" data-testid="quick-prompt-list-item">
-              <div className="ac-quick-editor__text">
-                <span className="ac-quick-editor__label" data-testid="quick-prompt-list-label">{p.label}</span>
-                <span className="ac-quick-editor__preview">{p.text}</span>
-              </div>
-              <div className="ac-quick-editor__actions">
-                <Button variant="tab" size="sm" active={p.pinned} onClick={() => handleTogglePinned(p)} title={t("ac.quick.pinnedTitle")}>
-                  {t("ac.quick.pinned")}
-                </Button>
-                <Button variant="primary" size="sm" disabled={!usable} onClick={() => handleUse(p)}>
-                  {t("ac.quick.use")}
-                </Button>
-              </div>
-            </div>
-          ))}
-        </Stack>
+      <Modal open={listOpen} onClose={() => setListOpen(false)} title={t("ac.quick.title")} size="lg">
+        <QuickPromptEditor prompts={prompts} onChanged={onChanged} onTogglePinned={handleTogglePinned} onUse={handleUse} usable={usable} />
       </Modal>
     </div>
   );

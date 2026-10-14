@@ -83,6 +83,7 @@
   - 1行にする（flex-wrap: nowrap、overflow-x: auto）。ボタンが縮んで名前がつぶれないように、`.ac-quick__buttons > *` に flex: none を当てる。並べるのは pinned の項目だけ、保存順。
   - 左の「よく使う指示」は SA の Button（ghost、sm）にして、押すと SA の Modal（md）を開く。
   - 右端の「指示を編集」は、今のまま。
+    - → v0.33.0 で右端のボタンを無くした（docs/handoff/quick-merge/design.md）
 - 一覧の Modal:
   - 全件を保存順に出す。
   - 各行に「使う」の Button と、「常に表示」の切り替えを置く。切り替えは SA の Button の variant="tab" と active={pinned} にする。押されているかどうかを aria-pressed で支援技術に伝えるため（SA の Button.tsx:64）。SA に Checkbox は無い。

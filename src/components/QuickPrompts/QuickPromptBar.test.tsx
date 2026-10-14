@@ -8,6 +8,9 @@ import { QuickPromptBar } from "./QuickPromptBar";
 const updateQuickPrompt = vi.fn();
 vi.mock("../../api", () => ({
   updateQuickPrompt: (id: string, i: unknown) => updateQuickPrompt(id, i),
+  createQuickPrompt: vi.fn(),
+  deleteQuickPrompt: vi.fn(),
+  moveQuickPrompt: vi.fn(),
 }));
 
 const prompts: QuickPrompt[] = [
@@ -17,7 +20,7 @@ const prompts: QuickPrompt[] = [
 ];
 
 function renderBar(overrides: Partial<React.ComponentProps<typeof QuickPromptBar>> = {}) {
-  const props = { prompts, canSend: true, onSend: vi.fn(), onEdit: vi.fn(), onChanged: vi.fn(), ...overrides };
+  const props = { prompts, canSend: true, onSend: vi.fn(), onChanged: vi.fn(), ...overrides };
   render(<QuickPromptBar {...props} />);
   return props;
 }
@@ -28,10 +31,10 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("QuickPromptBar (v0.10.0 K3)", () => {
-  it("shows only the pinned prompts as buttons, in saved order, between the list button and the edit button", () => {
+  it("shows only the pinned prompts as buttons, in saved order, after the list button (no edit button)", () => {
     renderBar();
     const bar = screen.getByTestId("quick-prompt-bar");
-    expect(within(bar).getAllByRole("button").map((b) => b.textContent)).toEqual(["よく使う指示", "テスト実行", "ビルド", "指示を編集"]);
+    expect(within(bar).getAllByRole("button").map((b) => b.textContent)).toEqual(["よく使う指示", "テスト実行", "ビルド"]);
   });
 
   it("sends a pinned prompt from the bar", () => {
@@ -45,14 +48,14 @@ describe("QuickPromptBar (v0.10.0 K3)", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "よく使う指示" }));
     const dialog = screen.getByRole("dialog");
-    const rows = within(dialog).getAllByTestId("quick-prompt-list-item");
-    expect(rows.map((r) => within(r).getByTestId("quick-prompt-list-label").textContent)).toEqual(["テスト実行", "リント", "ビルド"]);
+    const rows = within(dialog).getAllByTestId("quick-prompt-item");
+    expect(rows.map((r) => r.querySelector(".ac-quick-editor__label")?.textContent)).toEqual(["テスト実行", "リント", "ビルド"]);
   });
 
   it("uses a prompt from the dialog like the bar button does, then closes the dialog", async () => {
     const { onSend } = renderBar();
     fireEvent.click(screen.getByRole("button", { name: "よく使う指示" }));
-    const row = screen.getAllByTestId("quick-prompt-list-item")[1];
+    const row = screen.getAllByTestId("quick-prompt-item")[1];
     fireEvent.click(within(row).getByRole("button", { name: "使う" }));
     expect(onSend).toHaveBeenCalledWith("p2");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -61,7 +64,7 @@ describe("QuickPromptBar (v0.10.0 K3)", () => {
   it("disables 使う in the dialog when the session cannot receive input", () => {
     renderBar({ canSend: false });
     fireEvent.click(screen.getByRole("button", { name: "よく使う指示" }));
-    for (const row of screen.getAllByTestId("quick-prompt-list-item")) {
+    for (const row of screen.getAllByTestId("quick-prompt-item")) {
       expect((within(row).getByRole("button", { name: "使う" }) as HTMLButtonElement).disabled).toBe(true);
     }
   });
@@ -77,7 +80,7 @@ describe("QuickPromptBar (v0.10.0 K3)", () => {
   it("shows pinned as aria-pressed and toggles it through update with pinned only, then asks for a reload", async () => {
     const { onChanged } = renderBar();
     fireEvent.click(screen.getByRole("button", { name: "よく使う指示" }));
-    const rows = screen.getAllByTestId("quick-prompt-list-item");
+    const rows = screen.getAllByTestId("quick-prompt-item");
     const first = within(rows[0]).getByRole("button", { name: "常に表示" });
     const second = within(rows[1]).getByRole("button", { name: "常に表示" });
     expect(first.getAttribute("aria-pressed")).toBe("true");
@@ -101,7 +104,7 @@ describe("QuickPromptBar (v0.10.0 K3)", () => {
     updateQuickPrompt.mockRejectedValue(new Error("boom"));
     renderBar();
     fireEvent.click(screen.getByRole("button", { name: "よく使う指示" }));
-    fireEvent.click(within(screen.getAllByTestId("quick-prompt-list-item")[0]).getByRole("button", { name: "常に表示" }));
+    fireEvent.click(within(screen.getAllByTestId("quick-prompt-item")[0]).getByRole("button", { name: "常に表示" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("boom"));
   });
 
@@ -127,7 +130,7 @@ describe("QuickPromptBar (v0.10.0 K3)", () => {
       const onPick = vi.fn();
       renderBar({ onPick, canSend: false });
       fireEvent.click(screen.getByRole("button", { name: "よく使う指示" }));
-      const row = screen.getAllByTestId("quick-prompt-list-item")[1];
+      const row = screen.getAllByTestId("quick-prompt-item")[1];
       const use = within(row).getByRole("button", { name: "使う" }) as HTMLButtonElement;
       expect(use.disabled).toBe(false);
       fireEvent.click(use);
@@ -146,9 +149,20 @@ describe("QuickPromptBar (v0.10.0 K3)", () => {
     });
   });
 
-  it("calls onEdit from the edit button", () => {
-    const { onEdit } = renderBar();
-    fireEvent.click(screen.getByRole("button", { name: "指示を編集" }));
-    expect(onEdit).toHaveBeenCalled();
+  it("K1 has no 指示を編集 button in the bar or in the dialog", () => {
+    renderBar();
+    expect(screen.queryByRole("button", { name: "指示を編集" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "よく使う指示" }));
+    expect(screen.queryByRole("button", { name: "指示を編集" })).toBeNull();
+  });
+
+  it("K2 puts use / pinned / move / edit / delete on every row of the one dialog, plus the add form", () => {
+    renderBar();
+    fireEvent.click(screen.getByRole("button", { name: "よく使う指示" }));
+    const dialog = screen.getByRole("dialog");
+    for (const row of within(dialog).getAllByTestId("quick-prompt-item")) {
+      expect(within(row).getAllByRole("button").map((b) => b.getAttribute("aria-label") ?? b.textContent)).toEqual(["常に表示", "使う", "上へ", "下へ", "編集", "削除"]);
+    }
+    expect(within(dialog).getByTestId("quick-prompt-form")).toBeTruthy();
   });
 });

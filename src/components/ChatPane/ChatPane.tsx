@@ -27,7 +27,6 @@ interface Props {
   /** 今、端末へ文章を入れてよい状態か（サーバーの判定。セッション一覧と同じ） */
   canChat: boolean;
   prompts: QuickPrompt[];
-  onEditPrompts: () => void;
   onPromptsChanged: () => void;
   /** 端末タブへ移る（確認の待ちのときの案内の Button） */
   onOpenTerminal: () => void;
@@ -42,7 +41,7 @@ const messageOf = (err: unknown): string => (err instanceof Error ? err.message 
  * 「送る」は、いつでもサーバーの送信の予約に入れるだけ（手が空けばすぐ、作業中なら作業が終わってから、サーバーが端末へ書く）。
  * 会話の正本は記録のファイル、予約の正本はサーバーのメモリで、ここは写しだけ。
  */
-export function ChatPane({ sessionId, active, rev, state, canChat, prompts, onEditPrompts, onPromptsChanged, onOpenTerminal }: Props) {
+export function ChatPane({ sessionId, active, rev, state, canChat, prompts, onPromptsChanged, onOpenTerminal }: Props) {
   const { t } = useTranslation();
   const [items, setItems] = useState<ChatItem[]>([]);
   const [load, setLoad] = useState<Load>("loading");
@@ -210,7 +209,7 @@ export function ChatPane({ sessionId, active, rev, state, canChat, prompts, onEd
       </div>
       <div className="ac-chat__composer">
         {/* バーは、このタブが開いているときだけ置く（端末の上のバーと同時に DOM に 2 本ある状態を作らない） */}
-        {active && <QuickPromptBar prompts={prompts} onPick={pickPrompt} onEdit={onEditPrompts} onChanged={onPromptsChanged} />}
+        {active && <QuickPromptBar prompts={prompts} onPick={pickPrompt} onChanged={onPromptsChanged} />}
         {noticeKey !== null && (
           <div className="ac-chat__blocked" data-testid="chat-blocked">
             <span>{t(noticeKey)}</span>
