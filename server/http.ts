@@ -31,6 +31,7 @@ import { RoutineApprovals } from "./routine-approvals.ts";
 import { RoutineLimitError, validateReason, type RoutineService } from "./routines.ts";
 import { RoutineAudit, type RoutineAuditAction, type RoutineAuditEntry } from "./routine-audit.ts";
 import type { ReservationService } from "./reservations.ts";
+import type { RelayManager } from "./relay.ts";
 import type { ReserveAccess } from "./reserve-token.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -65,6 +66,8 @@ export interface AppDeps {
   routines: RoutineService;
   /** 予約（日時を指定して 1 回送る）。正本は dataDir/reservations.json */
   reservations: ReservationService;
+  /** 引き継ぎ（今のセッションに引き継ぎ書を書かせ、次のセッションへ渡す）。進行はメモリだけ */
+  relay: RelayManager;
   /** AI 用コマンドの合言葉（dataDir/reserve-token）。作れなかった・本番のポートでないときは token が null */
   reserve: ReserveAccess;
   /** ac-routine の一時承認の保管。無ければ deps ごとにメモリに 1 つ作る（試験では時刻を差し替えたものを渡す） */
@@ -266,7 +269,7 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
     sendJson(res, 201, { id: session.id });
     return true;
   }
-  const sessionMatch = /^\/api\/sessions\/([^/]+)\/(read|rename|send-check|close|move)$/.exec(url.pathname);
+  const sessionMatch = /^\/api\/sessions\/([^/]+)\/(read|rename|send-check|close|move|relay)$/.exec(url.pathname);
   if (method !== "POST" || !sessionMatch) return false;
   const [, id, action] = sessionMatch;
   const session = sessions.get(id);
@@ -275,6 +278,10 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
     // 止まっているものは一覧から外し、動いているものは端末（と子孫）を終わらせてから外す。確認は画面で行う
     await sessions.close(id);
     sendJson(res, 200, { closed: true });
+    return true;
+  }
+  if (action === "relay") {
+    sendJson(res, 202, await deps.relay.start(id));
     return true;
   }
   if (action === "move") {

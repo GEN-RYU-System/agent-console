@@ -10,6 +10,7 @@ import {
   ApiError,
   checkQuickPromptSend,
   closeSession,
+  relaySession,
   moveSession,
   createSession,
   fetchLedger,
@@ -46,7 +47,7 @@ import { UsageMeter } from "../components/UsageMeter/UsageMeter";
 import { RoutinesPane } from "../components/Routines/RoutinesPane";
 import { ReservationsPane } from "../components/Reservations/ReservationsPane";
 import { TerminalPane, type PasteResult, type TerminalHandle, type UploadNotice } from "../components/TerminalPane/TerminalPane";
-import { ACCOUNT_LOGIN_ROLE_ID, type ConsoleState, type LedgerSnapshot, type QuickPrompt, type ResumeTarget, type SessionState, type SessionView } from "../types";
+import { ACCOUNT_LOGIN_ROLE_ID, type ConsoleState, type LedgerSnapshot, type QuickPrompt, type RelayView, type ResumeTarget, type SessionState, type SessionView } from "../types";
 import "./ConsolePage.css";
 
 const LEDGER_POLL_MS = 60000;
@@ -185,12 +186,26 @@ export function ConsolePage() {
   const [diffCount, setDiffCount] = useState<number | null>(null);
   const [closeTargetId, setCloseTargetId] = useState<string | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
+  // 引き継ぎ: 確認中の古い側、失敗の案内、画面側で隠した relayId、選択を切り替え済みの relayId
+  const [relayTargetId, setRelayTargetId] = useState<string | null>(null);
+  const [relayError, setRelayError] = useState<string | null>(null);
+  const [dismissedRelays, setDismissedRelays] = useState<ReadonlySet<string>>(() => new Set<string>());
+  const handledRelaysRef = useRef<Set<string>>(new Set<string>());
   // 復元の案内は、閉じた内容を覚えておく（メモリだけ。同じ内容は出し直さない）
   const [dismissedNotices, setDismissedNotices] = useState<string | null>(null);
   const [dismissedTerminalNotices, setDismissedTerminalNotices] = useState<string | null>(null);
   const terminalRef = useRef<TerminalHandle>(null);
   const selectedIdRef = useRef<string | null>(null);
   selectedIdRef.current = selectedId;
+  // 引き継ぎが終わったとき、選択中が古い側なら新しい側を選ぶ（同じ relayId では 1 回だけ）
+  const relays = state?.relays;
+  useEffect(() => {
+    for (const r of relays ?? []) {
+      if (r.phase !== "done" || r.newSessionId === undefined || handledRelaysRef.current.has(r.relayId)) continue;
+      handledRelaysRef.current.add(r.relayId);
+      if (selectedIdRef.current === r.oldSessionId) setSelectedId(r.newSessionId);
+    }
+  }, [relays]);
   const sessionsRef = useRef<SessionView[]>([]);
   sessionsRef.current = state?.sessions ?? [];
 
@@ -258,6 +273,14 @@ export function ConsolePage() {
     setCloseTargetId(null);
     setCloseError(null);
     closeSession(id).catch((err: unknown) => setCloseError(err instanceof Error ? err.message : String(err)));
+  };
+
+  const handleConfirmRelay = (): void => {
+    if (relayTargetId === null) return;
+    const id = relayTargetId;
+    setRelayTargetId(null);
+    setRelayError(null);
+    relaySession(id).catch((err: unknown) => setRelayError(err instanceof Error ? err.message : String(err)));
   };
 
   const handleSendPrompt = (promptId: string): void => {
@@ -377,6 +400,10 @@ export function ConsolePage() {
   const activeSession = state.sessions.find((s) => s.id === activeId);
   const renameTarget = state.sessions.find((s) => s.id === renameTargetId);
   const closeTarget = state.sessions.find((s) => s.id === closeTargetId);
+  const relayTarget = state.sessions.find((s) => s.id === relayTargetId);
+  const activeRelays: RelayView[] = (state.relays ?? []).filter((r) => r.phase === "handoff" || r.phase === "launching" || r.phase === "sending");
+  const relayBusyIds = new Set<string>(activeRelays.flatMap((r) => (r.newSessionId !== undefined ? [r.oldSessionId, r.newSessionId] : [r.oldSessionId])));
+  const failedRelays = (state.relays ?? []).filter((r) => r.phase === "failed" && !dismissedRelays.has(r.relayId));
   const noticesKey = JSON.stringify(state.restoreNotices);
   const showNotices = state.restoreNotices.length > 0 && dismissedNotices !== noticesKey;
   const terminalNotices = state.terminalNotices ?? [];
@@ -417,6 +444,21 @@ export function ConsolePage() {
             {closeError}
           </Callout>
         )}
+        {relayError !== null && (
+          <Callout variant="warning" title={t("ac.relay.error")}>
+            {t("ac.relay.errorBody")}
+          </Callout>
+        )}
+        {failedRelays.map((r) => (
+          <div key={r.relayId} data-testid="relay-failed">
+            <Callout variant="warning" title={t("ac.relay.failedTitle")}>
+              {t(`ac.relay.failed.${r.reason ?? "start_failed"}`, { name: r.oldName })}
+              <Button variant="outline" size="sm" onClick={() => setDismissedRelays((prev) => new Set(prev).add(r.relayId))}>
+                {t("ac.relay.dismiss")}
+              </Button>
+            </Callout>
+          </div>
+        ))}
         {showNotices && (
           <div data-testid="restore-notices">
             <Callout variant="info" title={t("ac.restoreNotice.title")}>
@@ -457,6 +499,11 @@ export function ConsolePage() {
           onSelect={handleSelect}
           onMove={(id, toIndex) => void moveSession(id, toIndex).catch(() => undefined)}
           onRemove={handleRemove}
+          relayBusyIds={relayBusyIds}
+          onRelay={(id) => {
+            setRelayError(null);
+            setRelayTargetId(id);
+          }}
           onClose={(id) => {
             setCloseError(null);
             setCloseTargetId(id);
@@ -594,6 +641,15 @@ export function ConsolePage() {
         danger
         onConfirm={handleConfirmClose}
         onCancel={() => setCloseTargetId(null)}
+      />
+      <ConfirmModal
+        open={relayTarget !== undefined}
+        title={t("ac.relay.title")}
+        message={relayTarget !== undefined ? t("ac.relay.body", { name: relayTarget.name }) : ""}
+        confirmLabel={t("ac.relay.confirm")}
+        cancelLabel={t("ac.close.cancel")}
+        onConfirm={handleConfirmRelay}
+        onCancel={() => setRelayTargetId(null)}
       />
       <ConfirmModal
         open={accountConfirmOpen}

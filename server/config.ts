@@ -51,6 +51,8 @@ export const DEFAULT_CLAUDE_SETTINGS_PATH = "~/.claude/settings.json";
 export const DEFAULT_TERMINAL_SMOOTH_SCROLL_MS = 125;
 export const DEFAULT_UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
 export const DEFAULT_UPLOAD_MAX_KEEP = 100;
+/** 引き継ぎ書を待つ上限（30 分） */
+export const DEFAULT_RELAY_HANDOFF_TIMEOUT_MS = 30 * 60 * 1000;
 /** git に渡す基準の名前。`-` で始まるものはオプションと読まれるので許さない。 */
 const DIFF_BASE_REF_PATTERN = /^[A-Za-z0-9_./][A-Za-z0-9_./-]*$/;
 
@@ -112,6 +114,10 @@ export interface Config {
   uploadMaxBytes: number;
   /** 貼った画像・ファイルを残す数（画像とファイルは別に数える）。超えたら古い順に消す */
   uploadMaxKeep: number;
+  /** 引き継ぎ書を置く場所（`~` 可）。無ければ本番のポートのときだけ既定を使う（server/relay.ts の resolveRelayDir） */
+  relayDir?: string;
+  /** 引き継ぎ書ができるのを待つ上限（ms）。既定 30 分 */
+  relayHandoffTimeoutMs?: number;
 }
 
 const STRING_KEYS = ["salesanchorRoot", "newWorktreeScript", "ledgerLookupScript", "ledgerDir", "claudeBin"] as const;
@@ -214,6 +220,11 @@ function parseClaudeSettingsPath(raw: unknown): string {
   return expandHome(raw);
 }
 
+function parseRelayDir(raw: unknown): string {
+  if (typeof raw !== "string" || raw === "") throw new Error("config: relayDir must be a non-empty string");
+  return expandHome(raw);
+}
+
 const ENV_KEY = /^[A-Z_][A-Z0-9_]*$/;
 // eslint-disable-next-line no-control-regex
 const ENV_CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
@@ -296,6 +307,8 @@ export function parseConfig(raw: unknown): Config {
     terminalSmoothScrollMs: parseSmoothScroll(o.terminalSmoothScrollMs),
     uploadMaxBytes: parsePositive(o.uploadMaxBytes, "uploadMaxBytes", DEFAULT_UPLOAD_MAX_BYTES),
     uploadMaxKeep: parsePositive(o.uploadMaxKeep, "uploadMaxKeep", DEFAULT_UPLOAD_MAX_KEEP),
+    ...(o.relayDir !== undefined ? { relayDir: parseRelayDir(o.relayDir) } : {}),
+    relayHandoffTimeoutMs: parsePositive(o.relayHandoffTimeoutMs, "relayHandoffTimeoutMs", DEFAULT_RELAY_HANDOFF_TIMEOUT_MS),
   };
 }
 

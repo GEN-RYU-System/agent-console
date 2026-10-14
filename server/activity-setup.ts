@@ -24,6 +24,16 @@ export function installGuardFile(sourceDir: string, dataDir: string): string {
   return copyAtomically(sourceDir, GUARD_FILE_NAME, guardPathIn(dataDir));
 }
 
+export const BOARD_GUARD_FILE_NAME = "board-guard.mjs";
+
+/** dataDir/hooks/board-guard.mjs（作戦ボードの書き忘れを応答終了で 1 回だけ止める同期 hook。設定に書くパス） */
+export const boardGuardPathIn = (dataDir: string): string => path.join(dataDir, "hooks", BOARD_GUARD_FILE_NAME);
+
+/** リポジトリの hooks/board-guard.mjs（正本）を dataDir/hooks/ へ写す */
+export function installBoardGuardFile(sourceDir: string, dataDir: string): string {
+  return copyAtomically(sourceDir, BOARD_GUARD_FILE_NAME, boardGuardPathIn(dataDir));
+}
+
 export const BOARD_COMMAND_FILE_NAME = "ac-board.mjs";
 
 /** dataDir/bin/ac-board.mjs（Claude の Bash が打つ、作戦ボードの命令） */

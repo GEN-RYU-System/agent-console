@@ -12,7 +12,7 @@ import { RESERVE_TOKEN, startHarness, TOKEN, type Harness } from "./helpers/harn
 
 type Verdict = { ok: boolean; hasClaude: boolean; reason?: string };
 const BASE_MS = Date.parse("2026-10-12T00:00:00.000Z"); // 09:00 JST 月曜
-const TIMING = { pollMs: 5, timeoutMs: 80 };
+const TIMING = { pollMs: 5, timeoutMs: 80, namePollMs: 5, nameTimeoutMs: 20 };
 const STAGGER = 3000;
 
 const makeRoot = (): string => {
@@ -38,7 +38,7 @@ const setup = async (opts: { verdicts?: Verdict[]; capacity?: boolean } = {}) =>
   };
   const queue = [...(opts.verdicts ?? [{ ok: true, hasClaude: true }])];
   const checkInput = vi.fn(async () => (queue.length > 1 ? queue.shift() : queue[0]));
-  const hub = { checkInput, requestRename: vi.fn(async () => "queued"), sessions, config: cfg, submitText: (id: string, text: string) => Hub.prototype.submitText.call(hub, id, text) };
+  const hub = { checkInput, sessions, config: cfg, submitText: (id: string, text: string) => Hub.prototype.submitText.call(hub, id, text), sendName: () => true, displayNames: () => new Map<string, string>(), writing: new Set<string>(), tryBeginWrite: (id: string) => Hub.prototype.tryBeginWrite.call(hub, id), endWrite: (id: string) => Hub.prototype.endWrite.call(hub, id) };
   const store = new ReservationStore(dir);
   const service = new ReservationService(cfg as never, sessions as never, hub as never, store, () => new Date(clock.t), TIMING, true);
   const input = (over: Record<string, unknown> = {}) => ({ name: "measure", roleId: "echo", cwd: root, date: "2026-10-12", time: "09:10", promptText: "hello", ...over });

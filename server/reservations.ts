@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
 import { createSerial, readJsonFile, writeJsonAtomic } from "./json-store.ts";
-import { CONTROL, launchAndSend, READY_POLL_MS, READY_TIMEOUT_MS, validateLaunchTarget, validateLaunchText, type LaunchOutcome, type LaunchTiming } from "./launch.ts";
+import { CONTROL, launchAndSend, NAME_POLL_MS, NAME_TIMEOUT_MS, READY_POLL_MS, READY_TIMEOUT_MS, validateLaunchTarget, validateLaunchText, type LaunchOutcome, type LaunchTiming } from "./launch.ts";
 import { jstSlot } from "./routines.ts";
 import { SessionConflictError, SessionInputError, type SessionManager } from "./sessions.ts";
 
@@ -130,7 +130,7 @@ export class ReservationService {
   /** 最初の読み込み（list と interrupted 化）が終わったら成功する。create・cancel・listReady はこれを待つ */
   private readonly loaded: Promise<void>;
   private markLoaded: () => void = () => undefined;
-  constructor(private readonly config: Config, private readonly sessions: SessionManager, private readonly hub: Hub, private readonly store: ReservationStore, private readonly now: () => Date = () => new Date(), private readonly timing: LaunchTiming = { pollMs: READY_POLL_MS, timeoutMs: READY_TIMEOUT_MS }, preloaded = false) {
+  constructor(private readonly config: Config, private readonly sessions: SessionManager, private readonly hub: Hub, private readonly store: ReservationStore, private readonly now: () => Date = () => new Date(), private readonly timing: LaunchTiming = { pollMs: READY_POLL_MS, timeoutMs: READY_TIMEOUT_MS, namePollMs: NAME_POLL_MS, nameTimeoutMs: NAME_TIMEOUT_MS }, preloaded = false) {
     this.loaded = new Promise<void>((resolve) => { this.markLoaded = resolve; });
     if (preloaded) this.markLoaded(); // start を呼ばない試験用。既定は start で読み込む
   }
