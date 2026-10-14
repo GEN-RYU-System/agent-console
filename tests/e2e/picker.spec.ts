@@ -16,6 +16,7 @@ const BASE = `http://127.0.0.1:${E2E_PORT}`;
 const BEARER = { Authorization: `Bearer ${E2E_TOKEN}` };
 const DATA_DIR = process.env.AC_E2E_DATA_DIR as string;
 const STATUS_FILE = process.env.AC_E2E_STATUS_FILE as string;
+const NAME_FILE = process.env.AC_E2E_NAME_FILE as string;
 const SETTLE_DEADLINE_MS = 20000;
 /** 目視確認用。指定したときだけ、部品タブの画面を保存する */
 const SHOT_DIR = process.env.AC_SHOT_DIR;
@@ -207,6 +208,8 @@ test("K1: アプリの画面の部品も選べる。選んでいる間、その�
 test("K3・K4・K5: 「部品」タブに画像と内容が並び、ひとことを書いて「Claude に送る」と、1つの依頼として端末に入り（括弧付きで貼って2秒待って Enter）、送信済みの印が付く", async () => {
   test.setTimeout(120000);
   writeFileSync(STATUS_FILE, "idle");
+  // 新しく作ったセッションには最初の入力待ちで /rename が 1 回書かれる（initialName）。stub の Claude 側の名前を同じにして書かせない
+  writeFileSync(NAME_FILE, "picks-target");
   const res = await fetch(`${BASE}/api/sessions`, { method: "POST", headers: { ...BEARER, "Content-Type": "application/json" }, body: JSON.stringify({ name: "picks-target", roleId: "e2e-bracketed" }) });
   expect(res.status).toBe(201);
   const { id } = (await res.json()) as { id: string };
@@ -261,6 +264,7 @@ test("K3・K4・K5: 「部品」タブに画像と内容が並び、ひとこと
   await expect(cards.filter({ hasText: "送信済み" })).toHaveCount(2);
   await expect(appPage.getByRole("tab", { name: /部品/ })).toHaveText("部品");
   expect((await listPicks()).every((x) => typeof x.sentAt === "number")).toBe(true);
+  writeFileSync(NAME_FILE, "");
 });
 
 test("K7: Claude が作業中の間は送れず、理由が見える。削除で一覧から消える", async () => {

@@ -561,6 +561,8 @@ test("段階2 K1: busy→idle で未読の印・窓タイトル・macOS 通知�
 });
 
 test("段階2 K2: 名前を変えると /rename が端末に送られ、Claude 側の名前が変われば表示も変わる。作業中は予約され、待機になってから送られる", async ({ page }) => {
+  // 新しく作ったセッションには、最初の入力待ちで /rename <名前> が 1 回書かれる（initialName）。stub の Claude 側の名前を同じにして書かせない
+  writeFileSync(NAME_FILE, "rename-target");
   const id = await apiCreate("rename-target", "e2e-plain");
   await openPaired(page);
   const row = rowOf(page, id);

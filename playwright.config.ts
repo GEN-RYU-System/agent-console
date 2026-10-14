@@ -24,7 +24,7 @@ export default defineConfig({
   globalTeardown: "./tests/fixtures/e2e-teardown.ts",
   // app: 従来の画面の試験 / picker: Chrome 拡張を読み込んだ別の Chrome（launchPersistentContext）で行う、部品を選ぶ試験
   projects: [
-    { name: "app", testMatch: /(console|activity|chat|reservations)\.spec\.ts/ },
+    { name: "app", testMatch: /(console|activity|chat|reservations|relay)\.spec\.ts/ },
     // tmux 経由の端から端までの試験（2 つ目のサーバー・試験用ソケット）。後片付けは globalTeardown
     { name: "tmux", testMatch: /tmux\.spec\.ts/, use: { baseURL: `http://127.0.0.1:${E2E_TMUX_PORT}` } },
     { name: "picker", testMatch: /picker\.spec\.ts/ },
@@ -57,7 +57,8 @@ export default defineConfig({
       timeout: 30000,
       env: {
         ...(process.env as Record<string, string>),
-        AGENT_CONSOLE_PORT: "",
+        // 引き継ぎの既定の置き場（実ホーム）を使わないよう、ポートを渡して「本番ではない」扱いにする
+        AGENT_CONSOLE_PORT: String(E2E_TMUX_PORT),
         AGENT_CONSOLE_CONFIG: process.env.AC_E2E_TMUX_CONFIG as string,
         AGENT_CONSOLE_TOKEN: E2E_TOKEN,
         ...stubEnv,

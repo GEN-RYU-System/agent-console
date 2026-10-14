@@ -45,3 +45,17 @@ test("tmux: セッションが試験用ソケットの tmux の中に作られ�
   expect(del.status).toBe(200);
   await expect.poll(() => { try { return tmux("list-sessions", "-F", "#{session_name}").trim(); } catch { return ""; } }, { timeout: 10000 }).not.toContain(`ac-${id}`);
 });
+
+test("tmux: relayDir の無い設定（試験用ポート）では引き継ぎは 409 relay not configured で、フォルダも作られない", async () => {
+  const create = await fetch(`${BASE}/api/sessions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${E2E_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "tmux-relay-409", roleId: "e2e-plain" }),
+  });
+  expect(create.status).toBe(201);
+  const { id } = (await create.json()) as { id: string };
+  const res = await fetch(`${BASE}/api/sessions/${id}/relay`, { method: "POST", headers: { Authorization: `Bearer ${E2E_TOKEN}` } });
+  expect(res.status).toBe(409);
+  expect(((await res.json()) as { error: string }).error).toBe("relay not configured");
+  await fetch(`${BASE}/api/sessions/${id}/close`, { method: "POST", headers: { Authorization: `Bearer ${E2E_TOKEN}` } });
+});
