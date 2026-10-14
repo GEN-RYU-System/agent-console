@@ -90,7 +90,7 @@ handler の種類を表にする。
 - transcript の形は公式の安定した約束ではない。数えられなければ止めない側に倒れる。
 - 版の跳び: 本番は v0.17.0。keep-sessions（v0.20.0）の後に出す（v0.21.0 の予定）。
 
-## 9. 外部・過去事例
+## 9. 外部・過去事例の参照と我々への応用
 - 外部事例は使わない。理由: Claude Code の hook でセッション内の記録を強制する公開事例で、数値つきの物を確認していない。根拠は自前の実測（4/11、e7a95d2c の0回）。
 - 過去事例: japanese-reply-guard.py（Stop で block、stop_hook_active で抜ける）が本環境で動いている。
 
@@ -112,6 +112,7 @@ handler の種類を表にする。
 - 触らない: hooks/ac-board.mjs、boards の保存形式、open-sessions.json の形、画面、~/.claude/scripts の既存 hook、~/.claude/prompts。
 
 ## 維持の仕組み
+- 守り手: 設計者（Opus）。正本: この design.md と CHANGELOG の 0.32.0 の行。判定の正本は hooks/ac-board.mjs の readBoard、登録の正本は server/activity-hooks.ts の HOOK_SPECS。
 - ac-hooks.mjs check（起動時と1時間ごとのログ）が board-guard の登録漏れも出す。
 - K8 の保有率を board-coverage.mjs で測る。週次保守の定期実行に足すかは導入7日後に決める。
 
