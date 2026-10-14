@@ -1,6 +1,6 @@
-# 端末ページのホイールを滑らかにする（terminal-wheel）設計 第2版
+# 端末ページのホイールを滑らかにする（terminal-wheel）設計 第3版
 
-- 状態: 第2版（Opus 2026-10-14）。第1版は Fable 審査 REVISE（高なし・中6・低7、/tmp/CC報告ファイル/terminal-scroll-history/review-design1/review.md）→ §11 で全件反映。§11 は §1〜§9 より優先する。PO の要望「滑らかに動くようにしてほしい」で着手（目的は PO 承認済み）。
+- 状態: 第3版（Opus 2026-10-14）。第2版は Fable 審査 REVISE（高1・中6・低5、/tmp/CC報告ファイル/terminal-scroll-history/review-design2/review.md）→ §12 で全件反映。§12 は §11 より優先する。第1版は Fable 審査 REVISE（高なし・中6・低7、/tmp/CC報告ファイル/terminal-scroll-history/review-design1/review.md）→ §11 で全件反映。§11 は §1〜§9 より優先する。PO の要望「滑らかに動くようにしてほしい」で着手（目的は PO 承認済み）。
 - PO の言葉（2026-10-14）: 「端末ページのマウスホイールのスクロールの動きがカクカクするので滑らかに動くようにしてほしい、ターミナルでは滑らかに動いた、それと右側の最近の入力履歴だがクリックしたら履歴の箇所にジャンプする機能はつけることは出来る？」
 - 根拠の生出力: /tmp/CC報告ファイル/terminal-scroll-history/recon/facts.md（以下 R1）、recon2/facts.md（R2）、recon3/facts.md（R3）。行番号は origin/main 078c9e4。
 
@@ -102,3 +102,16 @@ server、tmux の設定（mouse off のまま）、Claude の設定（CLAUDE_COD
 - 低6 WeakSet はその useEffect の中に置く（端末ごと）。dispatch 先は元のイベントの target が Element ならそれ、そうでなければ term.element の .xterm-screen。どちらも無ければ捨てる。
 - 低7 K1 の数値例は行高 17 ちょうどの時（単体試験は行高を引数で渡すので成り立つ）。
 - 触るファイル（全件、§「触るファイル」を置き換え）: src/components/TerminalPane/wheelLines.ts（新規）、wheelLines.test.ts（新規）、TerminalPane.tsx、TerminalPane.ux.test.tsx、TerminalPane.test.tsx、tests/fixtures/mouse-role.mjs（新規）、tests/fixtures/e2e-env.ts、tests/e2e/terminal-wheel.spec.ts（新規）、docs/CHANGELOG.md、README.md、版の4か所（package.json・package-lock.json・extension/manifest.json・README.md の版の箇所）。
+
+## 12. 第3版の決め（第2版の審査 REVISE を反映、Opus 2026-10-14）。§11 と食い違う所はこちらが正
+- 高1 e2e が走るように: playwright.config.ts:27 の app の testMatch を `/(console|activity|chat|reservations|terminal-wheel)\.spec\.ts/` にする（1か所の変更）。触るファイルに playwright.config.ts を足す。
+- 中1・中2 mouse-role.mjs の形（bracketed-role.mjs:1-11 に倣う）: 先頭で `process.stdin.setRawMode(true)`、`READY <cwd>` を出し、`\x1b[?1003h\x1b[?1006h` を出す。受けたバイトは連結して保ち、data のたびに連結全体から `/\x1b\[<65;/g`（下向き）と `/\x1b\[<64;/g`（上向き）の数を数え直して `WHEEL:<下の数>:<上の数>` を1行出す（区切りに左右されない）。argv の目印は他の fixture と同じ。
+- 中3・中4 e2e の手順（tests/e2e/terminal-wheel.spec.ts）: mouse-role のセッションを開いて端末タブを出し、`READY` が見えるまで待つ。`.xterm-rows > div` の1行目の高さ h を page.evaluate で測る。`.xterm-screen` の中央へ `page.mouse.move` してから `page.mouse.wheel(0, h * 5.5)` を1回。`.xterm-rows > div` を全行連結した文字の最後の `WHEEL:` が `WHEEL:5:0` になるまで待つ（下向き5・上向き0）。続けて `page.mouse.wheel(0, -h * 3.5)` → `WHEEL:5:3`。行高は spec 内で測るので書体の差に左右されない。
+- 中5 LineEmitter は送る時機の関数を受け取る（`constructor(schedule: (cb: () => void) => void, cancel: () => void)` の形。本番は requestAnimationFrame / cancelAnimationFrame を包む）。wheelLines.test.ts は node 環境のまま、手で回す scheduler を渡して試す。
+- 中6 K3 の画面の単体試験: モックの Terminal に `element`（中に `.xterm-screen` を持つ div）を持たせ、TerminalPane.test.tsx:52-55 と同じ形で clientHeight を prototype に定義して行高が正になるようにする。両方の test ファイルのモックに attachCustomWheelEventHandler（渡された handler を保持し試験から呼べる）と modes を足す。
+- 低1 LineEmitter は useEffect の中で connect() より前に作る。つなぎ直し（:142 の term.reset の直前）でも待ち行列を捨てる（送る直前の再確認があるので保険）。
+- 低2 上限 rows × 2 は「まだ送っていない行」に対する上限。rows は push のたびに term.rows を渡す。
+- 低3 TRACKPAD_FACTOR は今回は入れない（定数も作らない）。K5 で速すぎた時に第2便で足す。
+- 低4 K5 が × の時の分岐①（一時計測）は本便の範囲外。必要になったら別便。
+- 低5 custom handler が false でも、xterm はその wheel を cancel する（CoreBrowserTerminal.ts:711-714）ので、ページ自体はスクロールしない。今と同じ。
+- 触るファイル（全件、§11 を置き換え）: src/components/TerminalPane/wheelLines.ts（新規）、wheelLines.test.ts（新規）、TerminalPane.tsx、TerminalPane.ux.test.tsx、TerminalPane.test.tsx、tests/fixtures/mouse-role.mjs（新規）、tests/fixtures/e2e-env.ts、tests/e2e/terminal-wheel.spec.ts（新規）、playwright.config.ts、docs/CHANGELOG.md、README.md、版の箇所（package.json・package-lock.json・extension/manifest.json・README.md）。
