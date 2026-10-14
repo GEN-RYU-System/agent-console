@@ -157,7 +157,8 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
       const cellHeight = screen === null ? 0 : screen.clientHeight / term.rows;
       if (!(cellHeight > 0)) return true;
       const lines = wheelAccumulator.add(e, cellHeight, term.rows);
-      if (lines === 0) return true;
+      // 端数だけで 0 行のときも false（xterm 側に別の端数を溜めさせない）。積むのは 1 行以上のときだけ
+      if (lines === 0) return false;
       wheelOrigin = {
         target: e.target instanceof Element ? e.target : screen,
         x: e.clientX,

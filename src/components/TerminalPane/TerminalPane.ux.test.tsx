@@ -159,6 +159,17 @@ describe("K3: wheel lines while the app tracks the mouse", () => {
     expect(term.wheelHandler?.(got[0]!)).toBe(true);
   });
 
+  it("returns false for a real wheel that is less than one line (0 lines) and emits no synthetic wheel", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    render(<TerminalPane sessionId="a" />);
+    const term = lastTerm!;
+    term.modes.mouseTrackingMode = "any";
+    const got = collect();
+    expect(term.wheelHandler?.(real(4))).toBe(false);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(got).toHaveLength(0);
+  });
+
   it("lets Shift-wheel, horizontal-only wheel and a mode without wheel (x10) through to xterm", async () => {
     const { TerminalPane } = await import("./TerminalPane");
     render(<TerminalPane sessionId="a" />);
