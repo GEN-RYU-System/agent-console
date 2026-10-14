@@ -1,6 +1,6 @@
 # 作戦ボードの書き忘れ防止（board-guard）設計 第3版
 
-- 状態: 第3版（Opus 2026-10-14。工程0の実測を §11 に反映）。Fable 審査 APPROVE（/tmp/CC報告ファイル/board-adoption/review-design3/review.md。中1・低は §12 に反映）。PO 承認済み（2026-10-14「3から順番にy,」＝file-viewer→keep-login→session-relay→board-guard の順に実装してよい。離席中の完走は同日夜の PO 委任による。工程3の ac-hooks.mjs install は §3-2 のとおり PO の手元で行う）。それまでの経過: 第2版＋審査反映。第2版は Fable 審査 APPROVE（工程0へ進んでよい。/tmp/CC報告ファイル/board-adoption/review-design2/review.md。中 A〜C は下に反映）。第1版は Fable 審査 REVISE（/tmp/CC報告ファイル/board-adoption/review-design1/review.md。第1版の控え: /tmp/CC報告ファイル/board-adoption/design-v1.md）。PO 未承認。
+- 状態: 第3版（Opus 2026-10-14。工程0の実測を §11 に反映）。Fable 審査 APPROVE（/tmp/CC報告ファイル/board-adoption/review-design3/review.md。中1・低は §12 に反映）。PO 承認済み（2026-10-14「3から順番にy,」＝file-viewer→keep-login→session-relay→board-guard の順に実装してよい。離席中の完走は同日夜の PO 委任による。工程3の ac-hooks.mjs install は §3-2 のとおり PO の手元で行う）。それまでの経過: 第2版＋審査反映。第2版は Fable 審査 APPROVE（工程0へ進んでよい。/tmp/CC報告ファイル/board-adoption/review-design2/review.md。中 A〜C は下に反映）。第1版は Fable 審査 REVISE（/tmp/CC報告ファイル/board-adoption/review-design1/review.md。第1版の控え: /tmp/CC報告ファイル/board-adoption/design-v1.md）。
 - PO の言葉（2026-10-14）: 「あなたが作ってくれた右側の作戦ボードだがほとんどのセッションで使っておらず有効化されていない、どうやったら他のセッションも守る？」
 - 根拠の生出力: /tmp/CC報告ファイル/board-adoption/facts.md、r2/（公式・settings.json の Stop の並び）、r3/（origin/main f255892 の行番号。§0 のコードの行はすべて r3 による）
 
