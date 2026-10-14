@@ -186,7 +186,7 @@ export class TmuxControlTerminal implements TerminalHandle {
     const { history, visible } = splitCapture(text(capture), parsed.paneHeight);
     const replay = buildReplay({
       info: parsed,
-      history: parsed.alternateOn ? [] : history,
+      history,
       normal: parsed.alternateOn ? text(altNormal) : visible,
       alt: parsed.alternateOn ? visible : [],
     });

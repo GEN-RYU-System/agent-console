@@ -38,13 +38,20 @@ function drift(line) {
   total += 3;
   return block(nextNum++, lines);
 }
+// alt: alt 画面中。-S - の先頭 history_size 行は通常画面の履歴、末尾 pane_height 行が alt 画面、-a は退避された通常画面（実測 tmux 3.8）
+function altMode(line) {
+  if (line.startsWith("display")) return block(nextNum++, ["4242 1 2 0 0 1 default 0 0 0 0 2 []"]);
+  if (!line.startsWith("capture-pane")) return "";
+  if (line.includes(" -a ")) return block(nextNum++, ["n1", "n2"]);
+  return block(nextNum++, ["h1", "h2", "a1", "a2"]);
+}
 process.stdin.on("data", (d) => {
   buf += d;
-  if (mode === "drift") {
+  if (mode === "drift" || mode === "alt") {
     const ls = buf.split("\\n");
     ls.pop();
     let out = "";
-    for (; consumed < ls.length; consumed++) out += drift(ls[consumed]);
+    for (; consumed < ls.length; consumed++) out += (mode === "alt" ? altMode : drift)(ls[consumed]);
     if (out) process.stdout.write(out);
     return;
   }
@@ -107,6 +114,14 @@ describe("TmuxControlTerminal with a scripted tmux", () => {
     expect(nums.length).toBeGreaterThan(0);
     nums.forEach((n, i) => expect(n).toBe(nums[0] + i));
     expect(nums[0]).toBe(1);
+    term.release();
+  });
+
+  it("S10: while the alternate screen is on, the normal screen's scrollback (head of the -S - capture) is still replayed", async () => {
+    const { term, replays } = open("alt");
+    expect(await waitFor(() => replays.length >= 1, 5000)).toBe(true);
+    expect(replays[0]).toContain("h1\r\nh2\r\nn1\r\nn2");
+    expect(replays[0]).toContain("\x1b[?1049h\x1b[H\x1b[2Ja1\r\na2");
     term.release();
   });
 
