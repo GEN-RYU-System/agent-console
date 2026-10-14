@@ -83,11 +83,13 @@ src/pages/ConsolePage.tsx（:410-416 付近）
 | 型・i18n キーの一致・全試験 | `npm run typecheck`・`npm test`・CI 全緑 |
 | PO の目視 K14 | 導入後、Claude に長い作業をさせている間に端末タブのよく使う指示を押し、入力欄に文章が入ることを見る |
 
-## 7. 外部事例
-- 不要。既存のチャットの busy 送信（同じアプリ内の実績）を判定の根拠にしており、外部の事例で補う論点が無い。
+## 7. 外部・過去事例の参照と我々への応用
+- 外部事例: 不要。既存のチャットの busy 送信（同じアプリ内の実績）を判定の根拠にしており、外部の事例で補う論点が無い。
+- 過去事例: docs/handoff/quick-paste/design.md（v0.17.0 貼るだけ）と、チャットの busy 送信（chatVerdict）。応用: 判定は chatVerdict を流用し、貼るだけ（Enter なし）は v0.17.0 のまま保つ。
 
 ## 8. 維持の仕組み
 - 判定は chatVerdict 1 か所に寄せる（判定の重複を作らない）。試験 3 層（統合・画面・e2e）が busy=可・waiting=不可を固定する。
+- 守り手: 試験（tests/unit/daily-use.integration.test.ts・src/pages/ConsolePage.test.tsx・tests/e2e/console.spec.ts）と CI。判定を変える変更は設計者 Opus が審査で見る。
 
 ## 9. 戻し方
 - PR を revert して前の版を入れ直す（update-when-idle で前のタグを指定）。データの形は変わらない。
