@@ -133,3 +133,17 @@ handler の種類を表にする。
 - 中1 `ac-hooks.mjs check` の出し方: stdout は今の1つの JSON のまま、鍵 `boardGuard`（"ok" / "missing" / "differs"）を足す。終了コードは今の activity の判定だけで決め、board-guard の状態では変えない（既存の試験 tests/unit/activity-hooks.test.ts:314-316 と右の欄の案内を変えないため）。
 - 低: timeout で打ち切られた回は errors.log に残らない（公式は出力を捨てる）。印も作られないので、次の応答終了でもう一度試す。tool_use が3未満の巨大な transcript では全部読み最大 3.7 秒（timeout 15 の内）。どちらも受け入れる。
 - 低: 工程3の (e) の確認は、必ず本物の `ac-hooks.mjs install` で行う（settings.json は rename で置き換わるため、手で echo 書き込みして代用しない）。工程0 (e) の起動は --setting-sources project,local で、本番と条件が違う。
+
+## 13. main（de5b053・v0.31.0）を合流した後の決め（Opus 2026-10-15）
+照合の生出力: /tmp/CC報告ファイル/board-guard/line-check.md（Sonnet。合流コミット 904256c、衝突なし）。
+- 【事実】§3-2 が求めた「種類の表」は v0.25.0（ac-routine の guard）で既に入っている。server/activity-hooks.ts:20-31 の HookSpec（file / async / timeout / if）、:38-50 の HOOK_SPECS（記録用9＋guard 1）、:57-64 の Handler（async 任意・timeout 任意）、:74-80 buildHandler(spec)、:82-86 isOwnHandler（:14 OWN_HOOK_SUFFIXES）、:89-93 isHandlerOf、:95 sameHandler（buildHandler の結果と丸ごと比べるので timeout も比べる）。addHandlers（:141）・removeHandlers（:191）・findHandler（:235-247）・checkHooks（:256）は HOOK_SPECS 全体を回す。同じイベント・同じ matcher でも file が違えば別の group として末尾に足す（:150-183）。
+- 決め1（§3-2・§11 の BOARD_GUARD_SPECS を取り消す）: 別の表は作らず、guard と同じ作法で HOOK_SPECS の末尾に1行足す。`{ event: "Stop", file: BOARD_GUARD_HOOK_FILE, async: false, timeout: 15 }`。BOARD_GUARD_HOOK_FILE = "board-guard.mjs" を :10 の GUARD_HOOK_FILE の隣に置き、OWN_HOOK_SUFFIXES（:14）に `/hooks/${BOARD_GUARD_HOOK_FILE}` を足す。理由: 表を2つにすると「自分の handler」の正本が2か所になる（SSOT）。既存の関数は1行も変えずに済む。handler の期待値は §11 のまま（async なし・timeout 15・Stop の末尾に自分専用の group）。
+- 決め2（§12 中1 を取り消す）: ac-hooks.mjs check に boardGuard の鍵は足さない。board-guard の handler も HOOK_SPECS に入るので、今の checkHooks の結果（missingEvents に "Stop(board-guard.mjs)"）と終了コードにそのまま入る。
+  - 影響【事実】: 版を入れてから PO が install するまでの間、右の欄（src/types.ts:260 の hooks）と1時間ごとのログ（server/activity-start.ts:78-79）は「記録の仕組みが外れています」を出す。記録用 hook と guard は動き続ける。v0.25.0 で guard を足した時と同じ動き。
+  - これを受け入れる理由: PO の install（工程3）を思い出させる案内として働く。表示を変えないために点検を2系統に分けると、決め1の SSOT が崩れる。
+- 決め3（写し）: server/activity-setup.ts に BOARD_GUARD_FILE_NAME・boardGuardPathIn・installBoardGuardFile を installGuardFile（:17-25）と同じ作法で足す。server/activity-start.ts の起動時の写し（:43-52 の並び）に installBoardGuardFile を足す。scripts/ac-hooks.mjs の install（:73-75）は installHooks の前に installBoardGuardFile と installBoardCommand（今は import に無い。:15）を呼ぶ。install の案内文（:76）とファイル先頭の説明（:3。handler の本数 10 → 11）を直す。
+- 決め4（試験）: tests/unit/activity-hooks.test.ts は v0.25.0 の guard の足し方に倣って書き換える。:20 OWN_HANDLER_COUNT を +2 に、:74-75 の HOOK_SPECS の期待に1行足し本数の文言を 11 に、:281 の missingEvents に "Stop(board-guard.mjs)" を足す。:147 と同じ形で board-guard.mjs が1本だけであることを足す。ACTIVITY_HANDLER_COUNT（:18、記録用だけの本数）を使う所は変えない。
+- 決め5: §0 の「routineId は server/ に0件」は今は成り立たない（server/routine-audit.ts:17、server/http.ts:400）。ただし open-sessions.json の項目には今も routineId が無いので、§6 の決め（定期実行由来も止める）は変えない。
+- 決め6: §11 の `activity-start.ts:117` は f255892 でも存在しない誤記（ファイルは72行）。e2e の :117 の意味で、§3-2 の check を変えない方針は決め2で取り消したので、この引用は使わない。
+- 版: いま最新のタグは v0.31.0。次の空き番号（0.32.0 の見込み）を、マージの直前に `git tag` で確かめてから決める。§8 の「v0.21.0 の予定」は古い。
+- 変えないもの: §3-1（board-guard.mjs の手順）、§3-3、§4〜§7、K1〜K8（ただし K7 の「activity の handler は変わらない」は「既存の handler（記録用9・guard）は変わらない」と読む）。
