@@ -227,8 +227,9 @@ export interface ActivityInput {
 /** 記録の仕組み（hooks）の点検の結果。reason は ok でないときだけ */
 export interface HookCheck {
   ok: boolean;
-  reason?: "noSettings" | "unreadable" | "missingHandler" | "nodeMissing" | "hookFileMissing";
+  reason?: "noSettings" | "unreadable" | "missingHandler" | "nodeMissing" | "hookFileMissing" | "matcherDiffers";
   missingEvents?: string[];
+  matcherDiffersEvents?: string[];
 }
 export type ActivityResponse =
   | { status: "noSession" }
@@ -307,3 +308,23 @@ export type AccountResponse =
   | { status: "ok"; loggedIn: false }
   | { status: "invalid" }
   | { status: "error" };
+
+/** セッションが書いたファイル（file-viewer 設計 §3-4） */
+export interface SessionFile {
+  path: string;
+  name: string;
+  dir: string;
+  tool: string;
+  lastAt: number;
+  byAgent: boolean;
+}
+export type FilesResponse = { status: "noSession" } | { status: "ok"; files: SessionFile[] };
+export type FileContentResponse =
+  | { status: "noSession" }
+  | { status: "notListed" }
+  | { status: "missing" }
+  | { status: "notRegular" }
+  | { status: "unreadable" }
+  | { status: "tooLarge"; size: number }
+  | { status: "binary"; size: number }
+  | { status: "ok"; text: string; size: number; mtimeMs: number; kind: "markdown" | "text" };

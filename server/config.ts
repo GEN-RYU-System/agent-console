@@ -35,6 +35,8 @@ export const DEFAULT_RESTORE_STAGGER_MS = 3000;
 export const DEFAULT_DATA_DIR = "~/Library/Application Support/agent-console";
 export const DEFAULT_DIFF_BASE_REF = "origin/main";
 export const DEFAULT_DIFF_MAX_FILE_BYTES = 1024 * 1024;
+/** ファイルの表示（file-viewer）で読む上限。diff と同じ値 */
+export const DEFAULT_FILE_VIEW_MAX_BYTES = 1024 * 1024;
 export const DEFAULT_DIFF_SEND_MAX_BYTES = 16 * 1024;
 export const DEFAULT_PASTE_SUBMIT_DELAY_MS = 2000;
 export const DEFAULT_GH_BIN = "gh";

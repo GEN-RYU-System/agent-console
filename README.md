@@ -51,7 +51,7 @@ node "<dataDir>/bin/ac-routine.mjs" disable <id> < reason.json
 
 ### 入れる（1 回だけ・実行する人が自分で）
 
-アプリは Claude の設定を書き換えません。次を実行すると、`~/.claude/settings.json` に記録用の hook（9 つのイベント。v0.11.0 で Stop と StopFailure、v0.12.0 で SubagentStart が増えました）と、ac-routine のサブエージェント拒否 hook（v0.25.0、計 10 本）を足します。足す前に控え `settings.json.ac-backup-<日時>` を作り（新しい 6 つだけ残します。1 回の install で控えが 2 つ作られます: hooks の段と statusLine の段）、足すのは自分の hook だけです。2 回実行しても増えません。
+アプリは Claude の設定を書き換えません。次を実行すると、`~/.claude/settings.json` に記録用の hook（9 つのイベント。v0.11.0 で Stop と StopFailure、v0.12.0 で SubagentStart が増えました）と、ac-routine のサブエージェント拒否 hook（v0.25.0、計 10 本）を足します。足す前に控え `settings.json.ac-backup-<日時>` を作り（新しい 6 つだけ残します。1 回の install で控えが 2 つ作られます: hooks の段と statusLine の段）、足すのは自分の hook だけです。足りないイベントを足し、自分の hook の matcher（どの道具のときに動くか）が古ければ直します。2 回実行しても増えません。
 
 ```
 node scripts/ac-hooks.mjs install      # 足す（hook の本体を dataDir/hooks/ に置いてから、設定に足す）
@@ -168,6 +168,23 @@ node scripts/ac-hooks.mjs check
 - **tmux の版が合わない時の直し方**: 設定は tmux サーバーの起動時に 1 回だけ読まれます。tmux を入れ替えたあとなどで動きがおかしい時は、全セッションを閉じて開き直してください（セッションが 0 件になると tmux サーバーも終わり、次の起動で新しい設定を読みます）。
 - **前の版へ戻した時（切戻し中）の見方と注意**: 戻す先が tmux を知らない版（v0.19.0 以前）の場合、`scripts/ac-update.sh` の失敗時の戻しと `scripts/ac-rollback.sh` は、保存リスト（`open-sessions.json`）と routine（`routines.json`）を `*.tmux-held.json` へ退避してから戻します（同じ会話を二重に起動しないため。この間 routine の予定は止まります）。「裏で N 件が動いています。この間は会話を開き直さないでください」と出たら、その間は同じ会話を手で開き直さないでください。裏で動いている会話は `tmux -L agent-console attach -t =<名前>`（名前は出力に一覧が出ます）で見られます。tmux を知っている版へ更新すると、退避したファイルを今のリストと合わせて元へ戻し、画面につなぎ直します。
 - 試験: tmux の統合試験は本物の tmux を使います（`tests/unit/tmux-host.integration.test.ts`）。試験用の config は `terminalHost: "direct"` か専用ソケットにして、本番のソケットを使わないでください。
+
+## v0.26.0 ファイルタブ（セッションが書いたファイルを読む）
+
+中央のタブ「変更」の隣の「ファイル」に、選んだセッションが Write・Edit・MultiEdit・NotebookEdit で書いたファイル（担当が書いたものも。「担当」の印が付きます）が、新しい順に出ます。押すと中身が右に出ます。`.md` は見出し・表などを整えて出し（リンクは http・https のものだけ開けます）、それ以外は文字のまま出します。読むだけで、書き換えはできません。1 MiB を超えるもの・文字でないもの・消されたもの・普通のファイルでないもの（リンク・フォルダ）は、中身を出さず理由を出します。設計は [design](docs/handoff/file-viewer/design.md)、調査は [recon](docs/handoff/file-viewer/recon.md)。
+
+- 一覧は hook の記録（`dataDir/activity/`）から作ります。**コマンドの出力（`>` など）で作ったファイルは出ません**（Write・Edit などの道具で書いたものだけ）。
+- `/clear` をすると会話の番号が変わるので、一覧は空からになります。アプリを再起動しても、記録を残す日数（`activityKeepDays`、既定 7 日）以内に書いたファイルは一覧に戻ります（チャットの会話が戻るのは今日と昨日（UTC）の分だけです）。
+- 一覧に出たファイルなら、中身は**秘密（鍵・合言葉など）が書かれていてもそのまま出ます**。画面を人に見せるときは気をつけてください。
+
+### 更新したあとにやること（hook を入れ直す）
+
+ファイルの道具（Write・Edit・MultiEdit・NotebookEdit）を記録するために、PostToolUse の hook の matcher が増えました。**v0.25.0 までに `node scripts/ac-hooks.mjs install` を済ませている人も、更新のあとにもう一度実行してください**（matcher が古ければ直します。ほかの設定は変わらず、直す前に控えを作ります）。実行するまでは、右の欄に「記録の仕組みが外れています」と出て（`check` の理由は `matcherDiffers`）、ファイルタブには新しいファイルが出ません。設定の変更は**新しく開いたセッション**で確かめてください（すでに動いているセッションに効くかは確かめていません）。
+
+```
+node scripts/ac-hooks.mjs install
+node scripts/ac-hooks.mjs check
+```
 
 ## 設計メモ
 

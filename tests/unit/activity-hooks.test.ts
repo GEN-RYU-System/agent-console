@@ -20,6 +20,8 @@ const ACTIVITY_HANDLER_COUNT = EVENTS.length;
 const OWN_HANDLER_COUNT = EVENTS.length + 1;
 const GUARD_MISSING = "PreToolUse(ac-routine-guard.mjs)";
 
+const NEW_MATCHER = "Agent|Write|Edit|MultiEdit|NotebookEdit";
+
 const dirs: string[] = [];
 function tmp(): string {
   const d = mkdtempSync(path.join(os.tmpdir(), "ac-hooks-"));
@@ -72,7 +74,7 @@ describe("K6: 設定の定義", () => {
   it("10 本の handler（9 つのイベント＋ ac-routine-guard）と matcher は設計のとおり（v0.11.0 で Stop と StopFailure、v0.12.0 で SubagentStart、v0.25.0 で guard を足した）", () => {
     expect(HOOK_SPECS).toEqual([
       { event: "PreToolUse", matcher: "Agent|SubagentHandback" },
-      { event: "PostToolUse", matcher: "Agent" },
+      { event: "PostToolUse", matcher: "Agent|Write|Edit|MultiEdit|NotebookEdit" },
       { event: "SubagentStop" },
       { event: "TaskCreated" },
       { event: "TaskCompleted" },
@@ -113,7 +115,7 @@ describe("K6: install", () => {
     expect(after.hooks.PreToolUse.slice(0, 2)).toEqual(PO_SETTINGS.hooks.PreToolUse);
     expect(after.hooks.PreToolUse[2]).toEqual({ matcher: "Agent|SubagentHandback", hooks: [ownHandler(e)] });
     expect(after.hooks.PreToolUse[3]).toEqual({ matcher: "Bash", hooks: [{ type: "command", command: e.nodePath, args: [path.join(path.dirname(e.hookPath), "ac-routine-guard.mjs")], timeout: 5, if: "Bash(*/bin/ac-routine.mjs*)" }] });
-    expect(after.hooks.PostToolUse).toEqual([{ matcher: "Agent", hooks: [ownHandler(e)] }]);
+    expect(after.hooks.PostToolUse).toEqual([{ matcher: NEW_MATCHER, hooks: [ownHandler(e)] }]);
     expect(after.hooks.UserPromptSubmit).toEqual([...PO_SETTINGS.hooks.UserPromptSubmit, { hooks: [ownHandler(e)] }]);
     for (const ev of EVENTS) expect(JSON.stringify(after.hooks[ev])).toContain("activity-hook.mjs");
     // 空白を含む dataDir でも args の 1 要素のまま（引用符なし）
@@ -296,6 +298,77 @@ describe("K6 / K8: check", () => {
     const e = makeEnv();
     installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: path.join(e.home, "other", "hooks", "activity-hook.mjs") });
     expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toMatchObject({ ok: false, reason: "missingHandler" });
+  });
+});
+
+describe("K10: PostToolUse の matcher が古い環境", () => {
+  const OLD_MATCHER = "Agent";
+  /** 全イベントを新しく install したあと、PostToolUse だけを渡した groups に差し替えた設定 */
+  function withPostToolUse(e: Env, groups: unknown[]): void {
+    installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath });
+    const s = readJson(e.settings);
+    s.hooks.PostToolUse = groups;
+    writeFileSync(e.settings, JSON.stringify(s, null, 2) + "\n");
+  }
+
+  it("自分だけの group の matcher は書き換える（group は増えない）。check は install 前に matcherDiffers", () => {
+    const e = makeEnv();
+    withPostToolUse(e, [{ matcher: OLD_MATCHER, hooks: [ownHandler(e)] }]);
+    expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toMatchObject({ ok: false, reason: "matcherDiffers", matcherDiffersEvents: ["PostToolUse"] });
+    const r = installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath });
+    expect(r.changed).toBe(true);
+    expect(readJson(e.settings).hooks.PostToolUse).toEqual([{ matcher: NEW_MATCHER, hooks: [ownHandler(e)] }]);
+    expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toEqual({ ok: true });
+  });
+
+  it("他の handler と同居する group からは自分の分だけ抜き、新しい matcher の group を末尾に足す", () => {
+    const e = makeEnv();
+    const other = { type: "command", command: "/x/other.sh" };
+    withPostToolUse(e, [{ matcher: OLD_MATCHER, hooks: [other, ownHandler(e)] }]);
+    expect(installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath }).changed).toBe(true);
+    expect(readJson(e.settings).hooks.PostToolUse).toEqual([
+      { matcher: OLD_MATCHER, hooks: [other] },
+      { matcher: NEW_MATCHER, hooks: [ownHandler(e)] },
+    ]);
+    expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toEqual({ ok: true });
+  });
+
+  it("2 回目の install は何も変えない", () => {
+    const e = makeEnv();
+    withPostToolUse(e, [{ matcher: OLD_MATCHER, hooks: [ownHandler(e)] }]);
+    installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath });
+    const once = readFileSync(e.settings, "utf8");
+    expect(installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath }).changed).toBe(false);
+    expect(readFileSync(e.settings, "utf8")).toBe(once);
+  });
+
+  it("guard の group（PreToolUse・matcher Bash）は、install・2 回目の install・PostToolUse の matcher 直しの後もそのまま残る（matcher 直しは spec ごと。§16）", () => {
+    const e = makeEnv();
+    const guardGroup = { matcher: "Bash", hooks: [{ type: "command", command: e.nodePath, args: [path.join(path.dirname(e.hookPath), "ac-routine-guard.mjs")], timeout: 5, if: "Bash(*/bin/ac-routine.mjs*)" }] };
+    const activityPre = { matcher: "Agent|SubagentHandback", hooks: [ownHandler(e)] };
+    installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath });
+    expect(readJson(e.settings).hooks.PreToolUse).toEqual([activityPre, guardGroup]);
+    expect(installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath }).changed).toBe(false);
+    expect(readJson(e.settings).hooks.PreToolUse).toEqual([activityPre, guardGroup]);
+    const s = readJson(e.settings);
+    s.hooks.PostToolUse = [{ matcher: OLD_MATCHER, hooks: [ownHandler(e)] }];
+    writeFileSync(e.settings, JSON.stringify(s, null, 2) + "\n");
+    expect(installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath }).changed).toBe(true);
+    const after = readJson(e.settings);
+    expect(after.hooks.PostToolUse).toEqual([{ matcher: NEW_MATCHER, hooks: [ownHandler(e)] }]);
+    expect(after.hooks.PreToolUse).toEqual([activityPre, guardGroup]);
+    expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toEqual({ ok: true });
+  });
+
+  it("scripts/ac-hooks.mjs check は古い matcher を不一致として報告し（終了コード 1）、install のあと ok", () => {
+    const e = makeEnv();
+    withPostToolUse(e, [{ matcher: OLD_MATCHER, hooks: [ownHandler(e)] }]);
+    const run = (cmd: string) => spawnSync(process.execPath, [CLI, cmd, "--settings", e.settings, "--data-dir", e.dataDir], { encoding: "utf8", env: { ...process.env, HOME: e.home } });
+    const before = run("check");
+    expect(before.status).toBe(1);
+    expect(JSON.parse(before.stdout.split("\n")[0])).toMatchObject({ ok: false, reason: "matcherDiffers" });
+    run("install");
+    expect(run("check").status).toBe(0);
   });
 });
 

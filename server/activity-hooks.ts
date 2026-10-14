@@ -37,7 +37,7 @@ export interface HookSpec {
  */
 export const HOOK_SPECS: readonly HookSpec[] = [
   { event: "PreToolUse", matcher: "Agent|SubagentHandback" },
-  { event: "PostToolUse", matcher: "Agent" },
+  { event: "PostToolUse", matcher: "Agent|Write|Edit|MultiEdit|NotebookEdit" },
   { event: "SubagentStop" },
   { event: "TaskCreated" },
   { event: "TaskCompleted" },
@@ -122,34 +122,63 @@ export interface EditResult {
   changed: boolean;
 }
 
-/** HOOK_SPECS のすべて（記録用 9 つ＋ guard）に自分の handler を足した新しい設定を返す。すでにあれば足さない。内容が違えば（node のパス変更など）その場で直す */
+/** group の matcher が spec の matcher と同じか（どちらも無い場合も同じ） */
+function sameMatcher(group: unknown, spec: HookSpec): boolean {
+  return isObject(group) && group.matcher === spec.matcher;
+}
+
+/** matcher を spec に合わせた group（spec に matcher が無ければ matcher の鍵を外す） */
+function withMatcher(group: Json, spec: HookSpec): Json {
+  const { matcher: _old, ...rest } = group;
+  return spec.matcher === undefined ? rest : { matcher: spec.matcher, ...rest };
+}
+
+/**
+ * HOOK_SPECS のすべて（記録用 9 つ＋ guard）に自分の handler を足した新しい設定を返す。すでにあれば足さない。内容が違えば（node のパス変更など）その場で直す。
+ * その spec の handler（isHandlerOf）がある group の matcher が spec と違う時（file-viewer 設計 §3-2・§16。判定は spec ごと。他の spec の handler、たとえば guard の group には触れない）:
+ * 自分の handler だけの group は matcher を書き換え、他の handler と同居する group からはその spec の分だけ抜いて、spec の matcher の新しい group を末尾に足す。
+ */
 export function addHandlers(settings: Json, nodePath: string, hookPath: string): EditResult {
   let next = settings;
   let changed = false;
   for (const spec of HOOK_SPECS) {
     const groups = eventGroups(next, spec.event);
     let found = false;
-    let stale = false;
-    const rewritten = groups.map((group) => {
+    let touched = false;
+    const rewritten: unknown[] = [];
+    for (const group of groups) {
       const handlers = groupHandlers(group);
-      if (handlers === null || !handlers.some((h) => isHandlerOf(h, spec))) return group;
-      found = true;
-      const updated = handlers.map((h) => {
-        if (!isHandlerOf(h, spec) || sameHandler(h, nodePath, hookPath, spec)) return h;
-        stale = true;
-        return buildHandler(nodePath, specHookPath(hookPath, spec), spec);
-      });
-      return stale ? { ...(group as Json), hooks: updated } : group;
-    });
-    if (found && !stale) continue;
-    changed = true;
-    if (found) {
-      next = withEvent(next, spec.event, rewritten);
-      continue;
+      if (handlers === null || !handlers.some((h) => isHandlerOf(h, spec))) {
+        rewritten.push(group);
+        continue;
+      }
+      if (sameMatcher(group, spec)) {
+        found = true;
+        let stale = false;
+        const updated = handlers.map((h) => {
+          if (!isHandlerOf(h, spec) || sameHandler(h, nodePath, hookPath, spec)) return h;
+          stale = true;
+          return buildHandler(nodePath, specHookPath(hookPath, spec), spec);
+        });
+        if (stale) touched = true;
+        rewritten.push(stale ? { ...(group as Json), hooks: updated } : group);
+        continue;
+      }
+      // matcher が違う
+      touched = true;
+      if (handlers.every((h) => isHandlerOf(h, spec))) {
+        found = true;
+        rewritten.push({ ...withMatcher(group as Json, spec), hooks: handlers.map((h) => (sameHandler(h, nodePath, hookPath, spec) ? h : buildHandler(nodePath, specHookPath(hookPath, spec), spec))) });
+        continue;
+      }
+      const rest = handlers.filter((h) => !isHandlerOf(h, spec));
+      rewritten.push({ ...(group as Json), hooks: rest });
     }
+    if (found && !touched) continue;
+    changed = true;
     const handler = buildHandler(nodePath, specHookPath(hookPath, spec), spec);
-    const group: Json = spec.matcher === undefined ? { hooks: [handler] } : { matcher: spec.matcher, hooks: [handler] };
-    next = withEvent(next, spec.event, [...groups, group]);
+    const out = found ? rewritten : [...rewritten, spec.matcher === undefined ? { hooks: [handler] } : { matcher: spec.matcher, hooks: [handler] }];
+    next = withEvent(next, spec.event, out);
   }
   return { settings: next, changed };
 }
@@ -189,20 +218,32 @@ export function removeHandlers(settings: Json): RemoveResult {
 
 export interface HookCheck {
   ok: boolean;
-  reason?: "noSettings" | "unreadable" | "missingHandler" | "nodeMissing" | "hookFileMissing";
+  reason?: "noSettings" | "unreadable" | "missingHandler" | "nodeMissing" | "hookFileMissing" | "matcherDiffers";
   /** reason が missingHandler のとき、handler が無かったイベント */
   missingEvents?: string[];
+  /** reason が matcherDiffers のとき、matcher が古いイベント */
+  matcherDiffersEvents?: string[];
 }
 
-/** この spec の本体（hookPath と同じフォルダ）を指す自分の handler（node のパスも返す）。無ければ null */
-function findHandler(settings: Json, spec: HookSpec, hookPath: string): Json | null {
+interface FoundHandler {
+  handler: Json;
+  /** 見つけた group の matcher が spec と同じか */
+  matcherOk: boolean;
+}
+
+/** この spec の本体（hookPath と同じフォルダ）を指す自分の handler（node のパスも返す）。matcher が spec と同じ group にあるものを先に探す。無ければ null */
+function findHandler(settings: Json, spec: HookSpec, hookPath: string): FoundHandler | null {
   const wanted = specHookPath(hookPath, spec);
+  let stale: FoundHandler | null = null;
   for (const group of eventGroups(settings, spec.event)) {
     for (const h of groupHandlers(group) ?? []) {
-      if (isHandlerOf(h, spec) && ((h as Json).args as unknown[])[0] === wanted) return h as Json;
+      if (isHandlerOf(h, spec) && ((h as Json).args as unknown[])[0] === wanted) {
+        if (sameMatcher(group, spec)) return { handler: h as Json, matcherOk: true };
+        stale = { handler: h as Json, matcherOk: false };
+      }
     }
   }
-  return null;
+  return stale;
 }
 
 export interface CheckInput {
@@ -228,10 +269,12 @@ export function checkHooks(input: CheckInput): HookCheck {
     return { ok: false, reason: "unreadable" };
   }
   try {
-    const found = HOOK_SPECS.map((spec) => ({ event: spec.file === undefined ? spec.event : `${spec.event}(${spec.file})`, handler: findHandler(settings, spec, input.hookPath) }));
-    const missingEvents = found.filter((f) => f.handler === null).map((f) => f.event);
+    const found = HOOK_SPECS.map((spec) => ({ event: spec.file === undefined ? spec.event : `${spec.event}(${spec.file})`, found: findHandler(settings, spec, input.hookPath) }));
+    const missingEvents = found.filter((f) => f.found === null).map((f) => f.event);
     if (missingEvents.length > 0) return { ok: false, reason: "missingHandler", missingEvents };
-    const nodePaths = found.map((f) => (f.handler as Json).command);
+    const matcherDiffersEvents = found.filter((f) => f.found !== null && !f.found.matcherOk).map((f) => f.event);
+    if (matcherDiffersEvents.length > 0) return { ok: false, reason: "matcherDiffers", matcherDiffersEvents };
+    const nodePaths = found.map((f) => (f.found as FoundHandler).handler.command);
     if (!nodePaths.every((n) => typeof n === "string" && existsSync(n))) return { ok: false, reason: "nodeMissing" };
   } catch {
     return { ok: false, reason: "unreadable" };

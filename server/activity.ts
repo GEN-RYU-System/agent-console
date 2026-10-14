@@ -30,6 +30,18 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g;
 const AGENT_MESSAGE_PREFIX = /^\s*<agent-message\b/;
 /** 貼り付けの包みの行（工程0 (c)。`<pasted_content id="…">` と `</pasted_content id="…">`）。行ごと外す */
 const PASTED_WRAPPER_LINE = /^[ \t]*<\/?pasted_content\b[^>\n]*>[ \t]*\n?/gm;
+/** ファイルを書く 4 つのツール（file-viewer 設計 §3-1。hooks/activity-hook.mjs の FILE_TOOLS と同じ） */
+export const FILE_TOOLS: readonly string[] = ["Write", "Edit", "MultiEdit", "NotebookEdit"];
+/** セッションごとに覚える書いたファイルの上限（超えたら lastAt の古い順に落とす） */
+export const FILES_KEEP = 500;
+const PATH_MAX_CHARS = 4096;
+// eslint-disable-next-line no-control-regex
+const PATH_CONTROL = /[\u0000-\u001f\u007f]/;
+
+/** 記録してよい path か（hooks/activity-hook.mjs の isRecordablePath と同じ判定。古い hook・手で書かれた行への備え） */
+export function isRecordablePath(p: unknown): p is string {
+  return typeof p === "string" && p.startsWith("/") && p.length <= PATH_MAX_CHARS && !PATH_CONTROL.test(p) && path.posix.normalize(p) === p && !p.endsWith("/");
+}
 
 /** 動いている担当 1 つ。終わった担当は画面に出さないので持たない（終わりは「動いている」の判定にだけ使う） */
 export interface AgentItem {
@@ -67,6 +79,14 @@ export interface ChatItem {
   error?: string;
   /** 記録の時点で長さの上限（64KiB）により切られている */
   truncated?: boolean;
+}
+/** セッションが書いたファイル 1 つ（file-viewer 設計 §3-3） */
+export interface FileItem {
+  path: string;
+  tool: string;
+  lastAt: number;
+  /** 担当（サブエージェント）が書いた記録がある */
+  byAgent: boolean;
 }
 export interface ChatPage {
   items: ChatItem[];
@@ -125,6 +145,8 @@ interface SessionState {
   /** chat に入っている会話の重なり防止の鍵（同じ記録を読み直しても二重に出さない） */
   chatKeys: Set<string>;
   chatSeq: number;
+  /** path → 最後に書いた記録（当て方は順序に依存しない） */
+  files: Map<string, Omit<FileItem, "path">>;
   lastEventAt: number;
 }
 
@@ -139,6 +161,7 @@ const newSession = (): SessionState => ({
   chat: [],
   chatKeys: new Set(),
   chatSeq: 0,
+  files: new Map(),
   lastEventAt: 0,
 });
 
@@ -197,6 +220,8 @@ export class ActivityStore {
   private readonly listeners = new Set<(rev: number) => void>();
   private queue: Promise<unknown> = Promise.resolve();
   private seq = 0;
+  /** 再起動後の復元（loadFileHistory）を済ませたか。最初の readNew で 1 回だけ行う */
+  private historyLoaded = false;
   private readonly keepDays: number;
   private readonly now: () => number;
 
@@ -229,6 +254,10 @@ export class ActivityStore {
     const names = [dayFileName(now - MS_PER_DAY), dayFileName(now)];
     for (const known of [...this.cursors.keys()]) if (!names.includes(known)) this.cursors.delete(known);
     let applied = 0;
+    if (!this.historyLoaded) {
+      this.historyLoaded = true;
+      applied += await this.loadFileHistory(now, names);
+    }
     for (const name of names) applied += await this.readFile(name);
     this.dropOldSessions(now);
     if (applied > 0) {
@@ -238,11 +267,31 @@ export class ActivityStore {
     return { applied };
   }
 
-  private async readFile(name: string): Promise<number> {
+  /**
+   * 再起動後の復元（file-viewer 設計 §3-3）。readNew と同じ now で、names（今日・昨日）に無く、日付が cutoff（pruneOldFiles と同じ式）以上の
+   * events-YYYYMMDD.jsonl を全部読み、ファイルの記録だけを当てる（一昨日も含む）。cursor は残さない
+   */
+  private async loadFileHistory(now: number, names: string[]): Promise<number> {
+    const todayStart = Math.floor(now / MS_PER_DAY) * MS_PER_DAY;
+    const cutoff = todayStart - this.keepDays * MS_PER_DAY;
+    const all = await readdir(this.activityDir).catch(() => [] as string[]);
+    let applied = 0;
+    for (const name of all.sort()) {
+      const m = EVENT_FILE.exec(name);
+      if (m === null || names.includes(name)) continue;
+      const fileDay = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      if (!Number.isFinite(fileDay) || fileDay < cutoff) continue;
+      applied += await this.readFile(name, (rec) => rec.event === "PostToolUse" && FILE_TOOLS.includes(text(rec.tool)), false);
+    }
+    return applied;
+  }
+
+  /** 1 つのファイルを cursor の位置から読み、filter に合う記録を当てる。keepCursor が false なら先頭から読み、位置は覚えない */
+  private async readFile(name: string, filter: (rec: Raw) => boolean = () => true, keepCursor = true): Promise<number> {
     const file = path.join(this.activityDir, name);
     const info = await stat(file).catch(() => null);
     if (info === null || !info.isFile()) return 0;
-    const cursor = this.cursors.get(name) ?? { offset: 0 };
+    const cursor = (keepCursor ? this.cursors.get(name) : undefined) ?? { offset: 0 };
     // 小さくなっていたら作り直されたとみなして先頭から読み直す（担当・やることは id で上書きされ、入力は重複を除く）
     let offset = info.size < cursor.offset ? 0 : cursor.offset;
     let applied = 0;
@@ -270,6 +319,7 @@ export class ActivityStore {
             this.invalidLines += 1;
             continue;
           }
+          if (!filter(record)) continue;
           this.apply(record);
           applied += 1;
         }
@@ -278,7 +328,7 @@ export class ActivityStore {
     } finally {
       await handle.close();
     }
-    this.cursors.set(name, { offset });
+    if (keepCursor) this.cursors.set(name, { offset });
     return applied;
   }
 
@@ -299,7 +349,8 @@ export class ActivityStore {
         this.applyPre(state, rec, ts, agentId);
         break;
       case "PostToolUse":
-        this.applyPost(state, rec, ts);
+        if (FILE_TOOLS.includes(text(rec.tool))) this.applyFile(state, rec, ts, agentId);
+        else this.applyPost(state, rec, ts);
         break;
       case "SubagentStart":
         if (agentId !== "") rememberLatest(state.restarts, agentId, ts, RESTARTS_KEEP);
@@ -362,6 +413,19 @@ export class ActivityStore {
     state.posts.set(toolUseId, { ts, status: text(rec.status), agentId: text(rec.agentId), resolvedModel: text(rec.resolvedModel) });
   }
 
+  /** 書いたファイルを覚える。lastAt は新しい方、tool は lastAt が新しい方、byAgent は OR（順序に依存しない） */
+  private applyFile(state: SessionState, rec: Raw, ts: number, agentId: string): void {
+    if (!isRecordablePath(rec.path)) return;
+    const previous = state.files.get(rec.path);
+    const newer = previous === undefined || ts >= previous.lastAt;
+    state.files.set(rec.path, {
+      tool: newer ? text(rec.tool) : previous.tool,
+      lastAt: newer ? ts : previous.lastAt,
+      byAgent: (previous?.byAgent ?? false) || agentId !== "",
+    });
+    trimOldest(state.files, FILES_KEEP, (f) => f.lastAt);
+  }
+
   private applyTask(state: SessionState, rec: Raw, ts: number): void {
     const id = text(rec.task_id);
     if (id === "") return;
@@ -395,6 +459,13 @@ export class ActivityStore {
     if (state === undefined) return { items: [], lastSeq: 0 };
     const items = state.chat.filter((c) => c.seq > since).sort((a, b) => a.ts - b.ts || a.seq - b.seq);
     return { items, lastSeq: state.chatSeq };
+  }
+
+  /** そのセッションが書いたファイル（lastAt の新しい順）。別のセッションの記録は入らない */
+  files(sessionId: string): FileItem[] {
+    const state = this.sessions.get(sessionId);
+    if (state === undefined) return [];
+    return [...state.files.entries()].map(([p, f]) => ({ path: p, ...f })).sort((a, b) => b.lastAt - a.lastAt || a.path.localeCompare(b.path));
   }
 
   /** メモリに持っている件数（上限の試験用） */
