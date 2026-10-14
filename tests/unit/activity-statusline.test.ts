@@ -128,6 +128,7 @@ describe("K9: installStatusLine / uninstallStatusLine / checkStatusLine（ファ
     mkdirSync(path.dirname(hookPath), { recursive: true });
     writeFileSync(hookPath, "// x\n");
     writeFileSync(path.join(path.dirname(hookPath), "ac-routine-guard.mjs"), "// g\n");
+    writeFileSync(path.join(path.dirname(hookPath), "board-guard.mjs"), "// bg\n");
     writeFileSync(e.settings, JSON.stringify(PO_SETTINGS));
     installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath });
     expect(checkHooks({ settingsPath: e.settings, hookPath })).toMatchObject({ ok: true });
@@ -210,17 +211,15 @@ describe("§10-3: コマンド（scripts/ac-hooks.mjs を一時の HOME で）",
     expect(Object.keys(s.hooks)).toHaveLength(HOOK_EVENTS);
   });
 
-  it("dataDir/bin が通常のファイルで塞がれている → 命令を置けず、statusLine は入らず、終了コード 1。hooks は入っている", () => {
+  it("dataDir/bin が通常のファイルで塞がれている → ac-board 命令を置けず、hooks を設定に足す前に失敗する（終了コード 1・設定は変わらない。board-guard 設計 §13 決め3: bin が無いまま board-guard を登録すると止めない側に倒れ続けるため、置いてから登録する）", () => {
     const e = makeEnv();
     mkdirSync(e.dataDir, { recursive: true });
     writeFileSync(path.join(e.dataDir, "bin"), "not a directory\n");
     writeFileSync(e.settings, JSON.stringify(PO_SETTINGS, null, 2) + "\n");
     const i = cli(e, "install");
     expect(i.status).toBe(1);
-    expect(i.err).toContain("hooks は入りました・statusLine は入っていません");
-    const s = readJson(e.settings);
-    expect(s.statusLine).toBeUndefined();
-    expect(Object.keys(s.hooks)).toHaveLength(HOOK_EVENTS);
+    expect(i.err).toContain("失敗しました");
+    expect(readJson(e.settings)).toEqual(PO_SETTINGS);
   });
 
   it("空白を含む dataDir で、設定に書いた command が shell でそのまま動く（Claude が shell 経由で動かす形）", () => {

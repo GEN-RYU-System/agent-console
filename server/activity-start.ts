@@ -1,7 +1,7 @@
 import path from "node:path";
 import { ActivityStore } from "./activity.ts";
 import { checkHooks, type HookCheck } from "./activity-hooks.ts";
-import { hookPathIn, installBoardCommand, installGuardFile, installHookFile, installReserveCommand, installRoutineCommand, installStatuslineCommand, isActivitySetupEnabled } from "./activity-setup.ts";
+import { hookPathIn, installBoardCommand, installBoardGuardFile, installGuardFile, installHookFile, installReserveCommand, installRoutineCommand, installStatuslineCommand, isActivitySetupEnabled } from "./activity-setup.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
 import { startPolling } from "./poll.ts";
@@ -49,6 +49,11 @@ export function startActivity(opts: StartOptions): ActivityRuntime {
       installGuardFile(opts.hooksSourceDir, config.dataDir);
     } catch (err) {
       console.error("activity: cannot place the routine guard hook file:", err instanceof Error ? err.message : err);
+    }
+    try {
+      installBoardGuardFile(opts.hooksSourceDir, config.dataDir);
+    } catch (err) {
+      console.error("activity: cannot place the board guard hook file:", err instanceof Error ? err.message : err);
     }
     try {
       installBoardCommand(opts.hooksSourceDir, config.dataDir);
