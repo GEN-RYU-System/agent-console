@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { ChatMarkdown } from "./ChatMarkdown";
+import { MarkdownView } from "./MarkdownView";
 
 afterEach(cleanup);
 
 function html(markdown: string): HTMLElement {
-  const { container } = render(<ChatMarkdown text={markdown} />);
+  const { container } = render(<MarkdownView text={markdown} />);
   return container;
 }
 
@@ -72,7 +72,7 @@ describe("K11 チャットの見た目が変わらない（代表入力の inner
   it("見出し・表・箇条書き・コード・リンク・画像", () => {
     const md = "# 見出し\n\n## 小見出し\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n- 一\n- 二\n\n1. い\n\n`x` と\n\n```ts\nconst a = 1;\n```\n\n[公式](https://example.com) と [相対](/x) と [js](javascript:alert(1))\n\n![図](https://example.com/p.png)\n";
     expect(html(md).innerHTML).toBe(
-      "<div class=\"ac-chat__md\"><h1>見出し</h1>\n<h2>小見出し</h2>\n<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>\n<ul>\n<li>一</li>\n<li>二</li>\n</ul>\n<ol>\n<li>い</li>\n</ol>\n<p><code>x</code> と</p>\n<pre><code class=\"language-ts\">const a = 1;\n</code></pre>\n<p><a href=\"https://example.com\" target=\"_blank\" rel=\"noopener noreferrer\">公式</a> と <a href=\"/x\" target=\"_blank\" rel=\"noopener noreferrer\">相対</a> と <span>js</span></p>\n<p><span>図</span></p></div>",
+      "<div class=\"ac-md\"><h1>見出し</h1>\n<h2>小見出し</h2>\n<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>\n<ul>\n<li>一</li>\n<li>二</li>\n</ul>\n<ol>\n<li>い</li>\n</ol>\n<p><code>x</code> と</p>\n<pre><code class=\"language-ts\">const a = 1;\n</code></pre>\n<p><a href=\"https://example.com\" target=\"_blank\" rel=\"noopener noreferrer\">公式</a> と <a href=\"/x\" target=\"_blank\" rel=\"noopener noreferrer\">相対</a> と <span>js</span></p>\n<p><span>図</span></p></div>",
     );
   });
 });
