@@ -92,6 +92,9 @@ function safeEqualDigest(a: Buffer, b: Buffer): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+/** 合言葉の定数時間比較（拡張の合言葉・予約の合言葉の受け取り口が共有する）。文字列でなければ false */
+export const sameSecret = (given: unknown, expected: string): boolean => typeof given === "string" && safeEqualDigest(sha256(given), sha256(expected));
+
 export function createAuth(secret: string, port: number, options: AuthOptions = {}): Auth {
   const now = options.now ?? Date.now;
   const ownOrigin = `http://127.0.0.1:${port}`;

@@ -207,7 +207,8 @@
       "changes": "変更",
       "pr": "PR",
       "picks": "部品",
-      "routines": "定期実行"
+      "routines": "定期実行",
+      "reservations": "予約"
     },
     "routines": {
       "title": "定期実行",
@@ -244,6 +245,45 @@
         "failed": "失敗"
       },
       "days": { "sun": "日", "mon": "月", "tue": "火", "wed": "水", "thu": "木", "fri": "金", "sat": "土" }
+    },
+    "reservations": {
+      "title": "予約",
+      "new": "予約を登録",
+      "upcoming": "これから",
+      "finished": "済み",
+      "emptyUpcoming": "これからの予約はありません",
+      "emptyFinished": "済みの予約はありません",
+      "name": "名前",
+      "role": "役割",
+      "cwd": "作業場所",
+      "branch": "ブランチ",
+      "date": "日付",
+      "time": "時刻",
+      "timeHint": "日本時間の HH:mm（例: 09:00）",
+      "prompt": "Claude に送る指示",
+      "save": "予約する",
+      "saving": "保存中",
+      "error": "予約を処理できませんでした",
+      "cancel": "取消",
+      "byUi": "画面",
+      "byAgent": "AI・測定",
+      "measureNote": "測る内容: {{note}}",
+      "newSessionTitle": "実行のしかた",
+      "newSessionNotice": "日時になると新しいセッションを開いて、この指示を1回だけ送ります。開いたセッションは自動では閉じません。アプリが止まっていた場合は、動き出したときに1回だけ遅れて送ります。",
+      "status": {
+        "pending": "待機中",
+        "dispatching": "送信中",
+        "sent": "送信済み",
+        "late": "遅れて送信（{{minutes}}分）",
+        "cancelled": "取消"
+      },
+      "outcomes": {
+        "not_ready": "送れなかった（準備できず）",
+        "full": "送れなかった（満席）",
+        "cwd_invalid": "送れなかった（作業フォルダなし）",
+        "failed": "送れなかった（失敗）",
+        "interrupted": "送れなかった（中断）"
+      }
     },
     "diff": {
       "loading": "読み込み中",

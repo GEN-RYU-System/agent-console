@@ -6,6 +6,27 @@ Local console for running parallel Claude Code sessions (Orca-inspired, lightwei
 
 「定期実行」タブは、Asia/Tokyo の曜日・時刻になると新しい Claude Code セッションを1つ開き、Claude が入力待ちになったら登録した指示を一度だけ送ります（登録しただけではセッションは開きません）。開いたセッションはふつうのセッションと同じで、自動では閉じません（不要になったら自分で閉じてください）。定義・`lastSlot`・実行履歴（結果と開いたセッション名）は `dataDir/routines.json`（version 2）のみへ保存されます。設計は [routines-new-session](docs/handoff/routines-new-session/design.md)（v0.7.0 の [routine design](docs/handoff/v0.7.0-routines/design.md) の一部を置き換え）を参照してください。
 
+## 予約（v0.21.0）
+
+日付と時刻（日本時間）を決めて、その時刻に新しいセッションを1つ開き、指示を1回だけ送る。画面の「予約」タブから登録・取消ができる（取消は「待機中」のものだけ）。正本は `dataDir/reservations.json` で、書くのはサーバーだけ。
+
+- 時刻が来ると、Claude が入力待ちになるのを待って指示を貼って Enter を送る。120 秒待っても準備できなければ送らず「送れなかった（準備できず）」と残す。開いたセッションは自動では閉じない。
+- アプリが止まっていて時刻を過ぎた予約は、起動後に復元が終わってから1回だけ遅れて送る。送信中に止まったものは再送せず「中断」にする。
+
+### ac-reserve の使い方（AI が Bash で打つ）
+
+**使ってよいのは、変更の効果を実地で測る予約だけ（PO 決定 2026-10-14）。**
+
+```
+node "<dataDir>/bin/ac-reserve.mjs" add < reservation.json
+node "<dataDir>/bin/ac-reserve.mjs" list
+node "<dataDir>/bin/ac-reserve.mjs" cancel <id>
+```
+
+- reservation.json の形: `name`（1〜40字）、`roleId`、`cwd`、`branch`（worktree 役のとき）、`date`（YYYY-MM-DD）、`time`（HH:mm、日本時間）、`promptText`（8192字以下）、`purpose`（必ず `"measure"`）、`measureNote`（何を測るか、1〜200字）。
+- 予定は1分後から366日後まで。待機中の予約は全体で50件、AI の分は10件まで。
+- 宛先は `dataDir/reserve-token`（`{port, token}`、サーバーが本番のポートで起動したときだけ作る）。失敗は終了コード1と理由を標準エラーに出す。
+
 ## v0.9.0 セッションの様子の記録
 
 左でセッションを選ぶと、右の欄の「作戦ボード」（v0.11.0 までは「このセッション」）に、動いている担当・計画（KGI・KPI・ロードマップ。v0.12.0 から）・タスク（v0.14.0 から）・最近の入力が出ます（台帳は隣の「台帳」タブ）。v0.14.0 で「今の状態」の欄はなくなりました（左の一覧のバッジが正本）。v0.12.0 で「終わった担当」と「やること」の欄はなくなりました。Claude Code の hook が `dataDir/activity/events-YYYYMMDD.jsonl`（UTC の日付、権限 600）に 1 行ずつ追記した記録を、アプリが読んでまとめます。設計は [design](docs/handoff/v0.8.0-activity/design.md)、工程0の実測は [step0](docs/handoff/v0.8.0-activity/step0.md)。
