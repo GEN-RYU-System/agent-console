@@ -52,7 +52,7 @@ node "<dataDir>/bin/ac-routine.mjs" disable <id> < reason.json
 
 ### 入れる（1 回だけ・実行する人が自分で）
 
-アプリは Claude の設定を書き換えません。次を実行すると、`~/.claude/settings.json` に記録用の hook（9 つのイベント。v0.11.0 で Stop と StopFailure、v0.12.0 で SubagentStart が増えました）と、ac-routine のサブエージェント拒否 hook（v0.25.0、計 10 本）を足します。足す前に控え `settings.json.ac-backup-<日時>` を作り（新しい 6 つだけ残します。1 回の install で控えが 2 つ作られます: hooks の段と statusLine の段）、足すのは自分の hook だけです。足りないイベントを足し、自分の hook の matcher（どの道具のときに動くか）が古ければ直します。2 回実行しても増えません。
+アプリは Claude の設定を書き換えません。次を実行すると、`~/.claude/settings.json` に記録用の hook（9 つのイベント。v0.11.0 で Stop と StopFailure、v0.12.0 で SubagentStart が増えました）と、ac-routine のサブエージェント拒否 hook（v0.25.0）、作戦ボードの書き忘れ防止 hook（board-guard、v0.32.0、計 11 本）を足します。足す前に控え `settings.json.ac-backup-<日時>` を作り（新しい 6 つだけ残します。1 回の install で控えが 2 つ作られます: hooks の段と statusLine の段）、足すのは自分の hook だけです。足りないイベントを足し、自分の hook の matcher（どの道具のときに動くか）が古ければ直します。2 回実行しても増えません。
 
 ```
 node scripts/ac-hooks.mjs install      # 足す（hook の本体を dataDir/hooks/ に置いてから、設定に足す）
@@ -181,6 +181,28 @@ node scripts/ac-hooks.mjs check
 ### 更新したあとにやること（hook を入れ直す）
 
 ファイルの道具（Write・Edit・MultiEdit・NotebookEdit）を記録するために、PostToolUse の hook の matcher が増えました。**v0.25.0 までに `node scripts/ac-hooks.mjs install` を済ませている人も、更新のあとにもう一度実行してください**（matcher が古ければ直します。ほかの設定は変わらず、直す前に控えを作ります）。実行するまでは、右の欄に「記録の仕組みが外れています」と出て（`check` の理由は `matcherDiffers`）、ファイルタブには新しいファイルが出ません。設定の変更は**新しく開いたセッション**で確かめてください（すでに動いているセッションに効くかは確かめていません）。
+
+```
+node scripts/ac-hooks.mjs install
+node scripts/ac-hooks.mjs check
+```
+
+## v0.32.0 作戦ボードの書き忘れ防止（board-guard）
+
+作戦ボードを書かないまま作業を進めているセッションを、**応答が終わるとき（Stop）に 1 回だけ止め**、書き方（`ac-board` のコマンドと JSON の形・上限）を本人に渡します。設計は [design](docs/handoff/board-guard/design.md)（§13 が最優先）。
+
+- 止めるのは、このアプリが開いたセッション（`open-sessions.json` に会話の番号があるもの）だけです。アプリの外で動かした Claude は止めません。
+- 止める条件は、ボードが無い（または形が壊れている）こと、かつ会話の記録（transcript）に道具の呼び出し（tool_use）が 3 件以上あることです。単発の質問だけのセッションは止まりません。止めたあと「theme だけ書けばよい」と案内します。
+- 止めるのは各セッションで 1 回だけです（止めた印は `dataDir/board-guard/<会話の番号>`）。書かなくても 2 回目以降は止めません。復元の直後は、ボードの無いセッションが次の応答終了で 1 回ずつ止まります。新しいセッションの最初の応答は、番号がまだ保存されていなければ止まらず、次以降の応答で止まります。
+- どこで失敗しても止めません（終了コード 0・出力なし）。失敗は `dataDir/board-guard/errors.log` に日時つきで 1 行残ります。
+- 保有率（ボードがあるセッション ÷ 開いているセッション）は `node scripts/board-coverage.mjs` で測れます（読むだけ。「ok 件数/全件数（日時）」を 1 行で出します）。
+
+### 更新したあとにやること（hook を入れ直す）
+
+board-guard の hook（Stop・同期）が増えました。**v0.31.0 までに `node scripts/ac-hooks.mjs install` を済ませている人も、更新のあとにもう一度実行してください**（足りない 1 つだけが足されます。すでに入っている 10 本や、ほかの設定は変わらず、足す前に控えを作ります。install は board-guard の本体を `dataDir/hooks/` に、判定の正本の `ac-board.mjs` を `dataDir/bin/` に写してから登録します）。
+
+- 実行するまでは、右の欄に「記録の仕組みが外れています」と出ます（点検が board-guard の欠けを理由にするため）。**記録用の hook と ac-routine の guard は動き続けています**が、**ボードの案内（board-guard）は install するまで働きません**。
+- install のあと、すでに動いているセッションに効くかは確かめていません。効かないときは、そのセッションを開き直してください（hook は起動時に読まれます）。
 
 ```
 node scripts/ac-hooks.mjs install

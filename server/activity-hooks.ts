@@ -8,10 +8,12 @@ import path from "node:path";
 export const ACTIVITY_HOOK_FILE = "activity-hook.mjs";
 /** ac-routine のサブエージェント拒否 hook（同期）の本体のファイル名 */
 export const GUARD_HOOK_FILE = "ac-routine-guard.mjs";
+/** 作戦ボードの書き忘れ防止 hook（Stop・同期）の本体のファイル名 */
+export const BOARD_GUARD_HOOK_FILE = "board-guard.mjs";
 /** 自分の handler の目印: args[0] がこの文字列で終わる（記録用 hook） */
 export const OWN_HOOK_SUFFIX = `/hooks/${ACTIVITY_HOOK_FILE}`;
-/** 自分の handler の目印（記録用 hook と guard の 2 本） */
-export const OWN_HOOK_SUFFIXES: readonly string[] = [OWN_HOOK_SUFFIX, `/hooks/${GUARD_HOOK_FILE}`];
+/** 自分の handler の目印（記録用 hook・ac-routine の guard・board-guard の 3 種） */
+export const OWN_HOOK_SUFFIXES: readonly string[] = [OWN_HOOK_SUFFIX, `/hooks/${GUARD_HOOK_FILE}`, `/hooks/${BOARD_GUARD_HOOK_FILE}`];
 export const BACKUP_PREFIX = "settings.json.ac-backup-";
 const BACKUP_NAME = /^settings\.json\.ac-backup-\d{8}T\d{9}Z$/;
 export const BACKUPS_KEPT = 6;
@@ -31,7 +33,7 @@ export interface HookSpec {
 }
 
 /**
- * 記録する 9 つのイベント（＋ guard の 1 本、計 10 本の handler）。Notification は使わない（状態は claude agents --json が正本）。
+ * 記録する 9 つのイベント（＋ guard 2 本、計 11 本の handler）。Notification は使わない（状態は claude agents --json が正本）。
  * Stop（返事）と StopFailure（API エラー）はチャット画面の会話の記録のため（v0.11.0）。状態の判定には使わない。
  * SubagentStart は担当の呼び出しと再開の印（v0.12.0 作戦ボード）。再開した担当を「動いている担当」に戻すために使う。
  */
@@ -47,6 +49,8 @@ export const HOOK_SPECS: readonly HookSpec[] = [
   { event: "SubagentStart" },
   // ac-routine を実行しようとするサブエージェントを止める同期の guard（v0.25.0。設計 ac-routine §4-1-2）。async を付けると拒否できない。
   { event: "PreToolUse", matcher: "Bash", file: GUARD_HOOK_FILE, async: false, timeout: 5, if: "Bash(*/bin/ac-routine.mjs*)" },
+  // 作戦ボードが無いまま作業を進めているセッションを、応答終了で 1 回だけ止める同期の guard（board-guard 設計 §13 決め1）。async を付けると止められない。timeout 15 は transcript を全部読む場合の最大実測 3.7 秒の 3 倍以上。
+  { event: "Stop", file: BOARD_GUARD_HOOK_FILE, async: false, timeout: 15 },
 ];
 
 type Json = Record<string, unknown>;
@@ -134,7 +138,7 @@ function withMatcher(group: Json, spec: HookSpec): Json {
 }
 
 /**
- * HOOK_SPECS のすべて（記録用 9 つ＋ guard）に自分の handler を足した新しい設定を返す。すでにあれば足さない。内容が違えば（node のパス変更など）その場で直す。
+ * HOOK_SPECS のすべて（記録用 9 つ＋ guard 2 本）に自分の handler を足した新しい設定を返す。すでにあれば足さない。内容が違えば（node のパス変更など）その場で直す。
  * その spec の handler（isHandlerOf）がある group の matcher が spec と違う時（file-viewer 設計 §3-2・§16。判定は spec ごと。他の spec の handler、たとえば guard の group には触れない）:
  * 自分の handler だけの group は matcher を書き換え、他の handler と同居する group からはその spec の分だけ抜いて、spec の matcher の新しい group を末尾に足す。
  */
@@ -252,7 +256,7 @@ export interface CheckInput {
   hookPath: string;
 }
 
-/** 設定ファイルを読むだけ（書かない）。全 handler（記録用 9 つ＋ guard）・node・hook のファイルがそろっているか */
+/** 設定ファイルを読むだけ（書かない）。全 handler（記録用 9 つ＋ guard 2 本）・node・hook のファイルがそろっているか */
 export function checkHooks(input: CheckInput): HookCheck {
   let raw: string;
   try {
