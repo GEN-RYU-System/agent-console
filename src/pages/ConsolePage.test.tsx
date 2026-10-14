@@ -386,6 +386,28 @@ describe("ConsolePage daily use", () => {
     await waitFor(() => expect(screen.queryByText("claude is busy")).toBeNull());
   });
 
+  it("clears the send warning when canChat changes from false to true (state pushed over the event socket)", async () => {
+    let refuse: (e: Error) => void = () => {};
+    checkQuickPromptSend.mockReturnValue(new Promise((_, reject) => (refuse = reject)));
+    fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0 }] });
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    await openTerminalTab();
+    await waitFor(() => expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "テスト実行" }));
+    await waitFor(() => expect(checkQuickPromptSend).toHaveBeenCalled());
+    const onmessage = lastSocket?.onmessage as (e: { data: string }) => void;
+    const push = (canChat: boolean): void =>
+      act(() => onmessage({ data: JSON.stringify({ sessions: [{ ...live, unread: 0, canChat, canInput: canChat, state: canChat ? "idle" : "waiting" }], agentsAvailable: true }) }));
+    // 確認している間に waiting へ変わり、そのあとサーバーが 409 を返す（警告は canChat が false の間に出る）
+    push(false);
+    await waitFor(() => expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(true));
+    act(() => refuse(new Error("claude is waiting")));
+    expect((await screen.findByRole("alert")).textContent).toContain("claude is waiting");
+    push(true);
+    await waitFor(() => expect(screen.queryByText("claude is waiting")).toBeNull());
+  });
+
   it("disables the quick prompt buttons and shows the reason while Claude waits for an answer", async () => {
     fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0, canInput: false, canChat: false, state: "waiting" as const }] });
     render(<ConsolePage />);
