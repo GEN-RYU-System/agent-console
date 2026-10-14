@@ -86,9 +86,9 @@ hook の記録（チャットと同じ源）に「書いたファイルの場所
 - 読むだけ。書く・消す口は作らない。
 
 ### 3-5 画面
-- 中央タブに "files"（文言 ac.tabs.files「ファイル」）を足す: src/pages/ConsolePage.tsx:55 の CenterTab、:393-407 の items、:428-466 の描画。並びは「変更」の直後（チャット・端末・変更・ファイル・PR・部品・定期実行の 7 つ）。
-  - 必ず変わる既存試験: src/pages/ConsolePage.test.tsx:388-396 の `toHaveLength(6)` → 7（試験名の「all 6 tabs」も 7 に）、tests/e2e/chat.spec.ts:85 の配列に「ファイル」を「変更」の後へ足す。それ以外のタブの試験は変えない。
-  - 【未確認】origin/main は設計の基準 533e7f4 の後に #36（予約、0a8266c）が入った。工程2の前に origin/main を取り込み、タブの数・並び・上の行番号を実物で確かめ直す（違えば担当は止まって Opus へ報告）。
+- 中央タブに "files"（文言 ac.tabs.files「ファイル」）を足す: src/pages/ConsolePage.tsx の CenterTab（origin/main 0a8266c で :56）、items（同 :401-407）、描画の分岐。並びは「変更」の直後（チャット・端末・変更・ファイル・PR・部品・定期実行・予約の 8 つ）。
+  - 必ず変わる既存試験: src/pages/ConsolePage.test.tsx:388-396 の `toHaveLength(7)` → 8（試験名の「all 7 tabs」も 8 に）、tests/e2e/chat.spec.ts:85 の配列に「ファイル」を「変更」の後へ足す（8 個）。それ以外のタブの試験は変えない。
+  - 【事実】タブの数・並び・上の行番号は 0a8266c（#36 予約 取り込み済み）で確認済み。§3 のそれ以外の ConsolePage.tsx・ChatPane の行番号は 533e7f4 基準なので、担当は工程の前に origin/main を取り込み、名前（CenterTab・activityRev 等）で探して確かめる。中身が設計と違えば止まって Opus へ報告。
 - FilesPane に `rev={state.activityRev}` を渡す（ChatPane と同じ、ConsolePage.tsx:432）。`active && rev` が変わったら一覧を取り直す（ChatPane.tsx:60-88 の流儀）。K1 の根拠はこれ。「再読込」ボタン（SA Button）も置く。
 - 新規 src/components/FilesPane/FilesPane.tsx（＋ FilesPane.css、FilesPane.test.tsx）。
   - 左に一覧（ul/li。名前・置き場所・時刻、担当の印は SA Badge）。0 件なら SA EmptyState（文言「このセッションが書いたファイルはまだありません。コマンドの出力（> など）で作ったファイルはここには出ません」）。
@@ -182,3 +182,7 @@ hook の記録（チャットと同じ源）に「書いたファイルの場所
 | 低N8 FIFO | 3-4（O_NONBLOCK）・K3 |
 | 低N9 K9 の pre | K9 |
 | 低N10 Context7 の代わりに公式直読み | PR 本文の「標準ワークフロー確認」に recon.md:5 の理由を書く（工程の最後） |
+
+## 14. 第3版の審査（条件付き APPROVE）への対応
+- 新1・新2（タブは #36 で既に 7 個、追加後 8 個・行番号）→ 3-5 を直した。新3（O_NONBLOCK）は問題なし。
+- 審査結果: Fable 第3回 条件付き APPROVE（/tmp/CC報告ファイル/file-viewer/review-design3/review.md）。条件は上の直しで満たした。→ 設計審査済み。PO 実装承認前。
