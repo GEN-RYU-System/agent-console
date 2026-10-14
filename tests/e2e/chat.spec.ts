@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { E2E_PORT, E2E_TOKEN } from "../fixtures/e2e-env";
@@ -207,8 +208,8 @@ test("K2/K3/K4: 本物の hook に流した記録が、右に自分・左に Cla
 
 test("file-viewer K1/K4: ファイルタブを開いたまま、本物の hook に Write を流すと名前が出る。押すと .md が整えた表示で出る", async ({ page }) => {
   const s = await makeSession("e2e-plain", "files-view");
-  const dir = path.join(DATA_DIR, "e2e-files");
-  mkdirSync(dir, { recursive: true });
+  // dataDir の外に置く（console.spec.ts が dataDir の中身の一覧を数えるため）
+  const dir = mkdtempSync(path.join(os.tmpdir(), "ac-e2e-files-"));
   const file = path.join(dir, `報告-${Date.now().toString(36)}.md`);
   writeFileSync(file, "# 調べた結果\n\n- 原因は **memo**\n\n[外](https://example.com/x) [相対](./a.md)\n");
 
