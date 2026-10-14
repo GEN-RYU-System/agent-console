@@ -10,6 +10,7 @@ import { handleBoard } from "./board-routes.ts";
 import { handleUsage } from "./usage-routes.ts";
 import { handleAccount } from "./account-routes.ts";
 import { handleChat } from "./chat-routes.ts";
+import { handleFiles } from "./files-routes.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
 import type { MemoryCollector } from "./memory.ts";
@@ -194,6 +195,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   if (await handleUsage(deps, req, res, url)) return;
   if (await handleAccount(deps, req, res, url)) return;
   if (await handleChat(deps, req, res, url)) return;
+  if (await handleFiles(deps, req, res, url)) return;
   if (await handleUploads(deps, req, res, url)) return;
   if (await handleUploadFiles(deps, req, res, url)) return;
   if (await handleDailyUse(deps, req, res, url)) return;

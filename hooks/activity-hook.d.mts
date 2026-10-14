@@ -8,3 +8,5 @@ export interface AppendIo {
 }
 export function appendRecord(activityDir: string, record: ActivityRecord, io?: AppendIo): boolean;
 export function run(stdinText: string, dataDir: string, now?: number): boolean;
+export const FILE_TOOLS: readonly string[];
+export function isRecordablePath(p: unknown): p is string;

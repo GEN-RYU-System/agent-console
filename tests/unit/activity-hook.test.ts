@@ -344,3 +344,46 @@ describe("K5: スクリプト本体（本物の node）", () => {
     expect(specs.filter((s) => !s.startsWith("node:"))).toEqual([]);
   });
 });
+
+describe("file-viewer K3 / K8: PostToolUse の Write・Edit・MultiEdit・NotebookEdit は path だけを記録する", () => {
+  const fileInput = (tool: string, toolInput: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({ session_id: SID, hook_event_name: "PostToolUse", tool_name: tool, tool_input: toolInput, tool_response: { filePath: "/x", content: "秘密" }, ...extra });
+
+  it("K8 記録のキーは ts・event・session_id・agent_id?・tool・path だけ（content・old_string・new_string・tool_response は入らない）", () => {
+    const w = buildRecord(fileInput("Write", { file_path: "/tmp/a b/報告.md", content: "中身" }), NOW);
+    expect(w).toEqual({ ts: NOW, event: "PostToolUse", session_id: SID, tool: "Write", path: "/tmp/a b/報告.md" });
+    const e = buildRecord(fileInput("Edit", { file_path: "/tmp/x.ts", old_string: "a", new_string: "b" }, { agent_id: "ag1" }), NOW)!;
+    expect(Object.keys(e).sort()).toEqual(["agent_id", "event", "path", "session_id", "tool", "ts"]);
+    expect(e.tool).toBe("Edit");
+    expect(buildRecord(fileInput("MultiEdit", { file_path: "/tmp/m.ts", edits: [{ old_string: "a", new_string: "b" }] }), NOW)).toMatchObject({ tool: "MultiEdit", path: "/tmp/m.ts" });
+    expect(buildRecord(fileInput("NotebookEdit", { notebook_path: "/tmp/n.ipynb", new_source: "x" }), NOW)).toMatchObject({ tool: "NotebookEdit", path: "/tmp/n.ipynb" });
+  });
+
+  it("path は clip を通さず生のまま（連続する空白もそのまま）", () => {
+    expect(buildRecord(fileInput("Write", { file_path: "/tmp/a  b/ c.md" }), NOW)).toMatchObject({ path: "/tmp/a  b/ c.md" });
+  });
+
+  it("K3 段が .. か . のパス・// を含むパス・末尾 /・相対パス・制御文字入り・4096 文字超・文字列でないものは記録しない（名前の中の . は対象）", () => {
+    for (const bad of ["/a/../b", "/a/./b", "/a//b", "/a/b/", "a/b.md", "./b.md", "/a/b\n.md", "/a/\u0000b", "/a\u007f", "/" + "x".repeat(4096), 12, undefined]) {
+      expect(buildRecord(fileInput("Write", { file_path: bad }), NOW)).toBeNull();
+    }
+    expect(buildRecord(fileInput("Write", { file_path: "/a/x.md" }), NOW)).toMatchObject({ path: "/a/x.md" });
+    expect(buildRecord(fileInput("Write", { file_path: "/a/..x/.y" }), NOW)).toMatchObject({ path: "/a/..x/.y" });
+  });
+
+  it("PreToolUse の Write・Read など、対象外のものは記録しない", () => {
+    expect(buildRecord({ session_id: SID, hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: "/a.md" } }, NOW)).toBeNull();
+    expect(buildRecord(fileInput("Read", { file_path: "/a.md" }), NOW)).toBeNull();
+  });
+
+  it("本物の hook に PostToolUse(Write) を流すと、path の 1 行が書かれる", () => {
+    const { dataDir, hook } = installHook();
+    const r = runHook(hook, JSON.stringify(fileInput("Write", { file_path: "/tmp/fv.md", content: "x" })));
+    expect(r.status).toBe(0);
+    const dir = path.join(dataDir, "activity");
+    const [name] = readdirSync(dir);
+    const [line] = lines(path.join(dir, name));
+    const parsed = JSON.parse(line);
+    expect(parsed).toMatchObject({ event: "PostToolUse", session_id: SID, tool: "Write", path: "/tmp/fv.md" });
+    expect(line).not.toContain("content");
+  });
+});
