@@ -2,7 +2,7 @@
 
 - 状態: 第3版（Opus 2026-10-14）。第2版は Fable 審査 REVISE（高1・中6・低5、/tmp/CC報告ファイル/terminal-scroll-history/review-design2/review.md）→ §12 で全件反映。§12 は §11 より優先する。第1版は Fable 審査 REVISE（高なし・中6・低7、/tmp/CC報告ファイル/terminal-scroll-history/review-design1/review.md）→ §11 で全件反映。§11 は §1〜§9 より優先する。PO の要望「滑らかに動くようにしてほしい」で着手（目的は PO 承認済み）。
 - PO の言葉（2026-10-14）: 「端末ページのマウスホイールのスクロールの動きがカクカクするので滑らかに動くようにしてほしい、ターミナルでは滑らかに動いた、それと右側の最近の入力履歴だがクリックしたら履歴の箇所にジャンプする機能はつけることは出来る？」
-- 根拠の生出力: /tmp/CC報告ファイル/terminal-scroll-history/recon/facts.md（以下 R1）、recon2/facts.md（R2）、recon3/facts.md（R3）。行番号は origin/main 078c9e4。
+- recon: docs/handoff/terminal-wheel/recon.md（R1〜R3 を写したもの）。根拠の生出力: /tmp/CC報告ファイル/terminal-scroll-history/recon/facts.md（以下 R1）、recon2/facts.md（R2）、recon3/facts.md（R3）。行番号は origin/main 078c9e4。
 
 ## 0. 事実
 - 端末は @xterm/xterm 6.0.0（package.json:22）。生成は src/components/TerminalPane/TerminalPane.tsx:102-107（scrollback 2000、smoothScrollDuration 0）。物理ホイールと判定した時だけ smoothScrollDuration を terminalSmoothScrollMs（agent-console.config.json:25、125）にする仕組みがある（TerminalPane.tsx:175-184、wheelClassifier.ts）。(R1)
@@ -65,7 +65,7 @@ server、tmux の設定（mouse off のまま）、Claude の設定（CLAUDE_COD
 - 合成イベントの扱いは xterm の公開の約束ではない → 工程0 と e2e K4 で版を固定して確かめる。xterm を上げる時は K4 が守る。
 - 端末の行高を host.clientHeight / rows で出すので、余白があると少しずれる。行数の端数は持ち越すので、ずれは量だけで向きや段には出ない。
 
-## 8. 外部事例
+## 8. 外部・過去事例の参照と我々への応用
 - Claude 公式が「Ghostty・iTerm2 は増幅する」と書く（R3 §5）。両者は1ノッチで複数のイベントを送ることで Claude の中で滑らかに見える、という本設計と同じ考え方。数値つきの公開事例は確認していないので、成功の証明には使わない。
 
 ## 9. 入力履歴へのジャンプ（PO の2つ目の質問）
