@@ -1,4 +1,6 @@
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -56,6 +58,17 @@ const setup = async (opts: { verdicts?: Verdict[] | (() => Verdict); routines?: 
 };
 const run = async (service: RoutineService) => { await service.tick(); await service.settled(); };
 const outcomes = (service: RoutineService, i = 0) => service.list()[i].events.map((e) => e.outcome);
+
+describe("routine launch target cwd default (v0.22.0)", () => {
+  it("R7 create without cwd saves the real path of salesanchorRoot for a main-checkout role", async () => {
+    const root = realpathSync(await mkdtemp(path.join(os.tmpdir(), "ac-routine-root-")));
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    const dir = await mkdtemp(path.join(os.tmpdir(), "ac-routine-"));
+    const service = new RoutineService({ roles: [{ id: "echo", needsWorktree: false }], salesanchorRoot: root } as never, {} as never, {} as never, new RoutineStore(dir));
+    const created = await service.create({ name: "n", enabled: true, roleId: "echo", weekdays: [1], timeHHmm: "09:00", promptText: "hi" });
+    expect(created.cwd).toBe(root);
+  });
+});
 
 describe("routine dispatch opens a new session", () => {
   it("K2 opens one new session without resuming at the slot", async () => {

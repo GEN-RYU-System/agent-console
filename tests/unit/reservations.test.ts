@@ -328,3 +328,34 @@ describe("reserve-token file", () => {
     expect((await setupReserveToken({ env: { AGENT_CONSOLE_PORT: "5000" }, dataDir: dir, port: 4003 })).token).toBeNull();
   });
 });
+
+describe("launch target cwd default (v0.22.0)", () => {
+  it("R2 a main-checkout role without cwd is saved with the real path of salesanchorRoot", async () => {
+    const { service, root, input } = await setup();
+    const r = await service.create(input({ cwd: undefined }), "ui");
+    expect(r.cwd).toBe(realpathSync(root));
+    expect(r.branch).toBeUndefined();
+  });
+
+  it("R5 a worktree role without cwd is rejected as cwd invalid, and an explicit cwd still works", async () => {
+    const h2 = await startHarness();
+    try {
+      const date2 = new Date(Date.now() + 3 * 24 * 60 * MIN).toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+      const post = (over: Record<string, unknown>) => send(h2.port, "POST", "/api/reservations", { Authorization: `Bearer ${TOKEN}` }, { name: "m", roleId: "wt", date: date2, time: "10:00", promptText: "hi", ...over });
+      const missing = await post({ branch: "b" });
+      expect(missing.status).toBe(400);
+      expect(String(missing.json.error)).toContain("cwd invalid");
+      expect((await post({ cwd: h2.config.salesanchorRoot, branch: "b" })).status).toBe(201);
+    } finally { await h2.close(); }
+  });
+
+  it("R13 the agent route accepts a main-checkout role without cwd and saves the real path of salesanchorRoot", async () => {
+    const h2 = await startHarness();
+    try {
+      const date2 = new Date(Date.now() + 3 * 24 * 60 * MIN).toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+      const r = await send(h2.port, "POST", "/api/agent/reservations", { Authorization: `Bearer ${RESERVE_TOKEN}` }, { name: "m", roleId: "echo", date: date2, time: "10:00", promptText: "hi", ...AGENT });
+      expect(r.status).toBe(201);
+      expect(r.json.cwd).toBe(realpathSync(h2.config.salesanchorRoot));
+    } finally { await h2.close(); }
+  });
+});
