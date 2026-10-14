@@ -52,6 +52,8 @@ async function api(method: string, p: string, body?: unknown): Promise<{ status:
 async function newSession(roleId: string, name: string): Promise<string> {
   const res = await api("POST", "/api/sessions", { name, roleId });
   expect(res.status).toBe(201);
+  // 起動直後の自動の名前合わせ（initialName）はこのファイルの試験の対象外。端末への書き込みを数える試験を乱さないよう外す
+  delete h.sessions.get(res.json.id as string)?.initialName;
   return res.json.id as string;
 }
 

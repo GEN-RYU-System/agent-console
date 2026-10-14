@@ -20,6 +20,7 @@ import { OpenSessionRecorder, isRestoreEnabled, startOpenSessionRestore } from "
 import { OpenSessionStore } from "./session-store.ts";
 import { RoutineService, RoutineStore } from "./routines.ts";
 import { ReservationService, ReservationStore } from "./reservations.ts";
+import { RelayManager, resolveRelayDir } from "./relay.ts";
 import { setupReserveToken } from "./reserve-token.ts";
 import { resolveSecret } from "./secret.ts";
 import { SessionManager } from "./sessions.ts";
@@ -69,6 +70,7 @@ async function main(): Promise<void> {
   const recorder = new OpenSessionRecorder(sessions, hub, openSessions);
   const routines = new RoutineService(config, sessions, hub, new RoutineStore(config.dataDir));
   const reservations = new ReservationService(config, sessions, hub, new ReservationStore(config.dataDir));
+  const relay = new RelayManager({ config, sessions, hub, relayDir: resolveRelayDir(config, process.env) });
   const meta = { saSource: await readSaSource(), claudeVersion: await fetchClaudeVersion(config.claudeBin), version: readVersion(), commit: await readCommit() };
 
   // 拡張の合言葉とフォルダの作り直しは、本番のポートで起動したときだけ（AGENT_CONSOLE_PORT があれば作らない）。作れなくてもサーバーは止めない
@@ -79,7 +81,7 @@ async function main(): Promise<void> {
   const activity = startActivity({ config, hub, env: process.env, hooksSourceDir: path.join(process.cwd(), "hooks") });
   const uploads = new UploadStore(config.dataDir, config.uploadMaxBytes, config.uploadMaxKeep);
 
-  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity: activity.store, checkHooks: activity.check, memory: new MemoryCollector(), staticDir: path.join(process.cwd(), "dist"), meta, routines, reservations, reserve }));
+  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity: activity.store, checkHooks: activity.check, memory: new MemoryCollector(), staticDir: path.join(process.cwd(), "dist"), meta, routines, reservations, relay, reserve }));
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   // 期限切れ（12 時間）になったセッションの WebSocket を閉じる
   setInterval(() => controls.sweep(), SESSION_SWEEP_MS).unref();

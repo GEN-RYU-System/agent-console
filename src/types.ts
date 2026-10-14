@@ -42,12 +42,28 @@ export interface TerminalNotice {
   name?: string;
 }
 
+export type RelayPhase = "handoff" | "launching" | "sending" | "done" | "failed";
+export type RelayReason = "send_failed" | "handoff_timeout" | "gone" | "full" | "start_failed" | "not_ready";
+
+/** 引き継ぎの進行（server の RelayView の写し） */
+export interface RelayView {
+  relayId: string;
+  oldSessionId: string;
+  oldName: string;
+  newName: string;
+  phase: RelayPhase;
+  newSessionId?: string;
+  reason?: RelayReason;
+}
+
 export interface ConsoleState {
   sessions: SessionView[];
   agentsAvailable: boolean;
   restoreNotices: RestoreNotice[];
   /** tmux が無い・つなげない時の案内。無ければ空（キー自体が無い） */
   terminalNotices?: TerminalNotice[];
+  /** 引き継ぎの進行。無ければキー自体が無い */
+  relays?: RelayView[];
   /** まだ Claude に送っていない部品の数（「部品」タブの件数） */
   picksUnsent: number;
   /** セッションの様子の記録の版（進んだら、右の欄の「このセッション」を取り直す） */
