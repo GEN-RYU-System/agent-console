@@ -36,10 +36,18 @@ export interface RestoreNotice {
   name?: string;
 }
 
+/** 端末の置き場（tmux）についての案内（文言は画面の i18n）。name はセッション名 */
+export interface TerminalNotice {
+  reason: "tmuxMissing" | "cannotAttach";
+  name?: string;
+}
+
 export interface ConsoleState {
   sessions: SessionView[];
   agentsAvailable: boolean;
   restoreNotices: RestoreNotice[];
+  /** tmux が無い・つなげない時の案内。無ければ空（キー自体が無い） */
+  terminalNotices?: TerminalNotice[];
   /** まだ Claude に送っていない部品の数（「部品」タブの件数） */
   picksUnsent: number;
   /** セッションの様子の記録の版（進んだら、右の欄の「このセッション」を取り直す） */

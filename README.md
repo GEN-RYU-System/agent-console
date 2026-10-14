@@ -141,6 +141,16 @@ node scripts/ac-hooks.mjs install
 node scripts/ac-hooks.mjs check
 ```
 
+## v0.20.0 更新しても会話が続く（tmux 保持）
+
+各セッションの本体（claude）は、このアプリ専用の tmux サーバー（`tmux -L agent-console`、設定は `ops/tmux/agent-console.tmux.conf`）の中で動きます。アプリ（サーバー）を更新・再起動しても本体は止まらず、起動時に同じセッションへつなぎ直します（`--resume` で開き直さないので、作業中でも切れません）。起動のログに `open-sessions: つなぎ直し N・resume M` が出ます。設計は [design](docs/handoff/keep-sessions/design.md)。
+
+- **tmux が必要です**（`brew install tmux`）。見つからない時は今までどおりの方式（direct）で動き、画面に案内が出ます（その場合、更新するとセッションは閉じます）。
+- **×で閉じる**と、tmux のセッションも本体も終わります。「一覧から外す」などの今までの操作は変わりません。
+- **tmux の版が合わない時の直し方**: 設定は tmux サーバーの起動時に 1 回だけ読まれます。tmux を入れ替えたあとなどで動きがおかしい時は、全セッションを閉じて開き直してください（セッションが 0 件になると tmux サーバーも終わり、次の起動で新しい設定を読みます）。
+- **前の版へ戻した時（切戻し中）の見方と注意**: 戻す先が tmux を知らない版（v0.19.0 以前）の場合、`scripts/ac-update.sh` の失敗時の戻しと `scripts/ac-rollback.sh` は、保存リスト（`open-sessions.json`）と routine（`routines.json`）を `*.tmux-held.json` へ退避してから戻します（同じ会話を二重に起動しないため。この間 routine の予定は止まります）。「裏で N 件が動いています。この間は会話を開き直さないでください」と出たら、その間は同じ会話を手で開き直さないでください。裏で動いている会話は `tmux -L agent-console attach -t =<名前>`（名前は出力に一覧が出ます）で見られます。tmux を知っている版へ更新すると、退避したファイルを今のリストと合わせて元へ戻し、画面につなぎ直します。
+- 試験: tmux の統合試験は本物の tmux を使います（`tests/unit/tmux-host.integration.test.ts`）。試験用の config は `terminalHost: "direct"` か専用ソケットにして、本番のソケットを使わないでください。
+
 ## 設計メモ
 
 - 設計・調査・実装メモ: `docs/handoff/stage1/`（段階1）、`docs/handoff/stage1-5/`（段階1.5: 起動・版管理・セキュリティ）

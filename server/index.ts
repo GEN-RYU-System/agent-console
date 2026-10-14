@@ -15,7 +15,8 @@ import { setupPicker } from "./picker-extension.ts";
 import { PickStore } from "./picks.ts";
 import { UploadStore } from "./uploads.ts";
 import { QuickPromptStore } from "./quick-prompts.ts";
-import { OpenSessionRecorder, startOpenSessionRestore } from "./restore.ts";
+import { restoreHeldFiles } from "./held-merge.ts";
+import { OpenSessionRecorder, isRestoreEnabled, startOpenSessionRestore } from "./restore.ts";
 import { OpenSessionStore } from "./session-store.ts";
 import { RoutineService, RoutineStore } from "./routines.ts";
 import { ReservationService, ReservationStore } from "./reservations.ts";
@@ -85,7 +86,9 @@ async function main(): Promise<void> {
 
   server.listen(config.port, LISTEN_HOST, () => {
     hub.start();
-    void routines.start().catch((err) => console.error("routines failed:", err));
+    // 切戻しで退避された保存リストと routine を、つなぎ直しと routine の読込より先に元へ戻す（復元が有効な本番のポートのみ）
+    const heldRestored = isRestoreEnabled(process.env) ? restoreHeldFiles(config.dataDir) : Promise.resolve(0);
+    void heldRestored.then(() => routines.start()).catch((err) => console.error("routines failed:", err));
     if (mode === "fixed") console.warn("agent-console: 警告: AGENT_CONSOLE_TOKEN で固定したトークンを使用中です（テスト用途のみ）");
     if (mode === "keychain") {
       // 本番（起動アプリ経由）。秘密・セッション・コードはログに出さない
@@ -96,7 +99,7 @@ async function main(): Promise<void> {
       console.log(`agent-console: http://${LISTEN_HOST}:${config.port}/pair?code=${code}`);
     }
     // 前回開いていたセッションを開き直す（失敗してもサーバーは止めない）
-    const restored = startOpenSessionRestore(process.env, { config, sessions, hub, store: openSessions, recorder }).catch((err) => console.error("restore failed:", err));
+    const restored = heldRestored.then(() => startOpenSessionRestore(process.env, { config, sessions, hub, store: openSessions, recorder })).catch((err) => console.error("restore failed:", err));
     // 予約の時計は復元の完了を待ってから動かす（復元が先に席を取れるように）。復元の成否・無効に関わらず始まる
     void reservations.start(restored).catch((err) => console.error("reservations failed:", err));
   });

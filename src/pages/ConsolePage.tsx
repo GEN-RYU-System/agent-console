@@ -121,6 +121,7 @@ export function ConsolePage() {
   const [closeError, setCloseError] = useState<string | null>(null);
   // 復元の案内は、閉じた内容を覚えておく（メモリだけ。同じ内容は出し直さない）
   const [dismissedNotices, setDismissedNotices] = useState<string | null>(null);
+  const [dismissedTerminalNotices, setDismissedTerminalNotices] = useState<string | null>(null);
   const terminalRef = useRef<TerminalHandle>(null);
   const selectedIdRef = useRef<string | null>(null);
   selectedIdRef.current = selectedId;
@@ -307,6 +308,9 @@ export function ConsolePage() {
   const closeTarget = state.sessions.find((s) => s.id === closeTargetId);
   const noticesKey = JSON.stringify(state.restoreNotices);
   const showNotices = state.restoreNotices.length > 0 && dismissedNotices !== noticesKey;
+  const terminalNotices = state.terminalNotices ?? [];
+  const terminalNoticesKey = JSON.stringify(terminalNotices);
+  const showTerminalNotices = terminalNotices.length > 0 && dismissedTerminalNotices !== terminalNoticesKey;
 
   return (
     <div className="ac-page">
@@ -342,6 +346,20 @@ export function ConsolePage() {
               </ul>
               <Button variant="outline" size="sm" onClick={() => setDismissedNotices(noticesKey)}>
                 {t("ac.restoreNotice.dismiss")}
+              </Button>
+            </Callout>
+          </div>
+        )}
+        {showTerminalNotices && (
+          <div data-testid="terminal-notices">
+            <Callout variant="info" title={t("ac.terminalNotice.title")}>
+              <ul>
+                {terminalNotices.map((n, i) => (
+                  <li key={`${n.reason}-${n.name ?? ""}-${i}`}>{t(`ac.terminalNotice.${n.reason}`, { name: n.name ?? "" })}</li>
+                ))}
+              </ul>
+              <Button variant="outline" size="sm" onClick={() => setDismissedTerminalNotices(terminalNoticesKey)}>
+                {t("ac.terminalNotice.dismiss")}
               </Button>
             </Callout>
           </div>

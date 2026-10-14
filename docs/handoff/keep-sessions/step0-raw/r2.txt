@@ -1,0 +1,48 @@
+== 1. submit job (node = server role) at 13:48:53
+pane_pid=35572
+-- launchctl list (job)
+35553	0	local.acstep0.job
+-- tmux list-sessions
+ac-step0-r2: 1 windows (created Tue Oct 13 13:48:54 2026) (attached)
+-- tmux list-clients
+/dev/ttys024: ac-step0-r2 [100x30 xterm-256color] (attached,focused,UTF-8)
+-- K11: tmux global environment, secret names present? (names only)
+AGENT_CONSOLE_TOKEN: absent in global env
+AGENT_CONSOLE_AUTH: absent in global env
+AC_SECURITY: absent in global env
+AC_STUB_LOG: absent in global env
+-- K11: tmux session environment, secret names present?
+AGENT_CONSOLE_TOKEN: absent in session env
+AGENT_CONSOLE_AUTH: absent in session env
+AC_SECURITY: absent in session env
+AC_STUB_LOG: absent in session env
+-- session env AC_RESUME_ID / TERM
+AC_RESUME_ID=demo-resume
+-- pane process environment (ps eww, names only for secrets)
+-- pane screen
+READY id=[demo-resume] token=[]
+
+
+== 2. SIGTERM the node via launchctl kill (same signal as kickstart -k) at 13:48:56
+-- launchctl list (job)
+-	0	local.acstep0.job
+-- server.log
+2026-10-13T04:48:54.078Z parent env has AGENT_CONSOLE_TOKEN=true
+2026-10-13T04:48:54.224Z pane_pid=35572 server_pid=35553
+2026-10-13T04:48:54.231Z attach pid=35585
+2026-10-13T04:48:56.445Z SIGTERM: killing attach only
+-- ps (pane pid 35572 still alive, same pid?)
+  PID  PPID STAT COMMAND
+35572 35560 Ss+  sleep 900
+-- tmux list-sessions
+ac-step0-r2: 1 windows (created Tue Oct 13 13:48:54 2026)
+-- tmux list-clients (expect empty)
+-- tmux server process
+35546 34689 35546 /bin/zsh -c source /Users/tanizawashingo/.claude/shell-snapshots/snapshot-zsh-1791824447636-kmrych.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && { \builtin unalias -- 'unsetenv'; \builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval 'cd /Users/tanizawashingo/agent-console-wt/keep-sessions && R=$PWD && bash docs/handoff/keep-sessions/step0-scripts/r2.sh "$R" /tmp/kspr-r2 2>&1 | tee docs/handoff/keep-sessions/step0-raw/r2.txt; /opt/homebrew/bin/tmux -L acstep0 kill-server; ps -axo pid,command | grep "[s]leep 900"' < /dev/null && pwd -P >| /tmp/claude-387d-cwd
+35560     1 35560 /opt/homebrew/bin/tmux -u -L acstep0 -f /Users/tanizawashingo/agent-console-wt/keep-sessions/ops/tmux/agent-console.tmux.conf new-session -d -s ac-step0-r2 -x 100 -y 30 -c /tmp/kspr-r2 -e AC_RESUME_ID=demo-resume -- /bin/sh -c echo READY id=[$AC_RESUME_ID] token=[$AGENT_CONSOLE_TOKEN]; exec sleep 900
+== 3. launchctl remove at 13:48:59
+-- after remove: pane pid alive?
+  PID  PPID STAT COMMAND
+35572 35560 Ss+  sleep 900
+-- tmux list-sessions
+ac-step0-r2: 1 windows (created Tue Oct 13 13:48:54 2026)

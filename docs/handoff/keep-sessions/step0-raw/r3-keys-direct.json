@@ -1,0 +1,134 @@
+{
+  "mode": "direct",
+  "scenario": "keys",
+  "tmuxVersion": null,
+  "afterStart": {
+    "type": "normal",
+    "baseY": 0,
+    "viewportY": 0,
+    "length": 30,
+    "line0": "ENV TERM=xterm-256color LANG=ja_JP.UTF-8 AC_RESUME_ID=demo-resume TOKEN=[] COLUMNS=100 ROWS=30",
+    "lineLast": "",
+    "viewportTop": "ENV TERM=xterm-256color LANG=ja_JP.UTF-8 AC_RESUME_ID=demo-resume TOKEN=[] COLUMNS=100 ROWS=30",
+    "viewportBottom": "",
+    "mouseTrackingMode": "vt200",
+    "bracketedPasteMode": true
+  },
+  "keys": [
+    {
+      "label": "Ctrl+B",
+      "hex": [
+        "02"
+      ],
+      "firstLatencyMs": 459
+    },
+    {
+      "label": "Esc",
+      "hex": [
+        "1b"
+      ],
+      "firstLatencyMs": 76
+    },
+    {
+      "label": "Shift+Enter",
+      "hex": [
+        "0d"
+      ],
+      "firstLatencyMs": 214
+    },
+    {
+      "label": "Enter",
+      "hex": [
+        "0d"
+      ],
+      "firstLatencyMs": 143
+    },
+    {
+      "label": "ArrowUp",
+      "hex": [
+        "1b5b41"
+      ],
+      "firstLatencyMs": 49
+    },
+    {
+      "label": "Ctrl+C",
+      "hex": [
+        "03"
+      ],
+      "firstLatencyMs": 58
+    },
+    {
+      "label": "a",
+      "hex": [
+        "61"
+      ],
+      "firstLatencyMs": 95
+    },
+    {
+      "label": "Shift+Tab",
+      "hex": [
+        "1b5b5a"
+      ],
+      "firstLatencyMs": 88
+    },
+    {
+      "label": "Alt+B",
+      "hex": [],
+      "firstLatencyMs": null
+    },
+    {
+      "label": "Alt+Enter",
+      "hex": [
+        "1b0d"
+      ],
+      "firstLatencyMs": 120
+    },
+    {
+      "label": "Ctrl+Shift+A",
+      "hex": [],
+      "firstLatencyMs": null
+    }
+  ],
+  "paste": {
+    "reads": 1,
+    "joined": "1b5b3230307e68656c6c6f0d776f726c641b5b3230317e",
+    "bracketed": true
+  },
+  "longPaste": {
+    "reads": 4,
+    "bytes": 4012,
+    "startsWithBracket": true,
+    "endsWithBracket": true,
+    "xCount": 4000
+  },
+  "mouseWheel": {
+    "newInputs": [
+      "1b5b3c36343b31323b364d"
+    ]
+  },
+  "afterKeysState": {
+    "type": "normal",
+    "baseY": 0,
+    "viewportY": 0,
+    "length": 30,
+    "line0": "ENV TERM=xterm-256color LANG=ja_JP.UTF-8 AC_RESUME_ID=demo-resume TOKEN=[] COLUMNS=100 ROWS=30",
+    "lineLast": "",
+    "viewportTop": "ENV TERM=xterm-256color LANG=ja_JP.UTF-8 AC_RESUME_ID=demo-resume TOKEN=[] COLUMNS=100 ROWS=30",
+    "viewportBottom": "",
+    "mouseTrackingMode": "vt200",
+    "bracketedPasteMode": true
+  },
+  "outerSequences": {
+    "osc52": true,
+    "osc52Raw": "\u001b]52;c;aGVsbG8=\u0007",
+    "mode2004h": true,
+    "mode1000h": true,
+    "mode1006h": true,
+    "smcup1049h": false
+  },
+  "envLine": "ENV TERM=xterm-256color LANG=ja_JP.UTF-8 AC_RESUME_ID=demo-resume TOKEN=[] COLUMNS=100 ROWS=30",
+  "japanese": true,
+  "resizeSeen": [
+    "RESIZE 70x20"
+  ]
+}

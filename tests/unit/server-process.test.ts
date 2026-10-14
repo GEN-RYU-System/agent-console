@@ -60,6 +60,8 @@ async function startServer(env: Record<string, string>, extraRoles: unknown[] = 
     agentsPollMs: 60000,
     ledgerPollMs: 60000,
     ringBufferBytes: 1048576,
+    // 本番の tmux（-L agent-console）に触れないよう、この試験の子サーバーは direct で動かす
+    terminalHost: "direct",
     roles: [{ id: "plain", labelKey: "role.shell", command: ["/bin/sh", "-c", "cat"], needsWorktree: false }, ...extraRoles],
   };
   const configFile = path.join(dir, "config.json");
