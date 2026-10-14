@@ -44,6 +44,16 @@ export function installBoardCommand(sourceDir: string, dataDir: string): string 
   return copyAtomically(sourceDir, BOARD_COMMAND_FILE_NAME, boardCommandPathIn(dataDir));
 }
 
+export const RESERVE_COMMAND_FILE_NAME = "ac-reserve.mjs";
+
+/** dataDir/bin/ac-reserve.mjs（Claude の Bash が打つ、予約の命令） */
+export const reserveCommandPathIn = (dataDir: string): string => path.join(dataDir, "bin", RESERVE_COMMAND_FILE_NAME);
+
+/** リポジトリの hooks/ac-reserve.mjs（正本）を dataDir/bin/ へ写す（ac-board と同じ作法） */
+export function installReserveCommand(sourceDir: string, dataDir: string): string {
+  return copyAtomically(sourceDir, RESERVE_COMMAND_FILE_NAME, reserveCommandPathIn(dataDir));
+}
+
 export const STATUSLINE_COMMAND_FILE_NAME = "ac-statusline.mjs";
 
 /** dataDir/bin/ac-statusline.mjs（Claude の statusLine が動かす、利用量の写し取りの命令） */

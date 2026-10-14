@@ -385,7 +385,7 @@ describe("ConsolePage daily use", () => {
 });
 
 describe("ConsolePage center tabs (v0.10.0 K1)", () => {
-  it("puts ac-center-tabs on the center tablist only (all 6 tabs share it), not on the right pane", async () => {
+  it("puts ac-center-tabs on the center tablist only (all 7 tabs share it), not on the right pane", async () => {
     render(<ConsolePage />);
     fireEvent.click(await screen.findByText("dead"));
     const tab = await screen.findByRole("tab", { name: /変更/ });
@@ -393,7 +393,7 @@ describe("ConsolePage center tabs (v0.10.0 K1)", () => {
     expect(list.className).toContain("ac-center-tabs");
     expect(list.className).toContain("comp-tabs");
     const labels = within(list).getAllByRole("tab").map((n) => n.textContent);
-    expect(labels).toHaveLength(6);
+    expect(labels).toHaveLength(7);
     const others = screen.getAllByRole("tablist").filter((n) => n !== list);
     for (const other of others) expect(other.className).not.toContain("ac-center-tabs");
   });
@@ -415,7 +415,7 @@ describe("ConsolePage チャット tab (v0.11.0 K1, K6, K7)", () => {
     const tab = await screen.findByRole("tab", { name: /変更/ });
     const list = tab.closest('[role="tablist"]') as HTMLElement;
     const tabs = within(list).getAllByRole("tab");
-    expect(tabs.map((n) => (n.textContent ?? "").replace(/\d+$/, ""))).toEqual(["チャット", "端末", "変更", "PR", "部品", "定期実行"]);
+    expect(tabs.map((n) => (n.textContent ?? "").replace(/\d+$/, ""))).toEqual(["チャット", "端末", "変更", "PR", "部品", "定期実行", "予約"]);
     expect(tabs[0].getAttribute("aria-selected")).toBe("true");
     expect(screen.getByTestId("chat-pane").hasAttribute("hidden")).toBe(false);
     expect(screen.getByTestId("terminal-stub").parentElement?.hasAttribute("hidden")).toBe(true);
@@ -538,7 +538,7 @@ describe("ConsolePage 部品 tab (K3, §3-8)", () => {
     expect(stub.getAttribute("data-max")).toBe(String(5 * 1024 * 1024));
     fireEvent.click(within(stub).getByText("stub-notice"));
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("画像を貼れませんでした");
-    expect(alert.textContent).toContain("画像が大きすぎます（1枚 5 MB まで）");
+    expect(alert.textContent).toContain("ファイルを貼れませんでした");
+    expect(alert.textContent).toContain("ファイルが大きすぎます（1つ 5 MB まで）");
   });
 });

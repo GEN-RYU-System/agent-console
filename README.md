@@ -6,6 +6,27 @@ Local console for running parallel Claude Code sessions (Orca-inspired, lightwei
 
 「定期実行」タブは、Asia/Tokyo の曜日・時刻になると新しい Claude Code セッションを1つ開き、Claude が入力待ちになったら登録した指示を一度だけ送ります（登録しただけではセッションは開きません）。開いたセッションはふつうのセッションと同じで、自動では閉じません（不要になったら自分で閉じてください）。定義・`lastSlot`・実行履歴（結果と開いたセッション名）は `dataDir/routines.json`（version 2）のみへ保存されます。設計は [routines-new-session](docs/handoff/routines-new-session/design.md)（v0.7.0 の [routine design](docs/handoff/v0.7.0-routines/design.md) の一部を置き換え）を参照してください。
 
+## 予約（v0.21.0）
+
+日付と時刻（日本時間）を決めて、その時刻に新しいセッションを1つ開き、指示を1回だけ送る。画面の「予約」タブから登録・取消ができる（取消は「待機中」のものだけ）。正本は `dataDir/reservations.json` で、書くのはサーバーだけ。
+
+- 時刻が来ると、Claude が入力待ちになるのを待って指示を貼って Enter を送る。120 秒待っても準備できなければ送らず「送れなかった（準備できず）」と残す。開いたセッションは自動では閉じない。
+- アプリが止まっていて時刻を過ぎた予約は、起動後に復元が終わってから1回だけ遅れて送る。送信中に止まったものは再送せず「中断」にする。
+
+### ac-reserve の使い方（AI が Bash で打つ）
+
+**使ってよいのは、変更の効果を実地で測る予約だけ（PO 決定 2026-10-14）。**
+
+```
+node "<dataDir>/bin/ac-reserve.mjs" add < reservation.json
+node "<dataDir>/bin/ac-reserve.mjs" list
+node "<dataDir>/bin/ac-reserve.mjs" cancel <id>
+```
+
+- reservation.json の形: `name`（1〜40字）、`roleId`、`cwd`、`branch`（worktree 役のとき）、`date`（YYYY-MM-DD）、`time`（HH:mm、日本時間）、`promptText`（8192字以下）、`purpose`（必ず `"measure"`）、`measureNote`（何を測るか、1〜200字）。
+- 予定は1分後から366日後まで。待機中の予約は全体で50件、AI の分は10件まで。
+- 宛先は `dataDir/reserve-token`（`{port, token}`、サーバーが本番のポートで起動したときだけ作る）。失敗は終了コード1と理由を標準エラーに出す。
+
 ## v0.9.0 セッションの様子の記録
 
 左でセッションを選ぶと、右の欄の「作戦ボード」（v0.11.0 までは「このセッション」）に、動いている担当・計画（KGI・KPI・ロードマップ。v0.12.0 から）・タスク（v0.14.0 から）・最近の入力が出ます（台帳は隣の「台帳」タブ）。v0.14.0 で「今の状態」の欄はなくなりました（左の一覧のバッジが正本）。v0.12.0 で「終わった担当」と「やること」の欄はなくなりました。Claude Code の hook が `dataDir/activity/events-YYYYMMDD.jsonl`（UTC の日付、権限 600）に 1 行ずつ追記した記録を、アプリが読んでまとめます。設計は [design](docs/handoff/v0.8.0-activity/design.md)、工程0の実測は [step0](docs/handoff/v0.8.0-activity/step0.md)。
@@ -160,7 +181,7 @@ node scripts/ac-hooks.mjs check
   - **できないこと**: iframe の中の部品は選べません（最上位のフレームだけ）。切り抜き画像は、いま見えている範囲だけです。`chrome://` など Chrome の内部のページでは動かず、ボタンに「×」が出ます。React の部品名は取りません。
 - 拡張の見た目の値（選ぶ枠・案内）は、`npm run build` のたびに Sales Anchor のトークンから `extension/picker-tokens.css` に生成します（生成物。コミットしません）。`extension/` の JS と CSS には色・px の直書きをしません（`npm run lint` が検査します）。
 - **端末の見やすさ（v0.8.0）**: 全角の句読点・括弧（（ ）、 。）が端末の右端ではみ出さないよう、端末の CSS で `text-spacing-trim: space-all` を指定しています（Chrome 123 以上）。書体は、英数字・罫線が Menlo、「※」などが Monaco、日本語がヒラギノ明朝です（`src/tokens.app.css` の `--ac-font-mono` が正本）。スクロールは、マウスのホイールのときだけなめらかです（設定 `terminalSmoothScrollMs`、既定 125 ms、0 で無し。トラックパッドでは常にブラウザのそのままの動きです）。
-- **画像を端末に貼る（v0.8.0）**: スクリーンショットなどの PNG・JPEG を、端末にコピーして貼り付けるか、端末の上にドロップすると、アプリが `~/Library/Application Support/agent-console/uploads/<UUID>.png`（`.jpg`。設定 `dataDir` で変更、ディレクトリ 700・ファイル 600）に保存し、その絶対パスを入力欄に貼ります（Enter は押しません。送るかどうかは人が決めます）。Claude Code の入力欄では `[Image #n]` になります。1 枚 `uploadMaxBytes`（既定 5 MiB）まで、`uploadMaxKeep`（既定 100）枚まで残し、古いものから消えます（このアプリが作った UUID の名前のファイルだけ）。文字もいっしょにコピーされているときは、画像ではなく文字として貼ります。PNG と JPEG 以外のファイルを落としても何も貼らず、案内だけ出ます（画面が別のページに変わることはありません）。shell の役割の端末には使えません（空白がパスの区切りになるため）。
+- **画像を端末に貼る（v0.8.0）**: スクリーンショットなどの PNG・JPEG を、端末にコピーして貼り付けるか、端末の上にドロップすると、アプリが `~/Library/Application Support/agent-console/uploads/<UUID>.png`（`.jpg`。設定 `dataDir` で変更、ディレクトリ 700・ファイル 600）に保存し、その絶対パスを入力欄に貼ります（Enter は押しません。送るかどうかは人が決めます）。Claude Code の入力欄では `[Image #n]` になります。1 枚 `uploadMaxBytes`（既定 5 MiB）まで、`uploadMaxKeep`（既定 100）枚まで残し、古いものから消えます（このアプリが作った UUID の名前のファイルだけ）。文字もいっしょにコピーされているときは、画像ではなく文字として貼ります。PNG と JPEG 以外のファイル（CSV・PDF・テキストなど種類を問わない）を落とした（コピーして貼った）ときは、`uploads/files/<UUID>/<名前>`（名前は安全な文字だけに直します。フォルダ 700・ファイル 600）に保存して、同じようにその絶対パスを貼ります（上限と残す数は画像と同じ値で、数は画像とは別に数えます。画面が別のページに変わることはありません）。shell の役割の端末には使えません（空白がパスの区切りになるため）。
 - **端末の文字コード（LANG）**: 端末の中のプログラム（Claude のコピー機能が使う `pbcopy` など）は、環境変数 `LANG` で文字コードを決めます。自動起動（LaunchAgent）のサーバーには `LANG` が無く、そのままだとコピーした日本語が化けるため、設定 `terminalEnv`（既定 `{"LANG": "ja_JP.UTF-8"}`）を端末の環境に重ねます。`TERM` と秘密系の変数（`AGENT_CONSOLE_TOKEN` など）は指定できず、キーは英大文字・数字・`_`、値は空でなく制御文字なし。秘密の値は入れないでください。環境は端末を開くときに決まるため、**すでに開いている端末は開き直すまで直りません**。
 - **過去の会話を再開**: 「過去の会話を再開」で、本店の行（Opus 設計役）と、本店の worktree ごとの行（Sonnet 実装役、名前で絞り込めます）が出ます。「再開」を押すと、その場所で Claude 公式の選択リスト（`ccopusgo --resume` / `claude --model sonnet --resume`、id なし）が端末に開くので、会話はそこで選びます。アプリは会話の一覧を持ちません。選択リストでは `Ctrl+W` で同じリポジトリの全 worktree、`Ctrl+A` でこの Mac の全プロジェクトの会話に広げられます（別の役割の会話を選ぶと、開いた行の役割のモデルで再開されます）。ターミナルなどで今動いている会話は選ばないでください（二重に書き込むおそれがあります）。再開先は本店と `git worktree list` にある場所だけで、サーバーが照合します。ターミナルからは `ccopusgo --resume`（id なしで選択リスト）、`ccopusgo --resume <UUID>`（id 指定）でも再開できます（どちらも依頼文とは併用不可）。
 - **セッションを閉じる**: 動いている行の右端の「×（セッションを閉じる）」を押すと確認画面が出て、「閉じる」を選ぶと端末のプロセス（子孫を含む）が終わり、行が一覧から消えます。「やめる」では何も起きません。動いている作業は止まりますが、会話は「過去の会話を再開」から戻せます。止まった行の「一覧から外す」は従来どおりです。

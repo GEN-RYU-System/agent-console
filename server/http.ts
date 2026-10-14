@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
-import { CHALLENGE_TTL_MS, PAIRING_TTL_MS, SESSION_MAX_MS, type Auth } from "./auth.ts";
+import { CHALLENGE_TTL_MS, PAIRING_TTL_MS, SESSION_MAX_MS, sameSecret, type Auth } from "./auth.ts";
 import type { ActivityStore } from "./activity.ts";
 import type { HookCheck } from "./activity-hooks.ts";
 import { handleActivity } from "./activity-routes.ts";
@@ -20,13 +20,15 @@ import { handlePr } from "./pr-routes.ts";
 import type { PickerAccess } from "./picker-extension.ts";
 import { handlePickIngest, handlePicks } from "./picks-routes.ts";
 import type { PickStore } from "./picks.ts";
-import { handleUploads } from "./uploads-routes.ts";
+import { handleUploadFiles, handleUploads } from "./uploads-routes.ts";
 import type { UploadStore } from "./uploads.ts";
 import { listResumeTargets, resolveResumeTarget } from "./resume-targets.ts";
 import type { QuickPromptStore } from "./quick-prompts.ts";
 import { SessionConflictError, SessionInputError, SessionNotFoundError, validateName, type SessionManager } from "./sessions.ts";
 import { WorktreeError } from "./worktree.ts";
 import type { RoutineService } from "./routines.ts";
+import type { ReservationService } from "./reservations.ts";
+import type { ReserveAccess } from "./reserve-token.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -58,6 +60,10 @@ export interface AppDeps {
   staticDir: string;
   meta: { saSource: string; claudeVersion: string; version: string; commit: string };
   routines: RoutineService;
+  /** 予約（日時を指定して 1 回送る）。正本は dataDir/reservations.json */
+  reservations: ReservationService;
+  /** AI 用コマンドの合言葉（dataDir/reserve-token）。作れなかった・本番のポートでないときは token が null */
+  reserve: ReserveAccess;
 }
 
 export function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -176,6 +182,10 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   const routineEnabledMatch = /^\/api\/routines\/([^/]+)\/enabled$/.exec(url.pathname);
   if (routineMatch && req.method === "PUT") { sendJson(res, 200, await deps.routines.update(routineMatch[1], jsonBody(await readJsonBody(req)) as never)); return; }
   if (routineEnabledMatch && req.method === "POST") { sendJson(res, 200, await deps.routines.setEnabled(routineEnabledMatch[1], jsonBody(await readJsonBody(req)).enabled)); return; }
+  if (req.method === "GET" && url.pathname === "/api/reservations") { sendJson(res, 200, { items: await deps.reservations.listReady() }); return; }
+  if (req.method === "POST" && url.pathname === "/api/reservations") { sendJson(res, 201, await deps.reservations.create(uiReservationInput(jsonBody(await readJsonBody(req))), "ui")); return; }
+  const reservationCancel = /^\/api\/reservations\/([^/]+)\/cancel$/.exec(url.pathname);
+  if (req.method === "POST" && reservationCancel) { sendJson(res, 200, await deps.reservations.cancel(reservationCancel[1])); return; }
   if (await handleDiff(deps, req, res, url)) return;
   if (await handlePr(deps, req, res, url)) return;
   if (await handlePicks(deps, req, res, url)) return;
@@ -185,6 +195,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   if (await handleAccount(deps, req, res, url)) return;
   if (await handleChat(deps, req, res, url)) return;
   if (await handleUploads(deps, req, res, url)) return;
+  if (await handleUploadFiles(deps, req, res, url)) return;
   if (await handleDailyUse(deps, req, res, url)) return;
   const removeMatch = /^\/api\/sessions\/([^/]+)$/.exec(url.pathname);
   if (req.method === "DELETE" && removeMatch) {
@@ -293,6 +304,31 @@ export function jsonBody(body: unknown): Record<string, unknown> {
   return body as Record<string, unknown>;
 }
 
+/** 画面からの予約には purpose・measureNote を持たせない（測定目的の制限は AI 用の経路だけ） */
+function uiReservationInput(body: Record<string, unknown>): Record<string, unknown> {
+  const { purpose: _purpose, measureNote: _measureNote, ...rest } = body;
+  return rest;
+}
+
+const safeDecode = (raw: string): string => { try { return decodeURIComponent(raw); } catch { throw new BadRequestError("malformed id"); } };
+
+const AGENT_RESERVATION_PATH = /^\/api\/agent\/reservations(?:\/([^/]+)\/cancel)?$/;
+
+/**
+ * AI 用の予約の受け取り口（/api/agent/reservations の GET・POST と /:id/cancel の POST だけ）。認証の前に分ける。
+ * Host は検査済み。順序: Origin ヘッダーがあれば 403 → 合言葉が無ければ 401 → Bearer を定数時間比較（不一致 401）→ 本文 → 処理。
+ */
+async function handleAgentReservations(deps: AppDeps, req: IncomingMessage, res: ServerResponse, match: RegExpExecArray): Promise<void> {
+  if (req.headers.origin !== undefined) { sendJson(res, 403, { error: "forbidden" }); return; }
+  const presented = (req.headers.authorization ?? "").replace(/^Bearer /, "");
+  if (deps.reserve.token === null || !sameSecret(presented, deps.reserve.token)) { sendJson(res, 401, { error: "unauthorized" }); return; }
+  const id = match[1];
+  if (req.method === "GET" && id === undefined) { sendJson(res, 200, { items: await deps.reservations.listReady() }); return; }
+  if (req.method === "POST" && id === undefined) { sendJson(res, 201, await deps.reservations.create(jsonBody(await readJsonBody(req)), "agent")); return; }
+  if (req.method === "POST" && id !== undefined) { sendJson(res, 200, await deps.reservations.cancel(safeDecode(id))); return; }
+  sendJson(res, 404, { error: "not found" });
+}
+
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
 /**
@@ -383,6 +419,11 @@ export function createRequestHandler(deps: AppDeps) {
       // 拡張からの部品の受け取り口。認証の前に通すのはこの完全一致の 1 本だけ（Origin と合言葉で守る）
       if (req.method === "POST" && url.pathname === PICK_INGEST_PATH) {
         await handlePickIngest(deps, req, res);
+        return;
+      }
+      const agentReservation = AGENT_RESERVATION_PATH.exec(url.pathname);
+      if (agentReservation) {
+        await handleAgentReservations(deps, req, res, agentReservation);
         return;
       }
       if (url.pathname.startsWith("/api/")) {

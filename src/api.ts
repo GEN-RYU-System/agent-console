@@ -1,4 +1,4 @@
-import type { AccountResponse, ActivityResponse, BoardResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, ResumeTarget, Routine, RoutineInput, UsageResponse } from "./types";
+import type { AccountResponse, ActivityResponse, BoardResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, Reservation, ReservationInput, ResumeTarget, Routine, RoutineInput, UsageResponse } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -149,6 +149,9 @@ export const fetchRoutines = (): Promise<{ items: Routine[] }> => request("/api/
 export const createRoutine = (input: RoutineInput): Promise<Routine> => request("/api/routines", { method: "POST", body: JSON.stringify(input) });
 export const updateRoutine = (id: string, input: RoutineInput): Promise<Routine> => request(`/api/routines/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(input) });
 export const setRoutineEnabled = (id: string, enabled: boolean): Promise<Routine> => request(`/api/routines/${encodeURIComponent(id)}/enabled`, { method: "POST", body: JSON.stringify({ enabled }) });
+export const fetchReservations = (): Promise<{ items: Reservation[] }> => request("/api/reservations");
+export const createReservation = (input: ReservationInput): Promise<Reservation> => request("/api/reservations", { method: "POST", body: JSON.stringify(input) });
+export const cancelReservation = (id: string): Promise<Reservation> => request(`/api/reservations/${encodeURIComponent(id)}/cancel`, { method: "POST", body: "{}" });
 
 /** ペアリングコードを引換えてセッショントークンを得る（認証前の API）。 */
 export async function redeemCode(code: string): Promise<string> {
@@ -201,6 +204,12 @@ function readBytes(file: Blob): Promise<Uint8Array> {
     reader.onerror = () => reject(reader.error ?? new Error("read failed"));
     reader.readAsArrayBuffer(file);
   });
+}
+
+/** 端末に貼る画像以外のファイルを、元の名前（サーバーが安全に直す）で保存してもらい、保存先の絶対パスを受け取る。大きさはサーバーが検査する。 */
+export async function uploadFile(file: File): Promise<{ path: string }> {
+  const data = toBase64(await readBytes(file));
+  return request("/api/uploads/files", { method: "POST", body: JSON.stringify({ name: file.name, data }) });
 }
 
 /** 端末に貼る画像を保存してもらい、保存先の絶対パスを受け取る（PNG と JPEG だけ。形式と大きさはサーバーが検査する）。 */
