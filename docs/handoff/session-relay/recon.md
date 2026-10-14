@@ -10,7 +10,7 @@
 - server/hub.ts:553（snapshot）`name: agent?.name !== undefined && agent.name !== "" ? agent.name : s.name`。Claude が動いている間は Claude 側の名前が優先される。
 - 実機（r2）: 起動直後の Claude の name は cwd のフォルダ名からの自動名（例 "work-06"）。そのため、アプリで付けた名前が自動名に負ける。
 - 実機（r2）: `/rename X` を送ると約5秒後に name が X になり、次の指示の後も X のまま。`claude -n X` で起動しても X で保たれる。
-- 役割の command は ccopusgo などのシェル関数で、`-n` を足すには関数の変更が要る（r1）。よって `/rename` を送る経路を採る。
+- 役割の command は役割ごとに固定の配列（agent-console.config.json:33 `/bin/zsh -ic ccopusgo`、:42 `claude --model sonnet`）で、セッションごとに変わる名前を渡す仕組みが無い。よって `/rename` を送る経路を採る。
 
 ## S2 既存の改名の仕組み
 - server/hub.ts:199-208 requestRename: checkInput が ok ならすぐ applyRename、そうでなければ pendingRenames に予約。

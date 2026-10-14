@@ -1,95 +1,170 @@
-# ボタン1つで次のセッションへ引き継ぐ・名前が英語に戻る不具合（session-relay）設計 第1版
+# ボタン1つで次のセッションへ引き継ぐ・名前が英語に戻る不具合（session-relay）設計 第2版
 
-- 状態: 設計案（Opus 作成）。審査前。PO の実装承認は無い。
-- 調査: recon.md（同じフォルダ）。行番号は recon の S1〜S7 を指す。
+- 状態: 設計案 第2版（Opus 2026-10-14）。第1版は Fable 審査で REVISE（/tmp/CC報告ファイル/session-relay/review-design1/review.md、§12 に対応表）。第2版の審査前。PO の実装承認は無い。実装未着手。
+- 調査: recon.md（同じフォルダ）。行番号は基準 origin/main 0a8266c。コードの写しは /tmp/CC報告ファイル/session-relay/r3/code.txt・code2.txt。
 
 ## 1 目的（PO の言葉は recon.md の冒頭）
 - A（不具合）: アプリで名前を付けて開いたセッションが、Claude が立ち上がった後も、その名前のまま一覧に出る。
 - B（新機能）: 一覧のボタン1つで、今のセッションに引き継ぎ書を書かせ、名前の末尾の数字を1つ増やした新しいセッションを開き、引き継ぎ書を読ませて続きに着手させ、画面を新しいセッションに切り替える。
 
 ## 2 対象と対象外
-- 対象: server/sessions.ts、server/hub.ts、server/launch.ts、新規 server/relay.ts、server/http.ts、server/config.ts、src/components/SessionList/SessionList.tsx、src/pages/ConsolePage.tsx、src/types.ts、src/api.ts、src/locales/ja.json・en.json、試験。
-- 対象外（触らない）: 役割のシェル関数（ccopusgo など、`-n` は足さない）、hooks/ac-statusline.mjs、会話の量（%）の表示（次の版で検討。今回は PO が自分で押す時を決める）、古いセッションを自動で閉じること、resume()（再開の選択リスト。名前は選んだ会話の物を尊重する）、アカウント切り替えの端末。
+- 触る: server/sessions.ts、server/hub.ts、server/launch.ts、server/relay.ts（新規）、server/http.ts、server/config.ts、server/index.ts、src/types.ts、src/api.ts、src/components/SessionList/SessionList.tsx、src/pages/ConsolePage.tsx、src/locales/ja.json、tests/fixtures/e2e-env.ts、試験（§11）、docs/CHANGELOG.md、README.md、版の4か所。
+- 触らない: 役割の command（agent-console.config.json の各役割。`-n` は足さない）、hooks/ac-statusline.mjs、server/restore.ts の保存の形、ws.ts、会話の量（%）の表示（次の版で検討）、古いセッションを自動で閉じること、resume()（再開の選択リスト）、アカウント切り替えの端末。
+- i18n: このリポジトリの文言は src/locales/ja.json だけ（src/i18n.ts:3-4,19,21、en.json は無い）。新しい文言は ja.json に足す。
 
-## 3 A: 初回の名前合わせ
+## 3 端末への書き込みを1つずつにする（書き込みの印）
 ### 変更前
-- 起動直後の Claude は自動名（例 "work-06"）を持ち、server/hub.ts:553 で Claude 側の名前が優先されるので、アプリの名前が負ける（recon S1）。
+- server が端末に書く所は 3 つあり、互いを見ていない: 送信の予約（hub.ts:377 貼り付け → :378 待つ → :381 Enter）、定期実行・予約の指示（hub.ts:393-401 submitText、同じ2回書き）、改名（hub.ts:215 `/rename …\r`）。2回書きの間に別の書き込みが入ると、入力が連結されて壊れる。
 ### 変更後
-- Session に `initialName?: string` を持たせる。spawnSession の呼び出し元のうち create()（sessions.ts:262）と restore()（:320）で、渡された名前を入れる。resume() とアカウント切り替えでは入れない。
-- restore() の入力に `manualInitialName?: boolean` を足す。true のときは initialName を入れない（launchAndSend と引き継ぎが自分で送るため。§3 の競合の項）。
-- hub の定期取得（:158 の flushPendingRenames の直後）に flushInitialNames を足す。各 initialName について:
-  1. セッションが無い・終了 → initialName を消す。
-  2. pendingRenames に同じ id がある（PO が後から改名した）→ initialName を消す（PO の新しい指示を優先）。
-  3. 作成から 10 分過ぎても入力待ちにならない → 消す（送らない）。
-  4. flushPendingRenames と同じ取り直し判定（polled → checkInput）で ok かつ hasClaude のとき、Claude 側の名前が initialName と違えば `/rename <initialName>\r` を 1 回書き、initialName を消す。同じなら書かずに消す。
-- 競合: 指示の自動送信（launchAndSend の submitText は「貼り付け → 待つ → \r」の2回に分けて書く、hub.ts:393-401）の途中に `/rename …\r` が割り込むと入力が壊れる。そのため launchAndSend と引き継ぎは manualInitialName=true で開き、次の順に自分で送る: waitReady → hub.sendName(id, name)（`/rename` を書く）→ waitName（Claude 側の名前が name になるまで 3 秒ごと・最大 15 秒。超えても次へ進む）→ waitReady → submitText。
-- routines・reservations のセッション名（sessionNameFor、launch.ts:58-62）もこれで Claude 側に入る。
+- Hub に `private readonly writing = new Set<string>()`（セッション id）と次の2つを足す。
+  - `tryBeginWrite(id): boolean` … 印が無ければ付けて true、有れば false。
+  - `endWrite(id): void` … 印を外す。
+- 2回書きの処理は印を取ってから書き、finally で外す:
+  - flushChatQueue（hub.ts:377-381 の書き込みの前後）。取れなければ何もせず戻る（次の定期取得で再び試す）。
+  - submitText（hub.ts:393-401）。取れなければ 1 秒ごとに最大 10 秒待ち、取れなければ false。
+- 1回書き（`/rename …\r`）は、印が有れば書かない:
+  - applyRename の呼び出し元 requestRename（hub.ts:199-208）: 印が有れば pendingRenames に入れて "queued" を返す。
+  - flushPendingRenames（hub.ts:223-242）と §4 の flushInitialNames: 印が有ればその回は飛ばす。
+- 受け入れる危険: 人が端末に直接打つ文字（ws.ts:36 → sessions.write）は印を見ない（今も同じ）。印の間に人が打った文字は混ざり得る。今の改名の予約と同じ水準として受け入れる。
 ### 受入
-- K1: 名前「テスト5」で新しいセッションを作る → Claude の入力待ちから 30 秒以内に一覧の名前が「テスト5」になり、指示を1回送った後も「テスト5」のまま（実機、K11 と同時）。
-- K2: 単体試験で、initialName があり pendingRenames もあるとき、`/rename` は予約の名前で 1 回だけ書かれる。
-- K3: 単体試験で、ok かつ hasClaude になるまで書かれない。名前が同じなら書かれない。10 分で消える。
-- K4: 単体試験で、launchAndSend の書き込み順が「/rename → 指示の貼り付け → \r」で、間に別の書き込みが入らない（manualInitialName で定期取得が送らない）。
+- K1: 単体試験で、送信の予約の貼り付けと Enter の間に requestRename が来ても `/rename` は書かれず予約になり、Enter の後の定期取得で1回書かれる。
+- K2: 単体試験で、submitText の印が有る間は flushPendingRenames・flushInitialNames が書かない。
 
-## 4 B: 引き継ぎ
-### 4-1 入口と条件（server/http.ts）
-- `POST /api/sessions/:id/relay` → 202 `{ relayId }`。本文は受けない（名前・文は server が決める。画面の文字列をコマンドに入れない）。
-- 409 の条件: セッションが無い・終了／hasClaude でない／checkInput が ok でない（待機中でない）／役割が config.roles に無い・アカウント切り替え／同じセッションの引き継ぎが進行中／hasCapacity が false。
-### 4-2 新しい名前（server/relay.ts の nextRelayName、純関数）
-- 今の表示名（snapshot の name）の末尾の半角数字を 1 増やす。桁数は元の桁数を下回らないよう 0 で埋める。例: "Agent Console2"→"Agent Console3"、"v9"→"v10"、"x009"→"x010"。
-- 末尾に半角数字が無ければ "2" を付ける。例: "設計"→"設計2"。全角数字は数字として扱わない。
-- 40 字（UTF-16 の長さ、launch.ts:8）を超えるときは、数字より前の部分をコードポイント単位で後ろから縮める。
-### 4-3 引き継ぎ書の置き場所
-- config に `relayDir`（既定 `~/CC報告ファイル-keep/relay`、`~` は home に展開）を足す。試験は一時フォルダを渡す。
-- 1回ごとのフォルダ `<relayDir>/<YYYYMMDD-HHmmss JST>-<古いセッション id の先頭 8 字>/`（700）を server が先に作る。中の `HANDOFF.md` を Claude に書かせる。
-### 4-4 流れ（server/relay.ts の RelayManager、進行は server 側。画面を閉じても続く）
-1. phase "handoff": 古いセッションに submitText で次の決まった文を送る（`<パス>` は 4-3 の絶対パス）。
+## 4 A: 初回の名前合わせ
+### 変更前
+- 起動直後の Claude は cwd のフォルダ名からの自動名（例 "work-06"）を持ち、hub.ts:553 で Claude 側の名前が優先されるので、アプリの名前が負ける（recon S1）。
+- `-n` を使わない理由: 役割の command は役割ごとに固定の配列（agent-console.config.json:33 は `/bin/zsh -ic ccopusgo`、:42 は `claude --model sonnet`）で、セッションごとに変わる名前を渡す仕組みが無い。`/rename` は既存の改名（hub.ts:211-220）と同じ経路なので、こちらを使う。
+### 変更後
+- Session（sessions.ts:59-74）に `initialName?: string` を足す。
+- spawnSession（sessions.ts:372-）の後、呼び出し元ごとに次のとおり入れる:
+  - create()（:262）: 入れる（値は渡された名前）。
+  - restore()（:320）: 次の3つを全部満たすときだけ入れる。① 入力の `manualInitialName` が true でない ② claudeSessionId を使った起動でない（:322-323 の useRestore が false）③ 結果の session.reattached が true でない（動いていた tmux へのつなぎ直しでない）。
+  - resume()・createAccountLogin(): 入れない。
+- restore() の入力の型に `manualInitialName?: boolean` を足す。
+- Hub に `flushInitialNames()` を足し、pollAgents（hub.ts:154-160）の `await this.flushPendingRenames();`（:157）の直後で呼ぶ。各セッションについて:
+  1. initialName が無い → 飛ばす。
+  2. 終了している → initialName を消す。
+  3. pendingRenames に同じ id がある（後から PO が改名した）→ initialName を消す。
+  4. createdAt から 10 分を過ぎた → initialName を消す（送らない）。
+  5. 書き込みの印が有る → この回は飛ばす。
+  6. flushPendingRenames と同じ二段の判定（polled の inputVerdict → checkInput）で ok かつ hasClaude のとき: Claude 側の名前が initialName と違えば `/rename <initialName>\r` を1回書く。どちらでも initialName を消す。
+- launchAndSend（launch.ts:82-94）: restore を `manualInitialName: true` で呼び、waitReady の後に次の順で送る: `hub.sendName(id, name)` → `waitName`（3 秒ごと、Claude 側の名前が name になるまで、最大 15 秒。超えても次へ進む）→ waitReady → submitText。sendName は印を取って `/rename <name>\r` を1回書き、外す（取れなければ書かずに false）。waitReady（launch.ts:70-79）は export する。
+- routines（routines.ts:90）・reservations（reservations.ts:230）は launchAndSend を通るので、変更は launch.ts の1か所。
+### 受入
+- K3: 名前「テスト5」で新しいセッションを作る → Claude の入力待ちから 30 秒以内に一覧の名前が「テスト5」になり、指示を1回送った後も「テスト5」のまま（実機のみ。e2e の stub は名前を1つしか持てない、tests/fixtures/claude-stub.sh:13-15）。
+- K4: 単体試験で、pendingRenames が有れば `/rename` は予約の名前で1回だけ書かれる。ok かつ hasClaude になるまで書かれない。名前が同じなら書かれない。10 分で消える。
+- K5: 単体試験で、restore が claudeSessionId 付き・reattached・manualInitialName のときは initialName が入らない。
+- K6: 単体試験で、launchAndSend の書き込み順が「/rename → 指示の貼り付け → Enter」で、定期取得の flushInitialNames は何も書かない。
+
+## 5 B: 引き継ぎ
+### 5-1 使える条件（server/config.ts）
+- config に `relayDir?: string` と `relayHandoffTimeoutMs?: number`（既定 1800000＝30 分）を足す。`~` は expandHome（config.ts:116-120）と同じ扱い。
+- relayDir が config に無いとき: 本番のポート（AGENT_CONSOLE_PORT が未設定か空）なら既定 `~/CC報告ファイル-keep/relay`。ポートを指定して起動したサーバー（自己診断・e2e）では引き継ぎを使えない（409 "relay not configured"）。e2e は tests/fixtures/e2e-env.ts（:111-161 の config を書く所）で一時フォルダの relayDir を渡す。
+### 5-2 入口（server/http.ts）
+- `POST /api/sessions/:id/relay` → 202 `{ relayId }`。本文は受けない（名前・文は server が決める）。
+- 409（理由の文字列は括弧内）: 引き継ぎを使えない（relay not configured）／セッションが無い・終了（session not found / stopped）／hasClaude でない・checkInput が ok でない（not idle）／役割が config.roles に無い・アカウント切り替え（role cannot relay）／送信の予約が残っている（chatQueueOf(id) が空でない）・名前の変更の予約が残っている（pending work）／このセッションが進行中の引き継ぎの古い側か新しい側（relay in progress）／hasCapacity が false（too many sessions）。
+### 5-3 新しい名前（server/relay.ts の nextRelayName、純関数）
+- 入力は今の表示名（snapshot の name）。最初に無害化する: 制御文字（`/[\u0000-\u001f\u007f]/g`）を除き、前後の空白を除く。空になればアプリ側の名前（session.name）を使う。
+- 末尾が「MM/DD HH:mm」の形（定期実行・予約が付ける日時、launch.ts:56-62）のとき: 末尾に " 2" を付ける。例: "設計 09/15 10:30"→"設計 09/15 10:30 2"、その次は "… 3"。
+- それ以外で末尾が半角数字のとき: その数字に 1 を足す。桁は元の桁数を下回らないよう 0 で埋める。例: "Agent Console2"→"Agent Console3"、"v9"→"v10"、"x009"→"x010"。
+- 末尾が半角数字でないとき: "2" を付ける。例: "設計"→"設計2"。全角数字は数字として扱わない。
+- 40 字（UTF-16 の長さ、launch.ts:8）を超えるときは、数字より前の部分をコードポイント単位で後ろから縮める（絵文字の途中で切らない）。
+- 最後に validateName（sessions.ts:79-85）を通す。
+### 5-4 引き継ぎ書の置き場所
+- relayDir を 700 で作る（既にあれば mode を変えない）。1回ごとのフォルダ `<relayDir>/<YYYYMMDD-HHmmss JST>-<古いセッション id の先頭 8 字>/` を 700 で作る。中の `HANDOFF.md` を Claude に書かせる。フォルダは消さない。
+### 5-5 流れ（server/relay.ts の RelayManager。進行は server 側にあり、画面を閉じても続く）
+- 進行の記録 RelayView: `{ relayId, oldSessionId, oldName, newName, phase, newSessionId?, reason? }`。phase は "handoff" | "launching" | "sending" | "done" | "failed"。phase が変わるたびに `hub.setRelays(list)` を呼ぶ（hub.setRestoreNotices hub.ts:193 と同じ形で、publish する）。
+1. phase "handoff": 古いセッションに submitText で次の決まった文を送る（`<パス>` は 5-4 の絶対パス）。submitText が false なら failed "send_failed"。
    「このセッションの作業を次のセッションに引き継ぎます。<パス> に Markdown で引き継ぎ書を書いてください。書く項目: 目的と PO の言葉の原文／決まったこと／今の状態（作業場所・ブランチ・PR・動いている担当）／終わっていない作業と次の一手（順番つき）／注意点と守るルール／読むべきファイルのパス。書き終えたら、そのパスだけを返答してください。新しい作業は始めないでください。」
-2. 3 秒ごとに見る。完了の条件は「HANDOFF.md が有り大きさが 0 より大きい」かつ「送った後に一度 ok でない状態を見た」かつ「今 ok」。許可待ち（waiting）は PO が古いセッションで許可すれば続く。30 分（config `relayHandoffTimeoutMs`）を超えたら failed "handoff_timeout"。古いセッションが終了したら failed "gone"。
-3. phase "launching": hasCapacity を見直す（false なら failed "full"）。sessions.restore({ role: 古い役割, name: 新しい名前, cwd: 古い cwd, branch: 古い branch, manualInitialName: true })。worktree は新しく作らない（sessions.ts:320-327）。claudeSessionId は渡さない（新しい会話）。
-4. waitReady（launch.ts:70-79 を export して使う。120 秒）。だめなら failed "not_ready"（開いたセッションは残す）。
-5. phase "sending": sendName → waitName → waitReady → submitText で次の文を送る。
-   「前のセッション「<古い名前>」からの引き継ぎです。<パス> を読み、書かれた次の一手から続きに着手してください。」
+2. 3 秒ごとに見る。次の全部で完了: HANDOFF.md が有り大きさが 0 より大きい／checkInput が今 ok／「送った後に一度 ok でない状態を見た」または「送ってから 60 秒過ぎた」（短い間に書き終えて作業中を一度も見られなかった場合の道）。許可待ちは、PO が古いセッションで許可すれば続く。relayHandoffTimeoutMs を超えたら failed "handoff_timeout"（ファイルが途中まであっても新しいセッションは開かない）。古いセッションが終了したら failed "gone"。
+3. phase "launching": hasCapacity を見直す（false なら failed "full"）。`sessions.restore({ role: 古い役割, name: 新しい名前, cwd: 古い cwd, branch: 古い branch, manualInitialName: true })`。worktree は新しく作らず（sessions.ts:320-327）、claudeSessionId は渡さない（新しい会話）。例外は catch し、SessionInputError の "too many sessions" なら failed "full"、それ以外は failed "start_failed"。
+4. waitReady（120 秒）。false なら failed "not_ready"（開いたセッションは残す）。
+5. phase "sending": sendName → waitName → waitReady → submitText で次の文を送る。waitReady が false なら failed "not_ready"、submitText が false なら failed "send_failed"（どちらも開いたセッションは残す）。
+   「前のセッション「<古い名前>」からの引き継ぎです。<パス> を読み、書かれた次の一手から続きに着手してください。」（<古い名前> は 5-3 の無害化を通した物）
 6. phase "done"、newSessionId を記録する。古いセッションは閉じない。
-- 進行の記録はメモリだけ（server を再起動すると消える）。終わった記録は 10 分後に消す。
-### 4-5 画面
-- SessionView ではなく ConsoleState に `relays: RelayView[]`（relayId・oldSessionId・newName・phase・newSessionId?・reason?）を足し、snapshot で送る。
-- 一覧の行（SessionList.tsx の閉じるボタンの左）に、`s.state === "idle" && s.hasClaude` のときだけ、引き継ぎのボタン（Button variant="ghost" size="sm" iconOnly、lucide の ArrowRightLeft、aria-label・title は t("ac.relay.open")、data-testid="relay-session"）。進行中の行には出さず、代わりに Badge（variant="info"、t("ac.relay.running")、data-testid="relay-badge"）。
-- 押すと ConfirmModal（ConsolePage.tsx の閉じる確認と同じ部品）: 題 t("ac.relay.title")、本文 t("ac.relay.body", { name })「「{{name}}」に引き継ぎ書を書かせてから、名前の数字を1つ増やした新しいセッションを開いて続きを渡します。今のセッションは閉じずに残ります。」、確定 t("ac.relay.confirm")。
-- done を受けたとき、選択中が古いセッションなら新しいセッションを選ぶ（同じ relayId で 1 回だけ）。
-- failed は Callout variant="warning"（t("ac.relay.failed.<reason>", { name })）を一覧の上に出し、閉じるボタンで消せる（restoreNotices と同じ扱い）。
-- 新しい色・余白の直値は書かない。既存の @sa 部品と CSS 変数だけを使う。
+- 終わった記録（done・failed）は 10 分後に消す。進行の記録はメモリだけ。
+- 受け入れる限界: server を再起動すると進行中の記録は消える（tmux で古いセッションは生き残り、引き継ぎ書は書き終わるが、新しいセッションは開かれず、画面にも何も出ない）。PO はもう一度ボタンを押せる（新しいフォルダに書き直す）。
+### 5-6 画面
+- 型: server の Snapshot（hub.ts:61）と画面の ConsoleState（src/types.ts:45）に `relays?: RelayView[]` を足す。空のときはキーを省く（terminalNotices と同じ、hub.ts:571）。手書きの ConsoleState を使う既存の試験は変えなくてよい。
+- src/api.ts に `relaySession(id)`（POST /api/sessions/:id/relay）を足す。
+- 一覧の行（SessionList.tsx の閉じるボタン :150-162 の左）:
+  - 引き継ぎのボタン: `s.state === "idle" && s.hasClaude` で、かつ進行中の引き継ぎ（phase が handoff・launching・sending）の古い側・新しい側のどちらでもない行だけ。Button variant="ghost" size="sm" iconOnly、アイコンは lucide-react の ArrowRightLeft、aria-label・title は t("ac.relay.open")、data-testid="relay-session"。
+  - 進行中の行（古い側・新しい側の両方）: Badge variant="info" size="sm"、t("ac.relay.running")、data-testid="relay-badge"。
+  - SessionList の props に `relayBusyIds: ReadonlySet<string>` と `onRelay: (id: string) => void` を足す。
+- ConsolePage: relayTargetId の state を足し、ConfirmModal（:504 の閉じる確認と同じ props の形）を出す。題 t("ac.relay.title")、本文 t("ac.relay.body", { name })、確定 t("ac.relay.confirm")、取消は既存と同じ。確定で relaySession を呼ぶ。409 などの失敗は既存の closeError と同じ形の Callout で出す（t("ac.relay.error")）。
+- done を受けたとき、選択中が古いセッションなら新しいセッションを選ぶ（同じ relayId で1回だけ。処理した relayId を useRef の Set で持つ）。
+- failed は一覧の上に Callout variant="warning"（題 t("ac.relay.failedTitle")、本文 t("ac.relay.failed.<reason>", { name: oldName })）。閉じるボタン（t("ac.relay.dismiss")）で、その relayId を画面側で隠す。
+- 新しい色・余白の直値は書かない（npm run lint の scripts/check-design-governance.mjs が見る）。
+- ja.json に足すキー: ac.relay.open「次のセッションへ引き継ぐ」、ac.relay.running「引き継ぎ中」、ac.relay.title「次のセッションへ引き継ぐ」、ac.relay.body「「{{name}}」に引き継ぎ書を書かせてから、名前の数字を1つ増やした新しいセッションを開いて続きを渡します。今のセッションは閉じずに残ります。」、ac.relay.confirm「引き継ぐ」、ac.relay.error「引き継ぎを始められませんでした」、ac.relay.failedTitle「引き継ぎが止まりました」、ac.relay.dismiss「閉じる」、ac.relay.failed.send_failed「「{{name}}」に文を送れませんでした」、.handoff_timeout「「{{name}}」の引き継ぎ書が 30 分以内にできませんでした」、.gone「「{{name}}」が終了しました」、.full「セッションの数が上限のため、新しいセッションを開けませんでした」、.start_failed「新しいセッションを起動できませんでした」、.not_ready「新しいセッションが入力待ちになりませんでした（開いたセッションは残っています）」。
 ### 受入
-- K5: ボタンは待機中かつ Claude ありの行だけに出る（単体の画面試験で working・waiting・no-claude・stopped では出ない）。
-- K6: nextRelayName の単体試験（4-2 の例すべて、40 字の縮め、絵文字を途中で切らない）。
-- K7: RelayManager の単体試験（偽の hub・sessions）で、4-4 の順に書かれ、HANDOFF.md 作成前は launching に進まず、新しいセッションは古い cwd・branch・役割・新しい名前・manualInitialName=true で開かれ、最後の文にパスが入る。
-- K8: 失敗の単体試験: 待機中でない／空きなし → 409 でフォルダを作らない。30 分で handoff_timeout（新しいセッションを開かない）。古いセッションの終了で gone。
-- K9: ポートを指定して起動したサーバー（e2e）は config の relayDir（一時フォルダ）にだけ書く。
-- K10: typecheck・lint・単体・e2e が通る。ja.json と en.json のキーが同じ。
-- K11: PO の目視。実際のセッションでボタンを押し、①古いセッションが引き継ぎ書を書く ②名前の数字が1つ増えた新しいセッションが開く ③新しいセッションが引き継ぎ書を読んで続きに着手する ④画面が新しいセッションに切り替わる ⑤古いセッションが残る、の5点が○。
+- K7: 画面の単体試験で、ボタンは idle かつ hasClaude の行だけに出て、working・waiting・no-claude・stopped と、進行中の引き継ぎの両側の行には出ない。両側の行にはバッジが出る。
+- K8: nextRelayName の単体試験: 5-3 の例すべて、40 字を超える名前の縮め、絵文字を途中で切らない、制御文字（ESC など）を含む名前は除いて扱う、空になればアプリ側の名前。
+- K9: RelayManager の単体試験（偽の hub・sessions、作法は tests/unit/routines.test.ts:30-50）で、5-5 の順に書かれ、HANDOFF.md ができる前は launching に進まず、新しいセッションは古い cwd・branch・役割・新しい名前・manualInitialName=true で開かれ、最後の文にパスと無害化した古い名前が入る。作業中を一度も見ないまま 60 秒過ぎたら完了する。
+- K10: 失敗の単体試験: 5-2 の 409 の各条件でフォルダを作らない。handoff_timeout・gone・full（hasCapacity と restore の例外の両方）・start_failed・not_ready（手順4と5）・send_failed（手順1と5）がそれぞれの reason になる。
+- K11: e2e で、一時フォルダの relayDir を渡したサーバーでボタンを押すと、その一時フォルダにだけフォルダができ、stub の古いセッションに文が送られる（stub は書かないので、K11 は 409 の無い開始と送信までを見る）。relayDir を渡さないポート指定のサーバーでは 409 になる。
+- K12: typecheck・lint・単体・e2e が通る。ja.json に 5-6 のキーが全部ある。
+- K13: PO の目視。実際のセッションでボタンを押し、①古いセッションが引き継ぎ書を書く ②名前の数字が1つ増えた新しいセッションが開く ③新しいセッションが引き継ぎ書を読んで続きに着手する ④画面が新しいセッションに切り替わる ⑤古いセッションが残る、の5点が○。
 
-## 5 代替案と選んだ理由
-- 名前: 役割の command に `-n` を足す案は、シェル関数（ccopusgo など）の変更が要り、アプリの外の設定を触るので採らない。`/rename` は既存の改名（hub.ts:211-220）と同じ経路。
-- 引き継ぎ書: 新しいセッションに古い会話を丸ごと渡す（--resume・/compact）案は、会話の量を減らすという目的に合わないので採らない。
-- 完了の判定: 時間だけで待つ案は、書き終わる前に次へ進む恐れがあるので、ファイルの存在と状態の戻りの両方を見る。
+## 6 代替案と選んだ理由
+- 名前: command に `-n` を足す案は、名前をセッションごとに渡す仕組み（環境変数など）を新しく作る必要があり、役割の設定にも手が入るので採らない。
+- 引き継ぎ書: 新しいセッションに古い会話を丸ごと渡す（--resume・/compact）案は、会話の量を減らす目的に合わないので採らない。
+- 完了の判定: 時間だけで待つ案は書き終わる前に進む恐れがあるので、ファイル・状態・時間の3つを見る。
 - 進行を画面側で行う案は、画面を閉じると止まるので server 側にする。
+- 書き込みの印: 送信の予約の印 chatFlushing（hub.ts:98）を使い回す案は、意味（予約の同時実行の防止）が違うので、別の印 writing を足す。
 
-## 6 リスクと対処
-- 書き込みの許可待ち: relayDir が作業フォルダの外なので、Claude が許可を求める場合がある【未確認、工程0で確かめる】。許可待ちは失敗にせず 30 分まで待つ。
-- 引き継ぎ書の質: Claude の書く中身はこの機能では保証しない。項目は 4-4 の決まった文で指定する。
+## 7 リスクと対処
+- 書き込みの許可待ち: relayDir は作業フォルダの外なので、Claude が許可を求める場合がある【未確認、工程0】。許可待ちは失敗にせず、時間切れまで待つ。
+- 引き継ぎ書の中身の質はこの機能では保証しない。項目は 5-5 の決まった文で指定する。
 - tmux の中での `/rename` の挙動【未確認、工程0】。
-- 同時に複数押す: 同じセッションは 409。別々のセッションは、それぞれ空き（hasCapacity）を見る。
+- 人が端末に直接打つ文字と server の書き込みが重なる危険は残る（§3）。
+- server の再起動で進行中の引き継ぎが消える（5-5）。
+- lucide-react 1.55.0 に ArrowRightLeft が有るか【未確認、工程0】。無ければ実装を止めて Opus に報告する（別のアイコンを推測で選ばない）。
 
-## 7 戻し方
-- 版を戻す（前の版のタグで update-when-idle）。データの形は変えない（relays はメモリだけ、relayDir のファイルは残っても害が無い）。
+## 8 戻し方
+- 前の版のタグで update-when-idle を実行する。保存の形は変えない（relays はメモリだけ。relayDir のファイルは残っても害が無い）。
 
-## 8 維持する仕組み
-- 単体試験 K2〜K4・K6〜K8 と e2e K9 を CI で毎回回す。
-
-## 9 版
-- マージ時点の次の空きのマイナー版。
+## 9 維持する仕組み
+- K1・K2・K4〜K12 の試験を CI で毎回回す。
 
 ## 10 工程
-- 工程0（実機・Sonnet、コードは変えない）: アプリから tmux の中で開いたセッションで、(a) 入力待ちの直後に `/rename 名前` を送ると名前が変わり指示の後も保たれるか、(b) `~/CC報告ファイル-keep/relay/試験/HANDOFF.md` に書いてと頼むと許可を求めるか、を確かめ /tmp/CC報告ファイル/session-relay/stage0/ に生出力を残す。127.0.0.1:4319 の本番には操作しない（試験用ポートのサーバーを使う）。
-- 工程1（server）: §3 と §4-1〜4-4、単体試験。
-- 工程2（画面）: §4-5、i18n、画面試験、e2e。
-- 工程3: 版上げ・CHANGELOG・README、PR。
+- 工程0（Sonnet、コードは変えない）:
+  (a) 本番（127.0.0.1:4319）には操作せず、ポートを指定して起動した試験用のアプリから tmux の中で開いたセッションで、入力待ちの直後に `/rename 名前` を送ると名前が変わり、次の指示の後も保たれるかを見る。
+  (b) 同じセッションで「`~/CC報告ファイル-keep/relay-stage0/HANDOFF.md` に1行書いて」と頼み、Claude が許可を求めるかを見る（本番の既定の場所の兄弟フォルダ。作ったフォルダは消さずに残し、報告に書く）。
+  (c) `ls node_modules/lucide-react/dist/esm/icons/ | grep arrow-right-left` とその export の有無。
+  生出力は /tmp/CC報告ファイル/session-relay/stage0/ に置く。
+- 工程1（server）: §3・§4・§5-1〜5-5 と単体試験（K1・K2・K4〜K6・K8〜K10）。
+- 工程2（画面）: §5-6、ja.json、画面試験（K7）、e2e（K11）。
+- 工程3: 版を上げる（package.json:3、package-lock.json:3,9、extension/manifest.json:4）、docs/CHANGELOG.md（1版1行）、README.md、PR。版はマージ時点の次の空きのマイナー版。
+
+## 11 実装の約束（Sonnet 向け）
+- 触るファイルと変更:
+  - server/sessions.ts: Session（:59-74）に `initialName?: string`。restore() の入力に `manualInitialName?: boolean`。create()・restore() で §4 の条件で initialName を入れる。
+  - server/hub.ts: `writing` の Set と tryBeginWrite・endWrite（§3）。flushChatQueue・submitText・requestRename・flushPendingRenames に印を入れる（§3）。flushInitialNames を pollAgents の :157 の直後に呼ぶ（§4）。sendName。Snapshot（:61）に `relays?`、setRelays、snapshot の返り値（:571）に relays を足す。chatQueueOf・pendingRenames を relay の 409 判定に使えるよう、`hasPendingWork(id): boolean`（予約の送信か改名の予約が残っていれば true）を足す。
+  - server/launch.ts: waitReady を export。launchAndSend の restore に manualInitialName: true、§4 の送る順。waitName を足す。
+  - server/relay.ts（新規）: nextRelayName、RelayManager（§5-2〜5-5）。
+  - server/config.ts: relayDir・relayHandoffTimeoutMs（§5-1）。
+  - server/index.ts: RelayManager を作って http の deps に渡す。
+  - server/http.ts: `POST /api/sessions/:id/relay`。
+  - src/types.ts: RelayView、ConsoleState の relays?。
+  - src/api.ts: relaySession。
+  - src/components/SessionList/SessionList.tsx・src/pages/ConsolePage.tsx: §5-6。
+  - src/locales/ja.json: §5-6 のキー。
+  - tests/fixtures/e2e-env.ts: relayDir（一時フォルダ）。
+- 足す試験: tests/unit/relay.test.ts（K8〜K10）、tests/unit/hub-write-lock.test.ts（K1・K2）、tests/unit/initial-name.test.ts（K4・K5）、launch の書き込み順（K6、既存の routines・reservations の試験に足してよい）、SessionList の画面試験（K7）、tests/e2e の引き継ぎ（K11）。
+- 触らない: §2 の「触らない」すべて。既存の試験の期待値は、§3 の印のために書き込みの順が変わる所以外は変えない（変えたら PR 本文に理由を書く）。
+- 迷ったら止まって Opus に報告する（推測で決めない）。
+
+## 12 第1版の審査への対応
+- F1・R4（en.json が無い）→ §2 の i18n、K12。
+- F2（-n を使わない理由）→ §4 の変更前、§6。
+- F3（Snapshot と ConsoleState）→ §5-6 の型、§11。
+- F4（CHANGELOG の場所）→ §10 工程3。
+- R1（書き込みの割り込み）→ §3（印）、5-2 の 409 に予約の残り、§7 に人の打鍵を受け入れる危険として記載。
+- R2（起動時の復元）→ §4 の restore() の条件、K5。
+- R3-a〜d → 5-5 の各手順の reason、手順2 の 60 秒の道、5-2 の relay in progress、5-6 の両側のバッジ、K9・K10。
+- R3-e（再起動）→ 5-5 の受け入れる限界、§7。
+- R3-f（日時付きの名前）→ 5-3 の " 2" の規則、K8。
+- R5（名前の無害化）→ 5-3、K8。
+- R6（工程0 の書き込み先、試験用サーバー）→ §10 工程0 (b)、5-1（ポート指定のサーバーは relayDir を渡さないと使えない）、5-4 で relayDir も 700。
+- R7（実装者向けの粒度）→ §11。
+- 未確認3件 → §7・§10 工程0。
