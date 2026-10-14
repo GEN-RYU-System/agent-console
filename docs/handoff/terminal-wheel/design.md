@@ -1,6 +1,6 @@
-# 端末ページのホイールを滑らかにする（terminal-wheel）設計 第1版
+# 端末ページのホイールを滑らかにする（terminal-wheel）設計 第2版
 
-- 状態: 第1版（Opus 2026-10-14）。Fable 審査前。PO の要望「滑らかに動くようにしてほしい」により着手（目的は PO 承認済み。作り方の y/n は不要と判断: 画面の内部の動きだけで、PO が決める事業上の選択を含まない）。
+- 状態: 第2版（Opus 2026-10-14）。第1版は Fable 審査 REVISE（高なし・中6・低7、/tmp/CC報告ファイル/terminal-scroll-history/review-design1/review.md）→ §11 で全件反映。§11 は §1〜§9 より優先する。PO の要望「滑らかに動くようにしてほしい」で着手（目的は PO 承認済み）。
 - PO の言葉（2026-10-14）: 「端末ページのマウスホイールのスクロールの動きがカクカクするので滑らかに動くようにしてほしい、ターミナルでは滑らかに動いた、それと右側の最近の入力履歴だがクリックしたら履歴の箇所にジャンプする機能はつけることは出来る？」
 - 根拠の生出力: /tmp/CC報告ファイル/terminal-scroll-history/recon/facts.md（以下 R1）、recon2/facts.md（R2）、recon3/facts.md（R3）。行番号は origin/main 078c9e4。
 
@@ -86,3 +86,19 @@ server、tmux の設定（mouse off のまま）、Claude の設定（CLAUDE_COD
 - (c) 座標は floor(x/9)+1・floor(y/17)+1 で信号の列・行に入る。
 - (d) mouseTrackingMode は 1003h で 'any'、1003l で 'none'（1000h は 'vt200'、1002h は 'drag'）。none では合成でも信号0。
 - → §3 の方式の前提はすべて成り立つ。設計は変えない。dispatch 先は元のイベントの target（DIV.xterm-screen）とする。
+
+## 11. 第2版の決め（第1版の審査 REVISE を反映、Opus 2026-10-14）。§1〜§9 と食い違う所はこちらが正
+- 中1 §1 の書き分け: 【観測】ブラウザの xterm は wheel 1イベントにつき信号を最大1つ送る、トラックパッドの小さい動き25回で信号1つ（R3）。【仮説】カクつきの主因はこの「信号が少なく、1信号で大きく動く」こと。PO の普段の端末がもっと多くの信号を出すこと、送り届ける遅れが主因でないことは未測定。→ K5 が × の時の分岐（§7 に足す）: ①ブラウザの開発者ツールなしで測れる範囲として、サーバー側で input の受信時刻を記録する一時の計測（試験用の環境、本番 4319 は使わない）で、信号が届く間隔を測る。②届く間隔が詰まっているのに段になるなら Claude 側（加速・描き直し）と判断し、LINES_PER_FRAME を 1 にして再確認。③届く間隔が空いていれば遅延側を別便で調べる。
+- 中2 K4 の e2e: 新しい fixture `tests/fixtures/mouse-role.mjs` を作る。起動時に `READY <cwd>` と `\x1b[?1003h\x1b[?1006h` を出し、stdin から受けた `\x1b[<` を `<SGR>` という見える文字に置き換えて stdout に出す（role.mjs と同じく argv に目印 agent-console-e2e-role を持たせる）。tests/fixtures/e2e-env.ts の roles に1つ足す（既存の bracketed-role.mjs 等と同じ足し方、e2e-env.ts:104-107・:135）。試験は app 側の project で、そのセッションの端末で `page.mouse.wheel(0, 100)` を1回 → 端末の DOM（.xterm-screen の文字）に `<SGR>65;` が 5 回出る。追跡を外す出力は今回は試さない（単体 K3 で見る）。playwright.config.ts は deviceScaleFactor 未指定＝1 の前提。spec は tests/e2e/terminal-wheel.spec.ts（新規）。
+- 中3 触るファイルに src/components/TerminalPane/TerminalPane.test.tsx を足す。両方の試験の vi.mock の Terminal（TerminalPane.ux.test.tsx:11-27、TerminalPane.test.tsx:17 付近）に `attachCustomWheelEventHandler` と `modes`（mouseTrackingMode）を足す。既存の期待は変えない。
+- 中4 LineEmitter の上限: 待ち行列の上限は rows × 2 行。push で上限を超える分は捨てる（新しい push を切り詰める）。K2 は2つに分ける: K2a 上限内なら送った合計が push の合計と一致。K2b 上限を超えた push は上限まで送り、残りは捨てる。
+- 中5 送る直前の再確認: emitOne の直前に、termRef.current?.term がこの端末と同じで、かつ mouseTrackingMode が wheel を持つモード（下の低2）であることを確かめ、違えば待ち行列を全部捨てて送らない。term.reset() を呼ぶ所（TerminalPane.tsx:142 のつなぎ直し）でも待ち行列を捨てる。
+- 中6 §7 リスクに追加: トラックパッドで速すぎる恐れ（xterm の 0.3 倍の補正（CoreMouseService.ts:257-260）を外すので、今の約5倍の信号になり、Claude の加速も加わる）。K5 で速すぎたら、ピクセル入力の時だけ係数 TRACKPAD_FACTOR（第2版では 1、定数1か所）を下げる。戻し方: この便を revert すれば今の動きに戻る（server と設定は触らないので、画面の再読み込みだけで戻る）。
+- 低1 行高: `term.element?.querySelector(".xterm-screen")?.clientHeight / term.rows`（.xterm-screen は既存 e2e でも使う DOM 名）。0 以下・取れない時は 0 行を返す（何も送らない、元のイベントは true で xterm に任せる）。dpr の補正は要らない（clientHeight も wheel の deltaY も CSS px）。
+- 低2 対象のモード: mouseTrackingMode が "vt200"・"drag"・"any" の時だけ（x10 は wheel を持たない、CoreMouseService.ts:28-32）。それ以外は true（今のまま）。
+- 低3 修飾キー: shiftKey が押された wheel は true を返して今のまま（xterm が Shift の wheel を 0 にする、:243）。合成イベントには ctrlKey・altKey・metaKey を写し、shiftKey は写さない。
+- 低4 対象外: マウス追跡なしの alt 画面での矢印キー変換（CoreBrowserTerminal.ts:814-840）は変えない（追跡なしなので true を返す）。
+- 低5 deltaY が 0（横だけ）の wheel は true（今のまま）。
+- 低6 WeakSet はその useEffect の中に置く（端末ごと）。dispatch 先は元のイベントの target が Element ならそれ、そうでなければ term.element の .xterm-screen。どちらも無ければ捨てる。
+- 低7 K1 の数値例は行高 17 ちょうどの時（単体試験は行高を引数で渡すので成り立つ）。
+- 触るファイル（全件、§「触るファイル」を置き換え）: src/components/TerminalPane/wheelLines.ts（新規）、wheelLines.test.ts（新規）、TerminalPane.tsx、TerminalPane.ux.test.tsx、TerminalPane.test.tsx、tests/fixtures/mouse-role.mjs（新規）、tests/fixtures/e2e-env.ts、tests/e2e/terminal-wheel.spec.ts（新規）、docs/CHANGELOG.md、README.md、版の4か所（package.json・package-lock.json・extension/manifest.json・README.md の版の箇所）。
