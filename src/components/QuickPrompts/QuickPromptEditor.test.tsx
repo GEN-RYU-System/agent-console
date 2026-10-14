@@ -88,4 +88,57 @@ describe("QuickPromptEditor", () => {
     rerender(<QuickPromptEditor prompts={[{ id: "p2", label: "二", text: "2", pinned: true }, { id: "p1", label: "一", text: "1", pinned: true }]} onChanged={() => {}} />);
     expect(order()).toEqual(["二", "一"]);
   });
+
+  describe("onTogglePinned / onUse / usable（まとめた画面の行の操作）", () => {
+    it("渡さないと「常に表示」「使う」は出ない", () => {
+      render(<QuickPromptEditor prompts={prompts} onChanged={() => {}} />);
+      expect(screen.queryByRole("button", { name: "常に表示" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "使う" })).toBeNull();
+    });
+
+    it("渡すと出る。「常に表示」は aria-pressed が pinned と同じで、押すと onTogglePinned を呼び、終わったら onChanged を呼ぶ", async () => {
+      const onTogglePinned = vi.fn().mockResolvedValue({});
+      const onChanged = vi.fn();
+      render(<QuickPromptEditor prompts={prompts} onChanged={onChanged} onTogglePinned={onTogglePinned} onUse={vi.fn()} />);
+      const pin = screen.getByRole("button", { name: "常に表示" });
+      expect(pin.getAttribute("aria-pressed")).toBe("true");
+      fireEvent.click(pin);
+      await waitFor(() => expect(onTogglePinned).toHaveBeenCalledWith(prompts[0]));
+      await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    });
+
+    it("「使う」は onUse に指示を渡す", () => {
+      const onUse = vi.fn();
+      render(<QuickPromptEditor prompts={prompts} onChanged={() => {}} onUse={onUse} />);
+      fireEvent.click(screen.getByRole("button", { name: "使う" }));
+      expect(onUse).toHaveBeenCalledWith(prompts[0]);
+    });
+
+    it("usable=false のときは「使う」が押せない", () => {
+      const onUse = vi.fn();
+      render(<QuickPromptEditor prompts={prompts} onChanged={() => {}} onUse={onUse} usable={false} />);
+      const use = screen.getByRole("button", { name: "使う" }) as HTMLButtonElement;
+      expect(use.disabled).toBe(true);
+      fireEvent.click(use);
+      expect(onUse).not.toHaveBeenCalled();
+    });
+
+    it("処理中（busy）は「常に表示」「使う」が押せない", async () => {
+      let release: (v: unknown) => void = () => {};
+      const onTogglePinned = vi.fn().mockReturnValue(new Promise((resolve) => (release = resolve)));
+      render(<QuickPromptEditor prompts={prompts} onChanged={() => {}} onTogglePinned={onTogglePinned} onUse={vi.fn()} />);
+      fireEvent.click(screen.getByRole("button", { name: "常に表示" }));
+      await waitFor(() => expect((screen.getByRole("button", { name: "常に表示" }) as HTMLButtonElement).disabled).toBe(true));
+      expect((screen.getByRole("button", { name: "使う" }) as HTMLButtonElement).disabled).toBe(true);
+      release({});
+      await waitFor(() => expect((screen.getByRole("button", { name: "常に表示" }) as HTMLButtonElement).disabled).toBe(false));
+    });
+
+    it("onTogglePinned が失敗したら、同じエラー欄に出す", async () => {
+      const onTogglePinned = vi.fn().mockRejectedValue(new Error("boom"));
+      render(<QuickPromptEditor prompts={prompts} onChanged={() => {}} onTogglePinned={onTogglePinned} />);
+      fireEvent.click(screen.getByRole("button", { name: "常に表示" }));
+      expect((await screen.findByRole("alert")).textContent).toContain("boom");
+    });
+  });
 });

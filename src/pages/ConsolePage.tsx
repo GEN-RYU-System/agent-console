@@ -39,7 +39,6 @@ import { RightPane } from "../components/RightPane/RightPane";
 import { NewSessionForm, type NewSessionValues } from "../components/NewSessionForm/NewSessionForm";
 import { ResumePicker } from "../components/ResumePicker/ResumePicker";
 import { QuickPromptBar } from "../components/QuickPrompts/QuickPromptBar";
-import { QuickPromptEditor } from "../components/QuickPrompts/QuickPromptEditor";
 import { RenameForm } from "../components/RenameForm/RenameForm";
 import { SessionList } from "../components/SessionList/SessionList";
 import { ThemeToggle } from "../components/ThemeToggle/ThemeToggle";
@@ -164,7 +163,6 @@ export function ConsolePage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [quickPrompts, setQuickPrompts] = useState<QuickPrompt[]>([]);
-  const [quickEditorOpen, setQuickEditorOpen] = useState(false);
   const [quickError, setQuickError] = useState<string | null>(null);
   const [uploadNotice, setUploadNotice] = useState<UploadNotice | null>(null);
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
@@ -542,7 +540,6 @@ export function ConsolePage() {
             canSend={activeSession?.canChat === true}
             {...(activeSession !== undefined && activeSession.canChat !== true ? { blockedHint: t(quickBlockedKey(activeSession.state)) } : {})}
             onSend={handleSendPrompt}
-            onEdit={() => setQuickEditorOpen(true)}
             onChanged={loadQuickPrompts}
           />
         )}
@@ -565,7 +562,6 @@ export function ConsolePage() {
           state={activeSession?.state ?? "unknown"}
           canChat={activeSession?.canChat === true}
           prompts={quickPrompts}
-          onEditPrompts={() => setQuickEditorOpen(true)}
           onPromptsChanged={loadQuickPrompts}
           onOpenTerminal={() => setCenterTab("terminal")}
         />
@@ -664,9 +660,6 @@ export function ConsolePage() {
         {renameTarget !== undefined && (
           <RenameForm key={renameTarget.id} session={renameTarget} busy={renameBusy} error={renameError} onSubmit={(n) => void handleRename(n)} />
         )}
-      </Modal>
-      <Modal open={quickEditorOpen} onClose={() => setQuickEditorOpen(false)} title={t("ac.quick.editTitle")} size="md">
-        <QuickPromptEditor prompts={quickPrompts} onChanged={loadQuickPrompts} />
       </Modal>
       <Modal open={resumeOpen} onClose={() => setResumeOpen(false)} title={t("ac.resume.title")} size="lg">
         <ResumePicker items={resumeItems} busyPath={resumeBusyPath} error={resumeError} onResume={(target) => void handleResume(target)} />

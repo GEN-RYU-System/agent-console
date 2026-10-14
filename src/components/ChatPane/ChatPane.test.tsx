@@ -46,7 +46,6 @@ function renderPane(over: Partial<Props> = {}) {
     state: "idle" as SessionState,
     canChat: true,
     prompts,
-    onEditPrompts: vi.fn(),
     onPromptsChanged: vi.fn(),
     onOpenTerminal,
     ...over,
@@ -393,7 +392,7 @@ describe("K7 よく使う指示", () => {
   it("一覧（全件）の「使う」でも、本文が入力欄に入る", async () => {
     renderPane();
     fireEvent.click(within(screen.getByTestId("quick-prompt-bar")).getByRole("button", { name: "よく使う指示" }));
-    const row = screen.getAllByTestId("quick-prompt-list-item")[1];
+    const row = screen.getAllByTestId("quick-prompt-item")[1];
     fireEvent.click(within(row).getByRole("button", { name: "使う" }));
     expect(input().value).toBe("lint を実行して");
   });
