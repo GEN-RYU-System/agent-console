@@ -496,7 +496,14 @@ async function expectLargeCenterTabs(page: Page): Promise<void> {
         rightFont: rightTab ? getComputedStyle(rightTab).fontSize : null,
       };
     });
-  await expect.poll(async () => (await measure()).tabs.length, { timeout: 5000 }).toBe(7);
+  await expect.poll(async () => (await measure()).tabs.length, { timeout: 5000 }).toBe(8);
+  // 1400px の画面で、最後のタブの右端がタブ枠の右端以内（タブを足してもはみ出さない。横スクロールでしか見えないタブを作らない）
+  expect(page.viewportSize()?.width).toBe(1400);
+  const frame = await page.locator(".ac-center-tabs").boundingBox();
+  const lastTab = await page.locator('.ac-center-tabs [role="tab"]').last().boundingBox();
+  expect(frame).not.toBeNull();
+  expect(lastTab).not.toBeNull();
+  expect((lastTab as { x: number; width: number }).x + (lastTab as { x: number; width: number }).width).toBeLessThanOrEqual((frame as { x: number; width: number }).x + (frame as { x: number; width: number }).width);
   let m = await measure();
   await expect.poll(async () => (m = await measure()).tabs[0].height, { timeout: 5000 }).toBe("56px");
   const large = await probe("font-size:var(--font-2xl)");
