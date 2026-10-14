@@ -67,7 +67,11 @@ try {
     installHookFile(path.join(root, "hooks"), dataDir);
     installGuardFile(path.join(root, "hooks"), dataDir);
     installBoardGuardFile(path.join(root, "hooks"), dataDir);
-    installBoardCommand(path.join(root, "hooks"), dataDir);
+    try {
+      installBoardCommand(path.join(root, "hooks"), dataDir);
+    } catch (e) {
+      console.error(`作戦ボードの命令を dataDir/bin に置けませんでした（board-guard は止めない側で動きます）: ${e instanceof Error ? e.message : String(e)}`);
+    }
     const r = installHooks({ settingsPath, nodePath: process.execPath, hookPath });
     console.log(r.changed ? `記録用 hook・ac-routine の guard hook・作戦ボードの board-guard hook を ${settingsPath} に足しました（控えは同じフォルダの settings.json.ac-backup-*）` : "記録用 hook はすでに入っています（変更なし）");
     process.exitCode = installStatusLineStage();
