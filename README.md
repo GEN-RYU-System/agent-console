@@ -10,6 +10,7 @@ Local console for running parallel Claude Code sessions (Orca-inspired, lightwei
 
 日付と時刻（日本時間）を決めて、その時刻に新しいセッションを1つ開き、指示を1回だけ送る。画面の「予約」タブから登録・取消ができる（取消は「待機中」のものだけ）。正本は `dataDir/reservations.json` で、書くのはサーバーだけ。
 
+- 作業場所は打たずに選ぶ（v0.24.0）。本店で動く役割（Opus 設計役・シェル）は欄が無く「本店（いつもの作業場所）で動きます」と出て、本店で起動する。作業用コピーで動く役割（Sonnet 実装役）は「作業用コピー」の一覧（`GET /api/resume-targets` の worktree の行）から名前（ブランチ）で選び、選んだものの branch を自動で記録する。定期実行タブの新規作成も同じ。定期実行の編集画面は今までどおり役割・作業場所・ブランチを変更不可で表示する。
 - 時刻が来ると、Claude が入力待ちになるのを待って指示を貼って Enter を送る。120 秒待っても準備できなければ送らず「送れなかった（準備できず）」と残す。開いたセッションは自動では閉じない。
 - アプリが止まっていて時刻を過ぎた予約は、起動後に復元が終わってから1回だけ遅れて送る。送信中に止まったものは再送せず「中断」にする。
 
@@ -23,7 +24,7 @@ node "<dataDir>/bin/ac-reserve.mjs" list
 node "<dataDir>/bin/ac-reserve.mjs" cancel <id>
 ```
 
-- reservation.json の形: `name`（1〜40字）、`roleId`、`cwd`、`branch`（worktree 役のとき）、`date`（YYYY-MM-DD）、`time`（HH:mm、日本時間）、`promptText`（8192字以下）、`purpose`（必ず `"measure"`）、`measureNote`（何を測るか、1〜200字）。
+- reservation.json の形: `name`（1〜40字）、`roleId`、`cwd`（本店で動く役割なら省ける。省くと本店になる）、`branch`（worktree 役のとき）、`date`（YYYY-MM-DD）、`time`（HH:mm、日本時間）、`promptText`（8192字以下）、`purpose`（必ず `"measure"`）、`measureNote`（何を測るか、1〜200字）。
 - 予定は1分後から366日後まで。待機中の予約は全体で50件、AI の分は10件まで。
 - 宛先は `dataDir/reserve-token`（`{port, token}`、サーバーが本番のポートで起動したときだけ作る）。失敗は終了コード1と理由を標準エラーに出す。
 
