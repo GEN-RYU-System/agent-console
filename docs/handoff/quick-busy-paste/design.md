@@ -57,6 +57,7 @@ src/pages/ConsolePage.tsx（:410-416 付近）
 
 
 試験の変更:
+- daily-use.integration.test.ts:266-280「uses the status at request time」（実装中に判明・Opus 判断 2026-10-14）→ :272 の busy は名前変更の queued 確認に使うので残し、:276 の quick send-check の直前に `setAgents([row(pid, "waiting")])` を入れて 409 を期待し続ける（ポーリングの古い idle ではなく要求時の状態で判定する、という試験の狙いは保つ）。
 - daily-use.integration.test.ts:346-356 → 名前「answers 200 for busy and 409 for waiting Claude sessions」。busy は 200、waiting は 409、idle は 200。
 - console.spec.ts:638-648 → busy のときボタンが有効で send-check が 200（busy の間はボタンを押さない。:654-659 の「反響が1回」の前提を崩さないため）、waiting のときボタンが無効・バーに「許可・質問への返事を待っている」が出て send-check が 409・端末に本文が入らない。idle に戻してからの押下と Enter の確認（:649 以降）はそのまま。
 - ConsolePage.test.tsx:373-379 → `canChat: false, state: "waiting"` で無効と理由の表示。`canInput: false, canChat: true` で押せる、の 1 件を足す。

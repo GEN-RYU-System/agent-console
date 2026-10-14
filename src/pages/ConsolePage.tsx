@@ -87,6 +87,13 @@ function useConsoleState() {
   return { state, loadFailed, setLoadFailed };
 }
 
+/** 端末のよく使う指示が押せない理由の文言キー（stopped・unknown 以外は確認待ち） */
+function quickBlockedKey(state: SessionState): string {
+  if (state === "stopped") return "ac.quick.blockedStopped";
+  if (state === "unknown") return "ac.quick.blockedUnknown";
+  return "ac.quick.blockedWaiting";
+}
+
 export function ConsolePage() {
   const { t } = useTranslation();
   const { state, loadFailed, setLoadFailed } = useConsoleState();
@@ -141,6 +148,11 @@ export function ConsolePage() {
   useEffect(() => {
     if (selectedId !== null && selectedUnread > 0 && document.visibilityState === "visible") void markRead(selectedId).catch(() => undefined);
   }, [selectedId, selectedUnread]);
+  // 送信の警告は、別のセッションを選んだとき、または今のセッションが送れる状態に戻ったときに消す
+  const selectedCanChat = state?.sessions.find((s) => s.id === selectedId)?.canChat;
+  useEffect(() => {
+    setQuickError(null);
+  }, [selectedId, selectedCanChat]);
 
   const handleSelect = (id: string): void => {
     setSelectedId(id);
@@ -410,7 +422,8 @@ export function ConsolePage() {
         {centerTab === "terminal" && (
           <QuickPromptBar
             prompts={quickPrompts}
-            canSend={activeSession?.canInput === true}
+            canSend={activeSession?.canChat === true}
+            {...(activeSession !== undefined && activeSession.canChat !== true ? { blockedHint: t(quickBlockedKey(activeSession.state)) } : {})}
             onSend={handleSendPrompt}
             onEdit={() => setQuickEditorOpen(true)}
             onChanged={loadQuickPrompts}

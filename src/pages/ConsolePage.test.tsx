@@ -311,7 +311,7 @@ describe("ConsolePage footer and authorization", () => {
 });
 
 describe("ConsolePage daily use", () => {
-  const live = { ...state.sessions[0], state: "idle" as const, unread: 2, hasClaude: true, canInput: true };
+  const live = { ...state.sessions[0], state: "idle" as const, unread: 2, hasClaude: true, canInput: true, canChat: true };
 
   it("puts the total unread count in the window title", async () => {
     fetchState.mockResolvedValue({ ...state, sessions: [live, { ...live, id: "s2", unread: 1 }] });
@@ -370,12 +370,35 @@ describe("ConsolePage daily use", () => {
     expect(pasteOnly).not.toHaveBeenCalled();
   });
 
-  it("disables the quick prompt buttons while input is not allowed", async () => {
-    fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0, canInput: false }] });
+  it("clears the send warning when another session is selected", async () => {
+    checkQuickPromptSend.mockRejectedValue(new Error("claude is busy"));
+    const other = { ...live, id: "s2", name: "other", unread: 0 };
+    fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0 }, other] });
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    await openTerminalTab();
+    await waitFor(() => expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "テスト実行" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("claude is busy");
+    fireEvent.click(screen.getByText("other"));
+    await waitFor(() => expect(screen.queryByText("claude is busy")).toBeNull());
+  });
+
+  it("disables the quick prompt buttons and shows the reason while Claude waits for an answer", async () => {
+    fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0, canInput: false, canChat: false, state: "waiting" as const }] });
     render(<ConsolePage />);
     fireEvent.click(await screen.findByText("dead"));
     await openTerminalTab();
     expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/許可・質問への返事を待っている/)).toBeTruthy();
+  });
+
+  it("enables the quick prompt buttons while Claude is busy (canChat true, canInput false)", async () => {
+    fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0, canInput: false, canChat: true, state: "working" as const }] });
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    await openTerminalTab();
+    await waitFor(() => expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(false));
   });
 
   it("explains that a break is the app's own definition", async () => {

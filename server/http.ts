@@ -289,7 +289,8 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
   }
   // send-check: サーバーは端末へ書かない。入れてよい状態なら本文を返し、画面が xterm の paste() で入れるだけ。Enter は人が端末で押す
   const prompt = await quickPrompts.get(str(jsonBody(await readJsonBody(req)).promptId));
-  const verdict = await hub.checkInput(id);
+  // 作業中（busy）でも可。確認待ち・状態不明・停止は不可（chatVerdict）
+  const verdict = await hub.checkChat(id);
   if (!verdict.ok) throw new SessionConflictError(verdict.reason ?? "cannot input now");
   sendJson(res, 200, { text: prompt.text });
   return true;
