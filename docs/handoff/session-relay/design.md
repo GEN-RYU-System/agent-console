@@ -1,6 +1,6 @@
 # ボタン1つで次のセッションへ引き継ぐ・名前が英語に戻る不具合（session-relay）設計 第4版
 
-- 状態: 設計案 第4版（Opus 2026-10-14）。第1版〜第3版は Fable 審査で REVISE、第4版は REVISE（中1件 N21）で本文を直した第4版の改（§12〜§15 に対応表）。PO の実装承認は無い。実装未着手。
+- 状態: 設計案 第4版（Opus 2026-10-14）。第1版〜第3版は Fable 審査で REVISE、第4版は REVISE（中1件 N21）で本文を直した第4版の改（§12〜§15 に対応表）。Fable 第4版の改 APPROVE（review-design5）。PO 実装承認: 2026-10-14 PO「3から順番にy,」（file-viewer → keep-login → session-relay → board-guard の順）。実装は Sonnet、工程0 から。
 - 調査: recon.md（同じフォルダ）。行番号は基準 origin/main 0a8266c。コードの写しは /tmp/CC報告ファイル/session-relay/r3/code.txt・code2.txt。
 
 ## 1 目的（PO の言葉は recon.md の冒頭）
@@ -204,3 +204,8 @@
 - R6（工程0 の書き込み先、試験用サーバー）→ §10 工程0 (b)、5-1（ポート指定のサーバーは relayDir を渡さないと使えない）、5-4 で relayDir も 700。
 - R7（実装者向けの粒度）→ §11。
 - 未確認3件 → §7・§10 工程0。
+
+## 16 工程0の結果（2026-10-14、Sonnet 確認・Opus 判断、生出力 /tmp/CC報告ファイル/session-relay/stage0/）
+- (c) lucide-react 1.55.0 に ArrowRightLeft あり（c-ls.txt・c-types.txt）。設計どおり使う。
+- (a) tmux 内の claude v2.1.299 で、入力待ちの直後に `/rename relay-stage0-test` を送ると「Session renamed to」が出て、次の指示の後も名前が残った（a-03・a-04、画面表示で確認）。§4 の方式のまま進める。
+- (b) auto mode の下では、作業フォルダの外の HANDOFF.md への書き込みで許可を求められなかった（b-01）。auto mode でない場合は未確認。§7 のとおり、許可待ちは失敗にせず時間切れまで待つ設計で両方に対応できるので、設計は変えない。
