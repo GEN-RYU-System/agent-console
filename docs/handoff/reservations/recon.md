@@ -12,7 +12,7 @@
 
 ## 今の動き（事実）
 ### 定期実行（server/routines.ts、141行）
-- 保存: `dataDir/routines.json`（VERSION=2、READ_VERSIONS=[1,2]）`server/routines.ts:9-23`。書き込みは `RoutineStore.save` が tmp＋rename・0600・`serial()` で直列化、書く前に read して壊れた内容は上書きしない `server/routines.ts:44-47`。
+- 保存: dataDir/routines.json（VERSION=2、READ_VERSIONS=[1,2]）`server/routines.ts:9-23`。書き込みは `RoutineStore.save` が tmp＋rename・0600・`serial()` で直列化、書く前に read して壊れた内容は上書きしない `server/routines.ts:44-47`。
 - 時計: 1秒ごとの tick `server/routines.ts:72`、`jstSlot` は Asia/Tokyo の曜日と HH:mm `server/routines.ts:50-54`。
 - 発火: 分が完全一致のときだけ `server/routines.ts:95`。寝ていた・止まっていた回は追いかけない（試験 `tests/unit/routines.test.ts:148`「does not catch up」）。
 - 二重送信防止: 送る前に lastSlot を保存、保存失敗ならその回は送らない `server/routines.ts:98-99`。
@@ -28,11 +28,11 @@
 
 ### AI が書く既存の経路（作戦ボード）
 - `hooks/ac-board.mjs`（230行）を起動時に `dataDir/bin/ac-board.mjs` へ写す `server/activity-setup.ts:17-20,42-45`、`server/activity-start.ts:49`。
-- ファイルへ直接書く（HTTP なし）。セッションは環境変数 CLAUDE_CODE_SESSION_ID、書込先 `dataDir/boards/<UUID>.json`。サーバーは読むだけ（書込口なし）`server/board-routes.ts:11-20`。
+- ファイルへ直接書く（HTTP なし）。セッションは環境変数 CLAUDE_CODE_SESSION_ID、書込先 dataDir/boards/<UUID>.json。サーバーは読むだけ（書込口なし）`server/board-routes.ts:11-20`。
 - ボードはセッションごとに1ファイルで書き手は1人。予約は「サーバーが状態を書き換える」ので、同じ方式だと書き手が2人（CLI とサーバー）になる。
 
 ### 画面・金型
-- 定期実行の画面: `src/components/Routines/RoutinesPane.tsx`（55行）、`RoutineEditor.tsx`（29行）、`Routines.css`（13行）。部品は `@sa/components/` の Badge, Button, Callout, EmptyState, Modal, Select, Stack, Textarea, TextField。
+- 定期実行の画面: `src/components/Routines/RoutinesPane.tsx`（55行）、`src/components/Routines/RoutineEditor.tsx`（29行）、`src/components/Routines/Routines.css`（13行）。部品は `@sa/components/` の Badge, Button, Callout, EmptyState, Modal, Select, Stack, Textarea, TextField。
 - 時刻は TextField の文字入力（HH:mm）`src/components/Routines/RoutineEditor.tsx:22`。
 - SA 金型の TextField は type に date を正式に含む（`.sa-cache/frontend/src/components/TextField.tsx:4`）。SA に専用の DatePicker / TimeInput 部品は無い。
 - 生 input 禁止の検査は `src/pages/` 配下のみ（`scripts/check-design-governance.mjs:164-166`）。日本語直書き禁止は全 tsx（:168-176）。

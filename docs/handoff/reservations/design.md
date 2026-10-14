@@ -21,7 +21,7 @@
 
 ## 4 詳しい動き
 ### 4-1 保存（SSOT）
-- 予約の正本は `dataDir/reservations.json` だけ。書き手はサーバー（`ReservationStore`）だけ。画面も AI 用コマンドも HTTP でサーバーに頼む（コマンドがファイルへ直接書くことは禁止＝書き手を1人にする）。
+- 予約の正本は dataDir/reservations.json だけ。書き手はサーバー（`ReservationStore`）だけ。画面も AI 用コマンドも HTTP でサーバーに頼む（コマンドがファイルへ直接書くことは禁止＝書き手を1人にする）。
 - 定期実行の routines.json には入れない。理由: 旧版（0.17.0〜0.19.0）は version 1/2 以外を読むと例外になる（`server/routines.ts:45`）ため、混ぜると切り戻し時に定期実行まで読めなくなる。別ファイルなら旧版は単に読まない。
 - 書き方は `RoutineStore` と同じ（tmp＋rename、0600、dir 0700、serial、書く前に read し壊れた内容は上書きしない）。共通の関数 `writeJsonAtomic`/直列化を `server/json-store.ts` に切り出し、RoutineStore と ReservationStore の両方が使う（書き方の正本を1か所に）。RoutineStore の挙動は変えない。
 
@@ -68,7 +68,7 @@ interface Reservation {
 - AI 用（新）: `/api/agent/reservations`（GET・POST）と `/api/agent/reservations/:id/cancel`（POST）。createdBy は "agent"。
 - 合言葉ファイル `dataDir/reserve-token`: 中身は `{"port": <config.port>, "token": "<64桁16進>"}`（0600、dir 0700、tmp＋rename）。書き手はサーバーだけ。起動のたびに port は今の config.port で書き直し、token は既存の正しい値があれば使い続ける（Chrome 拡張の `config.js` に `{port, token}` を書く型、`server/picker-extension.ts:93-95` と同じ）。作る条件は picker と同じ関数 `isPickerSetupEnabled`（`server/picker-extension.ts:38-39`、`AGENT_CONSOLE_PORT` が未設定か空のとき）を使う。安全の根拠は「書く先がそのサーバーの dataDir であること」: vitest の harness は env を見ず AppDeps で注入、e2e は一時 dataDir に作られ、本番 dataDir には触れない。作れなかったとき token は null。
 - http.ts の位置と順序: `server/http.ts:384-387`（PICK_INGEST の分岐）の後、`:388`（`/api/` の Bearer 認証）の間に、`/^\/api\/agent\/reservations(\/[^/]+\/cancel)?$/` の完全一致だけを分岐する。順序は Host 検査（`:372`、済み）→ `Origin` ヘッダーがあれば 403 → token が null なら 401 → Bearer を定数時間比較（`server/picks-routes.ts:15-16` の `sameSecret` を共通の場所へ移して両方が使う）、不一致 401 → 本文（`readJsonBody`、64KiB `server/http.ts:31`）→ 処理。入力エラー 400 は今の仕組み（`server/http.ts:408-411`）に乗せる。この合言葉は他の /api では通らない（`auth.authenticate` は知らない）。
-- AppDeps に `reserve: { token: string | null }` と `reservations: ReservationService` を足す。`tests/unit/helpers/harness.ts` に `reserve` の注入口を足す（picker の注入 `harness.ts:114-115` と同じ型）。
+- AppDeps に `reserve: { token: string | null }` と `reservations: ReservationService` を足す。`tests/unit/helpers/harness.ts` に `reserve` の注入口を足す（picker の注入 `tests/unit/helpers/harness.ts:114-115` と同じ型）。
 
 ### 4-7 AI 用コマンド `hooks/ac-reserve.mjs`
 - 配置は ac-board と同じ（起動時に `dataDir/bin/ac-reserve.mjs` へ copyAtomically、build で dist-server/hooks/ へ）。
@@ -81,7 +81,7 @@ interface Reservation {
 
 ### 4-8 画面（予約タブ）
 - タブ順: チャット・端末・変更・PR・部品・定期実行・予約（`src/pages/ConsolePage.tsx:55,381-388,448`）。
-- `src/components/Reservations/ReservationsPane.tsx`・`ReservationEditor.tsx`・`Reservations.css`。部品は `@sa/components/` の Badge・Button・Callout・EmptyState・Modal・Select・Stack・Textarea・TextField だけ（定期実行と同じ集合）。生の input/select/button は使わない。
+- `src/components/Reservations/ReservationsPane.tsx`・`src/components/Reservations/ReservationEditor.tsx`・`src/components/Reservations/Reservations.css`。部品は `@sa/components/` の Badge・Button・Callout・EmptyState・Modal・Select・Stack・Textarea・TextField だけ（定期実行と同じ集合）。生の input/select/button は使わない。
 - 入力欄: 名前 TextField、役割 Select、作業フォルダ TextField、ブランチ TextField、日付 `TextField type="date"`（金型が date を正式に持つ `.sa-cache/frontend/src/components/TextField.tsx:4`）、時刻 TextField 文字入力 HH:mm（定期実行と同じ。time 型は金型の正式一覧に無いため使わない）、指示 Textarea、新しいセッションの注意 Callout。
 - 一覧: 「これから」（pending と dispatching、runAt 昇順）と「済み」（`finishedAt ?? updatedAt` の新しい順。§4-2 の削除順と同じ規則）の2つの見出し。各行: 名前、`YYYY/MM/DD HH:mm JST`、役割、登録元（画面／AI）、状態 Badge、pending には「取消」Button。
 - 状態の文言: 待機中／送信中／送信済み／遅れて送信（{{minutes}}分）／取消／送れなかった（outcome ごと: 準備できず・満席・作業フォルダなし・失敗・中断）。
@@ -151,6 +151,7 @@ interface Reservation {
 - 単体試験 R1〜R13 と e2e R14・R15 が CI（ubuntu・macOS）で毎回動く。
 - 予約の書き方・送り方は共通関数（json-store・launch）1か所。定期実行と予約のどちらを直しても両方の試験が動く。
 - README に予約と ac-reserve の使い方、CHANGELOG に 1 行。
+- 守り手: CI（ubuntu・macOS の vitest・Playwright）と、設計ガバナンス検査（scripts/check-design-governance.mjs、lint の中で動く）。
 
 ## 外部・過去事例の参照と我々への応用
 - 外部事例は使わない。理由: 必要な判断（取りこぼしの扱い・書き手を1人にする・狭い合言葉）は、このリポジトリの既存の実装（定期実行 v0.7.0/v0.18.0 の lastSlot、Chrome 拡張の合言葉 v0.6.0）で根拠が足りる。
