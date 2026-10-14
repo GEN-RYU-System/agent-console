@@ -95,7 +95,7 @@ export async function waitName(deps: LaunchDeps, sessionId: string, name: string
 }
 
 /** cwd 再検査→空き確認→新しいセッションを開く→入力待ちを待つ→送る直前の確認→指示を 1 回送る */
-export async function launchAndSend(deps: LaunchDeps, req: LaunchRequest): Promise<{ outcome: LaunchOutcome; sessionName?: string }> {
+export async function launchAndSend(deps: LaunchDeps, req: LaunchRequest): Promise<{ outcome: LaunchOutcome; sessionName?: string; sessionId?: string }> {
   const role = deps.config.roles.find((x) => x.id === req.roleId);
   if (!role) return { outcome: "failed" };
   const entries = await listWorktreeEntries(deps.config.salesanchorRoot).catch((e) => { console.error("routines: worktree list failed:", e instanceof Error ? e.message : e); return []; });
@@ -103,12 +103,12 @@ export async function launchAndSend(deps: LaunchDeps, req: LaunchRequest): Promi
   if (verdict.real === null || verdict.block !== null) return { outcome: "cwd_invalid" };
   if (!deps.sessions.hasCapacity()) return { outcome: "full" };
   const name = sessionNameFor(req.name, req.slotKey);
-  // 名前はこの関数が /rename で 1 回送る（起動直後の自動の名前合わせはさせない）
+  // 名前はこの関数が /rename で 1 回送る（起動直後の自動の名前合わせはさせない）。戻り値の sessionId は closeWhenIdle の closer が閉じる対象に使う
   const session = deps.sessions.restore({ role, name, cwd: verdict.real, branch: req.branch ?? null, manualInitialName: true });
-  if (!(await waitReady(deps, session.id))) return { outcome: isGone(deps, session.id) ? "failed" : "not_ready", sessionName: name };
+  if (!(await waitReady(deps, session.id))) return { outcome: isGone(deps, session.id) ? "failed" : "not_ready", sessionName: name, sessionId: session.id };
   if (deps.hub.sendName(session.id, name)) await waitName(deps, session.id, name);
   else console.warn("launch: could not send /rename (write in progress); sending the prompt anyway");
-  if (!(await waitReady(deps, session.id))) return { outcome: isGone(deps, session.id) ? "failed" : "not_ready", sessionName: name };
-  if (!req.stillWanted()) return { outcome: "not_ready", sessionName: name };
-  return { outcome: (await deps.hub.submitText(session.id, req.promptText)) ? "sent" : "failed", sessionName: name };
+  if (!(await waitReady(deps, session.id))) return { outcome: isGone(deps, session.id) ? "failed" : "not_ready", sessionName: name, sessionId: session.id };
+  if (!req.stillWanted()) return { outcome: "not_ready", sessionName: name, sessionId: session.id };
+  return { outcome: (await deps.hub.submitText(session.id, req.promptText)) ? "sent" : "failed", sessionName: name, sessionId: session.id };
 }

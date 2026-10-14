@@ -270,3 +270,49 @@ describe("routine registration", () => {
     await expect(service.setEnabled("r1", "yes")).rejects.toThrow("enabled");
   });
 });
+
+describe("closeWhenIdle (v0.30.0)", () => {
+  it("hands a sent run to the closer only when closeWhenIdle is true, and keeps the session id in the event", async () => {
+    for (const closeWhenIdle of [true, false]) {
+      const { service } = await setup({ routines: [{ ...(closeWhenIdle ? { closeWhenIdle: true } : {}) }] });
+      const tracked: unknown[] = [];
+      service.setCloser({ track: (t: unknown) => tracked.push(t) } as never);
+      await run(service);
+      expect(outcomes(service)).toEqual(["sent"]);
+      expect(service.list()[0].events[0].sessionId).toBe("s1");
+      expect(tracked).toHaveLength(closeWhenIdle ? 1 : 0);
+      if (closeWhenIdle) expect(tracked[0]).toMatchObject({ routineId: "r1", sessionId: "s1" });
+    }
+  });
+
+  it("does not hand over a run that was not sent", async () => {
+    const { service } = await setup({ routines: [{ closeWhenIdle: true }], verdicts: [{ ok: false, hasClaude: true }] });
+    const tracked: unknown[] = [];
+    service.setCloser({ track: (t: unknown) => tracked.push(t) } as never);
+    await run(service);
+    expect(outcomes(service)).toEqual(["not_ready"]);
+    expect(tracked).toEqual([]);
+  });
+
+  it("create stores closeWhenIdle=true, drops false, and rejects a non-boolean", async () => {
+    const root = realpathSync(await mkdtemp(path.join(os.tmpdir(), "ac-routine-root-")));
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    const dir = await mkdtemp(path.join(os.tmpdir(), "ac-routine-"));
+    const service = new RoutineService({ roles: [{ id: "echo", needsWorktree: false }], salesanchorRoot: root } as never, {} as never, {} as never, new RoutineStore(dir));
+    const base = { name: "n", enabled: true, roleId: "echo", weekdays: [1], timeHHmm: "09:00", promptText: "hi" };
+    expect((await service.create({ ...base, closeWhenIdle: true })).closeWhenIdle).toBe(true);
+    expect((await service.create({ ...base, closeWhenIdle: false })).closeWhenIdle).toBeUndefined();
+    await expect(service.create({ ...base, closeWhenIdle: "yes" as never })).rejects.toThrow("closeWhenIdle");
+    const made = await service.create({ ...base, closeWhenIdle: true });
+    expect((await service.update(made.id, { ...base, closeWhenIdle: false })).closeWhenIdle).toBeUndefined();
+    expect((await new RoutineStore(dir).list()).find((r) => r.id === made.id)?.closeWhenIdle).toBeUndefined();
+    expect((await service.update(made.id, { ...base, closeWhenIdle: true })).closeWhenIdle).toBe(true);
+    expect((await new RoutineStore(dir).list()).filter((r) => r.closeWhenIdle === true)).toHaveLength(2);
+  });
+
+  it("recordClose appends a closed event with its summary", async () => {
+    const { service } = await setup();
+    await service.recordClose("r1", { outcome: "closed", slot: "x", sessionId: "s9", summary: "done" });
+    expect(service.list()[0].events.at(-1)).toMatchObject({ outcome: "closed", sessionId: "s9", summary: "done" });
+  });
+});

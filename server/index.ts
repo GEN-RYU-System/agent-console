@@ -18,6 +18,9 @@ import { QuickPromptStore } from "./quick-prompts.ts";
 import { restoreHeldFiles } from "./held-merge.ts";
 import { OpenSessionRecorder, isRestoreEnabled, startOpenSessionRestore } from "./restore.ts";
 import { OpenSessionStore } from "./session-store.ts";
+import { RoutineApprovals } from "./routine-approvals.ts";
+import { RoutineAudit } from "./routine-audit.ts";
+import { RoutineCloser } from "./routine-closer.ts";
 import { RoutineService, RoutineStore } from "./routines.ts";
 import { ReservationService, ReservationStore } from "./reservations.ts";
 import { RelayManager, resolveRelayDir } from "./relay.ts";
@@ -79,9 +82,22 @@ async function main(): Promise<void> {
   const picks = new PickStore(config.dataDir, config.pickMaxKeep);
   hub.watchPicks(picks);
   const activity = startActivity({ config, hub, env: process.env, hooksSourceDir: path.join(process.cwd(), "hooks") });
+  const routineApprovals = new RoutineApprovals();
+  const routineAudit = new RoutineAudit(config.dataDir);
+  // closeWhenIdle の定期実行が開いたセッションを、idle が累計 10 分続いたら閉じる（標本は claude agents の定期取得）
+  const closer = new RoutineCloser({
+    session: (id) => { const s = sessions.get(id); return s === undefined ? undefined : { exited: s.exited, ...(s.claudeSessionId !== undefined ? { claudeSessionId: s.claudeSessionId } : {}) }; },
+    lastReply: (cid) => { const last = activity.store.chat(cid).items.filter((c) => c.role === "assistant").at(-1); return last === undefined ? null : last.text; },
+    runningCount: (cid) => activity.store.runningCount(cid),
+    close: (id) => sessions.close(id),
+    record: (routineId, event) => routines.recordClose(routineId, event),
+    audit: (entry) => routineAudit.append({ at: new Date().toISOString(), ...entry }).catch((e) => console.error("routine-audit: write failed:", e instanceof Error ? e.message : e)),
+  });
+  routines.setCloser(closer);
+  hub.onAgentsSampled((states, at) => { void activity.store.refresh().then(() => states, () => null).then((st) => closer.sample(st, at)).catch((e) => console.error("routine-closer: sample failed:", e instanceof Error ? e.message : e)); });
   const uploads = new UploadStore(config.dataDir, config.uploadMaxBytes, config.uploadMaxKeep);
 
-  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity: activity.store, checkHooks: activity.check, memory: new MemoryCollector(), staticDir: path.join(process.cwd(), "dist"), meta, routines, reservations, relay, reserve }));
+  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity: activity.store, checkHooks: activity.check, memory: new MemoryCollector(), staticDir: path.join(process.cwd(), "dist"), meta, routines, reservations, relay, reserve, routineApprovals }));
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   // 期限切れ（12 時間）になったセッションの WebSocket を閉じる
   setInterval(() => controls.sweep(), SESSION_SWEEP_MS).unref();

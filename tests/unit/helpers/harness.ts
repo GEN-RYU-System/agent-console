@@ -20,6 +20,7 @@ import { Hub } from "../../../server/hub.ts";
 import { createRequestHandler } from "../../../server/http.ts";
 import { OpenSessionStore } from "../../../server/session-store.ts";
 import { OpenSessionRecorder } from "../../../server/restore.ts";
+import { RoutineApprovals } from "../../../server/routine-approvals.ts";
 import { RoutineService, RoutineStore } from "../../../server/routines.ts";
 import { ReservationService, ReservationStore } from "../../../server/reservations.ts";
 import type { ReserveAccess } from "../../../server/reserve-token.ts";
@@ -59,6 +60,8 @@ export interface Harness {
   reservations: ReservationService;
   relay: RelayManager;
   routines: RoutineService;
+  /** ac-routine の一時承認の保管（時刻は clock） */
+  routineApprovals: RoutineApprovals;
   close: () => Promise<void>;
 }
 
@@ -230,8 +233,9 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const uploads = new UploadStore(config.dataDir, config.uploadMaxBytes, config.uploadMaxKeep);
   const picker: PickerAccess = options.picker ?? { extensionOrigin: PICKER_ORIGIN, token: PICKER_TOKEN, extensionDir: path.join(config.dataDir, "chrome-extension") };
   const reserve: ReserveAccess = options.reserve ?? { token: RESERVE_TOKEN };
+  const routineApprovals = new RoutineApprovals(() => clock.t);
   const server = createServer(
-    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines, reservations, relay, reserve }),
+    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines, reservations, relay, reserve, routineApprovals }),
   );
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
@@ -255,6 +259,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     reservations,
     relay,
     routines,
+    routineApprovals,
     close: async () => {
       sessions.killAll();
       server.closeAllConnections();

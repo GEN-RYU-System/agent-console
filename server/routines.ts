@@ -5,6 +5,7 @@ import type { Hub } from "./hub.ts";
 import { createSerial, readJsonFile, writeJsonAtomic } from "./json-store.ts";
 import { CONTROL, launchAndSend, NAME_POLL_MS, NAME_TIMEOUT_MS, READY_POLL_MS, READY_TIMEOUT_MS, validateLaunchTarget, validateLaunchText, type LaunchOutcome, type LaunchTiming } from "./launch.ts";
 import { SessionInputError, type SessionManager } from "./sessions.ts";
+import type { RoutineCloser } from "./routine-closer.ts";
 
 export const ROUTINES_FILE = "routines.json";
 const VERSION = 2;
@@ -29,18 +30,20 @@ export function validateReason(x: unknown): string {
 export type RoutineOutcome = LaunchOutcome;
 /** version 1 の履歴を表示するためだけに読み込みを許す古い結果 */
 type LegacyOutcome = "busy" | "waiting" | "unknown" | "stopped" | "missing";
-const OUTCOMES = new Set<string>(["sent", "not_ready", "full", "cwd_invalid", "failed", "busy", "waiting", "unknown", "stopped", "missing"]);
-export type RoutineEvent = { at: number; slot: string; outcome: RoutineOutcome | LegacyOutcome; sessionName?: string };
-export interface Routine { id: string; name: string; enabled: boolean; roleId: string; cwd: string; branch?: string; timeZone: typeof TIME_ZONE; weekdays: number[]; timeHHmm: string; promptText: string; lastSlot?: string; createdAt: number; updatedAt: number; events: RoutineEvent[]; createdBy?: "agent"; }
+/** 自動クローズ（closeWhenIdle）が履歴に足す結果。closed = 閉じた、kept = 閉じずに残した */
+type CloseOutcome = "closed" | "kept";
+const OUTCOMES = new Set<string>(["sent", "not_ready", "full", "cwd_invalid", "failed", "busy", "waiting", "unknown", "stopped", "missing", "closed", "kept"]);
+export type RoutineEvent = { at: number; slot: string; outcome: RoutineOutcome | LegacyOutcome | CloseOutcome; sessionName?: string; sessionId?: string; summary?: string };
+export interface Routine { id: string; name: string; enabled: boolean; roleId: string; cwd: string; branch?: string; timeZone: typeof TIME_ZONE; weekdays: number[]; timeHHmm: string; promptText: string; closeWhenIdle?: boolean; lastSlot?: string; createdAt: number; updatedAt: number; events: RoutineEvent[]; createdBy?: "agent"; }
 export type RoutineTiming = LaunchTiming;
 /** cwd は省ける（本店で動く役割のとき、validateLaunchTarget が本店にする）。保存される Routine の cwd は必須のまま */
-export type RoutineInput = Pick<Routine, "name" | "enabled" | "roleId" | "weekdays" | "timeHHmm" | "promptText"> & { cwd?: string; branch?: string };
+export type RoutineInput = Pick<Routine, "name" | "enabled" | "roleId" | "weekdays" | "timeHHmm" | "promptText"> & { cwd?: string; branch?: string; closeWhenIdle?: boolean };
 
 const object = (x: unknown): Record<string, unknown> => { if (typeof x !== "object" || x === null || Array.isArray(x)) throw new Error("routines.json: object required"); return x as Record<string, unknown>; };
 const string = (x: unknown, what: string): string => { if (typeof x !== "string" || x.trim() === "") throw new Error(`routines.json: ${what} required`); return x; };
 function weekdays(x: unknown): number[] { if (!Array.isArray(x) || x.some((n) => !Number.isInteger(n) || n < 0 || n > 6) || new Set(x).size !== x.length) throw new Error("routines.json: weekdays invalid"); return [...x].sort(); }
-function event(x: unknown): RoutineEvent { const r = object(x); if (typeof r.at !== "number" || typeof r.slot !== "string" || typeof r.outcome !== "string" || !OUTCOMES.has(r.outcome)) throw new Error("routines.json: event invalid"); return { at: r.at, slot: r.slot, outcome: r.outcome as RoutineEvent["outcome"], ...(typeof r.sessionName === "string" ? { sessionName: r.sessionName } : {}) }; }
-function parse(raw: unknown): Routine { const r = object(raw); const timeHHmm = string(r.timeHHmm, "timeHHmm"); if (!TIME.test(timeHHmm) || r.timeZone !== TIME_ZONE || typeof r.enabled !== "boolean" || typeof r.createdAt !== "number" || typeof r.updatedAt !== "number" || !Array.isArray(r.events)) throw new Error("routines.json: routine invalid"); return { id: string(r.id, "id"), name: string(r.name, "name"), enabled: r.enabled, roleId: string(r.roleId, "roleId"), cwd: string(r.cwd, "cwd"), ...(typeof r.branch === "string" ? { branch: r.branch } : {}), timeZone: TIME_ZONE, weekdays: weekdays(r.weekdays), timeHHmm, promptText: string(r.promptText, "promptText"), ...(typeof r.lastSlot === "string" ? { lastSlot: r.lastSlot } : {}), createdAt: r.createdAt, updatedAt: r.updatedAt, events: r.events.map(event), ...(r.createdBy === "agent" ? { createdBy: "agent" as const } : {}) }; }
+function event(x: unknown): RoutineEvent { const r = object(x); if (typeof r.at !== "number" || typeof r.slot !== "string" || typeof r.outcome !== "string" || !OUTCOMES.has(r.outcome)) throw new Error("routines.json: event invalid"); return { at: r.at, slot: r.slot, outcome: r.outcome as RoutineEvent["outcome"], ...(typeof r.sessionName === "string" ? { sessionName: r.sessionName } : {}), ...(typeof r.sessionId === "string" ? { sessionId: r.sessionId } : {}), ...(typeof r.summary === "string" ? { summary: r.summary } : {}) }; }
+function parse(raw: unknown): Routine { const r = object(raw); const timeHHmm = string(r.timeHHmm, "timeHHmm"); if (!TIME.test(timeHHmm) || r.timeZone !== TIME_ZONE || typeof r.enabled !== "boolean" || typeof r.createdAt !== "number" || typeof r.updatedAt !== "number" || !Array.isArray(r.events)) throw new Error("routines.json: routine invalid"); return { id: string(r.id, "id"), name: string(r.name, "name"), enabled: r.enabled, roleId: string(r.roleId, "roleId"), cwd: string(r.cwd, "cwd"), ...(typeof r.branch === "string" ? { branch: r.branch } : {}), timeZone: TIME_ZONE, weekdays: weekdays(r.weekdays), timeHHmm, promptText: string(r.promptText, "promptText"), ...(r.closeWhenIdle === true ? { closeWhenIdle: true } : {}), ...(typeof r.lastSlot === "string" ? { lastSlot: r.lastSlot } : {}), createdAt: r.createdAt, updatedAt: r.updatedAt, events: r.events.map(event), ...(r.createdBy === "agent" ? { createdBy: "agent" as const } : {}) }; }
 
 export class RoutineStore {
   private readonly file: string;
@@ -65,6 +68,16 @@ export class RoutineService {
   async start(): Promise<void> { this.routines = await this.store.list(); this.timer = setInterval(() => void this.tick().catch((e) => console.error("routines: tick failed:", e)), 1000); this.timer.unref(); }
   stop(): void { if (this.timer) clearInterval(this.timer); this.timer = null; }
   list(): Routine[] { return this.routines; }
+  private closer: RoutineCloser | null = null;
+  /** 自動クローズ（closeWhenIdle）の見張りをつなぐ。sent になった実行を渡す */
+  setCloser(closer: RoutineCloser): void { this.closer = closer; }
+  /** 自動クローズの結果（closed / kept）を履歴に足す */
+  async recordClose(routineId: string, event: { outcome: CloseOutcome; slot: string; sessionName?: string; sessionId: string; summary?: string }): Promise<void> {
+    if (!this.routines.some((r) => r.id === routineId)) return;
+    const e: RoutineEvent = { at: this.now().getTime(), ...event };
+    this.routines = this.routines.map((r) => r.id === routineId ? { ...r, events: [...r.events, e].slice(-MAX_EVENTS), updatedAt: Date.now() } : r);
+    try { await this.persist(); } catch (err) { console.error("routines: close event save failed:", err instanceof Error ? err.message : err); }
+  }
   /** 動いている実行がすべて終わるまで待つ（試験用） */
   async settled(): Promise<void> { while (this.inflight.size > 0) await Promise.all([...this.inflight]); }
   private async persist(): Promise<void> { await this.store.save(this.routines); }
@@ -72,8 +85,9 @@ export class RoutineService {
     const text = validateLaunchText(input, "routine");
     if (!TIME.test(input.timeHHmm)) throw new SessionInputError("routine time invalid"); weekdays(input.weekdays);
     const target = await validateLaunchTarget(this.config, input, "routine");
-    const { createdBy: _createdBy, ...known } = input as RoutineInput & { createdBy?: unknown };
-    return { ...known, name: text.name, cwd: target.cwd, weekdays: [...input.weekdays].sort() };
+    const { createdBy: _createdBy, closeWhenIdle, ...known } = input as RoutineInput & { createdBy?: unknown };
+    if (closeWhenIdle !== undefined && typeof closeWhenIdle !== "boolean") throw new SessionInputError("routine closeWhenIdle invalid");
+    return { ...known, ...(closeWhenIdle === true ? { closeWhenIdle: true } : {}), name: text.name, cwd: target.cwd, weekdays: [...input.weekdays].sort() };
   }
   private agentLock: Promise<unknown> = Promise.resolve();
   /** AI の操作だけは1件ずつ順に行う（上限の検査と保存の間に別の AI の操作が入って11件になるのを防ぐ） */
@@ -89,7 +103,7 @@ export class RoutineService {
   create(input: RoutineInput, createdBy?: "agent"): Promise<Routine> { return this.exclusive(createdBy === "agent", async () => { const x = await this.validate(input); if (createdBy === "agent") this.assertAgentRoom(); const now = Date.now(); const routine: Routine = { id: randomUUID(), ...x, timeZone: TIME_ZONE, createdAt: now, updatedAt: now, events: [], ...(createdBy === "agent" ? { createdBy } : {}) }; await this.store.save([...this.routines, routine]); this.routines = [...this.routines, routine]; return routine; }); }
   /** agent: AI 用の受け口からの呼び出し。AI 分の有効の上限を見る（画面からは見ない） */
   update(id: string, input: RoutineInput, agent = false): Promise<Routine> { return this.exclusive(agent, () => this.updateNow(id, input, agent)); }
-  private async updateNow(id: string, input: RoutineInput, agent: boolean): Promise<Routine> { const at = this.routines.findIndex((r) => r.id === id); if (at < 0) throw new SessionInputError("routine not found"); const x = await this.validate(input); const old = this.routines[at]; if (x.roleId !== old.roleId || x.cwd !== old.cwd || (x.branch ?? null) !== (old.branch ?? null)) throw new SessionInputError("routine role, cwd and branch cannot be changed"); if (agent && old.createdBy === "agent" && x.enabled) this.assertAgentRoom(id); const next: Routine = { ...old, ...x, timeZone: TIME_ZONE, updatedAt: Date.now() }; this.routines = this.routines.map((r, i) => i === at ? next : r); await this.persist(); return next; }
+  private async updateNow(id: string, input: RoutineInput, agent: boolean): Promise<Routine> { const at = this.routines.findIndex((r) => r.id === id); if (at < 0) throw new SessionInputError("routine not found"); const x = await this.validate(input); const old = this.routines[at]; if (x.roleId !== old.roleId || x.cwd !== old.cwd || (x.branch ?? null) !== (old.branch ?? null)) throw new SessionInputError("routine role, cwd and branch cannot be changed"); if (agent && old.createdBy === "agent" && x.enabled) this.assertAgentRoom(id); const { closeWhenIdle: _prevClose, ...oldRest } = old; const next: Routine = { ...oldRest, ...x, timeZone: TIME_ZONE, updatedAt: Date.now() }; this.routines = this.routines.map((r, i) => i === at ? next : r); await this.persist(); return next; }
   setEnabled(id: string, enabled: unknown, agent = false): Promise<Routine> { return this.exclusive(agent, () => this.setEnabledNow(id, enabled, agent)); }
   private async setEnabledNow(id: string, enabled: unknown, agent: boolean): Promise<Routine> { if (typeof enabled !== "boolean") throw new SessionInputError("enabled required"); const at = this.routines.findIndex((r) => r.id === id); if (at < 0) throw new SessionInputError("routine not found"); if (agent && enabled && this.routines[at].createdBy === "agent") this.assertAgentRoom(id); const next = { ...this.routines[at], enabled, updatedAt: Date.now() }; this.routines = this.routines.map((r, i) => i === at ? next : r); await this.persist(); return next; }
 
@@ -108,14 +122,16 @@ export class RoutineService {
   }
 
   private async dispatch(routine: Routine, slot: string): Promise<void> {
-    let outcome: RoutineOutcome = "failed"; let sessionName: string | undefined;
-    try { ({ outcome, sessionName } = await this.open(routine, slot)); } catch (e) { console.error("routines: dispatch failed:", e instanceof Error ? e.message : e); }
-    const event: RoutineEvent = { at: this.now().getTime(), slot, outcome, ...(sessionName !== undefined ? { sessionName } : {}) };
+    let outcome: RoutineOutcome = "failed"; let sessionName: string | undefined; let sessionId: string | undefined;
+    try { ({ outcome, sessionName, sessionId } = await this.open(routine, slot)); } catch (e) { console.error("routines: dispatch failed:", e instanceof Error ? e.message : e); }
+    const event: RoutineEvent = { at: this.now().getTime(), slot, outcome, ...(sessionName !== undefined ? { sessionName } : {}), ...(sessionId !== undefined ? { sessionId } : {}) };
     this.routines = this.routines.map((r) => r.id === routine.id ? { ...r, events: [...r.events, event].slice(-MAX_EVENTS), updatedAt: Date.now() } : r);
     try { await this.persist(); } catch (e) { console.error("routines: event save failed:", e instanceof Error ? e.message : e); }
+    // 指示を送れた実行だけ、自動クローズの見張りに渡す（送ったあとから数える）
+    if (outcome === "sent" && routine.closeWhenIdle === true && sessionId !== undefined && this.closer !== null) this.closer.track({ routineId: routine.id, ...(routine.createdBy === "agent" ? { createdBy: "agent" as const } : {}), slot, sessionId, ...(sessionName !== undefined ? { sessionName } : {}), sentAt: this.now().getTime() });
   }
 
-  private open(routine: Routine, slot: string): Promise<{ outcome: RoutineOutcome; sessionName?: string }> {
+  private open(routine: Routine, slot: string): Promise<{ outcome: RoutineOutcome; sessionName?: string; sessionId?: string }> {
     return launchAndSend({ config: this.config, sessions: this.sessions, hub: this.hub, timing: this.timing }, { roleId: routine.roleId, name: routine.name, slotKey: slot, cwd: routine.cwd, ...(routine.branch !== undefined ? { branch: routine.branch } : {}), promptText: routine.promptText, stillWanted: () => this.routines.find((r) => r.id === routine.id)?.enabled === true });
   }
 }

@@ -273,8 +273,14 @@
         "unknown": "状態不明",
         "stopped": "停止中",
         "missing": "見つかりません",
-        "failed": "失敗"
+        "failed": "失敗",
+        "closed": "自動で閉じた",
+        "kept": "閉じずに残した"
       },
+      "closeWhenIdle": "終わったら自動で閉じる",
+      "closeWhenIdleHint": "指示を送ったあと 10 分間ずっと待機状態なら、このセッションを閉じます。判断待ち（NEEDS_DECISION: / BLOCKED:）や返答なしのときは閉じずに残します。",
+      "closeYes": "閉じる",
+      "closeNo": "閉じない",
       "days": { "sun": "日", "mon": "月", "tue": "火", "wed": "水", "thu": "木", "fri": "金", "sat": "土" }
     },
     "launchTarget": {
@@ -478,6 +484,14 @@
       "detailRect": "位置と大きさ",
       "receivedAt": "{{time}} に届きました",
       "noText": "文字なし"
+    },
+    "routineApproval": {
+      "title": "ルーティンの変更の承認",
+      "hint": "動いている担当がいる間、ルーティンの追加・変更は止まります。ここで承認すると、次の書き込み 1 回だけ通ります。",
+      "approve": "ルーティンの変更を 1 回承認する",
+      "approving": "承認しています",
+      "active": "承認中（残り {{minutes}} 分・未使用）",
+      "error": "承認できませんでした。セッションが開始済みか確認してください。"
     },
     "rightTabs": {
       "session": "作戦ボード",

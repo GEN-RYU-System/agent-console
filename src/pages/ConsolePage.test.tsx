@@ -49,6 +49,8 @@ vi.mock("../api", () => ({
   fetchState: () => fetchState(),
   fetchLedger: vi.fn(async () => ({ groups: { IN_PROGRESS: [], REVIEW: [], DONE: [], OTHER: [], UNREGISTERED: [] }, errors: [] })),
   refreshLedger: vi.fn(),
+  fetchRoutineApproval: vi.fn(async () => ({ approval: null })),
+  issueRoutineApproval: vi.fn(async () => ({ approved: true, expiresAt: new Date(Date.now() + 30 * 60_000).toISOString() })),
   createSession: vi.fn(),
   removeSession: (id: string) => removeSession(id),
   getSessionToken: () => "session-token",

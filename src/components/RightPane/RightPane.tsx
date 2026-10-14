@@ -4,6 +4,7 @@ import { Tabs } from "@sa/components/Tabs";
 import type { LedgerSnapshot } from "../../types";
 import { ActivityPane } from "../ActivityPane/ActivityPane";
 import { LedgerBoard } from "../LedgerBoard/LedgerBoard";
+import { RoutineApprovalBar } from "./RoutineApprovalBar";
 import "./RightPane.css";
 
 type RightTab = "session" | "ledger";
@@ -29,6 +30,7 @@ export function RightPane({ sessionId, rev, ledger, onRefresh }: Props) {
   return (
     <div className="ac-right">
       <Tabs variant="underline" size="sm" activeKey={active} onChange={setTab} items={items} />
+      {active === "session" && sessionId !== null && <RoutineApprovalBar sessionId={sessionId} />}
       <div className="ac-right__body">
         {active === "session" && sessionId !== null ? <ActivityPane sessionId={sessionId} rev={rev} /> : <LedgerBoard snapshot={ledger} onRefresh={onRefresh} />}
       </div>

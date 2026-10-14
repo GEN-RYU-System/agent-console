@@ -1,5 +1,6 @@
 // agent-console: 定期実行（曜日・時刻で新しいセッションに指示を送る）の AI 用命令。Opus 限定。設計 docs/handoff/ac-routine/design.md §4。
-// 使い方: node "<dataDir>/bin/ac-routine.mjs" list ／ add < routine.json ／ update <id> < routine.json ／ enable <id> < reason.json ／ disable <id> < reason.json
+// 使い方: node "<dataDir>/bin/ac-routine.mjs" list ／ add < routine.json ／ update <id> < routine.json ／ enable <id> < reason.json ／ disable <id> < reason.json ／ approve --reason <理由>
+// approve: 担当（サブエージェント）が動いている間は書き込みが 403 になる。その次の書き込み 1 回だけを通す一時承認（10 分・1 回限り）を出す。設計 docs/handoff/ac-hardening/design.md §3-3a。
 // 定期実行の正本は dataDir/routines.json で、書き手はサーバーだけ。この命令はファイルへ書かず、サーバーの HTTP（/api/agent/routines）に頼む。
 // 宛先のポートと合言葉は dataDir/reserve-token（{"port","token"}、サーバーが書く）だけから取る。node の標準の部品だけを使う。
 // 呼び出し元の会話は環境変数 CLAUDE_CODE_SESSION_ID を callerSessionId として送り、サーバーが役割を照合する（Opus 以外は 403）。
@@ -13,7 +14,7 @@ const REQUEST_TIMEOUT_MS = 15000;
 const TOKEN = /^[0-9a-f]{64}$/;
 const ROUTINE_ID = /^[A-Za-z0-9-]{1,64}$/;
 const STDIN_SUBS = new Set(["add", "update", "enable", "disable"]);
-const USAGE = '使い方: node "<dataDir>/bin/ac-routine.mjs" list ／ add < routine.json ／ update <id> < routine.json ／ enable <id> < reason.json ／ disable <id> < reason.json（reason は必須。入力の形は README の「定期実行（AI）」）';
+const USAGE = '使い方: node "<dataDir>/bin/ac-routine.mjs" list ／ add < routine.json ／ update <id> < routine.json ／ enable <id> < reason.json ／ disable <id> < reason.json ／ approve --reason <理由>（reason は必須。入力の形は README の「定期実行（AI）」）';
 
 const reject = (message) => ({ code: 1, stdout: "", stderr: `${message}\n` });
 
@@ -54,7 +55,7 @@ async function call(access, method, pathname, bodyText) {
 export async function runCommand({ argv, stdinText = "", dataDir, callerSessionId }) {
   const [sub, ...rest] = argv;
   const needsId = sub === "update" || sub === "enable" || sub === "disable";
-  const wellFormed = (sub === "add" && rest.length === 0) || (sub === "list" && rest.length === 0) || (needsId && rest.length === 1 && ROUTINE_ID.test(rest[0]));
+  const wellFormed = (sub === "approve" && rest.length >= 2 && rest[0] === "--reason" && rest.slice(1).join(" ").trim() !== "") || (sub === "add" && rest.length === 0) || (sub === "list" && rest.length === 0) || (needsId && rest.length === 1 && ROUTINE_ID.test(rest[0]));
   if (!wellFormed) return reject(USAGE);
   let payload;
   if (STDIN_SUBS.has(sub)) {
@@ -73,6 +74,7 @@ export async function runCommand({ argv, stdinText = "", dataDir, callerSessionI
   let result;
   try {
     if (sub === "list") result = await call(access, "GET", `/api/agent/routines${caller.callerSessionId !== undefined ? `?callerSessionId=${encodeURIComponent(caller.callerSessionId)}` : ""}`);
+    else if (sub === "approve") result = await call(access, "POST", "/api/agent/routines/approval", JSON.stringify({ reason: rest.slice(1).join(" "), ...caller }));
     else if (sub === "add") result = await call(access, "POST", "/api/agent/routines", JSON.stringify({ ...payload, ...caller }));
     else if (sub === "update") result = await call(access, "PUT", `/api/agent/routines/${encodeURIComponent(rest[0])}`, JSON.stringify({ ...payload, ...caller }));
     else result = await call(access, "POST", `/api/agent/routines/${encodeURIComponent(rest[0])}/enabled`, JSON.stringify({ reason: payload.reason, enabled: sub === "enable", ...caller }));

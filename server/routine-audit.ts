@@ -7,7 +7,8 @@ export const ROUTINE_AUDIT_FILE = "routine-audit.jsonl";
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
 
-export type RoutineAuditAction = "add" | "update" | "enable" | "disable";
+/** add / update / enable / disable は書き込み。approvalIssued は一時承認の発行。closed / kept は定期実行セッションの自動クローズ（設計 ac-hardening §7） */
+export type RoutineAuditAction = "add" | "update" | "enable" | "disable" | "approvalIssued" | "closed" | "kept";
 
 export interface RoutineAuditEntry {
   at: string;
@@ -22,6 +23,18 @@ export interface RoutineAuditEntry {
   roleId?: string;
   reason?: string;
   error?: string;
+  /** approvalIssued: 承認を出した側 */
+  by?: "opus" | "ui";
+  /** approvalIssued: 期限（ISO 8601） */
+  expiresAt?: string;
+  /** approvalIssued（opus）: 発行の時点で動いていた担当。どの担当が動いている最中に承認したかを週次で見る */
+  runningAgents?: { key: string; subagentType: string; startedAt: number }[];
+  /** 書き込みが一時承認で通ったときの、使った承認の出し手 */
+  approvedBy?: "opus" | "ui";
+  /** 書き込みが担当の動いている最中に拒否されたときの、動いていた担当の数 */
+  runningCount?: number;
+  /** closed / kept: 自動クローズの理由（kept は decision / no-reply / waiting） */
+  closeReason?: string;
 }
 
 export class RoutineAudit {
