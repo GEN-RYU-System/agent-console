@@ -34,7 +34,7 @@
 - src に ErrorBoundary は 0 件。SA の部品にあるかは .sa-cache が無く【未確認】。
 
 ## R7 更新
-- scripts/ac-update.sh → scripts/lib/ac-common.sh:499 `launchctl kickstart -k` でサーバーだけ再起動。Chrome のアプリ窓は開いたまま。起動を待つのは最大 20 秒（scripts/ac-update.sh:38）。
+- scripts/ac-update.sh → scripts/lib/ac-common.sh:499 `launchctl kickstart -k` でサーバーだけ再起動。Chrome のアプリ窓は開いたまま。起動を待つのは最大 20 秒（scripts/lib/ac-common.sh:38）。
 
 ## R8 未確認
 - PO の「何も表示されない」がどの経路か（実機で再現していない）。recon r1 10 の EBADF/SIGTERM のログが直接の原因かは判定できない。
