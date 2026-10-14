@@ -1,6 +1,6 @@
 # 作戦ボードの書き忘れ防止（board-guard）設計 第3版
 
-- 状態: 第3版（Opus 2026-10-14。工程0の実測を §11 に反映）。Fable 審査 APPROVE（/tmp/CC報告ファイル/board-adoption/review-design3/review.md。中1・低は §12 に反映）。PO 承認済み（2026-10-14「3から順番にy,」＝file-viewer→keep-login→session-relay→board-guard の順に実装してよい。離席中の完走は同日夜の PO 委任による。工程3の `ac-hooks.mjs install` は §3-2 のとおり PO の手元で行う）。それまでの経過: 第2版＋審査反映。第2版は Fable 審査 APPROVE（工程0へ進んでよい。/tmp/CC報告ファイル/board-adoption/review-design2/review.md。中 A〜C は下に反映）。第1版は Fable 審査 REVISE（/tmp/CC報告ファイル/board-adoption/review-design1/review.md。第1版の控え: /tmp/CC報告ファイル/board-adoption/design-v1.md）。PO 未承認。
+- 状態: 第3版（Opus 2026-10-14。工程0の実測を §11 に反映）。Fable 審査 APPROVE（/tmp/CC報告ファイル/board-adoption/review-design3/review.md。中1・低は §12 に反映）。PO 承認済み（2026-10-14「3から順番にy,」＝file-viewer→keep-login→session-relay→board-guard の順に実装してよい。離席中の完走は同日夜の PO 委任による。工程3の ac-hooks.mjs install は §3-2 のとおり PO の手元で行う）。それまでの経過: 第2版＋審査反映。第2版は Fable 審査 APPROVE（工程0へ進んでよい。/tmp/CC報告ファイル/board-adoption/review-design2/review.md。中 A〜C は下に反映）。第1版は Fable 審査 REVISE（/tmp/CC報告ファイル/board-adoption/review-design1/review.md。第1版の控え: /tmp/CC報告ファイル/board-adoption/design-v1.md）。PO 未承認。
 - PO の言葉（2026-10-14）: 「あなたが作ってくれた右側の作戦ボードだがほとんどのセッションで使っておらず有効化されていない、どうやったら他のセッションも守る？」
 - 根拠の生出力: /tmp/CC報告ファイル/board-adoption/facts.md、r2/（公式・settings.json の Stop の並び）、r3/（origin/main f255892 の行番号。§0 のコードの行はすべて r3 による）
 
@@ -33,7 +33,7 @@
 - K4: ボードが ok なら止めない。invalid なら K1 と同じく1回止める（reason に「形が壊れている」）。判定: 単体試験。
 - K5: stop_hook_active が true なら止めない。判定: 単体試験。
 - K6: どこで失敗しても止めない（常に exit 0、出力なし）。失敗は dataDir/board-guard/errors.log に日時つき1行。判定: 単体試験（open-sessions.json 壊れ・bin/ac-board.mjs 無し・transcript 無し・印が書けない、の4つで exit 0・出力なし・errors.log に1行）。
-- K7: `ac-hooks.mjs install/uninstall/check` が board-guard も足す・外す・点検する。既存の利用者 hook と activity の handler は変わらない。判定: 単体試験と、工程3の install 前後で `jq -S` で正規化した settings.json の差分が board-guard の handler 1つだけであること（uninstall 後は install 前と一致）。
+- K7: ac-hooks.mjs install/uninstall/check が board-guard も足す・外す・点検する。既存の利用者 hook と activity の handler は変わらない。判定: 単体試験と、工程3の install 前後で `jq -S` で正規化した settings.json の差分が board-guard の handler 1つだけであること（uninstall 後は install 前と一致）。
 - K8（運用指標）: ボード保有率 = boards の ok 件数 ÷ open-sessions.json の件数。基準値 3/11（2026-10-14 08:41 JST。boards のファイルは4件だが、1件は閉じたセッション a2a5ef28 の物。review-design2）。導入7日後に 10/11 以上。測るのは scripts/board-coverage.mjs。
 
 ## 3. 仕組み
@@ -131,9 +131,9 @@ handler の種類を表にする。
   - scripts/ac-hooks.mjs の install / uninstall / check は両方の種類を扱う。install は board-guard.mjs を dataDir/hooks/ に、ac-board.mjs を dataDir/bin/ に写してから登録する（bin が無いと board-guard は止めない側に倒れるため）。
 
 ## 12. 第3版の審査（Fable APPROVE）を受けた決め（Opus 2026-10-14）
-- 中1 `ac-hooks.mjs check` の出し方: stdout は今の1つの JSON のまま、鍵 `boardGuard`（"ok" / "missing" / "differs"）を足す。終了コードは今の activity の判定だけで決め、board-guard の状態では変えない（既存の試験 tests/unit/activity-hooks.test.ts:314-316 と右の欄の案内を変えないため）。
+- 中1 ac-hooks.mjs check の出し方: stdout は今の1つの JSON のまま、鍵 `boardGuard`（"ok" / "missing" / "differs"）を足す。終了コードは今の activity の判定だけで決め、board-guard の状態では変えない（既存の試験 tests/unit/activity-hooks.test.ts:314-316 と右の欄の案内を変えないため）。
 - 低: timeout で打ち切られた回は errors.log に残らない（公式は出力を捨てる）。印も作られないので、次の応答終了でもう一度試す。tool_use が3未満の巨大な transcript では全部読み最大 3.7 秒（timeout 15 の内）。どちらも受け入れる。
-- 低: 工程3の (e) の確認は、必ず本物の `ac-hooks.mjs install` で行う（settings.json は rename で置き換わるため、手で echo 書き込みして代用しない）。工程0 (e) の起動は --setting-sources project,local で、本番と条件が違う。
+- 低: 工程3の (e) の確認は、必ず本物の ac-hooks.mjs install で行う（settings.json は rename で置き換わるため、手で echo 書き込みして代用しない）。工程0 (e) の起動は --setting-sources project,local で、本番と条件が違う。
 
 ## 13. main（de5b053・v0.31.0）を合流した後の決め（Opus 2026-10-15）
 照合の生出力: /tmp/CC報告ファイル/board-guard/line-check.md（Sonnet。合流コミット 904256c、衝突なし）。
@@ -145,7 +145,7 @@ handler の種類を表にする。
 - 決め3（写し）: server/activity-setup.ts に BOARD_GUARD_FILE_NAME・boardGuardPathIn・installBoardGuardFile を installGuardFile（:17-25）と同じ作法で足す。server/activity-start.ts の起動時の写し（:43-52 の並び）に installBoardGuardFile を足す。scripts/ac-hooks.mjs の install（:73-75）は installHooks の前に installBoardGuardFile と installBoardCommand（今は import に無い。:15）を呼ぶ。install の案内文（:76）とファイル先頭の説明（:3。handler の本数 10 → 11）を直す。
 - 決め4（試験）: tests/unit/activity-hooks.test.ts は v0.25.0 の guard の足し方に倣って書き換える。:20 OWN_HANDLER_COUNT を +2 に、:74-75 の HOOK_SPECS の期待に1行足し本数の文言を 11 に、:281 の missingEvents に "Stop(board-guard.mjs)" を足す。:147 と同じ形で board-guard.mjs が1本だけであることを足す。ACTIVITY_HANDLER_COUNT（:18、記録用だけの本数）を使う所は変えない。
 - 決め5: §0 の「routineId は server/ に0件」は今は成り立たない（server/routine-audit.ts:17、server/http.ts:400）。ただし open-sessions.json の項目には今も routineId が無いので、§6 の決め（定期実行由来も止める）は変えない。
-- 決め6: §11 の `activity-start.ts:117` は f255892 でも存在しない誤記（ファイルは72行）。e2e の :117 の意味で、§3-2 の check を変えない方針は決め2で取り消したので、この引用は使わない。
+- 決め6: §11 の activity-start.ts:117 は f255892 でも存在しない誤記（ファイルは72行）。e2e の :117 の意味で、§3-2 の check を変えない方針は決め2で取り消したので、この引用は使わない。
 - 版: いま最新のタグは v0.31.0。次の空き番号（0.32.0 の見込み）を、マージの直前に `git tag` で確かめてから決める。§8 の「v0.21.0 の予定」は古い。
 - 変えないもの: §3-1（board-guard.mjs の手順）、§3-3、§4〜§7、K1〜K8（ただし K7 の「activity の handler は変わらない」は「既存の handler（記録用9・guard）は変わらない」と読む）。
 - §13 の審査（Fable REVISE、/tmp/CC報告ファイル/board-guard/review-s13.md）を受けた追記（Opus 2026-10-15）:
