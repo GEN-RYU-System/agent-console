@@ -170,10 +170,24 @@ const emptyActivity = (): SessionActivity => ({ running: [], tasks: [], inputs: 
 /** 渡された時刻（無いものは除く）のうち一番新しいもの。1 つも無ければ 0 */
 const latestOf = (...times: Array<number | undefined>): number => Math.max(0, ...times.map((t) => t ?? 0));
 
-/** map の agent_id に、新しい方の時刻を覚える。件数が上限を超えたら古い時刻から落とす */
-function rememberLatest(map: Map<string, number>, agentId: string, ts: number, keep: number): void {
+/**
+ * map の agent_id に、新しい方の時刻を覚える。件数が上限を超えたら古い時刻から落とす。
+ * protectedIds（開始に結び付いた担当）は後回しにして、守る物以外の古い順に落とす。足りなければ残りを古い順に落とす
+ */
+function rememberLatest(map: Map<string, number>, agentId: string, ts: number, keep: number, protectedIds: () => ReadonlySet<string>): void {
   map.set(agentId, Math.max(map.get(agentId) ?? 0, ts));
-  trimOldest(map, keep, (v) => v);
+  if (map.size <= keep) return;
+  const guarded = protectedIds();
+  const oldestFirst = [...map.entries()].sort((a, b) => a[1] - b[1]);
+  const order = [...oldestFirst.filter(([id]) => !guarded.has(id)), ...oldestFirst.filter(([id]) => guarded.has(id))];
+  for (const [id] of order.slice(0, map.size - keep)) map.delete(id);
+}
+
+/** 開始（starts）に結び付いた担当の agent_id。stop・handback・再開を落とさないために使う */
+function linkedAgentIds(state: SessionState): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const [toolUseId, post] of state.posts) if (post.agentId !== "" && state.starts.has(toolUseId)) ids.add(post.agentId);
+  return ids;
 }
 
 /** 件数が上限を超えたら、時刻（ts）の古いものから落とす */
@@ -353,10 +367,10 @@ export class ActivityStore {
         else this.applyPost(state, rec, ts);
         break;
       case "SubagentStart":
-        if (agentId !== "") rememberLatest(state.restarts, agentId, ts, RESTARTS_KEEP);
+        if (agentId !== "") rememberLatest(state.restarts, agentId, ts, RESTARTS_KEEP, () => linkedAgentIds(state));
         break;
       case "SubagentStop":
-        if (agentId !== "") rememberLatest(state.stops, agentId, ts, STOPS_KEEP);
+        if (agentId !== "") rememberLatest(state.stops, agentId, ts, STOPS_KEEP, () => linkedAgentIds(state));
         break;
       case "TaskCreated":
       case "TaskCompleted":
@@ -391,7 +405,7 @@ export class ActivityStore {
 
   private applyPre(state: SessionState, rec: Raw, ts: number, agentId: string): void {
     if (rec.tool === "SubagentHandback") {
-      if (agentId !== "") rememberLatest(state.handbacks, agentId, ts, HANDBACKS_KEEP);
+      if (agentId !== "") rememberLatest(state.handbacks, agentId, ts, HANDBACKS_KEEP, () => linkedAgentIds(state));
       return;
     }
     if (rec.tool !== "Agent") return;

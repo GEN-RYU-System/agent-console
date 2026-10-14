@@ -362,6 +362,54 @@ describe("メモリの上限", () => {
   });
 });
 
+describe("v0.32.1: 結び付いた担当の stop・handback・再開は、記憶の上限で落とさない", () => {
+  /** 結び付いていない agent_id（孫・内部の担当）を n 個、ts が A より後になるように流す */
+  const noise = (n: number, make: (id: string, ts: number) => Rec, from: number): Rec[] => Array.from({ length: n }, (_, i) => make(`N${i}`, from + i * 1000));
+  const linked = (): Rec[] => [pre("t1", { ts: T0 }), start("A", { ts: T0 + 500 }), post("t1", "A", { ts: T0 + 1000 })];
+  const stopsOf = (): Map<string, number> => (store as unknown as { sessions: Map<string, { stops: Map<string, number> }> }).sessions.get(SID)!.stops;
+
+  it("K1 結び付いた担当の stop の後に、結び付いていない 500 個の stop が届いても、running に出ない。stops は 400 以内（K3a）", async () => {
+    write([...linked(), stop("A", { ts: T0 + 91_000 }), ...noise(500, (id, ts) => stop(id, { ts }), T0 + 100_000)]);
+    await store.refresh();
+    expect(store.view(SID).running).toHaveLength(0);
+    expect(store.sizes(SID).stops).toBeLessThanOrEqual(400);
+  });
+
+  it("K2a 結び付いた担当の handback の後に、結び付いていない 500 個の handback が届いても、running に出ない。handbacks は 400 以内（K3a）", async () => {
+    write([...linked(), handback("A", "報告", { ts: T0 + 91_000 }), ...noise(500, (id, ts) => handback(id, `報告${id}`, { ts }), T0 + 100_000)]);
+    await store.refresh();
+    expect(store.view(SID).running).toHaveLength(0);
+    expect(store.sizes(SID).handbacks).toBeLessThanOrEqual(400);
+  });
+
+  it("K2b stop → 再開の後に、結び付いていない 500 個の SubagentStart が届いても、running に出る。restarts は 400 以内（K3a）", async () => {
+    write([...linked(), stop("A", { ts: T0 + 91_000 }), start("A", { ts: T0 + 200_000 }), ...noise(500, (id, ts) => start(id, { ts }), T0 + 300_000)]);
+    await store.refresh();
+    const v = store.view(SID);
+    expect(v.running).toHaveLength(1);
+    expect(v.running[0].startedAt).toBe(T0 + 200_000);
+    expect(store.sizes(SID).restarts).toBeLessThanOrEqual(400);
+  });
+
+  it("K3b starts 400 件すべてが結び付いた状態で、さらに結び付いていない stop を足しても stops は 400 以内。結び付いた 400 個の stop は残る", async () => {
+    const rows: Rec[] = [];
+    for (let i = 0; i < 400; i++) rows.push(pre(`t${i}`, { ts: T0 + i }), post(`t${i}`, `L${i}`, { ts: T0 + i + 1 }), stop(`L${i}`, { ts: T0 + 1000 + i }));
+    rows.push(...noise(50, (id, ts) => stop(id, { ts }), T0 + 100_000));
+    write(rows);
+    await store.refresh();
+    expect(store.sizes(SID)).toMatchObject({ starts: 400, stops: 400 });
+    for (let i = 0; i < 400; i++) expect(stopsOf().has(`L${i}`)).toBe(true);
+    expect(stopsOf().has("N0")).toBe(false);
+  });
+
+  it("K3c starts に無い toolUseId の post（孫など）の agentId は守られない。古い順に落ちる", async () => {
+    write([post("ghost", "G", { ts: T0 }), stop("G", { ts: T0 + 1 }), ...noise(400, (id, ts) => stop(id, { ts }), T0 + 1000)]);
+    await store.refresh();
+    expect(stopsOf().size).toBe(400);
+    expect(stopsOf().has("G")).toBe(false);
+  });
+});
+
 describe("K7: セッションごとに分ける", () => {
   it("別の session_id の記録は、選んだセッションの view に混ざらない", async () => {
     write([pre("t1"), rec({ session_id: OTHER, event: "TaskCreated", task_id: "1", task_subject: "他人の" }), rec({ session_id: OTHER, event: "UserPromptSubmit", prompt: "他の入力" })]);
