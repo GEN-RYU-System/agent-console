@@ -1,4 +1,4 @@
-import type { AccountResponse, ActivityResponse, BoardResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, ResumeTarget, Routine, RoutineInput, UsageResponse } from "./types";
+import type { AccountResponse, ActivityResponse, BoardResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, Reservation, ReservationInput, ResumeTarget, Routine, RoutineInput, UsageResponse } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -149,6 +149,9 @@ export const fetchRoutines = (): Promise<{ items: Routine[] }> => request("/api/
 export const createRoutine = (input: RoutineInput): Promise<Routine> => request("/api/routines", { method: "POST", body: JSON.stringify(input) });
 export const updateRoutine = (id: string, input: RoutineInput): Promise<Routine> => request(`/api/routines/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(input) });
 export const setRoutineEnabled = (id: string, enabled: boolean): Promise<Routine> => request(`/api/routines/${encodeURIComponent(id)}/enabled`, { method: "POST", body: JSON.stringify({ enabled }) });
+export const fetchReservations = (): Promise<{ items: Reservation[] }> => request("/api/reservations");
+export const createReservation = (input: ReservationInput): Promise<Reservation> => request("/api/reservations", { method: "POST", body: JSON.stringify(input) });
+export const cancelReservation = (id: string): Promise<Reservation> => request(`/api/reservations/${encodeURIComponent(id)}/cancel`, { method: "POST", body: "{}" });
 
 /** ペアリングコードを引換えてセッショントークンを得る（認証前の API）。 */
 export async function redeemCode(code: string): Promise<string> {

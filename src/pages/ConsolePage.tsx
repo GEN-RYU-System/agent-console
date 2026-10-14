@@ -42,6 +42,7 @@ import { SessionList } from "../components/SessionList/SessionList";
 import { ThemeToggle } from "../components/ThemeToggle/ThemeToggle";
 import { UsageMeter } from "../components/UsageMeter/UsageMeter";
 import { RoutinesPane } from "../components/Routines/RoutinesPane";
+import { ReservationsPane } from "../components/Reservations/ReservationsPane";
 import { TerminalPane, type PasteResult, type TerminalHandle, type UploadNotice } from "../components/TerminalPane/TerminalPane";
 import { ACCOUNT_LOGIN_ROLE_ID, type ConsoleState, type LedgerSnapshot, type QuickPrompt, type ResumeTarget, type SessionState, type SessionView } from "../types";
 import "./ConsolePage.css";
@@ -52,7 +53,7 @@ const RENAME_CONFIRM_MS = 10000;
 const UPLOAD_NOTICE_MS = 8000;
 const BYTES_PER_MB = 1024 * 1024;
 
-type CenterTab = "chat" | "terminal" | "changes" | "pr" | "picks" | "routines";
+type CenterTab = "chat" | "terminal" | "changes" | "pr" | "picks" | "routines" | "reservations";
 
 function useConsoleState() {
   const [state, setState] = useState<ConsoleState | null>(null);
@@ -385,6 +386,7 @@ export function ConsolePage() {
             { key: "pr", label: t("ac.tabs.pr") },
             { key: "picks", label: t("ac.tabs.picks"), ...(state.picksUnsent > 0 ? { count: state.picksUnsent } : {}) },
             { key: "routines", label: t("ac.tabs.routines") },
+            { key: "reservations", label: t("ac.tabs.reservations") },
           ]}
         />
         {centerTab === "terminal" && (
@@ -446,6 +448,7 @@ export function ConsolePage() {
           paste={pasteToTerminal}
         />
         <RoutinesPane roles={state.roles} active={centerTab === "routines"} />
+        <ReservationsPane roles={state.roles} active={centerTab === "reservations"} />
       </main>
       <aside className="ac-page__right">
         <RightPane sessionId={activeId} rev={state.activityRev} ledger={ledger} onRefresh={handleRefresh} />

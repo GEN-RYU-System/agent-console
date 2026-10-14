@@ -90,6 +90,17 @@ export interface RoutineEvent { at: number; slot: string; outcome: "sent" | "not
 export interface Routine { id: string; name: string; enabled: boolean; roleId: string; cwd: string; branch?: string; timeZone: "Asia/Tokyo"; weekdays: number[]; timeHHmm: string; promptText: string; lastSlot?: string; createdAt: number; updatedAt: number; events: RoutineEvent[]; }
 export type RoutineInput = Pick<Routine, "name" | "enabled" | "roleId" | "cwd" | "weekdays" | "timeHHmm" | "promptText"> & { branch?: string };
 
+export type ReservationStatus = "pending" | "dispatching" | "done" | "cancelled";
+export type ReservationOutcome = "sent" | "not_ready" | "full" | "cwd_invalid" | "failed" | "interrupted";
+export interface Reservation {
+  id: string; name: string; roleId: string; cwd: string; branch?: string;
+  runAt: number; runAtJst: string; timeZone: "Asia/Tokyo"; promptText: string;
+  createdBy: "ui" | "agent"; createdAt: number; updatedAt: number; status: ReservationStatus;
+  startedAt?: number; lateMinutes?: number; finishedAt?: number; outcome?: ReservationOutcome; sessionName?: string;
+  purpose?: "measure"; measureNote?: string;
+}
+export interface ReservationInput { name: string; roleId: string; cwd: string; branch?: string; date: string; time: string; promptText: string; }
+
 /** 再開先の1行（本店=Opus 設計役 / 本店の worktree=Sonnet 実装役）。会話の一覧は持たない。 */
 export interface ResumeTarget {
   kind: "main" | "worktree";

@@ -1,0 +1,10 @@
+.ac-reservations { padding: var(--space-3); overflow: auto; }
+.ac-reservations__bar, .ac-reservations__item, .ac-reservations__meta { display: flex; align-items: center; gap: var(--space-2); }
+.ac-reservations__bar { justify-content: space-between; margin-bottom: var(--space-3); }
+.ac-reservations__section { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); }
+.ac-reservations__heading { margin: 0; color: var(--text-muted); font-size: var(--font-sm); }
+.ac-reservations__list { display: grid; gap: var(--space-2); }
+.ac-reservations__item { justify-content: space-between; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.ac-reservations__details { min-width: 0; }
+.ac-reservations__meta { flex-wrap: wrap; color: var(--text-muted); font-size: var(--font-xs); }
+.ac-reservations__note { color: var(--text-muted); font-size: var(--font-xs); overflow-wrap: anywhere; }
