@@ -5,7 +5,7 @@ import { DENY_MESSAGE, judge } from "../../hooks/ac-routine-guard.mjs";
 import { GUARD_HOOK_FILE, HOOK_SPECS, buildHandler } from "../../server/activity-hooks.ts";
 
 const GUARD = path.join(process.cwd(), "hooks", "ac-routine-guard.mjs");
-const CMD = 'node "/Users/x/Library/Application Support/agent-console/bin/ac-routine.mjs" list';
+const CMD = 'node "/tmp/x/data/bin/ac-routine.mjs" list';
 const input = (command: string, agentId?: string): Record<string, unknown> => ({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command }, ...(agentId !== undefined ? { agent_id: agentId, agent_type: "general-purpose" } : {}) });
 
 describe("S4 ac-routine-guard judge", () => {

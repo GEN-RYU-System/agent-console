@@ -20,7 +20,7 @@ const auditLines = (): Record<string, unknown>[] => {
   try { return readFileSync(auditFile, "utf8").split("\n").filter((l) => l !== "").map((l) => JSON.parse(l) as Record<string, unknown>); } catch { return []; }
 };
 const entry = (over: Record<string, unknown> = {}): string => JSON.stringify({ name: "r", roleId: "echo", cwd: h.config.salesanchorRoot, weekdays: [1], timeHHmm: "09:00", promptText: "hi", enabled: true, reason: "測定のため", ...over });
-const run = (argv: string[], stdinText?: string, callerSessionId: string | undefined = OPUS_SID) => runCommand({ argv, ...(stdinText !== undefined ? { stdinText } : {}), dataDir, callerSessionId });
+const run = (argv: string[], stdinText?: string, callerSessionId: string | null = OPUS_SID) => runCommand({ argv, ...(stdinText !== undefined ? { stdinText } : {}), dataDir, callerSessionId: callerSessionId ?? undefined });
 const routineIds = (): string[] => h.routines.list().map((r) => r.id);
 
 beforeAll(async () => {
@@ -73,7 +73,7 @@ describe("ac-routine command and server", () => {
   it("S3 S5 S6 S8 a non-manager role, a missing, malformed or unknown caller and a mixed-role caller are all refused with 403 and nothing changes", async () => {
     const before = routineIds();
     const auditBefore = auditLines().length;
-    const cases: [string, string | undefined][] = [["sonnet role", SONNET_SID], ["no caller (terminal outside the app)", undefined], ["not a uuid", "not-a-uuid"], ["unknown uuid", UNKNOWN_SID], ["mixed roles", MIXED_SID]];
+    const cases: [string, string | null][] = [["sonnet role", SONNET_SID], ["no caller (terminal outside the app)", null], ["not a uuid", "not-a-uuid"], ["unknown uuid", UNKNOWN_SID], ["mixed roles", MIXED_SID]];
     for (const [label, sid] of cases) {
       const r = await run(["add"], entry(), sid);
       expect(r.code, label).toBe(1);
@@ -106,6 +106,21 @@ describe("ac-routine command and server", () => {
     expect((await run(["list"], undefined, sid)).code).toBe(0);
     await h.sessions.close(gone.id);
     expect((await run(["list"], undefined, sid)).stderr).toContain("403");
+  });
+
+  it("the agent path goes through the same validation as the screen: omitting cwd for a main-checkout role means the main checkout, and a worktree role without branch is a 400 on both", async () => {
+    const screen = async (body: Record<string, unknown>) => fetch(`${h.base}/api/routines`, { method: "POST", headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" }, body: JSON.stringify({ name: "s", weekdays: [3], timeHHmm: "11:00", promptText: "p", enabled: false, ...body }) });
+    const viaScreen = await screen({ roleId: "echo" });
+    expect(viaScreen.status).toBe(201);
+    const screenCwd = ((await viaScreen.json()) as { cwd: string }).cwd;
+    const added = await run(["add"], entry({ cwd: undefined, enabled: false }));
+    expect(added.code, added.stderr).toBe(0);
+    const id = (JSON.parse(added.stdout) as { id: string }).id;
+    expect(h.routines.list().find((r) => r.id === id)?.cwd).toBe(screenCwd);
+    const noBranchAgent = await run(["add"], entry({ roleId: "wt", enabled: false }));
+    expect(noBranchAgent.code).toBe(1);
+    expect(noBranchAgent.stderr).toContain("400");
+    expect((await screen({ roleId: "wt", cwd: h.config.salesanchorRoot })).status).toBe(400);
   });
 
   it("S6 input mistakes (400) leave no audit row, but a change to a routine made on the screen records targetCreatedBy ui", async () => {

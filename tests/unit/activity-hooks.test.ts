@@ -154,7 +154,7 @@ describe("K6: install", () => {
     const r = installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath });
     expect(r.changed).toBe(true);
     const after = readJson(e.settings);
-    for (const ev of V0_11_EVENTS) expect(after.hooks[ev]).toEqual(before.hooks[ev]);
+    for (const ev of V0_11_EVENTS) expect(after.hooks[ev].slice(0, before.hooks[ev].length)).toEqual(before.hooks[ev]); // 既存の group は変わらない（PreToolUse は末尾に guard の group が足される）
     expect(after.hooks.SubagentStart).toEqual([{ hooks: [ownHandler(e)] }]);
     expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toEqual({ ok: true });
   });
@@ -168,7 +168,7 @@ describe("K6: install", () => {
     const r = installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath });
     expect(r.changed).toBe(true);
     const after = readJson(e.settings);
-    for (const ev of OLD_EVENTS) expect(after.hooks[ev]).toEqual(before.hooks[ev]);
+    for (const ev of OLD_EVENTS) expect(after.hooks[ev].slice(0, before.hooks[ev].length)).toEqual(before.hooks[ev]); // 既存の group は変わらない（PreToolUse は末尾に guard の group が足される）
     expect(after.hooks.Stop).toEqual([...PO_SETTINGS.hooks.Stop, { hooks: [ownHandler(e)] }]);
     expect(after.hooks.StopFailure).toEqual([{ hooks: [ownHandler(e)] }]);
     expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toEqual({ ok: true });

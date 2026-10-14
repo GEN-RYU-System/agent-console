@@ -43,6 +43,7 @@ const statuslinePath = statuslineCommandPathIn(dataDir);
 /** statusLine の段（hooks の段のあとに別に行う）。失敗は例外にせず、「hooks は入った・statusLine は入っていない」と分けて出して 1 を返す */
 function installStatusLineStage() {
   try {
+    installRoutineCommand(path.join(root, "hooks"), dataDir);
     installStatuslineCommand(path.join(root, "hooks"), dataDir);
     const r = installStatusLine({ settingsPath, nodePath: process.execPath, scriptPath: statuslinePath });
     const messages = {
@@ -65,7 +66,6 @@ try {
   if (command === "install") {
     installHookFile(path.join(root, "hooks"), dataDir);
     installGuardFile(path.join(root, "hooks"), dataDir);
-    installRoutineCommand(path.join(root, "hooks"), dataDir);
     const r = installHooks({ settingsPath, nodePath: process.execPath, hookPath });
     console.log(r.changed ? `記録用 hook を ${settingsPath} に足しました（控えは同じフォルダの settings.json.ac-backup-*）` : "記録用 hook はすでに入っています（変更なし）");
     process.exitCode = installStatusLineStage();
