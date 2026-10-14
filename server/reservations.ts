@@ -125,19 +125,27 @@ export class ReservationService {
   private lastStartedAt = Number.NEGATIVE_INFINITY;
   private timer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
-  constructor(private readonly config: Config, private readonly sessions: SessionManager, private readonly hub: Hub, private readonly store: ReservationStore, private readonly now: () => Date = () => new Date(), private readonly timing: LaunchTiming = { pollMs: READY_POLL_MS, timeoutMs: READY_TIMEOUT_MS }) {}
+  /** 最初の読み込み（list と interrupted 化）が終わったら成功する。create・cancel・listReady はこれを待つ */
+  private readonly loaded: Promise<void>;
+  private markLoaded: () => void = () => undefined;
+  constructor(private readonly config: Config, private readonly sessions: SessionManager, private readonly hub: Hub, private readonly store: ReservationStore, private readonly now: () => Date = () => new Date(), private readonly timing: LaunchTiming = { pollMs: READY_POLL_MS, timeoutMs: READY_TIMEOUT_MS }, preloaded = false) {
+    this.loaded = new Promise<void>((resolve) => { this.markLoaded = resolve; });
+    if (preloaded) this.markLoaded(); // start を呼ばない試験用。既定は start で読み込む
+  }
 
   /**
    * 読み込み → 送信中のまま残ったものを interrupted にする（再送しない）→ ready を待つ → 1 秒ごとの tick。
    * interrupted の保存に失敗したら tick を始めない。ready の成否は問わない。
    */
   async start(ready: Promise<unknown> = Promise.resolve()): Promise<void> {
-    this.items = await this.store.list();
+    const loaded = await this.store.list();
+    this.items = loaded;
     const at = this.now().getTime();
     if (this.items.some((r) => r.status === "dispatching")) {
       this.items = this.items.map((r) => r.status === "dispatching" ? { ...r, status: "done" as const, outcome: "interrupted" as const, finishedAt: at, updatedAt: at } : r);
-      try { await this.persist(); } catch (e) { console.error("reservations: interrupted save failed, not starting the clock:", e instanceof Error ? e.message : e); return; }
+      try { await this.persist(); } catch (e) { console.error("reservations: interrupted save failed, not starting the clock:", e instanceof Error ? e.message : e); this.markLoaded(); return; }
     }
+    this.markLoaded();
     await ready.catch(() => undefined);
     if (this.stopped || this.timer) return;
     this.timer = setInterval(() => void this.tick().catch((e) => console.error("reservations: tick failed:", e)), 1000);
@@ -150,7 +158,11 @@ export class ReservationService {
   async settled(): Promise<void> { while (this.inflight.size > 0) await Promise.all([...this.inflight]); }
   private persist(): Promise<void> { return this.store.save(this.items); }
 
+  /** 最初の読み込みが終わってから、runAt の昇順で返す（API 用） */
+  async listReady(): Promise<Reservation[]> { await this.loaded; return this.list(); }
+
   async create(input: unknown, createdBy: ReservationCreator): Promise<Reservation> {
+    await this.loaded;
     if (typeof input !== "object" || input === null || Array.isArray(input)) throw new SessionInputError("JSON object required");
     const body = input as Record<string, unknown>;
     const { runAt, runAtJst } = resolveRunAt(body.date, body.time);
@@ -181,6 +193,7 @@ export class ReservationService {
 
   /** pending だけ取り消せる。未知の id は 400、pending 以外は 409 */
   async cancel(id: string): Promise<Reservation> {
+    await this.loaded;
     const current = this.items.find((r) => r.id === id);
     if (!current) throw new SessionInputError("reservation not found");
     if (current.status !== "pending") throw new SessionConflictError("reservation is not pending");

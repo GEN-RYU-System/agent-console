@@ -40,7 +40,7 @@ const setup = async (opts: { verdicts?: Verdict[]; capacity?: boolean } = {}) =>
   const checkInput = vi.fn(async () => (queue.length > 1 ? queue.shift() : queue[0]));
   const hub = { checkInput, sessions, config: cfg, submitText: (id: string, text: string) => Hub.prototype.submitText.call(hub, id, text) };
   const store = new ReservationStore(dir);
-  const service = new ReservationService(cfg as never, sessions as never, hub as never, store, () => new Date(clock.t), TIMING);
+  const service = new ReservationService(cfg as never, sessions as never, hub as never, store, () => new Date(clock.t), TIMING, true);
   const input = (over: Record<string, unknown> = {}) => ({ name: "measure", roleId: "echo", cwd: root, date: "2026-10-12", time: "09:10", promptText: "hello", ...over });
   return { service, store, sessions, hub, clock, dir, root, input };
 };
@@ -148,6 +148,29 @@ describe("reservation create and dispatch", () => {
     timers.mockRestore();
     second.stop();
     err.mockRestore();
+  });
+
+  it("R4b a reservation created while the initial load is running is kept, and listReady waits for the load", async () => {
+    const { service, store, sessions, clock, input } = await setup();
+    const existing = await service.create(input({ name: "existing" }), "ui");
+    const fresh = new ReservationService((service as unknown as { config: never }).config, sessions as never, (service as unknown as { hub: never }).hub, store, () => new Date(clock.t), TIMING);
+    const realList = store.list.bind(store);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    vi.spyOn(store, "list").mockImplementation(async () => { const before = await realList(); await gate; return before; });
+    const started = fresh.start();
+    const created = fresh.create(input(), "ui");
+    const listed = fresh.listReady();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fresh.list()).toHaveLength(0);
+    release();
+    const r = await created;
+    await started;
+    fresh.stop();
+    expect((await listed).map((x) => x.id)).toEqual([existing.id]);
+    expect(fresh.list().map((x) => x.id).sort()).toEqual([existing.id, r.id].sort());
+    const saved = await realList();
+    expect(saved.map((x) => x.id).sort()).toEqual([existing.id, r.id].sort());
   });
 
   it("R5 does not send when cancelled or changed right before sending", async () => {

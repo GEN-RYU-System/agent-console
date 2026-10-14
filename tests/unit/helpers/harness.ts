@@ -191,7 +191,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const store = new OpenSessionStore(config.dataDir);
   const recorder = new OpenSessionRecorder(sessions, hub, store);
   const routines = new RoutineService(config, sessions, hub, new RoutineStore(config.dataDir));
-  const reservations = new ReservationService(config, sessions, hub, new ReservationStore(config.dataDir));
+  const reservations = new ReservationService(config, sessions, hub, new ReservationStore(config.dataDir), undefined, undefined, true);
   if (options.recorder === true) recorder.start();
   const clock: Clock = { t: Date.now(), advance(ms) { this.t += ms; } };
   const auth = createAuth(TOKEN, port, { now: () => clock.t });

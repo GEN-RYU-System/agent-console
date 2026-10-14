@@ -182,7 +182,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   const routineEnabledMatch = /^\/api\/routines\/([^/]+)\/enabled$/.exec(url.pathname);
   if (routineMatch && req.method === "PUT") { sendJson(res, 200, await deps.routines.update(routineMatch[1], jsonBody(await readJsonBody(req)) as never)); return; }
   if (routineEnabledMatch && req.method === "POST") { sendJson(res, 200, await deps.routines.setEnabled(routineEnabledMatch[1], jsonBody(await readJsonBody(req)).enabled)); return; }
-  if (req.method === "GET" && url.pathname === "/api/reservations") { sendJson(res, 200, { items: deps.reservations.list() }); return; }
+  if (req.method === "GET" && url.pathname === "/api/reservations") { sendJson(res, 200, { items: await deps.reservations.listReady() }); return; }
   if (req.method === "POST" && url.pathname === "/api/reservations") { sendJson(res, 201, await deps.reservations.create(uiReservationInput(jsonBody(await readJsonBody(req))), "ui")); return; }
   const reservationCancel = /^\/api\/reservations\/([^/]+)\/cancel$/.exec(url.pathname);
   if (req.method === "POST" && reservationCancel) { sendJson(res, 200, await deps.reservations.cancel(reservationCancel[1])); return; }
@@ -322,7 +322,7 @@ async function handleAgentReservations(deps: AppDeps, req: IncomingMessage, res:
   const presented = (req.headers.authorization ?? "").replace(/^Bearer /, "");
   if (deps.reserve.token === null || !sameSecret(presented, deps.reserve.token)) { sendJson(res, 401, { error: "unauthorized" }); return; }
   const id = match[1];
-  if (req.method === "GET" && id === undefined) { sendJson(res, 200, { items: deps.reservations.list() }); return; }
+  if (req.method === "GET" && id === undefined) { sendJson(res, 200, { items: await deps.reservations.listReady() }); return; }
   if (req.method === "POST" && id === undefined) { sendJson(res, 201, await deps.reservations.create(jsonBody(await readJsonBody(req)), "agent")); return; }
   if (req.method === "POST" && id !== undefined) { sendJson(res, 200, await deps.reservations.cancel(safeDecode(id))); return; }
   sendJson(res, 404, { error: "not found" });
