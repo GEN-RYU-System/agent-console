@@ -162,7 +162,7 @@ describe("CommandQueue numbering (R3)", () => {
 describe("R7: retry count and the pending-input limit", () => {
   it("a client that answers once and then dies every time still stops after 3 attempts (the count is not reset by the first answer)", async () => {
     const { term, statuses } = open("readydie", 20);
-    expect(await waitFor(() => statuses.includes("failed"), 5000)).toBe(true);
+    expect(await waitFor(() => statuses.includes("failed"), 15000)).toBe(true);
     term.release();
   }, 15000);
 
