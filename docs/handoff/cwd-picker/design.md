@@ -1,6 +1,6 @@
 # 作業場所を「選ぶだけ」にする — design（v0.22.0）
 
-状態: 設計案（Opus 作成）第2版。Fable 審査 第1回 REVISE（5点）を反映。調査と PO 原文は recon.md（同じフォルダ）。
+状態: 設計（Opus 作成）第2版。Fable 審査 第1回 REVISE（5点）を反映、第2回 APPROVE。コード審査 APPROVE。調査と PO 原文は recon.md（同じフォルダ）。
 
 ## 1 目的
 予約タブと定期実行タブの新規作成で、パスやブランチ名を手で打たずに済むようにする。
@@ -82,10 +82,12 @@
 
 ## 8 維持の仕組み
 - cwd の既定は validateLaunchTarget の1か所。予約・定期実行・今後の起動系は同じ関数を通す。
-- 作業場所の選び方は LaunchTargetField の1か所。予約・定期実行の両エディタが使う。
+- 作業場所の選び方は LaunchTargetField（表示）と launchTarget.ts（一覧取得・保存可否・送信値）の1か所。予約・定期実行の両エディタが使う。
+- 守り手: CI（ubuntu・macOS の vitest・Playwright）と、設計ガバナンス検査（scripts/check-design-governance.mjs、lint の中で動く）。
 
-## 9 外部事例
-該当なし（社内画面の入力方式の変更で、外部の数値根拠を必要とする判断がないため）。
+## 外部・過去事例の参照と我々への応用
+- 外部事例は使わない。理由: 入力方式の変更で、判断に必要な根拠（候補一覧・本店の正本・検査の位置）はこのリポジトリの既存実装で足りる。
+- 応用した過去事例: v0.3.3（過去の会話を再開の候補一覧 /api/resume-targets を作業場所の候補に再利用）、v0.21.0（予約と定期実行で検査を validateLaunchTarget の1か所に共通化した形をそのまま使う）。
 
 ## 10 導入
 PR マージ → タグ v0.22.0 → 導入前に `launchctl list | grep ac-update` で待機中の更新 job が無いことを確認 → PO が ac-update.sh v0.22.0 → healthz の版を確認 → R12。
