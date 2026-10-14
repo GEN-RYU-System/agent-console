@@ -115,3 +115,6 @@ hooks/ac-routine.mjs, hooks/ac-routine.d.mts, hooks/ac-routine-guard.mjs, script
 - review-4（Fable）: REVISE（小。再審査不要、直した版を実装カードの根拠にしてよいとの判定）。M1（上限の400と入力不備の400の見分け→RoutineLimitError）、L1（CONTROL は export 済み・上限200は routines 側に定数）、L2（S6 の試験2本）、L3（本文の文言）を反映した。
 - review-3（Fable）: REVISE（小）。M1（origin/main が進み版と行番号がずれた）、M2（PO の分の enable に上限が掛かる穴）、L1〜L5 を反映した。上限は ac-reserve に揃えて400とした。
 - review-2（Fable）: REVISE（小）。M1（止め過ぎ→実行形に絞る）、M2（数え方の式）、M3（戻したとき createdBy が消える）、L1〜L7 を反映した。M4 は PO 決定済み（§3。PO の分も触ってよい、監査に作成者を残す）。
+
+## 外部・過去事例の参照と我々への応用
+該当なし。理由: 本件は agent-console 内の既存の仕組み（予約の ac-reserve、同 hook 機構、定期実行）を同じ型で広げるもので、外部の導入事例に頼る判断が無い。過去事例としては同リポジトリの ac-reserve（measureNote・AI 分10件上限・Origin/Bearer の通り道）を型として踏襲した（上記 §4-2、recon.md 参照）。

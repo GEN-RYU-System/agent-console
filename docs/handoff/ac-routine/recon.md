@@ -4,7 +4,7 @@
 
 
 基準: `~/agent-console` の origin/main = 0a8266c74a610fbd37387d5b6dbc86e28f776c5c（package.json version 0.21.0）。ローカル作業ツリーは origin/main より79コミット遅れていたため、すべて `git show origin/main:<path>` で読んだ。以下の `file:line` はそのときの行番号。
-生の取得物: `/tmp/CC報告ファイル/ac-routine-cli/recon-raw/`（`<パス の / を _ にした名前>.txt` が行番号付き全文、`pr36.json` が PR #36 の変更ファイル、`roles.txt` が役割設定）。
+生の取得物: `/tmp/CC報告ファイル/ac-routine-cli/recon-raw/`（`<パス の / を _ にした名前>.txt` が行番号付き全文、pr36.json が PR #36 の変更ファイル、`roles.txt` が役割設定）。
 導入先 = `/Users/tanizawashingo/Library/Application Support/agent-console/`（以下 `$DD`）。
 
 ## 1. 既存の AI 用 CLI の仕組み
@@ -38,7 +38,7 @@
 - エラー時: すべて `reject()`＝`{code:1, stdout:"", stderr:"<理由>\n"}`（`:16`）。接続失敗 `:72`「agent-console に接続できませんでした」、HTTP 非2xx は `:75-76`「受け付けられませんでした（<status>）: <error または HTTP status>」。成功は `:74` `JSON.stringify(result.json, null, 2)` を stdout、code 0。タイムアウト15秒（`:11`,`:36`）。
 - 実行形: `:87-105` `isMain()` のとき `path.basename(here) !== "bin"` なら拒否（`dataDir/bin` に写されたものからのみ実行可）。`dataDir` = スクリプトの1つ上（`:101`）。node 標準部品のみ（`:4`）。
 - サーバー側の検証（`server/reservations.ts` `create`, `:164-192`）: JSON オブジェクト必須(`:166`)、`resolveRunAt(date,time)`(`:99-108`、DATE `^\d{4}-\d{2}-\d{2}$`・TIME `HH:mm`・存在しない日付拒否)、予定は now+60秒〜+366日（`:15-16`,`:170`）、`validateLaunchText`・`validateLaunchTarget`、**createdBy==="agent" のとき `purpose==="measure"` 必須(`:176`) と `measureNote` 1〜200字・制御文字なし(`:177`)**、待機中全体50件(`:20`,`:181`)・agent 分10件(`:21`,`:182`)、全体200件超は done/cancelled を古い順に prune(`:112-118`)。
-- 共通化された関数（PR #36）: `server/launch.ts`。`:8` `MAX_NAME = 40`、`:9` `MAX_PROMPT = 8192`、`:14` `CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]/`、`:35-39` `validateLaunchText(input,label)`（name 1〜40字・promptText 非空/8192字以下/制御文字なし）、`:41-51` `validateLaunchTarget(config,input,label)`（roleId が config.roles に存在・cwd が本店/worktree 境界内・needsWorktree 役は branch 必須）、`launchAndSend`（送信本体）、`LaunchOutcome` 型。routines.ts は `:6` で `validateLaunchTarget, validateLaunchText, launchAndSend` を import し `:58,:60,:90` で利用。reservations.ts は `:6` で同じものを import。PR #36 の routines.ts は +12/-61（`pr36.json`）。
+- 共通化された関数（PR #36）: `server/launch.ts`。`:8` `MAX_NAME = 40`、`:9` `MAX_PROMPT = 8192`、`:14` `CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]/`、`:35-39` `validateLaunchText(input,label)`（name 1〜40字・promptText 非空/8192字以下/制御文字なし）、`:41-51` `validateLaunchTarget(config,input,label)`（roleId が config.roles に存在・cwd が本店/worktree 境界内・needsWorktree 役は branch 必須）、`launchAndSend`（送信本体）、`LaunchOutcome` 型。routines.ts は `:6` で `validateLaunchTarget, validateLaunchText, launchAndSend` を import し `:58,:60,:90` で利用。reservations.ts は `:6` で同じものを import。PR #36 の routines.ts は +12/-61（pr36.json）。
 - 時刻共通: `jstSlot` は routines.ts:40-44 に定義され reservations.ts:7 が import。
 
 ## 3. 定期実行のサーバー側
@@ -49,13 +49,13 @@
 - `RoutineInput = Pick<Routine,"name"|"enabled"|"roleId"|"cwd"|"weekdays"|"timeHHmm"|"promptText"> & { branch?: string }`（`:23`）。
 - 結果 outcome: `sent|not_ready|full|cwd_invalid|failed`（LaunchOutcome）+ 旧 `busy|waiting|unknown|stopped|missing`（`:18-19`）。
 
-【事実】保存: `dataDir/routines.json`（`:9` `ROUTINES_FILE`）、形 `{ version: 2, items: Routine[] }`（`:37` `writeJsonAtomic(this.file, { version: VERSION, items })`、`:10` `VERSION = 2`、`:11` 読めるのは 1,2）。書く前に read して壊れた内容は上書きしない(`:37`)。`createSerial` で直列化(`:33`)。events は最大100件(`:14`,`:85`)。
+【事実】保存: dataDir/routines.json（`:9` `ROUTINES_FILE`）、形 `{ version: 2, items: Routine[] }`（`:37` `writeJsonAtomic(this.file, { version: VERSION, items })`、`:10` `VERSION = 2`、`:11` 読めるのは 1,2）。書く前に read して壊れた内容は上書きしない(`:37`)。`createSerial` で直列化(`:33`)。events は最大100件(`:14`,`:85`)。
 【事実】検証: `validate`（`:57-62`）= `validateLaunchText`（name 1〜40字・promptText ≤8192・制御文字なし）+ `TIME` `^([01]\d|2[0-3]):[0-5]\d$`(`:13,:59`) + `weekdays()`（0〜6の整数・重複なし `:27`、保存時にソート）+ `validateLaunchTarget`。パース側 `parse`(`:29`) は timeZone が "Asia/Tokyo" 以外なら例外。
 【事実】操作（`RoutineService`）:
 - `create` `:63`: id=`randomUUID()`、createdAt=updatedAt=now、events=[]。**登録してもセッションは開かない**（README:7）。件数上限のコードは routines.ts に無い（grep で `MAX_` は `MAX_EVENTS` のみ `:14`）。【未確認】登録件数の実運用上の上限。
 - `update` `:64`: 全項目を `RoutineInput` で渡す（部分更新ではない）。**roleId・cwd・branch の変更は拒否** `"routine role, cwd and branch cannot be changed"`。未知の id は `SessionInputError("routine not found")`。
 - `setEnabled` `:65`: `enabled` が boolean でなければ `"enabled required"`。名前・時刻などは触らず updatedAt のみ更新。
-- 有効/無効はスケジューラの対象にするかだけ: `tick` `:70` `r.enabled && r.weekdays.includes(slot.weekday) && r.timeHHmm === slot.timeHHmm && r.lastSlot !== slot.key`。待機中に無効化されたら送らない `:90` `stillWanted: () => … ?.enabled === true`（試験 K11 `routines.test.ts:139`）。
+- 有効/無効はスケジューラの対象にするかだけ: `tick` `:70` `r.enabled && r.weekdays.includes(slot.weekday) && r.timeHHmm === slot.timeHHmm && r.lastSlot !== slot.key`。待機中に無効化されたら送らない `:90` `stillWanted: () => … ?.enabled === true`（試験 K11 `tests/unit/routines.test.ts:139`）。
 - 取りこぼしの追い付きなし、1回の slot は `lastSlot` を送信前に保存して重複防止（`:73-74`）。
 【事実】HTTP（通常認証 = `AGENT_CONSOLE_TOKEN` かセッショントークン。agent 用トークンでは通らない）`server/http.ts`:
 - `:179` `GET /api/routines` → `{items}`
@@ -68,7 +68,7 @@
 
 ## 4. 予約(reservations)の削除・取消
 
-【事実】削除は無いが取消がある。`server/reservations.ts:194-204` `cancel(id)`: 未知の id は `SessionInputError("reservation not found")`(400)、pending 以外は `SessionConflictError("reservation is not pending")`(409)、成功は `status:"cancelled"`・updatedAt 更新（行は消えない）。API は `server/http.ts:327` `POST /api/agent/reservations/:id/cancel`。実際に行が消えるのは `prune`(`:113-118`) で全体200件超のとき done/cancelled を古い順に落とすときだけ。試験 R8（cancel）`reservations.test.ts:220`, R9（prune）`:228`。
+【事実】削除は無いが取消がある。`server/reservations.ts:194-204` `cancel(id)`: 未知の id は `SessionInputError("reservation not found")`(400)、pending 以外は `SessionConflictError("reservation is not pending")`(409)、成功は `status:"cancelled"`・updatedAt 更新（行は消えない）。API は `server/http.ts:327` `POST /api/agent/reservations/:id/cancel`。実際に行が消えるのは `prune`(`:113-118`) で全体200件超のとき done/cancelled を古い順に落とすときだけ。試験 R8（cancel）`tests/unit/reservations.test.ts:220`, R9（prune）`:228`。
 【事実】定期実行側に相当する「取消」は無い（有効/無効のみ）。
 
 ## 5. README の AI 向け書き方（`README.md` at origin/main）
@@ -82,7 +82,7 @@
 ## 6. 版・PR・CI・テストの決まり
 
 【事実】
-- `~/agent-console` の origin/main に `CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING*` は無い（`git ls-tree` で確認。ヒットは `server/agents.ts` 等のみ）。決まりは `docs/CHANGELOG.md` と各 `docs/handoff/<topic>/design.md` に分散。
+- `~/agent-console` の origin/main に CLAUDE.md / AGENTS.md / `CONTRIBUTING*` は無い（`git ls-tree` で確認。ヒットは `server/agents.ts` 等のみ）。決まりは `docs/CHANGELOG.md` と各 docs/handoff/<topic>/design.md に分散。
 - 版: `docs/CHANGELOG.md:3` 「版を出すたびに 1 行追記する（版の正本は git タグ `vX.Y.Z`）。」タグは `git tag` で v0.20.0, v0.21.0 を確認。版を書き換える場所は PR #36 の変更ファイルから: `package.json`, `package-lock.json`(+2/-2), `extension/manifest.json`(`:4 "version": "0.21.0"`), `playwright.config.ts`(+1/-1), `docs/CHANGELOG.md`(+1), `README.md`。版の採番ルール: `docs/handoff/reservations/design.md:112` 「版は若い番号の PR を先に通す決まりにより #35 が v0.20.0、本件は v0.21.0」。
 - 導入手順: `docs/handoff/reservations/design.md:147` 「導入: マージ・タグ後、既存の手順（全セッションが入力待ちのときに ac-update を実行する予約 update-when-idle.sh）で行う。」戻し方 `:148` 前の版へ ac-update（切り戻し）。
 - design.md の型: `docs/handoff/reservations/design.md:11` 対象、`:120` 以降「R番号 | 検証方法」表、`:164` レビュー履歴（Fable 審査 REVISE→反映）。recon.md と対で `docs/handoff/<topic>/` に置く。
@@ -113,23 +113,23 @@
 
 【事実】役割とモデルの保存場所
 - 役割は config の `roles`（`agent-console.config.json:29-`、`server/config.ts:5-19` `RoleConfig` = id, labelKey, command, needsWorktree, resumeCommand?, resumeScope?, restoreCommand?）。**モデルを持つ専用フィールドは無く、`command` の文字列に埋まっている**: `opus-designer` = `["/bin/zsh","-ic","ccopusgo"]`（`needsWorktree:false`）、`sonnet-impl` = `["/bin/zsh","-ic","claude --model sonnet"]`（`needsWorktree:true`）、`shell` = `["/bin/zsh","-i"]`（`recon-raw/roles.txt`）。`ccopusgo` の中身（モデル指定）は zsh のエイリアス/関数で、今回は読んでいない【未確認】。
-- セッション自体: `server/sessions.ts:384-` `Session` に `id`(randomUUID `:382`)、`name`、`roleId: role.id`、`branch`、`cwd`、`createdAt` … を保持。永続化は `dataDir/open-sessions.json`（実測 `-rw------- 2881`、役割・名前・作業場所・ブランチ・Claude の sessionId。`docs/CHANGELOG.md` 0.3.8）。モデル名の保存先は無い。
+- セッション自体: `server/sessions.ts:384-` `Session` に `id`(randomUUID `:382`)、`name`、`roleId: role.id`、`branch`、`cwd`、`createdAt` … を保持。永続化は dataDir/open-sessions.json（実測 `-rw------- 2881`、役割・名前・作業場所・ブランチ・Claude の sessionId。`docs/CHANGELOG.md` 0.3.8）。モデル名の保存先は無い。
 - 定期実行/予約が起動するセッションの役割: `Routine.roleId` / `Reservation.roleId`（routines.ts:21, reservations.ts:30）。`validateLaunchTarget` は roleId が存在することしか見ない（`server/launch.ts:43-44`）。**ポリシー上「どの役割が登録してよいか」を判定する仕組みは無い**。
 
 【事実】ac-board / ac-reserve が呼び出し元を判別・記録するか
-- ac-board: 判別する。`env.CLAUDE_CODE_SESSION_ID`（`hooks/ac-board.mjs:191`）。ただし記録は「書き込み先ファイル名が `boards/<会話の番号>.json`」になるだけで、役割・モデルは読まない。
-- ac-reserve: 呼び出し元のセッション・役割を**送らない**。送るのは Bearer と JSON 本文のみ（`hooks/ac-reserve.mjs:32-37`）。サーバー側は `createdBy: "ui" | "agent"` の2値だけを記録（`server/reservations.ts:27,40`、`http.ts:326` で `"agent"` 固定）。どの会話から来たかは残らない。reserve-token は全セッション共通の1個（`server/reserve-token.ts:32`）で、`$DD/reserve-token` は権限 0600 だが同じユーザーで動く全プロセスが読める（Opus も Sonnet も同じ）。
+- ac-board: 判別する。`env.CLAUDE_CODE_SESSION_ID`（`hooks/ac-board.mjs:191`）。ただし記録は「書き込み先ファイル名が boards/<会話の番号>.json」になるだけで、役割・モデルは読まない。
+- ac-reserve: 呼び出し元のセッション・役割を**送らない**。送るのは Bearer と JSON 本文のみ（`hooks/ac-reserve.mjs:32-37`）。サーバー側は `createdBy: "ui" | "agent"` の2値だけを記録（`server/reservations.ts:27,40`、`server/http.ts:326` で `"agent"` 固定）。どの会話から来たかは残らない。reserve-token は全セッション共通の1個（`server/reserve-token.ts:32`）で、`$DD/reserve-token` は権限 0600 だが同じユーザーで動く全プロセスが読める（Opus も Sonnet も同じ）。
 - 結論の材料【事実】: 現状の仕組みでは、受け口に入れるかどうかは「`$DD/reserve-token` を読めるか」だけで決まり、役割（Opus/Sonnet）では区別されない。
 
 【事実】サブエージェント（Agent ツールで起動した Sonnet）の環境変数
 - 実測資料あり: `docs/handoff/board/step0.md:36-41` の表。Agent（general-purpose、sonnet）の中の Bash で `CLAUDE_CODE_SESSION_ID` = 親と同じ値 `ad60efcb-9d0c-43a1-936f-e3d31b43c907`、hook の session_id も同値。同表は「番号なしの再開」でも同値。→ サブエージェントの Bash は少なくとも `CLAUDE_CODE_SESSION_ID` を**親と同じ値で引き継ぐ**（Claude Code 2.1.296 での実測）。したがって `CLAUDE_CODE_SESSION_ID` では親(Opus)とサブエージェント(Sonnet)を区別できない。
 - hook 側には区別材料がある: `docs/handoff/board/step0.md:19-21` PreToolUse の入力に `agent_id` と `agent_type`（例 `"agent_id":"ab4603515d5beee56","agent_type":"general-purpose"`）。これは hook の標準入力 JSON であり、Bash の環境変数ではない。
-- その他の環境変数（`CLAUDE_CODE_CHILD_SESSION` 等）は `docs/handoff/board/step0.md:46` 「この実測を動かした Claude セッションは CLAUDE_CODE_CHILD_SESSION の印を引き継ぐ」と `chat2/recon.md:38` の記述があるのみ。親の全環境変数がサブエージェントの Bash に入るかを網羅的に調べた資料は見つけていない。【未確認】サブエージェントが `CLAUDE_CODE_SESSION_ID` 以外の変数（モデル名・役割を表すもの）を持つか。【未確認】Claude Code 本体が Bash ツールの環境にモデル名を入れる変数があるか。
+- その他の環境変数（`CLAUDE_CODE_CHILD_SESSION` 等）は `docs/handoff/board/step0.md:46` 「この実測を動かした Claude セッションは CLAUDE_CODE_CHILD_SESSION の印を引き継ぐ」と chat2/recon.md:38 の記述があるのみ。親の全環境変数がサブエージェントの Bash に入るかを網羅的に調べた資料は見つけていない。【未確認】サブエージェントが `CLAUDE_CODE_SESSION_ID` 以外の変数（モデル名・役割を表すもの）を持つか。【未確認】Claude Code 本体が Bash ツールの環境にモデル名を入れる変数があるか。
 - アプリ側の環境変数にはモデルや役割が無いので、「親と同じ環境変数を引き継ぐ」かどうかは、引き継ぐ対象が（`AC_RESUME_ID` を除き）元々 `process.env` 由来のものと `CLAUDE_CODE_*` だけ、という意味になる。【未確認】`AC_RESUME_ID` がサブエージェントの Bash に入るか（実測資料なし。復元起動のセッションのみに設定される）。
 
 【事実】書き込みの監査記録（誰がいつ書いたか）
 - 専用の監査ログは無い。`git grep -nE 'audit|監査' origin/main -- server hooks README.md` は該当0件。
-- 部分的な痕跡のみ: ①`Routine.createdAt/updatedAt`（`routines.ts:21`）、`Reservation.createdBy/createdAt/updatedAt`（`reservations.ts:40-42`）。誰か（セッション・役割）は残らない。②`Routine.events`（実行履歴、最大100件）。③ac-board は `boards/<会話の番号>.json` の `updatedAt`（README:125）。④サーバーログ/activity は別目的（`dataDir/activity/events-YYYYMMDD.jsonl`、hook が記録するツール呼び出し。`README.md:30-` の v0.9.0 節）で、Bash の中身が `ac-reserve.mjs` を叩いたかは hook 入力（tool_input.command）には出る可能性があるが、今回は活動ログの実物を確認していない【未確認】。
+- 部分的な痕跡のみ: ①`Routine.createdAt/updatedAt`（`server/routines.ts:21`）、`Reservation.createdBy/createdAt/updatedAt`（`server/reservations.ts:40-42`）。誰か（セッション・役割）は残らない。②`Routine.events`（実行履歴、最大100件）。③ac-board は boards/<会話の番号>.json の `updatedAt`（README:125）。④サーバーログ/activity は別目的（`dataDir/activity/events-YYYYMMDD.jsonl`、hook が記録するツール呼び出し。`README.md:30-` の v0.9.0 節）で、Bash の中身が `ac-reserve.mjs` を叩いたかは hook 入力（tool_input.command）には出る可能性があるが、今回は活動ログの実物を確認していない【未確認】。
 - 反映確認: 導入先 `$DD/activity/` は存在（`drwx------`、10月14日 09:00）。中身は未確認。
 
 ## 未確認まとめ
@@ -138,4 +138,4 @@
 3. `ccopusgo` の実体（モデル指定の中身。zsh -ic 経由）。
 4. サブエージェントの Bash が `CLAUDE_CODE_SESSION_ID` 以外の変数（モデル・役割・`AC_RESUME_ID`）を引き継ぐか。
 5. `$DD/activity/*.jsonl` に ac-reserve 呼び出し（tool_input）が残るか。
-6. `ac-update` / `update-when-idle.sh` の実物（導入手順の詳細は未読）。
+6. `ac-update` / update-when-idle.sh の実物（導入手順の詳細は未読）。
