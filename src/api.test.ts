@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, cancelChatQueue, checkChatSend, clearSessionToken, fetchChat, fetchState, getSessionToken, logout, openSocket, queueChat, redeemCode, setSessionToken, uploadImage, wsUrl } from "./api";
+import { ApiError, cancelChatQueue, checkChatSend, clearSessionToken, fetchChat, fetchState, getSessionToken, logout, openSocket, queueChat, redeemCode, setSessionToken, uploadImage, uploadFile, wsUrl } from "./api";
 
 beforeEach(() => window.sessionStorage.clear());
 afterEach(() => vi.unstubAllGlobals());
@@ -158,5 +158,48 @@ describe("uploadImage (K4)", () => {
   it("throws ApiError with the status when the server refuses", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "too large" }), { status: 413 })));
     await expect(uploadImage(new Blob([new Uint8Array([1])]))).rejects.toMatchObject({ status: 413 });
+  });
+});
+
+describe("uploadFile (K1/K4/K6)", () => {
+  it("POSTs the name and the bytes (base64) to /api/uploads/files with the Bearer token, and returns the path", async () => {
+    setSessionToken("tok");
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ path: "/d/uploads/files/u/a.csv" }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const f = new File([new Uint8Array([0x61, 0x2c, 0x62])], "売上.csv", { type: "text/csv" });
+    await expect(uploadFile(f)).resolves.toEqual({ path: "/d/uploads/files/u/a.csv" });
+    const [url, init] = lastCall(fetchMock);
+    expect(url).toBe("/api/uploads/files");
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok");
+    expect(JSON.parse(init.body as string)).toEqual({ name: "売上.csv", data: "YSxi" });
+  });
+
+  it("sends an empty file as an empty data string", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ path: "/p" }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await uploadFile(new File([], "empty.txt"));
+    expect(JSON.parse(lastCall(fetchMock)[1].body as string)).toEqual({ name: "empty.txt", data: "" });
+  });
+
+  it("throws ApiError with the status when the server refuses (413)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "file too large" }), { status: 413 })));
+    await expect(uploadFile(new File([new Uint8Array([1])], "a.bin"))).rejects.toMatchObject({ status: 413 });
+  });
+
+  it("rejects (and does not call fetch) when the file cannot be read", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    class FailingReader {
+      error = new Error("NotReadableError");
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      readAsArrayBuffer(): void {
+        queueMicrotask(() => this.onerror?.());
+      }
+    }
+    vi.stubGlobal("FileReader", FailingReader);
+    await expect(uploadFile(new File(["x"], "folder"))).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

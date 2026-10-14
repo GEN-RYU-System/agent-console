@@ -2,9 +2,9 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { ApiError, openSocket, uploadImage } from "../../api";
+import { ApiError, openSocket, uploadFile, uploadImage } from "../../api";
 import { splitByCodePoints } from "./chunkInput";
-import { classifyTransfer } from "./imageTransfer";
+import { classifyTransfer, type TransferFile } from "./imageTransfer";
 import { WheelClassifier, wheelDeltas } from "./wheelClassifier";
 import { readTerminalAppearance } from "./terminalTokens";
 import "./TerminalPane.css";
@@ -36,7 +36,7 @@ export interface TerminalHandle {
 export type PasteResult = "sent" | "notPasted" | "pastedNotSent";
 
 /** 画像の添付で画面に案内を出す場面（文言は呼び出し側の i18n） */
-export type UploadNotice = "tooLarge" | "notImage" | "failed" | "switched";
+export type UploadNotice = "tooLarge" | "failed" | "switched";
 
 export interface TerminalPaneProps {
   sessionId: string;
@@ -145,13 +145,13 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
     };
     host.addEventListener("wheel", onWheel, { capture: true, passive: true });
 
-    // 画像の添付: 保存してもらい、その絶対パスを入力欄に貼る（Enter は押さない）。1 枚ずつ順に行う
+    // 画像の添付: 保存してもらい、その絶対パスを入力欄に貼る（Enter は押さない）。1 つずつ順に行う
     const notify = (notice: UploadNotice): void => latest.current.onUploadNotice?.(notice);
-    const attachOne = async (file: File): Promise<void> => {
+    const attachOne = async ({ file, kind }: TransferFile): Promise<void> => {
       const max = latest.current.uploadMaxBytes;
       if (max !== undefined && file.size > max) return notify("tooLarge");
       try {
-        const { path } = await uploadImage(file);
+        const { path } = await (kind === "image" ? uploadImage(file) : uploadFile(file));
         // 待つ間にセッションが切り替わった（別の端末になった）ら入れない
         if (termRef.current?.term !== term) return notify("switched");
         term.paste(` ${path} `);
@@ -160,16 +160,16 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
       }
     };
     let uploadChain: Promise<void> = Promise.resolve();
-    const attach = (files: File[]): void => {
-      for (const file of files) uploadChain = uploadChain.then(() => attachOne(file));
+    const attach = (files: TransferFile[]): void => {
+      for (const item of files) uploadChain = uploadChain.then(() => attachOne(item));
     };
     const onPaste = (e: ClipboardEvent): void => {
-      const { images, text } = classifyTransfer(e.clipboardData);
-      // 文字があるときは今までどおり xterm に任せる（文字と画像の二重の貼り付けを防ぐ）
-      if (images.length === 0 || text !== "") return;
+      const { files, text } = classifyTransfer(e.clipboardData);
+      // 文字があるときは今までどおり xterm に任せる（文字とファイルの二重の貼り付けを防ぐ）
+      if (files.length === 0 || text !== "") return;
       e.preventDefault();
       e.stopPropagation();
-      attach(images);
+      attach(files);
     };
     // 止めないと、ブラウザがファイルをページとして開き、アプリの画面が置き換わる
     const onDragOver = (e: DragEvent): void => {
@@ -178,9 +178,7 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
     };
     const onDrop = (e: DragEvent): void => {
       e.preventDefault();
-      const { images, hasOtherFiles } = classifyTransfer(e.dataTransfer);
-      attach(images);
-      if (hasOtherFiles) notify("notImage");
+      attach(classifyTransfer(e.dataTransfer).files);
     };
     host.addEventListener("paste", onPaste, true);
     host.addEventListener("dragover", onDragOver);

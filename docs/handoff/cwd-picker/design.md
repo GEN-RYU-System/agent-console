@@ -1,4 +1,4 @@
-# 作業場所を「選ぶだけ」にする — design（v0.22.0）
+# 作業場所を「選ぶだけ」にする — design（v0.24.0）
 
 状態: 設計（Opus 作成）第2版。Fable 審査 第1回 REVISE（5点）を反映、第2回 APPROVE。コード審査 APPROVE。調査と PO 原文は recon.md（同じフォルダ）。
 
@@ -8,7 +8,7 @@
 - 作業用コピーで動く役割（sonnet-impl）: 作業場所を「今ある作業用コピーの一覧」から選ぶ。ブランチ欄は出さず、選んだ作業用コピーのブランチを自動で記録する。
 
 ## 2 対象と対象外
-- 対象: ReservationEditor.tsx、RoutineEditor.tsx、その2つが共有する新しい部品（作業場所の選択欄）、server/launch.ts の validateLaunchTarget（cwd 省略時の既定）、入力の型（`src/types.ts:99` RoutineInput・`:110` ReservationInput・`server/routines.ts:23` RoutineInput の cwd を省略可に。保存される Routine・Reservation の cwd は必須のまま）、ja.json、試験（単体・e2e）、README・CHANGELOG・版 0.22.0。
+- 対象: ReservationEditor.tsx、RoutineEditor.tsx、その2つが共有する新しい部品（作業場所の選択欄）、server/launch.ts の validateLaunchTarget（cwd 省略時の既定）、入力の型（`src/types.ts:99` RoutineInput・`:110` ReservationInput・`server/routines.ts:23` RoutineInput の cwd を省略可に。保存される Routine・Reservation の cwd は必須のまま）、ja.json、試験（単体・e2e）、README・CHANGELOG・版 0.24.0。
 - 対象外: 定期実行の編集画面（役割・作業場所・ブランチは今も変更不可で disabled 表示のまま。値を見せるだけなので今の表示を残す）、AI 用コマンド ac-reserve.mjs（cwd を送る今の使い方はそのまま通る）、新しいセッション画面、過去の会話を再開画面、resume-targets の中身、保存形式（reservations.json・routines.json の形は変えない）、worktree の新規作成。
 
 ## 3 変更の前後
@@ -76,7 +76,7 @@
 | R8 定期実行の編集画面は今と同じ（3項目 disabled 表示） | 単体試験 |
 | R9 新しい画面文言はすべて t() 経由。生 select / 生 input / 色直値なし | `npm run lint` と grep（`<select`・`<input`・`#[0-9a-f]{3,6}` を変更ファイルで0件） |
 | R10 typecheck・lint・build・npm test・e2e が通る。e2e は reservations.spec.ts:22 の作業場所 fill を削除し、初期役割（e2e-plain、needsWorktree=false、`tests/fixtures/e2e-env.ts:136`）で「本店（いつもの作業場所）で動きます」が見えることを確認する形に直す（e2e の一時リポジトリには worktree が無いため作業用コピー型は単体試験で確認） | ローカル実行と CI |
-| R11 版 0.22.0、CHANGELOG・README の予約/定期実行の説明を更新 | diff |
+| R11 版 0.24.0、CHANGELOG・README の予約/定期実行の説明を更新 | diff |
 | R13 本店型の役割で cwd を省いた /api/agent/reservations の POST が 201、保存 cwd=本店の実パス | サーバー単体試験（新規） |
 | R12 導入後、実画面で opus-designer の予約を2分後に作り、届く | 導入後の実機確認（PO の画面または Opus） |
 
@@ -90,4 +90,4 @@
 - 応用した過去事例: v0.3.3（過去の会話を再開の候補一覧 /api/resume-targets を作業場所の候補に再利用）、v0.21.0（予約と定期実行で検査を validateLaunchTarget の1か所に共通化した形をそのまま使う）。
 
 ## 10 導入
-PR マージ → タグ v0.22.0 → 導入前に `launchctl list | grep ac-update` で待機中の更新 job が無いことを確認 → PO が ac-update.sh v0.22.0 → healthz の版を確認 → R12。
+PR マージ → タグ v0.24.0 → 導入前に `launchctl list | grep ac-update` で待機中の更新 job が無いことを確認 → PO が ac-update.sh v0.24.0 → healthz の版を確認 → R12。

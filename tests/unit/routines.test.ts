@@ -59,7 +59,7 @@ const setup = async (opts: { verdicts?: Verdict[] | (() => Verdict); routines?: 
 const run = async (service: RoutineService) => { await service.tick(); await service.settled(); };
 const outcomes = (service: RoutineService, i = 0) => service.list()[i].events.map((e) => e.outcome);
 
-describe("routine launch target cwd default (v0.22.0)", () => {
+describe("routine launch target cwd default (v0.24.0)", () => {
   it("R7 create without cwd saves the real path of salesanchorRoot for a main-checkout role", async () => {
     const root = realpathSync(await mkdtemp(path.join(os.tmpdir(), "ac-routine-root-")));
     execFileSync("git", ["init", "-q"], { cwd: root });
