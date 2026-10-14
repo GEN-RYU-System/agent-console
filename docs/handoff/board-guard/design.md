@@ -1,6 +1,6 @@
 # 作戦ボードの書き忘れ防止（board-guard）設計 第2版
 
-- 状態: 第2版＋審査反映（Opus 2026-10-14）。第2版は Fable 審査 APPROVE（工程0へ進んでよい。/tmp/CC報告ファイル/board-adoption/review-design2/review.md。中 A〜C は下に反映）。第1版は Fable 審査 REVISE（/tmp/CC報告ファイル/board-adoption/review-design1/review.md。第1版の控え: /tmp/CC報告ファイル/board-adoption/design-v1.md）。PO 未承認。
+- 状態: 第3版（Opus 2026-10-14。工程0の実測を §11 に反映）。Fable 審査前。それまでの経過: 第2版＋審査反映。第2版は Fable 審査 APPROVE（工程0へ進んでよい。/tmp/CC報告ファイル/board-adoption/review-design2/review.md。中 A〜C は下に反映）。第1版は Fable 審査 REVISE（/tmp/CC報告ファイル/board-adoption/review-design1/review.md。第1版の控え: /tmp/CC報告ファイル/board-adoption/design-v1.md）。PO 未承認。
 - PO の言葉（2026-10-14）: 「あなたが作ってくれた右側の作戦ボードだがほとんどのセッションで使っておらず有効化されていない、どうやったら他のセッションも守る？」
 - 根拠の生出力: /tmp/CC報告ファイル/board-adoption/facts.md、r2/（公式・settings.json の Stop の並び）、r3/（origin/main f255892 の行番号。§0 のコードの行はすべて r3 による）
 
@@ -44,7 +44,7 @@
 3. dataDir = 自分の置き場所の1つ上。open-sessions.json の items[].claudeSessionId に session_id が無ければ exit 0。
 4. dataDir/board-guard/<id> があれば exit 0。
 5. `await import(pathToFileURL(join(dataDir, "bin", "ac-board.mjs")).href)` で readBoard を読む（判定の正本を ac-board.mjs の1か所に保つ。相対 import は写し先が hooks/ と bin/ に分かれるので使わない）。読めなければ K6。readBoard が ok なら exit 0。
-6. transcript_path を先頭から行ごとに読み、assistant の content の tool_use が3件に達した所で読み止める（全部は読まない。本番の最大の transcript は 10.1MB で、全件を読むと最大 2.85 秒かかった。review-design2）。最後まで読んで3未満なら exit 0。transcript は書き込みが遅れることがある（公式）ので、少なく数えた時は止めない側に倒れる。timeout は工程0 (f) の実測で決める。
+6. transcript_path を先頭から行ごとに読み、assistant の content の tool_use が3件に達した所で読み止める（全部は読まない。工程0 (f): 本番で最大の transcript 82MB を全部読むと最大 3.7 秒、読み止めは最大 49ms。load 約48）。最後まで読んで3未満なら exit 0。transcript は書き込みが遅れることがある（公式）ので、少なく数えた時は止めない側に倒れる。手順5（ボードが ok なら抜ける）を先に置くので、読むのはボードが無いセッションだけ。
 7. dataDir/board-guard/<id> を作ってから、stdout に `{"decision":"block","reason":"<文面>"}` を出して exit 0。印を先に作るので、2回目は必ず止めない。
 - 文面（日本語・固定）: 作戦ボードがまだ無い（または形が壊れている）こと、`node "<dataDir>/bin/ac-board.mjs" write` に JSON を標準入力で渡すこと、項目と上限（README「作戦ボード」）、単発の質問だけのセッションなら theme だけでよいこと、この案内は1回だけであること。
 - 工程0 (c) の結果、block 同士で reason が落ちると分かった場合は、block の代わりに additionalContext で同じ文面を渡す形に変える（第3版で決める）。
@@ -52,7 +52,7 @@
 ### 3-2 登録の一般化（server/activity-hooks.ts・scripts/ac-hooks.mjs）
 handler の種類を表にする。
 - activity: 目印 "/hooks/activity-hook.mjs"、async: true、今の9つのイベント（変えない）。
-- board-guard: 目印 "/hooks/board-guard.mjs"、async なし、timeout 5、Stop だけ。
+- board-guard: 目印 "/hooks/board-guard.mjs"、async なし、timeout 15（全部読む場合の最大実測 3.7 秒の3倍以上。工程0 (f)）、Stop だけ。
 触る関数: Handler 型（:41-47。async を任意、timeout を任意に）、buildHandler（:49-51。種類から作る）、isOwnHandler（:53-57。種類ごとの目印）、addHandlers（:90）・removeHandlers（:125）・findHandler（:161-168）・checkHooks（:177）は種類を引数に取る。commit（:246-275）と控え（:11,215-217）は変えない。
 - 既存の試験（activity-hooks.test.ts:50,81-87,92,258,312）の期待は変えずに通す。board-guard 用の試験を足す。
 - 写し: activity-setup.ts に board-guard.mjs を dataDir/hooks/ へ写す関数を足し、activity-start.ts の起動時と ac-hooks.mjs install の両方で呼ぶ。
@@ -114,3 +114,17 @@ handler の種類を表にする。
 ## 維持の仕組み
 - ac-hooks.mjs check（起動時と1時間ごとのログ）が board-guard の登録漏れも出す。
 - K8 の保有率を board-coverage.mjs で測る。週次保守の定期実行に足すかは導入7日後に決める。
+
+## 11. 工程0の結果と第3版の決め（Opus 2026-10-14）
+生出力: /tmp/CC報告ファイル/board-adoption/step0/（実測は Sonnet。途中で使い捨てソケットを別の審査担当が誤って止めたため (b) はやり直し済み、中断前の分は b1-aborted/ に退避して不使用）。
+- (b) /clear の前後で `claude agents --json` の sessionId は変わる（ed6ed734… → 3d782b39…、pid は同じ。agents-b2-before/after.txt）。サーバーはこの番号を拾って保存する（hub.ts:408）。open-sessions.json まで変わることは工程3の実機で確かめる。変わらない場合はその会話で止まらない（止めない側）。
+- (c) japanese-reply-guard と同時に block した時、Claude には両方の reason が別々に届いた（transcript-c1.jsonl に "Stop hook feedback:" が2件）。次の Stop では stop_hook_active=true で両方とも止めなかった。→ block のままでよい。additionalContext には変えない。
+- (d) Agent の呼び出し1回は親の transcript で tool_use 1件。担当の中の呼び出しは別ファイル（subagents/）で、数えない（probe-e.log）。→ 手順6はこのままでよい。
+- (e) 起動後に足した hook: `--settings` のファイルは監視されず効かなかった。作業フォルダの .claude/settings.json は新規作成の次の応答から効いた。デバッグログの監視対象は ~/.claude/settings.json（user 設定）を含む（debug-e.log）。user 設定の編集で起動中のセッションに効くかは、触らない制約のため未実測。→ 工程3の install 後、起動中のセッションの次の応答で効くことを `claude --debug` か errors.log・印ファイルで確かめる。効かない時は、そのセッションを開き直すと効く（起動時に読むため）、と README に書く。
+- (f) 読み止め版は最大 48.6ms、全部読む版は最大 3694ms（82MB・16,755行、load 約48、f-timing.txt）。→ timeout 15。
+- §3-2 の補い（review-design2 の中 B）:
+  - 種類の表: activity は今の HOOK_SPECS（:24）のまま。board-guard 用に BOARD_GUARD_SPECS = Stop のみを足す。
+  - board-guard の handler の期待値: `{ type: "command", command: <nodePath>, args: [<dataDir>/hooks/board-guard.mjs], timeout: 15 }`（async なし）。Stop の配列の末尾に自分専用のグループで足す。
+  - sameHandler（:59）は種類ごとに比べる項目を持つ（board-guard は timeout も比べる）。CheckInput（:170）・installHooks（:288）・uninstallHooks（:307）は種類を受ける。
+  - activity-start.ts:39 の check は今の activity の結果を右の欄の案内と e2e（:117）へ渡すまま変えない。board-guard の check 結果は起動時と1時間ごとのログにだけ出す。
+  - scripts/ac-hooks.mjs の install / uninstall / check は両方の種類を扱う。install は board-guard.mjs を dataDir/hooks/ に、ac-board.mjs を dataDir/bin/ に写してから登録する（bin が無いと board-guard は止めない側に倒れるため）。
