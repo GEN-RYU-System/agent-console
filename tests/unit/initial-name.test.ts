@@ -88,6 +88,20 @@ describe("K4 flushInitialNames", () => {
     expect(h.sessions.get(id)?.initialName).toBeUndefined();
   });
 
+  it("Claude 起動前に PO が改名したら、initialName はその名前に差し替わり、起動後に送られる名前は PO の名前", async () => {
+    const { id, pid, claudeId } = await newSession("初回の名前");
+    setRows([]);
+    await h.hub.pollAgents();
+    expect(await h.hub.requestRename(id, "POの名前")).toBe("app");
+    expect(h.sessions.get(id)?.name).toBe("POの名前");
+    expect(h.sessions.get(id)?.initialName).toBe("POの名前");
+    expect(renames(id)).toEqual([]);
+    setRows([row(pid, "idle", claudeId, "work-06")]);
+    await h.hub.pollAgents();
+    expect(renames(id)).toEqual(["/rename POの名前\r"]);
+    expect(h.sessions.get(id)?.initialName).toBeUndefined();
+  });
+
   it("10 分を過ぎたら送らずに消す", async () => {
     const { id, pid, claudeId } = await newSession("古い");
     const session = h.sessions.get(id);

@@ -270,8 +270,8 @@ export class Hub {
    * 端末に書く道では、書く直前に同期で書き込みの印を取る（取れなければ書かず、予約に入れて "queued"）。
    */
   private applyRename(sessionId: string, name: string, hasClaude: boolean): RenameMode {
-    this.dropInitialName(sessionId);
     if (hasClaude) {
+      this.dropInitialName(sessionId);
       if (!this.tryBeginWrite(sessionId)) {
         this.pendingRenames.set(sessionId, name);
         return "queued";
@@ -287,6 +287,9 @@ export class Hub {
     }
     this.pendingRenames.delete(sessionId);
     this.sessions.rename(sessionId, name);
+    // Claude 起動前の改名: 初回の名前合わせは消さず、PO の新しい名前に差し替える（起動後に送る名前が PO の名前になる）
+    const session = this.sessions.get(sessionId);
+    if (session && session.initialName !== undefined) session.initialName = name;
     return "app";
   }
 

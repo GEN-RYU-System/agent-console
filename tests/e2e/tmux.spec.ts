@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { E2E_TMUX_PORT, E2E_TOKEN } from "../fixtures/e2e-env";
 import { newPairingCode } from "../fixtures/e2e-pairing";
@@ -6,6 +7,7 @@ import { newPairingCode } from "../fixtures/e2e-pairing";
 /** terminalHost "tmux"（試験用ソケット ac-test-<pid>-<乱数>）で、ブラウザ → xterm.js → サーバー → tmux を端から端まで通す 1 本 */
 const BASE = `http://127.0.0.1:${E2E_TMUX_PORT}`;
 const SOCKET = process.env.AC_E2E_TMUX_SOCKET as string;
+const NAME_FILE = process.env.AC_E2E_NAME_FILE as string;
 
 function tmux(...args: string[]): string {
   const bin = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/usr/bin/tmux"].find((p) => {
@@ -23,6 +25,8 @@ test("tmux: セッションが試験用ソケットの tmux の中に作られ�
   expect(SOCKET.startsWith("ac-test-")).toBe(true);
   await page.goto(`${BASE}/pair?code=${await newPairingCode(E2E_TMUX_PORT)}`);
   await expect(page.getByRole("button", { name: "新しいセッション", exact: true })).toBeVisible();
+  // 新しく作ったセッションには最初の入力待ちで /rename が 1 回書かれ、打鍵に割り込む（initialName）。stub の Claude 側の名前を同じにして書かせない
+  writeFileSync(NAME_FILE, "tmux-e2e");
   const res = await fetch(`${BASE}/api/sessions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${E2E_TOKEN}`, "Content-Type": "application/json" },
@@ -39,6 +43,7 @@ test("tmux: セッションが試験用ソケットの tmux の中に作られ�
   await page.keyboard.type("tmux-e2e-ok");
   await page.keyboard.press("Enter");
   await expect(terminal).toContainText("tmux-e2e-ok", { timeout: 15000 });
+  writeFileSync(NAME_FILE, "");
   // tmux 側の画面にも同じ内容がある
   expect(tmux("capture-pane", "-p", "-t", `=ac-${id}:`)).toContain("tmux-e2e-ok");
   const del = await fetch(`${BASE}/api/sessions/${id}/close`, { method: "POST", headers: { Authorization: `Bearer ${E2E_TOKEN}` } });

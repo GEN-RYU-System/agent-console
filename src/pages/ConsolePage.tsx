@@ -446,7 +446,7 @@ export function ConsolePage() {
         )}
         {relayError !== null && (
           <Callout variant="warning" title={t("ac.relay.error")}>
-            {relayError}
+            {t("ac.relay.errorBody")}
           </Callout>
         )}
         {failedRelays.map((r) => (

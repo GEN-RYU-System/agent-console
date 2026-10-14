@@ -19,6 +19,9 @@ test("K11: 引き継ぎを押すと一時の置き場にだけフォルダがで
   const newName = `relay-${suffix}-2`;
   writeFileSync(STATUS_FILE, "idle");
   writeFileSync(NAME_FILE, "");
+  // 前の実行の残りの relay-* セッションを先に閉じる（同名・名前の数字の取り違えと、行数の増減を避ける）
+  const before = (await (await fetch(`${BASE}/api/state`, { headers })).json()) as { sessions: Array<{ id: string; name: string }> };
+  for (const s of before.sessions) if (s.name.startsWith("relay-")) await fetch(`${BASE}/api/sessions/${s.id}/close`, { method: "POST", headers });
   const created = await fetch(`${BASE}/api/sessions`, { method: "POST", headers, body: JSON.stringify({ name: oldName, roleId: "e2e-plain" }) });
   expect(created.status).toBe(201);
   const { id: oldId } = (await created.json()) as { id: string };
@@ -33,9 +36,11 @@ test("K11: 引き継ぎを押すと一時の置き場にだけフォルダがで
     await button.click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toContainText(oldName);
-    // 名前の合わせ待ちが長引かないよう、新しい名前を Claude 側の名前として先に出しておく
-    writeFileSync(NAME_FILE, newName);
+    const accepted = page.waitForResponse((r) => r.url().endsWith(`/api/sessions/${oldId}/relay`) && r.request().method() === "POST");
     await dialog.getByRole("button", { name: "引き継ぐ", exact: true }).click();
+    expect((await accepted).status()).toBe(202);
+    // 名前の合わせ待ちが長引かないよう、新しい名前を Claude 側の名前として出す。受付（newName の確定）の後に書く（古い側の表示名が newName にならないように）
+    writeFileSync(NAME_FILE, newName);
     // 一時の置き場にだけフォルダができる
     await expect.poll(() => (existsSync(RELAY_DIR) ? readdirSync(RELAY_DIR).length : 0), { timeout: 10000 }).toBe(1);
     const folder = path.join(RELAY_DIR, readdirSync(RELAY_DIR)[0]);
