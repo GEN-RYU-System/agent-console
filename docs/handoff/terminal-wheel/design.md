@@ -77,6 +77,7 @@ server、tmux の設定（mouse off のまま）、Claude の設定（CLAUDE_COD
 - 触らない: §3-3。
 
 ## 維持の仕組み
+- 守り手: 設計者（Opus）。正本: この design.md と CHANGELOG の 0.31.0 の行。
 - K1〜K4 の試験が CI（ubuntu・macos）で毎回走る。xterm を上げる時は K4 の e2e が合成イベントの振る舞いの変化を捕まえる。
 
 ## 10. 工程0の結果（Sonnet 実測、Opus 判断 2026-10-14。生出力 /tmp/CC報告ファイル/terminal-scroll-history/step0/）
