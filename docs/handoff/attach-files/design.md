@@ -1,6 +1,6 @@
 # 画像以外のファイルを端末に添付する（attach-files）設計 第2版
 
-- 状態: 設計案 第2版（Opus 2026-10-14）。第1版は Fable 審査で REVISE（高 1・中 8・低 8、§11 に記録）。第2版の審査前。実装未着手。
+- 状態: 設計審査済み（第2版、Fable APPROVE 条件付き 2026-10-14。条件 N1 と任意 N2〜N5 を反映済み、§11）。実装未着手。
 - 表の中の `\|` は Markdown の表の区切りと区別するための書き方で、実際の文字は `|`。
 - 根拠: 同じフォルダの recon.md（A1〜A5）。生出力 /tmp/CC報告ファイル/attach-files/r1/。第2版で Opus が読み直した行: server/uploads.ts:1-89、server/uploads-routes.ts:1-38、server/http.ts:427-439、server/config.ts:107-110、README.md:184、src/components/TerminalPane/imageTransfer.ts:1-19・imageTransfer.test.ts:1-35、TerminalPane.ux.test.tsx:29-32、tests/e2e/console.spec.ts:1272-1274、src/api.test.ts:3,135-160。
 
@@ -18,7 +18,7 @@
 | K1 | 端末に CSV（中身に UTF-8 の日本語を含む）をドロップすると、dataDir/uploads/files/<UUID>/<名前>.csv に中身がバイト一致で保存され、そのパスが入力欄に入る（Enter は押さない）。PDF も同じ | e2e（tests/e2e/console.spec.ts の pdf ドロップの試験を書き換え、csv を足す） |
 | K2 | PNG・JPEG の添付は今と同じ（同じ口・同じ保存先・同じ貼り方） | 画像の既存試験（tests/unit/uploads.test.ts・uploads.integration.test.ts・src/api.test.ts:135-160・TerminalPane.ux.test.tsx の画像の部分・e2e の png の部分）が中身を変えずに緑 |
 | K3 | 名前の直し方が §3-3 の手順どおり。表の全行が期待どおり | 単体試験（tests/unit/uploadName.test.ts 新規）: §3-3 の表の全行 |
-| K4 | 5 MiB を超えるファイルは保存せず「大きすぎます」を出す。ちょうど 5 MiB は 201、1 byte 超えは 413 | 画面の単体試験（事前の大きさ検査）＋統合試験（境界の 201/413） |
+| K4 | uploadMaxBytes（既定 5 MiB）を超えるファイルは保存せず「大きすぎます」を出す。ちょうど uploadMaxBytes は 201、1 byte 超えは 413（統合試験は harness の uploadMaxBytes が境界） | 画面の単体試験（事前の大きさ検査）＋統合試験（境界の 201/413） |
 | K5 | 画像以外の保存は uploadMaxKeep 個までで、超えたら古い順に消える。消すのはこのアプリが作った UUID 名のフォルダ（中が普通のファイルだけの物）だけ | 単体試験（maxKeep=3 で、既存の uploads.test.ts と同じ作り）: 4 個目で最古が消える／UUID でない名前のフォルダ・ファイルは残る／中にサブフォルダがある UUID フォルダは残る／画像の数とは別に数える |
 | K6 | 読めないファイル（フォルダなど）は何も貼らずに「保存できませんでした」を出す | 2 段: src/api.test.ts で「FileReader が失敗 → uploadFile が reject」、TerminalPane.ux.test.tsx で「uploadFile が reject → failed の通知・何も貼らない」 |
 | K7 | files・<UUID> のフォルダは 700、ファイルは 600 | 単体試験（stat の mode） |
@@ -35,7 +35,7 @@
   - attachOne（:150-161）に kind を渡し、image なら今の uploadImage、file なら新しい uploadFile を呼ぶ。大きさの事前検査（:151-152）・切り替わり検査（:156）・貼り方 `term.paste(\` ${path} \`)`（:157）・1 つずつ順に（:162-165）は同じ。
   - onDrop（:179-184）: files を元の順に attach する（notImage は出さない）。files が 0 なら今どおり何もしない。
   - onPaste（:166-173）: 条件を「files が 1 つ以上で、text/plain が空」にする（文字があれば今どおり xterm に任せる）。Finder でコピーしたファイルが clipboardData.files に入るかは【未確認】（入らなければ今と同じく何も起きないだけ）。
-  - UploadNotice（:39）から "notImage" を消す。ConsolePage.tsx:102,160 の表示は残りの 3 種のまま。
+  - UploadNotice（:39）から "notImage" を消す。表示は ConsolePage.tsx:424-426 の動的キー `ac.upload.${uploadNotice}` で、残りの 3 種のまま。
 - src/api.ts: `uploadFile(file: File): Promise<{ path: string }>` を足す（`POST /api/uploads/files`、本文 `{ name: file.name, data: base64 }`）。readBytes・toBase64（:200-213）は今の物を使う。
 - 文言（src/locales/ja.json:197-203 の upload）:
   - title「画像を貼れませんでした」→「ファイルを貼れませんでした」
@@ -45,7 +45,7 @@
   - switched はそのまま
 
 ### 3-2 server: 受け口（server/uploads-routes.ts）
-- 新しい口 `POST /api/uploads/files`（UPLOAD_FILES_PATH）。今の handleUploads と同じく handleApi の中で呼ぶので、認証（http.ts:429-433）と、セッション認証の POST に必須の Origin 検査（http.ts:434-438）の内側に入る。
+- 新しい口 `POST /api/uploads/files`（UPLOAD_FILES_PATH、新しい関数 handleUploadFiles。http.ts:197 の handleUploads の隣で呼ぶ）。今の handleUploads と同じく handleApi の中で呼ぶので、認証（http.ts:429-433）と、セッション認証の POST に必須の Origin 検査（http.ts:434-438）の内側に入る。
 - 本文の上限: `uploadBodyLimit(uploadMaxBytes) + NAME_MARGIN_BYTES`。NAME_MARGIN_BYTES = 8192（name は最大 1024 文字。JSON で 1 文字最大 6 byte の \uXXXX にされても 6144 byte に収まる）。
 - name: 文字列で、長さ 1〜1024（UTF-16 の数）。違えば 400 `{error:"name must be a string of 1-1024 characters"}`（SessionInputError）。
 - data: 新しい decodeFileBase64（空の "" は 0 byte として受ける。それ以外は今の decodeBase64 と同じ検査、:16-21）。
@@ -60,8 +60,8 @@
 4. 1 文字ずつ見て、使ってよい文字（Unicode の文字 `\p{L}`・結合記号 `\p{M}`・数字 `\p{N}`・`.`・`_`・`-`）以外はすべて `_` にする（空白・制御文字・記号・バッククォート・括弧・`%` などは全部ここで消える。許す側を決める方式）。
 5. 続いた `_` は 1 つにまとめる。
 6. 先頭の `.` と `-` を、続く限り全部落とす（`..foo.csv` → `foo.csv`）。
-7. 120 文字（コードポイント）を超えたら切る。拡張子 = 最後の `.` より後で、1〜10 文字・`\p{L}\p{N}` だけで、その前に 1 文字以上ある物。拡張子があれば「本体を切って `.拡張子` を残す」、無ければ頭から 120 文字。
-8. 結果が空・`.`・`..` なら `file`。
+7. 120 文字（コードポイント）を超えたら切る。拡張子 = 最後の `.` より後で、1〜10 文字・`\p{L}\p{N}` だけで、その前に 1 文字以上ある物。拡張子があれば本体を頭から「120 −（拡張子の文字数 + 1）」文字に切って `.拡張子` を付ける、無ければ頭から 120 文字。
+8. 結果が空・`.`・`..`・`_` だけ なら `file`。
 
 | 入力 | 結果 |
 |---|---|
@@ -88,9 +88,9 @@
   - 書き方は今の save と同じ: dir の中に一時ファイル（`.<UUID>.tmp`、600）→ chmod 600 → rename で final。
   - 最後に pruneFiles(このフォルダの UUID)。
 - pruneFiles(justSaved):
-  - files の中で、名前が小文字 UUID（UPLOAD_DIR_PATTERN）で、lstat がフォルダ（シンボリックリンクでない）の物だけを候補にする。
+  - files の中で、名前が小文字 UUID（新しい定数 UPLOAD_DIR_PATTERN = UUID だけの形。画像の UPLOAD_FILE_PATTERN :12 とは別）で、lstat がフォルダ（シンボリックリンクでない）の物だけを候補にする。
   - 並べる時刻は「フォルダの mtime」（rename で中にファイルが入った時刻）。新しい順に並べ、maxKeep を超えた物を消す。justSaved は飛ばす（今の :82 と同じ）。
-  - 1 つのフォルダの消し方: 中身を readdir し、全部が lstat で普通のファイルなら 1 つずつ unlink してから rmdir。中にサブフォルダ・シンボリックリンクなど普通のファイル以外があれば、そのフォルダは触らずに残す。フォルダを丸ごと消す関数（fs.rm の recursive）は使わない。
+  - 1 つのフォルダの消し方: 中身を readdir し、全部が lstat で普通のファイルなら 1 つずつ unlink してから rmdir。中にサブフォルダ・シンボリックリンクなど普通のファイル以外があれば、そのフォルダは触らずに残す（このアプリはそういう物を作らないので通常は起きない。起きた時は残る分だけ数の枠を占めるが、消しすぎない側に倒す）。フォルダを丸ごと消す関数（fs.rm の recursive）は使わない。
   - 失敗の扱いは画像の prune（:83-86）と同じ: ENOENT は無視、それ以外は例外（その保存は 500 になるが、保存した物は残る。画像と同じ動き）。
   - 画像の prune（:67-88）とは数を別に数える（画像の UPLOAD_FILE_PATTERN は uploads 直下のファイルだけを見るので、files フォルダは対象外のまま）。
 - 上限は画像と同じ値を使う（uploadMaxBytes 5 MiB、uploadMaxKeep 100）。値は変えず、server/config.ts:107-110 のコメントを「端末に貼る画像・ファイル 1 つの上限」「貼った画像・ファイルを残す数（画像とファイルは別に数える）」に直す。
@@ -147,7 +147,7 @@
 4. 審査（Fable）→ CI（K11）→ マージ・タグ・update-when-idle → PO 目視（K12）
 
 ## 触るファイル・触らないファイル
-- 触る: src/components/TerminalPane/imageTransfer.ts・imageTransfer.test.ts・TerminalPane.tsx・TerminalPane.ux.test.tsx、src/api.ts・src/api.test.ts、src/locales/ja.json、server/uploads.ts、server/uploads-routes.ts、server/http.ts（handleApi に新しい口の呼び出しを足すだけ。必要な場合）、server/config.ts（コメントだけ）、server/uploadName.ts（新規）、tests/unit/uploadName.test.ts（新規）・uploads.test.ts（足すだけ）・uploads.integration.test.ts（足すだけ）、tests/e2e/console.spec.ts、版の 4 か所・CHANGELOG・README。
+- 触る: src/components/TerminalPane/imageTransfer.ts・imageTransfer.test.ts・TerminalPane.tsx・TerminalPane.ux.test.tsx、src/api.ts・src/api.test.ts、src/locales/ja.json、server/uploads.ts、server/uploads-routes.ts、server/http.ts（handleApi の :197 の handleUploads の隣に handleUploadFiles の呼び出しを 1 行足す）、server/config.ts（コメントだけ）、server/uploadName.ts（新規）、tests/unit/uploadName.test.ts（新規）・uploads.test.ts（足すだけ）・uploads.integration.test.ts（足すだけ）、tests/e2e/console.spec.ts、版の 4 か所・CHANGELOG・README。
 - 触らない: 画像の検査と保存（detectImage・save・画像の prune）、画像の口、チャット欄、認証・Origin の検査、server/config.ts の値。
 
 ## 維持の仕組み
@@ -155,3 +155,4 @@
 
 ## 11. 審査の記録
 - 第1版（2026-10-14、Fable）: REVISE。高 H1（名前の直し方が並べ漏れのある方式）→ §3-3 を許す文字の方式に。中 M1（元の順が失われる）→ §3-1 files[]。M2（壊れる既存試験の漏れ）→ §10-2 に全部。M3（本文の上限が数でない）→ §3-2。M4（消す処理の例外）→ §3-4。M5（空白の理由が誤り・非画像パスの扱いが未確認）→ §3-5・§8。M6（FileReader 失敗の試験の場所）→ K6 を 2 段に。M7（空ファイル）→ D6・K8。M8（順序・範囲・切り方）→ §3-3。低 L1〜L8・推奨（dirname の確認）→ 該当箇所に反映。審査本文は Fable の報告（Opus の会話記録）にある。
+- 第2版（2026-10-14、Fable、/tmp/CC報告ファイル/attach-files/review-design2/review.md）: APPROVE（条件付き）。表 16 行を手順どおりのスクリプトで検算し 15 行一致。N1（`"` → `file` が手順 8 と矛盾）→ 手順 8 に「`_` だけ」を足した。N2（UPLOAD_DIR_PATTERN は新しい定数）・N3（http.ts の足す場所）・N4（表示の行）・N5（切る文字数・境界）→ 反映。
