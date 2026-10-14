@@ -82,7 +82,7 @@ test("K1: 最初に開くタブはチャット。端末は隠れた状態で開�
   const s = await makeSession("e2e-size", "chat-first");
   await openPairedOnChat(page);
   const labels = await page.locator(".ac-center-tabs [role=tab]").allTextContents();
-  expect(labels.map((l) => l.replace(/\d+$/, ""))).toEqual(["チャット", "端末", "変更", "PR", "部品", "定期実行"]);
+  expect(labels.map((l) => l.replace(/\d+$/, ""))).toEqual(["チャット", "端末", "変更", "PR", "部品", "定期実行", "予約"]);
   await expect(tab(page, /チャット/)).toHaveAttribute("aria-selected", "true");
   await rowOf(page, s.name).click();
   await expect(page.getByTestId("chat-pane")).toBeVisible();
