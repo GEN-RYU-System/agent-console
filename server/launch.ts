@@ -69,12 +69,12 @@ function isGone(deps: LaunchDeps, sessionId: string): boolean {
 }
 
 /** Claude が入力待ちになるまで待つ。終了したら・時間切れなら false */
-async function waitReady(deps: LaunchDeps, sessionId: string): Promise<boolean> {
+async function waitReady(deps: LaunchDeps, sessionId: string, extra?: () => Promise<boolean>): Promise<boolean> {
   const deadline = Date.now() + deps.timing.timeoutMs;
   while (Date.now() < deadline) {
     if (isGone(deps, sessionId)) return false;
     const verdict = await deps.hub.checkInput(sessionId);
-    if (verdict.ok && verdict.hasClaude) return true;
+    if (verdict.ok && verdict.hasClaude && (extra === undefined || (await extra()))) return true;
     await sleep(deps.timing.pollMs);
   }
   return false;
@@ -92,5 +92,11 @@ export async function launchAndSend(deps: LaunchDeps, req: LaunchRequest): Promi
   const session = deps.sessions.restore({ role, name, cwd: verdict.real, branch: req.branch ?? null });
   if (!(await waitReady(deps, session.id))) return { outcome: isGone(deps, session.id) ? "failed" : "not_ready", sessionName: name };
   if (!req.stillWanted()) return { outcome: "not_ready", sessionName: name };
+  // Claude の自動名で上書きされないように、同じ名前を Claude 側にも付ける（hub.ts:552）。反映に約3秒かかるので、名前が一致して入力待ちに戻るまで待ってから送る
+  if ((await deps.hub.requestRename(session.id, name)) === "claude") {
+    const named = async (): Promise<boolean> => (await deps.hub.snapshot()).sessions.find((v) => v.id === session.id)?.name === name;
+    if (!(await waitReady(deps, session.id, named))) console.error("launch: claude-side name not confirmed in time, sending anyway:", name);
+    if (isGone(deps, session.id)) return { outcome: "failed", sessionName: name };
+  }
   return { outcome: (await deps.hub.submitText(session.id, req.promptText)) ? "sent" : "failed", sessionName: name };
 }

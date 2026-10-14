@@ -46,7 +46,7 @@ const cfg = { salesanchorRoot: os.tmpdir(), roles: [{ id: "echo", needsWorktree:
 const makeHub = (sessions: unknown, verdicts: Verdict[] | (() => Verdict)) => {
   const queue = Array.isArray(verdicts) ? [...verdicts] : null;
   const checkInput = vi.fn(async () => (queue ? (queue.length > 1 ? queue.shift() : queue[0]) : (verdicts as () => Verdict)()));
-  const hub = { checkInput, sessions, config: cfg, submitText: (id: string, text: string) => Hub.prototype.submitText.call(hub, id, text) };
+  const hub = { checkInput, requestRename: vi.fn(async () => "queued"), sessions, config: cfg, submitText: (id: string, text: string) => Hub.prototype.submitText.call(hub, id, text) };
   return hub;
 };
 
@@ -92,6 +92,32 @@ describe("routine dispatch opens a new session", () => {
     expect(arg.claudeSessionId).toBeUndefined();
     expect(arg.routineId).toBeUndefined();
     expect(arg.name).toBe("daily 10/12 09:00");
+  });
+
+  it("renames the claude side first, waits for the matching name, then sends (v0.29.0)", async () => {
+    const { service, sessions, hub } = await setup();
+    const log: string[] = [];
+    let snaps = 0;
+    (hub as Record<string, unknown>).requestRename = vi.fn(async (_id: string, n: string) => { log.push(`rename:${n}`); return "claude"; });
+    (hub as Record<string, unknown>).snapshot = vi.fn(async () => { log.push("snapshot"); snaps += 1; return { sessions: [{ id: "s1", name: snaps >= 2 ? "daily 10/12 09:00" : "auto-name" }] }; });
+    sessions.write.mockImplementation((_s: unknown, d: string) => { log.push(`write:${d.length > 1 ? "paste" : "cr"}`); });
+    await run(service);
+    expect(log[0]).toBe("rename:daily 10/12 09:00");
+    expect(log.filter((x) => x === "snapshot")).toHaveLength(2);
+    expect(log.indexOf("write:paste")).toBeGreaterThan(log.lastIndexOf("snapshot"));
+    expect(outcomes(service)).toEqual(["sent"]);
+  });
+
+  it("still sends when the claude-side name never matches within the limit (v0.29.0)", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { service, sessions, hub } = await setup();
+    (hub as Record<string, unknown>).requestRename = vi.fn(async () => "claude");
+    (hub as Record<string, unknown>).snapshot = vi.fn(async () => ({ sessions: [{ id: "s1", name: "auto-name" }] }));
+    await run(service);
+    expect(sessions.write).toHaveBeenCalled();
+    expect(outcomes(service)).toEqual(["sent"]);
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
   });
 
   it("cuts the session name on a character boundary and keeps it within 40 units", async () => {
