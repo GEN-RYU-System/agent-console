@@ -1,4 +1,6 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { readFileSync, renameSync } from "node:fs";
+import { createSerial, writeJsonAtomic } from "./json-store.ts";
 import { clientProof, serverProof } from "./pair-proof.ts";
 
 const TOKEN_BYTES = 32;
@@ -82,6 +84,35 @@ export interface Auth {
 
 export interface AuthOptions {
   now?: () => number;
+  /** ログイン（セッション）の記録を残すファイル。無ければメモリだけ（試験・自己診断のサーバー）。 */
+  sessionsFile?: string;
+  /** 記録の読み書きの失敗を知らせる先（既定は console.error。トークンは渡さない） */
+  onPersistError?: (message: string) => void;
+}
+
+/** ログインの記録を残すのは本番のポートで起動したときだけ（AGENT_CONSOLE_PORT が未設定か空）。picker-extension の isPickerSetupEnabled と同じ式。 */
+export const isAuthPersistEnabled = (env: Readonly<Record<string, string | undefined>>): boolean =>
+  env.AGENT_CONSOLE_PORT === undefined || env.AGENT_CONSOLE_PORT === "";
+
+const SESSIONS_FILE_VERSION = 1;
+const SECRET_TAG_LABEL = "agent-console auth-sessions v1";
+const DIGEST_HEX_PATTERN = /^[0-9a-f]{64}$/;
+
+interface StoredSession {
+  digest: string;
+  expiresAt: number;
+}
+
+const secretTagOf = (secret: string): string => createHmac("sha256", secret).update(SECRET_TAG_LABEL).digest("hex");
+
+const pad2 = (n: number): string => String(n).padStart(2, "0");
+const stamp = (d: Date): string =>
+  `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}T${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+
+function isStoredSession(v: unknown): v is StoredSession {
+  if (typeof v !== "object" || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return typeof o.digest === "string" && DIGEST_HEX_PATTERN.test(o.digest) && typeof o.expiresAt === "number" && Number.isFinite(o.expiresAt);
 }
 
 function sha256(value: string): Buffer {
@@ -102,9 +133,62 @@ export function createAuth(secret: string, port: number, options: AuthOptions = 
   const secretDigest = sha256(secret);
   // コードもセッションもハッシュで保持し、全件を定数時間で比較する（入力値の一致位置が漏れない）
   const codes = new Map<string, { digest: Buffer; expiresAt: number }>();
+  // キーはトークンの sha256（16 進）。生のトークンはメモリにもファイルにも持たない
   const sessions = new Map<string, { digest: Buffer; expiresAt: number }>();
   const challenges = new Map<string, { cnonce: string; expiresAt: number }>();
   const revokedListeners: Array<(token: string) => void> = [];
+
+  const sessionsFile = options.sessionsFile;
+  const reportPersistError = options.onPersistError ?? ((message: string): void => console.error(message));
+  const serial = createSerial();
+  const secretTag = secretTagOf(secret);
+
+  /** メモリの全セッションをファイルへ写す（直列・失敗してもメモリで続ける） */
+  const persist = (): void => {
+    if (sessionsFile === undefined) return;
+    const items: StoredSession[] = [...sessions.values()].map((v) => ({ digest: v.digest.toString("hex"), expiresAt: v.expiresAt }));
+    void serial(() => writeJsonAtomic(sessionsFile, { version: SESSIONS_FILE_VERSION, secretTag, items })).catch((err: unknown) =>
+      reportPersistError(`auth-sessions の保存に失敗しました: ${(err as { code?: string }).code ?? "error"}`),
+    );
+  };
+
+  const loadSessions = (file: string): void => {
+    let raw: string;
+    try {
+      raw = readFileSync(file, "utf8");
+    } catch (err) {
+      if ((err as { code?: string }).code !== "ENOENT") reportPersistError(`auth-sessions を読めませんでした: ${(err as { code?: string }).code ?? "error"}`);
+      return;
+    }
+    let items: StoredSession[] | null = null;
+    let tagMatches = false;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (typeof parsed === "object" && parsed !== null) {
+        const o = parsed as Record<string, unknown>;
+        if (o.version === SESSIONS_FILE_VERSION && typeof o.secretTag === "string" && Array.isArray(o.items) && o.items.every(isStoredSession)) {
+          items = o.items as StoredSession[];
+          tagMatches = o.secretTag === secretTag;
+        }
+      }
+    } catch {
+      items = null;
+    }
+    if (items === null) {
+      // 壊れている: 空で始め、壊れたファイルは名前を変えて残す（ログインし直しで済むので止めない）
+      try {
+        renameSync(file, `${file}.broken-${stamp(new Date(now()))}`);
+      } catch {
+        reportPersistError("壊れた auth-sessions の名前を変えられませんでした");
+      }
+      return;
+    }
+    if (!tagMatches) return; // secret が変わった: 前のログインは全部無効
+    const t = now();
+    const alive = items.filter((v) => v.expiresAt > t).sort((a, b) => a.expiresAt - b.expiresAt).slice(-MAX_SESSIONS);
+    for (const v of alive) sessions.set(v.digest, { digest: Buffer.from(v.digest, "hex"), expiresAt: v.expiresAt });
+  };
+  if (sessionsFile !== undefined) loadSessions(sessionsFile);
 
   const purge = (): void => {
     const t = now();
@@ -196,13 +280,16 @@ export function createAuth(secret: string, port: number, options: AuthOptions = 
       codes.delete(key);
       dropOldest(sessions, MAX_SESSIONS);
       const token = randomBytes(TOKEN_BYTES).toString("hex");
-      sessions.set(token, { digest: sha256(token), expiresAt: now() + SESSION_MAX_MS });
+      const digest = sha256(token);
+      sessions.set(digest.toString("hex"), { digest, expiresAt: now() + SESSION_MAX_MS });
+      persist();
       return token;
     },
     revokeSession(token) {
       const key = sessionKey(token);
       if (key === null) return false;
       sessions.delete(key);
+      persist();
       for (const listener of revokedListeners) listener(token);
       return true;
     },

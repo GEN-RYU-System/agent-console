@@ -14,6 +14,7 @@ vi.mock("@xterm/xterm", () => ({
     loadAddon = vi.fn();
     open = vi.fn();
     write = vi.fn();
+    reset = vi.fn();
     paste = vi.fn((t: string) => calls.push(`paste:${t}`));
     input = vi.fn((d: string) => calls.push(`input:${d}`));
     options: Record<string, unknown>;
@@ -39,6 +40,8 @@ class FakeWebSocket {
   close = vi.fn();
   send = vi.fn();
   onopen: (() => void) | null = null;
+  onmessage: ((e: { data: unknown }) => void) | null = null;
+  onclose: (() => void) | null = null;
 }
 
 beforeEach(() => {

@@ -1,6 +1,6 @@
 # アプリを更新しても画面が止まらない（keep-login）設計 第3版
 
-- 状態: 設計案 第3版（Opus 2026-10-14）。第1版・第2版は Fable 審査で REVISE（§11）。第3版は Fable 審査で APPROVE（低5件は本版で反映、/tmp/CC報告ファイル/keep-login/review-design3/review.md）。PO 実装承認前。実装未着手。
+- 状態: 設計案 第3版（Opus 2026-10-14）。第1版・第2版は Fable 審査で REVISE（§11）。第3版は Fable 審査で APPROVE（低5件は本版で反映、/tmp/CC報告ファイル/keep-login/review-design3/review.md）。PO 実装承認: 2026-10-14 PO「3から順番にy,」（file-viewer → keep-login → session-relay → board-guard の順に実装してよい）。実装は Sonnet。
 - 根拠: 同じフォルダの recon.md（R1〜R8）。
 
 ## 0. PO の言葉と目的

@@ -1,4 +1,6 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { Callout } from "@sa/components/Callout";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -12,6 +14,9 @@ import "./TerminalPane.css";
 const SCROLLBACK_LINES = 2000;
 /** サーバーの WebSocket 上限（256KB）より十分小さく分割して送る（大量貼り付け対策）。 */
 const INPUT_CHUNK_CHARS = 16 * 1024;
+/** 切れた端末のつなぎ直し: 1 秒・2 秒・4 秒…最大 10 秒 */
+const RECONNECT_BASE_MS = 1000;
+const RECONNECT_MAX_MS = 10_000;
 
 export interface TerminalHandle {
   /**
@@ -49,7 +54,10 @@ export interface TerminalPaneProps {
 
 /** 表示中の 1 本だけ xterm を生成する。sessionId が変わる/外れるたびに破棄して再接続する。 */
 export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(function TerminalPane({ sessionId, smoothScrollMs = 0, uploadMaxBytes, onUploadNotice }, ref) {
+  const { t } = useTranslation();
   const hostRef = useRef<HTMLDivElement>(null);
+  /** 端末の WebSocket が切れて、つなぎ直している間は true（案内を出す） */
+  const [reconnecting, setReconnecting] = useState(false);
   /** 今の端末と、それがどのセッションのものか（effect で差し替わるので、同じ組で持つ） */
   const termRef = useRef<{ sessionId: string; term: Terminal } | null>(null);
   /** 画面から渡された値は、端末を作り直さずに読み直せるよう ref で持つ */
@@ -103,9 +111,13 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
     term.open(host);
     termRef.current = { sessionId, term };
 
-    const ws = openSocket("/ws/term", { session: sessionId });
+    // 切れたらつなぎ直す。send・syncSize は「今の ws」を見る（古い ws を閉包で持たない）
+    let ws: WebSocket | null = null;
+    let disposed = false;
+    let attempt = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     const send = (msg: object): void => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+      if (ws !== null && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
     };
     const syncSize = (): void => {
       // 隠れている（display:none）間は大きさが 0。このまま合わせると 2 列×1 行が pty に送られて Claude の画面が崩れるので、何もしない
@@ -113,9 +125,35 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
       fit.fit();
       send({ type: "resize", cols: term.cols, rows: term.rows });
     };
-
-    ws.onopen = syncSize;
-    ws.onmessage = (e) => term.write(typeof e.data === "string" ? e.data : "");
+    const release = (socket: WebSocket): void => {
+      socket.onopen = null;
+      socket.onmessage = null;
+      socket.onclose = null;
+    };
+    const connect = (): void => {
+      if (ws !== null) release(ws);
+      const socket = openSocket("/ws/term", { session: sessionId });
+      ws = socket;
+      socket.onopen = () => {
+        if (disposed || ws !== socket) return;
+        attempt = 0;
+        setReconnecting(false);
+        // つなぎ直しでは、サーバーが送る今の画面（ring・replay）を描き直す。前の中身は消す
+        term.reset();
+        syncSize();
+      };
+      socket.onmessage = (e) => {
+        if (ws === socket) term.write(typeof e.data === "string" ? e.data : "");
+      };
+      socket.onclose = () => {
+        if (disposed || ws !== socket) return;
+        setReconnecting(true);
+        const delay = Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_MAX_MS);
+        attempt += 1;
+        retryTimer = setTimeout(connect, delay);
+      };
+    };
+    connect();
     const dataSub = term.onData((data) => {
       for (const chunk of splitByCodePoints(data, INPUT_CHUNK_CHARS)) send({ type: "input", data: chunk });
     });
@@ -192,11 +230,25 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
       themeObserver.disconnect();
       resizeObserver.disconnect();
       dataSub.dispose();
-      ws.close();
+      disposed = true;
+      clearTimeout(retryTimer);
+      if (ws !== null) {
+        release(ws);
+        ws.close();
+      }
       termRef.current = null;
       term.dispose();
     };
   }, [sessionId]);
 
-  return <div ref={hostRef} className="ac-terminal" data-testid="terminal" />;
+  return (
+    <div className="ac-terminal-wrap">
+      <div ref={hostRef} className="ac-terminal" data-testid="terminal" />
+      {reconnecting && (
+        <div className="ac-terminal__reconnecting" data-testid="terminal-reconnecting">
+          <Callout variant="info" title={t("ac.terminalReconnecting")} />
+        </div>
+      )}
+    </div>
+  );
 });

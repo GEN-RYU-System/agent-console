@@ -69,6 +69,18 @@
       "atLimit": "上限"
     },
     "loadError": "状態を取得できません",
+    "loading": "読み込み中",
+    "terminalReconnecting": "つなぎ直しています…",
+    "errorBoundary": {
+      "title": "表示に失敗しました",
+      "body": "画面を読み込み直すと戻ります。",
+      "reload": "再読み込み"
+    },
+    "newVersion": {
+      "title": "新しい版が入りました",
+      "body": "再読み込みすると新しい版になります。書きかけの入力は消えるので、区切りのよいところで押してください。",
+      "reload": "再読み込み"
+    },
     "removeSession": "一覧から外す",
     "ledgerErrorTitle": "台帳を読めません",
     "ledgerErrorBody": "{{count}} 件で台帳の取得に失敗しました。最初のエラー: {{first}}",

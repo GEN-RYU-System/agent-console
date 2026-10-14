@@ -15,3 +15,17 @@
 .xterm {
   text-spacing-trim: space-all;
 }
+
+.ac-terminal-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.ac-terminal__reconnecting {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: 1;
+  pointer-events: none;
+}

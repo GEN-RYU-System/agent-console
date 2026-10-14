@@ -128,6 +128,10 @@ export interface HarnessOptions {
   reserve?: ReserveAccess;
   /** ac-routine を使ってよい役割 id（既定は "echo" だけ。試験の「管理職」役） */
   routineManagerRoles?: string[];
+  /** ログインの記録を dataDir の auth-sessions.json に残す（既定は残さない＝AGENT_CONSOLE_PORT 指定時の本番と同じ。再起動の試験だけ true） */
+  persistSessions?: boolean;
+  /** サーバーの秘密（既定は TOKEN）。Bearer の試験は TOKEN のままで、変わった秘密の試験だけ指定する */
+  secret?: string;
 }
 
 /** 実 HTTP/WS/PTY（ダミー役割 sh）を 127.0.0.1 の空きポートで起動する。 */
@@ -211,7 +215,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const reservations = new ReservationService(config, sessions, hub, new ReservationStore(config.dataDir), undefined, undefined, true);
   if (options.recorder === true) recorder.start();
   const clock: Clock = { t: Date.now(), advance(ms) { this.t += ms; } };
-  const auth = createAuth(TOKEN, port, { now: () => clock.t });
+  const auth = createAuth(options.secret ?? TOKEN, port, { now: () => clock.t, sessionsFile: options.persistSessions === true ? path.join(config.dataDir, "auth-sessions.json") : undefined });
   const picks = new PickStore(config.dataDir, config.pickMaxKeep);
   hub.watchPicks(picks);
   const activity = new ActivityStore(config.dataDir, { keepDays: config.activityKeepDays });
