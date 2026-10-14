@@ -8,7 +8,7 @@
 - server/auth.ts:104-106 codes・sessions・challenges は Map で、メモリだけ。再起動で全部消える。
 - sessions の Map のキーは「生のトークン」、値が {digest: sha256(token), expiresAt}（server/auth.ts:199-200）。照合は findByDigest（:116-123）で全件を定数時間比較し、見つかったキーを返す。revokeSession（:202-208）はそのキーで消し、revokedListeners にトークンを渡す。dropOldest（:125-129）は Map の最初（一番古く入れた物）を消す。
 - 期限 SESSION_MAX_MS = 12 時間（:17）、上限 MAX_SESSIONS = 64（:7）、トークンは 32 byte の乱数（:4）。
-- セッションの有効性は secret に結び付いていない（:131-134 の authenticate は Map に有るかだけを見る）。
+- セッションの有効性は secret に結び付いていない（:131-134 の sessionKey と :137 の authenticate は Map に有るかだけを見る）。
 - 秘密（secret）はキーチェーンにあり、再起動しても同じ（server/secret.ts:24-35）。
 
 ## R2 本番と試験・自己診断のサーバーの区別
