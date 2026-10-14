@@ -246,6 +246,19 @@
       },
       "days": { "sun": "日", "mon": "月", "tue": "火", "wed": "水", "thu": "木", "fri": "金", "sat": "土" }
     },
+    "launchTarget": {
+      "mainTitle": "作業場所",
+      "mainOnly": "本店（いつもの作業場所）で動きます",
+      "worktree": "作業用コピー",
+      "choose": "選んでください",
+      "worktreeHelp": "作業用コピーの名前（ブランチ）で選びます",
+      "noBranch": "（ブランチなし・選べません）",
+      "loading": "一覧を読み込み中…",
+      "loadFailedTitle": "作業用コピーの一覧を読めませんでした",
+      "loadFailed": "画面を開き直してください",
+      "noneTitle": "作業用コピーがありません",
+      "none": "本店で動く役割を選ぶか、先に作業用コピーを作ってください"
+    },
     "reservations": {
       "title": "予約",
       "new": "予約を登録",
@@ -255,8 +268,6 @@
       "emptyFinished": "済みの予約はありません",
       "name": "名前",
       "role": "役割",
-      "cwd": "作業場所",
-      "branch": "ブランチ",
       "date": "日付",
       "time": "時刻",
       "timeHint": "日本時間の HH:mm（例: 09:00）",
