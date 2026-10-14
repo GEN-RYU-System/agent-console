@@ -1,6 +1,6 @@
 # セッションが作ったファイルを開く（file-viewer）設計 第3版
 
-- 状態: 設計案 第3版（Opus 2026-10-14）。第1版 REVISE（高3・中7・低6、/tmp/CC報告ファイル/file-viewer/review-design1/review.md）→ 第2版 REVISE（中4・低6、/tmp/CC報告ファイル/file-viewer/review-design2/review.md）→ 第3版で全件に対応（§12・§13 に対応表）。実装済み（v0.25.0、release/file-viewer。PR 審査・K10・K12・K13 は未）。
+- 状態: 設計案 第3版（Opus 2026-10-14）。第1版 REVISE（高3・中7・低6、/tmp/CC報告ファイル/file-viewer/review-design1/review.md）→ 第2版 REVISE（中4・低6、/tmp/CC報告ファイル/file-viewer/review-design2/review.md）→ 第3版で全件に対応（§12・§13 に対応表）。実装済み（v0.26.0、release/file-viewer。PR 審査・K10・K12・K13 は未）。
 - 根拠: 同じフォルダの recon.md（R1〜R7）。生出力 /tmp/CC報告ファイル/file-viewer/。
 
 ## 0. PO の言葉と目的
@@ -192,3 +192,13 @@ hook の記録（チャットと同じ源）に「書いたファイルの場所
 - 【事実】CI run 38537396427 で tests/e2e/console.spec.ts:926 → :499 が「期待7・実際8」で失敗。1400px の画面でタブ枠の見える幅 812px に対しタブの中身は 923px。「定期実行」「予約」が枠の右端を越え、スクロールしないと見えない（/tmp/CC報告ファイル/file-viewer/fix4/e2e-926-probe.txt）。
 - 判断: タブの高さ（--ac-tab-h 56px）と文字（--font-2xl）は PO 承認「2倍ぐらい大きく」（docs/handoff/layout/design.md:6）なので保つ。左右の余白は PO の言葉ではなくトークンの例（同 :68）なので、var(--space-6) を var(--space-3) に縮める（8 タブ×左右 12px 減で約 731px、812px に収まる見込み）。
 - 試験: :499 の期待を 8 にし、「1400px で最後のタブの右端がタブ枠の右端以内」の確認を足す（はみ出しの再発を止める）。
+
+## 16. main（#42 ac-routine、v0.25.0）との合流（2026-10-14、設計者 Opus）
+- 【事実】#42 は PreToolUse に 2 本目の自分の handler（ac-routine-guard.mjs、matcher Bash）を足し、handler の判定を spec ごとの `isHandlerOf(h, spec)`・本体の場所を `specHookPath(hookPath, spec)` に変えた（origin/main a2350c9 server/activity-hooks.ts:69-95）。本設計 §3-2 の matcher 直しは spec を区別しない `isOwnHandler` で判定していたため、そのまま混ぜると記録用の spec の処理で guard の group を「matcher 違い」と見なし壊すおそれがある（競合の生出力 /tmp/CC報告ファイル/file-viewer/fix6/）。
+- 判断: §3-2 の考え方（matcher 違いの group を直す・同居なら自分の分だけ抜いて新しい group を足す・checkHooks で matcherDiffers を返す）は保ち、判定をすべて #42 の spec ごとの形に揃える。
+  - addHandlers・findHandler の `isOwnHandler(h)` → `isHandlerOf(h, spec)`。
+  - `sameHandler(h, nodePath, hookPath)` → `sameHandler(h, nodePath, hookPath, spec)`。`buildHandler(nodePath, hookPath)` → `buildHandler(nodePath, specHookPath(hookPath, spec), spec)`。
+  - findHandler は `specHookPath(hookPath, spec)` と args[0] を比べ、戻り値は §3-2 の `{handler, matcherOk}` のまま。
+  - checkHooks のイベント名は #42 の形（`PreToolUse(ac-routine-guard.mjs)`）を使い、matcherDiffersEvents も同じ名前にする。
+- 版: main が 0.25.0 を使ったので本 PR は 0.26.0。
+- 試験: install の期待は両方を満たす（PreToolUse[3] に guard、PostToolUse は新しい matcher）。加えて「guard の group（matcher Bash）が install・2 回目の install・matcher 直しの後もそのまま残る」確認を 1 件足す。

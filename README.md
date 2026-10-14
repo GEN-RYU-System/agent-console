@@ -169,7 +169,7 @@ node scripts/ac-hooks.mjs check
 - **前の版へ戻した時（切戻し中）の見方と注意**: 戻す先が tmux を知らない版（v0.19.0 以前）の場合、`scripts/ac-update.sh` の失敗時の戻しと `scripts/ac-rollback.sh` は、保存リスト（`open-sessions.json`）と routine（`routines.json`）を `*.tmux-held.json` へ退避してから戻します（同じ会話を二重に起動しないため。この間 routine の予定は止まります）。「裏で N 件が動いています。この間は会話を開き直さないでください」と出たら、その間は同じ会話を手で開き直さないでください。裏で動いている会話は `tmux -L agent-console attach -t =<名前>`（名前は出力に一覧が出ます）で見られます。tmux を知っている版へ更新すると、退避したファイルを今のリストと合わせて元へ戻し、画面につなぎ直します。
 - 試験: tmux の統合試験は本物の tmux を使います（`tests/unit/tmux-host.integration.test.ts`）。試験用の config は `terminalHost: "direct"` か専用ソケットにして、本番のソケットを使わないでください。
 
-## v0.25.0 ファイルタブ（セッションが書いたファイルを読む）
+## v0.26.0 ファイルタブ（セッションが書いたファイルを読む）
 
 中央のタブ「変更」の隣の「ファイル」に、選んだセッションが Write・Edit・MultiEdit・NotebookEdit で書いたファイル（担当が書いたものも。「担当」の印が付きます）が、新しい順に出ます。押すと中身が右に出ます。`.md` は見出し・表などを整えて出し（リンクは http・https のものだけ開けます）、それ以外は文字のまま出します。読むだけで、書き換えはできません。1 MiB を超えるもの・文字でないもの・消されたもの・普通のファイルでないもの（リンク・フォルダ）は、中身を出さず理由を出します。設計は [design](docs/handoff/file-viewer/design.md)、調査は [recon](docs/handoff/file-viewer/recon.md)。
 
@@ -179,7 +179,7 @@ node scripts/ac-hooks.mjs check
 
 ### 更新したあとにやること（hook を入れ直す）
 
-ファイルの道具（Write・Edit・MultiEdit・NotebookEdit）を記録するために、PostToolUse の hook の matcher が増えました。**v0.24.0 までに `node scripts/ac-hooks.mjs install` を済ませている人も、更新のあとにもう一度実行してください**（matcher が古ければ直します。ほかの設定は変わらず、直す前に控えを作ります）。実行するまでは、右の欄に「記録の仕組みが外れています」と出て（`check` の理由は `matcherDiffers`）、ファイルタブには新しいファイルが出ません。設定の変更は**新しく開いたセッション**で確かめてください（すでに動いているセッションに効くかは確かめていません）。
+ファイルの道具（Write・Edit・MultiEdit・NotebookEdit）を記録するために、PostToolUse の hook の matcher が増えました。**v0.25.0 までに `node scripts/ac-hooks.mjs install` を済ませている人も、更新のあとにもう一度実行してください**（matcher が古ければ直します。ほかの設定は変わらず、直す前に控えを作ります）。実行するまでは、右の欄に「記録の仕組みが外れています」と出て（`check` の理由は `matcherDiffers`）、ファイルタブには新しいファイルが出ません。設定の変更は**新しく開いたセッション**で確かめてください（すでに動いているセッションに効くかは確かめていません）。
 
 ```
 node scripts/ac-hooks.mjs install
