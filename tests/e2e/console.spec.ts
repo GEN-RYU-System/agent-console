@@ -642,16 +642,18 @@ test("段階2 K3: よく使う指示を登録・編集・削除でき、ボタ�
   await expect(bar.getByRole("button", { name: "テスト実行", exact: true })).toBeDisabled();
   await rowOf(page, id).click();
   await expect(page.getByTestId("terminal")).toContainText("READY");
-  // Claude が作業中・許可待ちの間は送れない（ボタンは無効、サーバーも 409）。idle になってから送る
+  // Claude が作業中の間は押せる（サーバーも 200）。許可待ちの間は送れない（ボタンは無効で理由が出る、サーバーも 409）。idle になってから押して確認する
   writeFileSync(STATUS_FILE, "busy");
   await expect(rowOf(page, id).getByTestId("status")).toHaveAttribute("data-state", "working", { timeout: STATE_DEADLINE_MS });
-  await expect(bar.getByRole("button", { name: "テスト実行", exact: true })).toBeDisabled();
+  await expect(bar.getByRole("button", { name: "テスト実行", exact: true })).toBeEnabled();
   const promptId = ((JSON.parse(readFileSync(path.join(DATA_DIR, "quick-prompts.json"), "utf8")) as { items: Array<{ id: string }> }).items[0]).id;
   const check = (): Promise<Response> =>
     fetch(`${BASE}/api/sessions/${id}/send-check`, { method: "POST", headers: { ...BEARER, "Content-Type": "application/json" }, body: JSON.stringify({ promptId }) });
-  expect((await check()).status).toBe(409);
+  expect((await check()).status).toBe(200);
   writeFileSync(STATUS_FILE, "waiting");
   await expect(rowOf(page, id).getByTestId("status")).toHaveAttribute("data-state", "waiting", { timeout: STATE_DEADLINE_MS });
+  await expect(bar.getByRole("button", { name: "テスト実行", exact: true })).toBeDisabled();
+  await expect(bar).toContainText("許可・質問への返事を待っている");
   expect((await check()).status).toBe(409);
   await expect(page.getByTestId("terminal")).not.toContainText("echo-quick-prompt-v2");
   writeFileSync(STATUS_FILE, "idle");
