@@ -150,7 +150,7 @@
 ## 11 実装の約束（Sonnet 向け）
 - 触るファイルと変更:
   - server/sessions.ts: Session（:59-74）に `initialName?: string`。restore() の入力に `manualInitialName?: boolean`。create()・restore() で §4 の条件で initialName を入れる。
-  - server/hub.ts: `writing` の Set と tryBeginWrite・endWrite（§3）。flushChatQueue・submitText・requestRename・flushPendingRenames に印を入れる（§3）。flushInitialNames を pollAgents の :158（flushPendingRenames）の直後に呼ぶ（§4）。sendName。Snapshot（:61）に `relays?`、setRelays、snapshot の返り値（:571）に relays を足す。chatQueueOf・pendingRenames を relay の 409 判定に使えるよう、`hasPendingWork(id): boolean`（予約の送信か改名の予約が残っていれば true）を足す。`peekInput(id): InputVerdict` を足す（this.agents と readProcessTable で inputVerdict を作る。fetchAgents は走らせない。flushPendingRenames hub.ts:233 と同じ式。this.agents が null なら ok でない）。
+  - server/hub.ts: `writing` の Set と tryBeginWrite・endWrite（§3）。flushChatQueue・submitText・requestRename・flushPendingRenames に印を入れる（§3）。flushInitialNames を pollAgents の :158（flushPendingRenames）の直後に呼ぶ（§4）。sendName。Snapshot（:61）に `relays?`、setRelays、snapshot の返り値（:571）に relays を足す。chatQueueOf・pendingRenames を relay の 409 判定に使えるよう、`hasPendingWork(id): boolean`（予約の送信か改名の予約が残っていれば true）を足す。`peekInput(id): Promise<InputVerdict>` を足す（readProcessTable が async のため Promise。this.agents と readProcessTable で inputVerdict を作る。fetchAgents は走らせない。flushPendingRenames hub.ts:233 と同じ式。this.agents が null なら ok でない。5-5 手順2 で null を「ok でない状態を見た」に数えても、完了には HANDOFF.md と checkInput の ok が要るので先へ進みすぎない）。
   - server/launch.ts: waitReady と waitName を export。launchAndSend の restore に manualInitialName: true、§4 の送る順。waitName を足す。
   - server/relay.ts（新規）: nextRelayName、RelayManager（§5-2〜5-5）。RelayManager が waitReady・waitName を使うときは、RelayTiming から `{ pollMs: readyPollMs, timeoutMs: readyTimeoutMs, namePollMs, nameTimeoutMs }` を写した LaunchTiming（launch.ts:17 の型）を作って渡す（launch.ts の既定値を使わない）。
   - server/config.ts: relayDir・relayHandoffTimeoutMs（§5-1）。
@@ -170,6 +170,7 @@
 - 迷ったら止まって Opus に報告する（推測で決めない）。
 
 ## 15 第4版の審査への対応（/tmp/CC報告ファイル/session-relay/review-design4/review.md）
+- 第4版の改の審査（review-design5）は APPROVE。低 N25（Promise）・N26（null）は §11 hub.ts に記載。
 - N21（this.agents は private）→ 案(a)を採る: Hub に peekInput を足す（§11 hub.ts）、5-5 手順2、K9 の偽の hub。理由: 引き継ぎ書を待つ間は最大 30 分続き、3 秒ごとに `claude agents` を走らせ続けると負荷が大きいため。
 - F8（:27・:15）→ §11。F9（:17）→ §4・§11。F10（題・状態）→ 冒頭。N22（K6 の観測対象・偽の hub の delegate）→ K6、§11 足す試験。N23（waitName の export）→ §11 launch.ts。N24（delete の前に印）→ §3。
 
