@@ -76,3 +76,19 @@ describe("K11 チャットの見た目が変わらない（代表入力の inner
     );
   });
 });
+
+describe("K4 ファイルの表示（linkPolicy file）", () => {
+  it("http・https だけ a（別タブ）。mailto・相対・javascript: は文字だけ", () => {
+    const { container } = render(<MarkdownView linkPolicy="file" text="[公式](https://example.com/a) と [h](http://example.com) と [メール](mailto:a@example.com) と [相対](/x) と [js](javascript:alert(1))" />);
+    const links = [...container.querySelectorAll("a")];
+    expect(links.map((a) => a.getAttribute("href"))).toEqual(["https://example.com/a", "http://example.com"]);
+    for (const a of links) expect(a.getAttribute("target")).toBe("_blank");
+    for (const t of ["メール", "相対", "js"]) expect(container.textContent).toContain(t);
+  });
+
+  it("HTML は描画しない・画像は代わりの文字（チャットと同じ）", () => {
+    const { container } = render(<MarkdownView linkPolicy="file" text={'<script>window.__pwned2 = 1</script>\n\n![図](https://example.com/p.png)'} />);
+    expect(container.querySelector("script, img")).toBeNull();
+    expect(container.textContent).toContain("図");
+  });
+});

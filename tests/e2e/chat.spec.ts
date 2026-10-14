@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { E2E_PORT, E2E_TOKEN } from "../fixtures/e2e-env";
@@ -82,7 +82,7 @@ test("K1: 最初に開くタブはチャット。端末は隠れた状態で開�
   const s = await makeSession("e2e-size", "chat-first");
   await openPairedOnChat(page);
   const labels = await page.locator(".ac-center-tabs [role=tab]").allTextContents();
-  expect(labels.map((l) => l.replace(/\d+$/, ""))).toEqual(["チャット", "端末", "変更", "PR", "部品", "定期実行", "予約"]);
+  expect(labels.map((l) => l.replace(/\d+$/, ""))).toEqual(["チャット", "端末", "変更", "ファイル", "PR", "部品", "定期実行", "予約"]);
   await expect(tab(page, /チャット/)).toHaveAttribute("aria-selected", "true");
   await rowOf(page, s.name).click();
   await expect(page.getByTestId("chat-pane")).toBeVisible();
@@ -203,6 +203,29 @@ test("K2/K3/K4: 本物の hook に流した記録が、右に自分・左に Cla
   });
   expect(colors.mine).toBe(colors.out);
   expect(colors.theirs).toBe(colors.inn);
+});
+
+test("file-viewer K1/K4: ファイルタブを開いたまま、本物の hook に Write を流すと名前が出る。押すと .md が整えた表示で出る", async ({ page }) => {
+  const s = await makeSession("e2e-plain", "files-view");
+  const dir = path.join(DATA_DIR, "e2e-files");
+  mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `報告-${Date.now().toString(36)}.md`);
+  writeFileSync(file, "# 調べた結果\n\n- 原因は **memo**\n\n[外](https://example.com/x) [相対](./a.md)\n");
+
+  await openPairedOnChat(page);
+  await rowOf(page, s.name).click();
+  await tab(page, /^ファイル/).click();
+  await expect(page.getByText("このセッションが書いたファイルはまだありません")).toBeVisible({ timeout: SETTLE_MS });
+  // タブを開いたまま、hook に記録を流す（K1: 取り直しの操作なしで出る）
+  fireHook({ session_id: s.claudeSessionId, transcript_path: "/not/kept/transcript.jsonl", cwd: dir, hook_event_name: "PostToolUse", tool_name: "Write", tool_input: { file_path: file, content: "x" }, tool_response: {} });
+  const name = path.basename(file);
+  await expect(page.getByText(name)).toBeVisible({ timeout: SETTLE_MS });
+  await page.getByRole("button", { name: new RegExp(name) }).click();
+  const view = page.locator(".ac-files__view .ac-md");
+  await expect(view.locator("h1")).toHaveText("調べた結果");
+  await expect(view.locator("li strong")).toHaveText("memo");
+  const hrefs = await view.locator("a").evaluateAll((els) => els.map((e) => e.getAttribute("href")));
+  expect(hrefs).toEqual(["https://example.com/x"]);
 });
 
 test("K2/K8: 新しいものが来たら一番下まで動く。上を読んでいるときは動かさない。64KiB を超える返事は切り詰めて「（以下略）」", async ({ page }) => {
