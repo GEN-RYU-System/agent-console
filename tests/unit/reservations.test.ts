@@ -38,7 +38,7 @@ const setup = async (opts: { verdicts?: Verdict[]; capacity?: boolean } = {}) =>
   };
   const queue = [...(opts.verdicts ?? [{ ok: true, hasClaude: true }])];
   const checkInput = vi.fn(async () => (queue.length > 1 ? queue.shift() : queue[0]));
-  const hub = { checkInput, sessions, config: cfg, submitText: (id: string, text: string) => Hub.prototype.submitText.call(hub, id, text) };
+  const hub = { checkInput, requestRename: vi.fn(async () => "queued"), sessions, config: cfg, submitText: (id: string, text: string) => Hub.prototype.submitText.call(hub, id, text) };
   const store = new ReservationStore(dir);
   const service = new ReservationService(cfg as never, sessions as never, hub as never, store, () => new Date(clock.t), TIMING, true);
   const input = (over: Record<string, unknown> = {}) => ({ name: "measure", roleId: "echo", cwd: root, date: "2026-10-12", time: "09:10", promptText: "hello", ...over });
