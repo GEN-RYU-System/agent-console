@@ -1,5 +1,5 @@
 import { useRef, useState, type DragEvent, type KeyboardEvent } from "react";
-import { X } from "lucide-react";
+import { ArrowRightLeft, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@sa/components/Badge";
 import { Button } from "@sa/components/Button";
@@ -26,9 +26,15 @@ interface Props {
   onClose: (id: string) => void;
   /** 並び順を変える。toIndex は動かしたあとの位置（0 始まり） */
   onMove: (id: string, toIndex: number) => void;
+  /** 進行中の引き継ぎの古い側・新しい側のセッション id */
+  relayBusyIds?: ReadonlySet<string>;
+  /** 次のセッションへ引き継ぐ（確認画面は呼び出し側） */
+  onRelay?: (id: string) => void;
 }
 
-export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, onRename, onClose, onMove }: Props) {
+const NO_BUSY: ReadonlySet<string> = new Set<string>();
+
+export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, onRename, onClose, onMove, relayBusyIds = NO_BUSY, onRelay }: Props) {
   const { t } = useTranslation();
   const dragId = useRef<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -140,6 +146,13 @@ export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, o
                   </Badge>
                 </span>
               )}
+              {relayBusyIds.has(s.id) && (
+                <span data-testid="relay-badge">
+                  <Badge variant="info" size="sm">
+                    {t("ac.relay.running")}
+                  </Badge>
+                </span>
+              )}
               {s.pendingName !== undefined && (
                 <span className="ac-session__pending" data-testid="pending-name">
                   {t("ac.rename.pendingLine", { name: s.pendingName })}
@@ -147,6 +160,19 @@ export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, o
               )}
             </span>
           </Button>
+          {onRelay !== undefined && s.state === "idle" && s.hasClaude && !relayBusyIds.has(s.id) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              aria-label={t("ac.relay.open")}
+              title={t("ac.relay.open")}
+              data-testid="relay-session"
+              onClick={() => onRelay(s.id)}
+            >
+              <ArrowRightLeft size={14} aria-hidden="true" />
+            </Button>
+          )}
           {s.state !== "stopped" && (
             <Button
               variant="ghost"

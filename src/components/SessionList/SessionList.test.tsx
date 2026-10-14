@@ -251,3 +251,30 @@ describe("SessionList", () => {
     expect(badge(3)).toBeNull();
   });
 });
+
+describe("SessionList relay (引き継ぎ)", () => {
+  const row = (id: string, state: SessionView["state"], hasClaude: boolean): SessionView => ({ id, name: `n-${id}`, roleId: "shell", branch: null, cwd: "/", state, createdAt: 1, unread: 0, hasClaude, canInput: false, canChat: false });
+  const list = [row("idle", "idle", true), row("working", "working", true), row("waiting", "waiting", true), row("noclaude", "no-claude", false), row("stopped", "stopped", false), row("idle-no-claude", "idle", false)];
+
+  it("K7: the relay button appears only on idle rows that have Claude", () => {
+    const onRelay = vi.fn();
+    render(<SessionList sessions={list} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} relayBusyIds={new Set()} onRelay={onRelay} />);
+    const buttons = screen.getAllByTestId("relay-session");
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].getAttribute("aria-label")).toBe("次のセッションへ引き継ぐ");
+    expect(buttons[0].getAttribute("title")).toBe("次のセッションへ引き継ぐ");
+    expect(within(screen.getAllByTestId("session-row")[0]).getByTestId("relay-session")).toBe(buttons[0]);
+    fireEvent.click(buttons[0]);
+    expect(onRelay).toHaveBeenCalledWith("idle");
+    expect(screen.queryByTestId("relay-badge")).toBeNull();
+  });
+
+  it("K7: both sides of a running relay show the badge and lose the button", () => {
+    const both = [row("old", "idle", true), row("new", "idle", true)];
+    render(<SessionList sessions={both} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} relayBusyIds={new Set(["old", "new"])} onRelay={() => {}} />);
+    expect(screen.queryAllByTestId("relay-session")).toHaveLength(0);
+    const badges = screen.getAllByTestId("relay-badge");
+    expect(badges).toHaveLength(2);
+    expect(badges[0].textContent).toBe("引き継ぎ中");
+  });
+});
