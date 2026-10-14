@@ -1,6 +1,6 @@
-# 作戦ボードの書き忘れ防止（board-guard）設計 第2版
+# 作戦ボードの書き忘れ防止（board-guard）設計 第3版
 
-- 状態: 第3版（Opus 2026-10-14。工程0の実測を §11 に反映）。Fable 審査前。それまでの経過: 第2版＋審査反映。第2版は Fable 審査 APPROVE（工程0へ進んでよい。/tmp/CC報告ファイル/board-adoption/review-design2/review.md。中 A〜C は下に反映）。第1版は Fable 審査 REVISE（/tmp/CC報告ファイル/board-adoption/review-design1/review.md。第1版の控え: /tmp/CC報告ファイル/board-adoption/design-v1.md）。PO 未承認。
+- 状態: 第3版（Opus 2026-10-14。工程0の実測を §11 に反映）。Fable 審査 APPROVE（/tmp/CC報告ファイル/board-adoption/review-design3/review.md。中1・低は §12 に反映）。PO 未承認。それまでの経過: 第2版＋審査反映。第2版は Fable 審査 APPROVE（工程0へ進んでよい。/tmp/CC報告ファイル/board-adoption/review-design2/review.md。中 A〜C は下に反映）。第1版は Fable 審査 REVISE（/tmp/CC報告ファイル/board-adoption/review-design1/review.md。第1版の控え: /tmp/CC報告ファイル/board-adoption/design-v1.md）。PO 未承認。
 - PO の言葉（2026-10-14）: 「あなたが作ってくれた右側の作戦ボードだがほとんどのセッションで使っておらず有効化されていない、どうやったら他のセッションも守る？」
 - 根拠の生出力: /tmp/CC報告ファイル/board-adoption/facts.md、r2/（公式・settings.json の Stop の並び）、r3/（origin/main f255892 の行番号。§0 のコードの行はすべて r3 による）
 
@@ -46,8 +46,8 @@
 5. `await import(pathToFileURL(join(dataDir, "bin", "ac-board.mjs")).href)` で readBoard を読む（判定の正本を ac-board.mjs の1か所に保つ。相対 import は写し先が hooks/ と bin/ に分かれるので使わない）。読めなければ K6。readBoard が ok なら exit 0。
 6. transcript_path を先頭から行ごとに読み、assistant の content の tool_use が3件に達した所で読み止める（全部は読まない。工程0 (f): 本番で最大の transcript 82MB を全部読むと最大 3.7 秒、読み止めは最大 49ms。load 約48）。最後まで読んで3未満なら exit 0。transcript は書き込みが遅れることがある（公式）ので、少なく数えた時は止めない側に倒れる。手順5（ボードが ok なら抜ける）を先に置くので、読むのはボードが無いセッションだけ。
 7. dataDir/board-guard/<id> を作ってから、stdout に `{"decision":"block","reason":"<文面>"}` を出して exit 0。印を先に作るので、2回目は必ず止めない。
-- 文面（日本語・固定）: 作戦ボードがまだ無い（または形が壊れている）こと、`node "<dataDir>/bin/ac-board.mjs" write` に JSON を標準入力で渡すこと、項目と上限（README「作戦ボード」）、単発の質問だけのセッションなら theme だけでよいこと、この案内は1回だけであること。
-- 工程0 (c) の結果、block 同士で reason が落ちると分かった場合は、block の代わりに additionalContext で同じ文面を渡す形に変える（第3版で決める）。
+- 文面（日本語・固定）: 作戦ボードがまだ無い（または形が壊れている）こと、`node "<dataDir>/bin/ac-board.mjs" write` に JSON を標準入力で渡すこと、項目と上限（ac-board.mjs:13 の BOARD_LIMITS を import して組む。数値を書き写さない）、単発の質問だけのセッションなら theme だけでよいこと、この案内は1回だけであること。
+- 工程0 (c) で block 同士でも両方の reason が届いたので、block のままとする（§11）。
 
 ### 3-2 登録の一般化（server/activity-hooks.ts・scripts/ac-hooks.mjs）
 handler の種類を表にする。
@@ -128,3 +128,8 @@ handler の種類を表にする。
   - sameHandler（:59）は種類ごとに比べる項目を持つ（board-guard は timeout も比べる）。CheckInput（:170）・installHooks（:288）・uninstallHooks（:307）は種類を受ける。
   - activity-start.ts:39 の check は今の activity の結果を右の欄の案内と e2e（:117）へ渡すまま変えない。board-guard の check 結果は起動時と1時間ごとのログにだけ出す。
   - scripts/ac-hooks.mjs の install / uninstall / check は両方の種類を扱う。install は board-guard.mjs を dataDir/hooks/ に、ac-board.mjs を dataDir/bin/ に写してから登録する（bin が無いと board-guard は止めない側に倒れるため）。
+
+## 12. 第3版の審査（Fable APPROVE）を受けた決め（Opus 2026-10-14）
+- 中1 `ac-hooks.mjs check` の出し方: stdout は今の1つの JSON のまま、鍵 `boardGuard`（"ok" / "missing" / "differs"）を足す。終了コードは今の activity の判定だけで決め、board-guard の状態では変えない（既存の試験 tests/unit/activity-hooks.test.ts:314-316 と右の欄の案内を変えないため）。
+- 低: timeout で打ち切られた回は errors.log に残らない（公式は出力を捨てる）。印も作られないので、次の応答終了でもう一度試す。tool_use が3未満の巨大な transcript では全部読み最大 3.7 秒（timeout 15 の内）。どちらも受け入れる。
+- 低: 工程3の (e) の確認は、必ず本物の `ac-hooks.mjs install` で行う（settings.json は rename で置き換わるため、手で echo 書き込みして代用しない）。工程0 (e) の起動は --setting-sources project,local で、本番と条件が違う。
