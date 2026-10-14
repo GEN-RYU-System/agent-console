@@ -67,6 +67,8 @@ vi.mock("../api", () => ({
   fetchAccount: vi.fn(async () => ({ status: "error" })),
   startAccountLogin: vi.fn(),
   fetchChat: vi.fn(async () => ({ status: "noSession", queued: [] })),
+  fetchFiles: vi.fn(async () => ({ status: "noSession" })),
+  fetchFileContent: vi.fn(async () => ({ status: "noSession" })),
   checkChatSend: vi.fn(),
   fetchMemory: vi.fn(async () => ({ sessions: [], serverRssMb: 1, system: null })),
   fetchDiff: () => fetchDiff(),
@@ -408,7 +410,7 @@ describe("ConsolePage daily use", () => {
 });
 
 describe("ConsolePage center tabs (v0.10.0 K1)", () => {
-  it("puts ac-center-tabs on the center tablist only (all 7 tabs share it), not on the right pane", async () => {
+  it("puts ac-center-tabs on the center tablist only (all 8 tabs share it), not on the right pane", async () => {
     render(<ConsolePage />);
     fireEvent.click(await screen.findByText("dead"));
     const tab = await screen.findByRole("tab", { name: /変更/ });
@@ -416,7 +418,7 @@ describe("ConsolePage center tabs (v0.10.0 K1)", () => {
     expect(list.className).toContain("ac-center-tabs");
     expect(list.className).toContain("comp-tabs");
     const labels = within(list).getAllByRole("tab").map((n) => n.textContent);
-    expect(labels).toHaveLength(7);
+    expect(labels).toHaveLength(8);
     const others = screen.getAllByRole("tablist").filter((n) => n !== list);
     for (const other of others) expect(other.className).not.toContain("ac-center-tabs");
   });
@@ -438,7 +440,7 @@ describe("ConsolePage チャット tab (v0.11.0 K1, K6, K7)", () => {
     const tab = await screen.findByRole("tab", { name: /変更/ });
     const list = tab.closest('[role="tablist"]') as HTMLElement;
     const tabs = within(list).getAllByRole("tab");
-    expect(tabs.map((n) => (n.textContent ?? "").replace(/\d+$/, ""))).toEqual(["チャット", "端末", "変更", "PR", "部品", "定期実行", "予約"]);
+    expect(tabs.map((n) => (n.textContent ?? "").replace(/\d+$/, ""))).toEqual(["チャット", "端末", "変更", "ファイル", "PR", "部品", "定期実行", "予約"]);
     expect(tabs[0].getAttribute("aria-selected")).toBe("true");
     expect(screen.getByTestId("chat-pane").hasAttribute("hidden")).toBe(false);
     expect(screen.getByTestId("terminal-stub").parentElement?.hasAttribute("hidden")).toBe(true);

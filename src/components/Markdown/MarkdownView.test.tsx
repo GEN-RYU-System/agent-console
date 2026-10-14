@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { ChatMarkdown } from "./ChatMarkdown";
+import { MarkdownView } from "./MarkdownView";
 
 afterEach(cleanup);
 
 function html(markdown: string): HTMLElement {
-  const { container } = render(<ChatMarkdown text={markdown} />);
+  const { container } = render(<MarkdownView text={markdown} />);
   return container;
 }
 
@@ -65,5 +65,30 @@ describe("K4 Markdown の描画", () => {
 
   it("本文は元の文字列を書き換えない（空の本文でもエラーにならない）", () => {
     expect(html("").textContent).toBe("");
+  });
+});
+
+describe("K11 チャットの見た目が変わらない（代表入力の innerHTML を固定値と比べる）", () => {
+  it("見出し・表・箇条書き・コード・リンク・画像", () => {
+    const md = "# 見出し\n\n## 小見出し\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n- 一\n- 二\n\n1. い\n\n`x` と\n\n```ts\nconst a = 1;\n```\n\n[公式](https://example.com) と [相対](/x) と [js](javascript:alert(1))\n\n![図](https://example.com/p.png)\n";
+    expect(html(md).innerHTML).toBe(
+      "<div class=\"ac-md\"><h1>見出し</h1>\n<h2>小見出し</h2>\n<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>\n<ul>\n<li>一</li>\n<li>二</li>\n</ul>\n<ol>\n<li>い</li>\n</ol>\n<p><code>x</code> と</p>\n<pre><code class=\"language-ts\">const a = 1;\n</code></pre>\n<p><a href=\"https://example.com\" target=\"_blank\" rel=\"noopener noreferrer\">公式</a> と <a href=\"/x\" target=\"_blank\" rel=\"noopener noreferrer\">相対</a> と <span>js</span></p>\n<p><span>図</span></p></div>",
+    );
+  });
+});
+
+describe("K4 ファイルの表示（linkPolicy file）", () => {
+  it("http・https だけ a（別タブ）。mailto・相対・javascript: は文字だけ", () => {
+    const { container } = render(<MarkdownView linkPolicy="file" text="[公式](https://example.com/a) と [h](http://example.com) と [メール](mailto:a@example.com) と [相対](/x) と [js](javascript:alert(1))" />);
+    const links = [...container.querySelectorAll("a")];
+    expect(links.map((a) => a.getAttribute("href"))).toEqual(["https://example.com/a", "http://example.com"]);
+    for (const a of links) expect(a.getAttribute("target")).toBe("_blank");
+    for (const t of ["メール", "相対", "js"]) expect(container.textContent).toContain(t);
+  });
+
+  it("HTML は描画しない・画像は代わりの文字（チャットと同じ）", () => {
+    const { container } = render(<MarkdownView linkPolicy="file" text={'<script>window.__pwned2 = 1</script>\n\n![図](https://example.com/p.png)'} />);
+    expect(container.querySelector("script, img")).toBeNull();
+    expect(container.textContent).toContain("図");
   });
 });

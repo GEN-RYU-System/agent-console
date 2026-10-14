@@ -63,6 +63,8 @@ async function startServer(env: Record<string, string>, extraRoles: unknown[] = 
     // 本番の tmux（-L agent-console）に触れないよう、この試験の子サーバーは direct で動かす
     terminalHost: "direct",
     roles: [{ id: "plain", labelKey: "role.shell", command: ["/bin/sh", "-c", "cat"], needsWorktree: false }, ...extraRoles],
+    // 既定の routineManagerRoles（opus-designer）はこの試験の役割に無いので、plain を指定する
+    routineManagerRoles: ["plain"],
   };
   const configFile = path.join(dir, "config.json");
   writeFileSync(configFile, JSON.stringify(config));

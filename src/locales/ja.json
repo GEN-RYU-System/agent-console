@@ -207,6 +207,7 @@
       "chat": "チャット",
       "terminal": "端末",
       "changes": "変更",
+      "files": "ファイル",
       "pr": "PR",
       "picks": "部品",
       "routines": "定期実行",
@@ -248,6 +249,19 @@
       },
       "days": { "sun": "日", "mon": "月", "tue": "火", "wed": "水", "thu": "木", "fri": "金", "sat": "土" }
     },
+    "launchTarget": {
+      "mainTitle": "作業場所",
+      "mainOnly": "本店（いつもの作業場所）で動きます",
+      "worktree": "作業用コピー",
+      "choose": "選んでください",
+      "worktreeHelp": "作業用コピーの名前（ブランチ）で選びます",
+      "noBranch": "（ブランチなし・選べません）",
+      "loading": "一覧を読み込み中…",
+      "loadFailedTitle": "作業用コピーの一覧を読めませんでした",
+      "loadFailed": "画面を開き直してください",
+      "noneTitle": "作業用コピーがありません",
+      "none": "本店で動く役割を選ぶか、先に作業用コピーを作ってください"
+    },
     "reservations": {
       "title": "予約",
       "new": "予約を登録",
@@ -257,8 +271,6 @@
       "emptyFinished": "済みの予約はありません",
       "name": "名前",
       "role": "役割",
-      "cwd": "作業場所",
-      "branch": "ブランチ",
       "date": "日付",
       "time": "時刻",
       "timeHint": "日本時間の HH:mm（例: 09:00）",
@@ -442,6 +454,28 @@
     "rightTabs": {
       "session": "作戦ボード",
       "ledger": "台帳"
+    },
+    "files": {
+      "loading": "読み込み中",
+      "hint": "このセッションが Write・Edit などで書いたファイル（新しい順）。読むだけです。",
+      "refresh": "再読込",
+      "fileList": "このセッションが書いたファイル",
+      "emptyTitle": "このセッションが書いたファイルはまだありません",
+      "emptyBody": "コマンドの出力（> など）で作ったファイルはここには出ません",
+      "loadError": "ファイルの一覧を取得できませんでした",
+      "loadErrorBody": "サーバーから取得できませんでした。再読込を押してください。",
+      "contentError": "このファイルを取得できませんでした",
+      "selectFile": "左の一覧からファイルを選んでください",
+      "byAgent": "担当",
+      "reason": {
+        "noSession": "このセッションの会話の記録がまだありません",
+        "notListed": "このセッションが書いたファイルの一覧にないため表示しません",
+        "missing": "ファイルが見つかりません（消されたか、移されました）",
+        "notRegular": "普通のファイルではないため表示しません（リンク・フォルダなど）",
+        "unreadable": "このファイルは読めません",
+        "tooLarge": "1 MiB を超えるため表示しません（{{size}} バイト）",
+        "binary": "文字のファイルではないため表示しません（{{size}} バイト）"
+      }
     },
     "chat": {
       "emptyTitle": "まだ会話がありません",

@@ -9,7 +9,7 @@ import { TextareaControl } from "@sa/components/Textarea";
 import { ApiError, cancelChatQueue, fetchChat, queueChat } from "../../api";
 import type { ChatItem, ChatQueueItem, QuickPrompt, SessionState } from "../../types";
 import { QuickPromptBar } from "../QuickPrompts/QuickPromptBar";
-import { ChatMarkdown } from "./ChatMarkdown";
+import { MarkdownView } from "../Markdown/MarkdownView";
 import { isSendBlocked, isSendKey, mergeChat, queueNoticeKey, shouldStickToBottom } from "./chatLogic";
 import "./ChatPane.css";
 
@@ -156,7 +156,7 @@ export function ChatPane({ sessionId, active, rev, state, canChat, prompts, onEd
     return (
       <div key={item.seq} className={`ac-chat__row ac-chat__row--${item.role}`} data-testid="chat-row">
         <div className={`ac-chat__bubble ac-chat__bubble--${item.role}`} data-testid="chat-bubble" data-role={item.role}>
-          {isUser ? item.text : <ChatMarkdown text={item.text} />}
+          {isUser ? item.text : <MarkdownView text={item.text} />}
           {item.truncated === true && <span className="ac-chat__truncated">{t("ac.chat.truncated")}</span>}
         </div>
       </div>

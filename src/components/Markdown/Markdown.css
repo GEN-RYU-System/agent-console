@@ -1,0 +1,88 @@
+/* Markdown の中身（チャットの返事・ファイルの表示で共通。ChatPane.css の .ac-chat__md から移した） */
+.ac-md > :first-child {
+  margin-top: 0;
+}
+
+.ac-md > :last-child {
+  margin-bottom: 0;
+}
+
+.ac-md p,
+.ac-md ul,
+.ac-md ol,
+.ac-md pre,
+.ac-md table,
+.ac-md blockquote {
+  margin: 0 0 var(--space-2);
+}
+
+.ac-md h1,
+.ac-md h2,
+.ac-md h3,
+.ac-md h4 {
+  margin: var(--space-3) 0 var(--space-2);
+  font-weight: var(--font-weight-semi);
+  line-height: 1.3;
+}
+
+.ac-md h1 {
+  font-size: var(--font-xl);
+}
+
+.ac-md h2 {
+  font-size: var(--font-lg);
+}
+
+.ac-md h3,
+.ac-md h4 {
+  font-size: var(--font-md);
+}
+
+.ac-md ul,
+.ac-md ol {
+  padding-left: var(--space-5);
+}
+
+.ac-md code {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  font-family: var(--ac-font-mono);
+  font-size: var(--font-sm);
+}
+
+.ac-md pre {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  overflow-x: auto;
+}
+
+.ac-md pre code {
+  padding: 0;
+  background: none;
+}
+
+.ac-md blockquote {
+  padding-left: var(--space-3);
+  border-left: var(--space-1) solid var(--border);
+  color: var(--text-secondary);
+}
+
+.ac-md table {
+  display: block;
+  max-width: 100%;
+  border-collapse: collapse;
+  overflow-x: auto;
+}
+
+.ac-md th,
+.ac-md td {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+}
+
+.ac-md a {
+  color: var(--accent);
+  text-decoration: underline;
+}

@@ -1,4 +1,4 @@
-import type { AccountResponse, ActivityResponse, BoardResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, Reservation, ReservationInput, ResumeTarget, Routine, RoutineInput, UsageResponse } from "./types";
+import type { AccountResponse, ActivityResponse, BoardResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileContentResponse, FileDiff, FilesResponse, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, Reservation, ReservationInput, ResumeTarget, Routine, RoutineInput, UsageResponse } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -121,6 +121,16 @@ export async function fetchPickImage(id: string): Promise<string> {
   });
 }
 /** 右の欄「作戦ボード」の、動いている担当・最近の入力と、記録の仕組みの点検。 */
+export const fetchFiles = (sessionId: string): Promise<FilesResponse> => request(`${diffBase(sessionId)}/files`);
+/** 一覧に無いパスはサーバーが 404 notListed を返す。画面では理由として出すので、例外にせず status にする */
+export async function fetchFileContent(sessionId: string, path: string): Promise<FileContentResponse> {
+  try {
+    return await request<FileContentResponse>(`${diffBase(sessionId)}/files/content?path=${encodeURIComponent(path)}`);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return { status: "notListed" };
+    throw err;
+  }
+}
 export const fetchActivity = (sessionId: string): Promise<ActivityResponse> => request(`${diffBase(sessionId)}/activity`);
 /** 右の欄「作戦ボード」の計画（テーマ・KGI・KPI・ロードマップ）。 */
 export const fetchBoard = (sessionId: string): Promise<BoardResponse> => request(`${diffBase(sessionId)}/board`);
