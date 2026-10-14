@@ -8,6 +8,7 @@ import { ApiError, openSocket, uploadFile, uploadImage } from "../../api";
 import { splitByCodePoints } from "./chunkInput";
 import { classifyTransfer, type TransferFile } from "./imageTransfer";
 import { WheelClassifier, wheelDeltas } from "./wheelClassifier";
+import { LineEmitter, WheelLineAccumulator } from "./wheelLines";
 import { readTerminalAppearance } from "./terminalTokens";
 import "./TerminalPane.css";
 
@@ -17,6 +18,8 @@ const INPUT_CHUNK_CHARS = 16 * 1024;
 /** 切れた端末のつなぎ直し: 1 秒・2 秒・4 秒…最大 10 秒 */
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 10_000;
+/** ホイールの信号を持つマウス追跡のモード（x10 は wheel を持たない） */
+const WHEEL_TRACKING_MODES: ReadonlySet<string> = new Set(["vt200", "drag", "any"]);
 
 export interface TerminalHandle {
   /**
@@ -111,6 +114,62 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
     term.open(host);
     termRef.current = { sessionId, term };
 
+    // マウス追跡中（Claude など）のホイールは、行の数に直して 1 行 1 信号で少しずつ送る（設計: docs/handoff/terminal-wheel/design.md）。
+    // 合成イベントは端末ごと（この effect の中）に持つ。connect() より前に作る
+    const syntheticWheels = new WeakSet<WheelEvent>();
+    const wheelAccumulator = new WheelLineAccumulator();
+    let rafId = 0;
+    const lineEmitter = new LineEmitter(
+      (cb) => {
+        rafId = requestAnimationFrame(cb);
+      },
+      () => cancelAnimationFrame(rafId),
+    );
+    const wheelTracked = (): boolean => WHEEL_TRACKING_MODES.has(term.modes.mouseTrackingMode);
+    const screenOf = (): Element | null => term.element?.querySelector(".xterm-screen") ?? null;
+    let wheelOrigin: { target: Element | null; x: number; y: number; ctrl: boolean; alt: boolean; meta: boolean } | null = null;
+    const emitOneLine = (dir: 1 | -1): void => {
+      // 送る直前の再確認: 端末が差し替わった・追跡が外れたなら、待ち行列を捨てて送らない
+      if (termRef.current?.term !== term || !wheelTracked() || wheelOrigin === null) {
+        lineEmitter.clear();
+        return;
+      }
+      const target = wheelOrigin.target?.isConnected ? wheelOrigin.target : screenOf();
+      if (target === null) return;
+      const synthetic = new WheelEvent("wheel", {
+        deltaMode: 1,
+        deltaY: dir,
+        clientX: wheelOrigin.x,
+        clientY: wheelOrigin.y,
+        ctrlKey: wheelOrigin.ctrl,
+        altKey: wheelOrigin.alt,
+        metaKey: wheelOrigin.meta,
+        bubbles: true,
+        cancelable: true,
+      });
+      syntheticWheels.add(synthetic);
+      target.dispatchEvent(synthetic);
+    };
+    term.attachCustomWheelEventHandler((e: WheelEvent): boolean => {
+      if (syntheticWheels.has(e)) return true;
+      if (e.shiftKey || e.deltaY === 0 || !wheelTracked()) return true;
+      const screen = screenOf();
+      const cellHeight = screen === null ? 0 : screen.clientHeight / term.rows;
+      if (!(cellHeight > 0)) return true;
+      const lines = wheelAccumulator.add(e, cellHeight, term.rows);
+      if (lines === 0) return true;
+      wheelOrigin = {
+        target: e.target instanceof Element ? e.target : screen,
+        x: e.clientX,
+        y: e.clientY,
+        ctrl: e.ctrlKey,
+        alt: e.altKey,
+        meta: e.metaKey,
+      };
+      lineEmitter.push(lines, emitOneLine, term.rows);
+      return false;
+    });
+
     // 切れたらつなぎ直す。send・syncSize は「今の ws」を見る（古い ws を閉包で持たない）
     let ws: WebSocket | null = null;
     let disposed = false;
@@ -139,6 +198,8 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
         attempt = 0;
         setReconnecting(false);
         // つなぎ直しでは、サーバーが送る今の画面（ring・replay）を描き直す。前の中身は消す
+        lineEmitter.clear();
+        wheelAccumulator.reset();
         term.reset();
         syncSize();
       };
@@ -174,6 +235,7 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
     // なめらかなスクロール: 物理的なマウスのホイールのときだけ（VS Code と同じ。トラックパッドでは切る）
     const wheelClassifier = new WheelClassifier();
     const onWheel = (e: WheelEvent): void => {
+      if (syntheticWheels.has(e)) return;
       const { dx, dy } = wheelDeltas(e);
       wheelClassifier.accept(Date.now(), dx, dy);
       const physical = wheelClassifier.isPhysicalMouseWheel();
@@ -230,6 +292,7 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
       themeObserver.disconnect();
       resizeObserver.disconnect();
       dataSub.dispose();
+      lineEmitter.dispose();
       disposed = true;
       clearTimeout(retryTimer);
       if (ws !== null) {

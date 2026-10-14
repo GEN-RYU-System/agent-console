@@ -105,6 +105,7 @@ export function prepareE2eEnv(): void {
   const bracketedScript = path.join(here, "bracketed-role.mjs");
   const sizeScript = path.join(here, "size-role.mjs");
   const punctScript = path.join(here, "punct-role.mjs");
+  const mouseScript = path.join(here, "mouse-role.mjs");
   const marker = "agent-console-e2e-role";
   const config = {
     port: E2E_PORT,
@@ -154,6 +155,7 @@ export function prepareE2eEnv(): void {
       { id: "e2e-bracketed", labelKey: "role.shell", command: [process.execPath, bracketedScript, marker], needsWorktree: false },
       { id: "e2e-size", labelKey: "role.shell", command: [process.execPath, sizeScript, marker], needsWorktree: false },
       { id: "e2e-punct", labelKey: "role.shell", command: [process.execPath, punctScript, marker], needsWorktree: false },
+      { id: "e2e-mouse", labelKey: "role.shell", command: [process.execPath, mouseScript, marker], needsWorktree: false },
       { id: "e2e-short", labelKey: "role.shell", command: [process.execPath, "-e", "console.log('bye')", marker], needsWorktree: false },
     ],
   };
