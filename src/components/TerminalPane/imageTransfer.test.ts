@@ -9,26 +9,23 @@ function transfer(files: File[], text = ""): DataTransfer {
 const file = (type: string, name = "x"): File => new File([new Uint8Array([1])], name, { type });
 
 describe("classifyTransfer (K4)", () => {
-  it("returns the PNG and JPEG files as images", () => {
+  it("marks PNG and JPEG as image, in the original order", () => {
     const r = classifyTransfer(transfer([file("image/png"), file("image/jpeg")]));
-    expect(r.images.map((f) => f.type)).toEqual(["image/png", "image/jpeg"]);
-    expect(r.hasOtherFiles).toBe(false);
+    expect(r.files.map((f) => [f.file.type, f.kind])).toEqual([["image/png", "image"], ["image/jpeg", "image"]]);
   });
-  it("reports other files (gif, pdf, no type) as not images", () => {
+  it("marks other files (gif, pdf, no type) as file", () => {
     const r = classifyTransfer(transfer([file("image/gif"), file("application/pdf"), file("")]));
-    expect(r.images).toEqual([]);
-    expect(r.hasOtherFiles).toBe(true);
+    expect(r.files.map((f) => f.kind)).toEqual(["file", "file", "file"]);
   });
-  it("keeps images and notes the others when mixed", () => {
-    const r = classifyTransfer(transfer([file("image/png"), file("text/plain")]));
-    expect(r.images).toHaveLength(1);
-    expect(r.hasOtherFiles).toBe(true);
+  it("keeps the dropped order when images and others are mixed", () => {
+    const r = classifyTransfer(transfer([file("text/csv", "a.csv"), file("image/png", "b.png"), file("", "c")]));
+    expect(r.files.map((f) => [f.file.name, f.kind])).toEqual([["a.csv", "file"], ["b.png", "image"], ["c", "file"]]);
   });
-  it("reports the plain text so a text+image paste can be left to xterm", () => {
+  it("reports the plain text so a text+file paste can be left to xterm", () => {
     expect(classifyTransfer(transfer([file("image/png")], "hello")).text).toBe("hello");
     expect(classifyTransfer(transfer([file("image/png")])).text).toBe("");
   });
   it("handles a missing transfer", () => {
-    expect(classifyTransfer(null)).toEqual({ images: [], hasOtherFiles: false, text: "" });
+    expect(classifyTransfer(null)).toEqual({ files: [], text: "" });
   });
 });
