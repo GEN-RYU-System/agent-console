@@ -1,6 +1,6 @@
-# ボタン1つで次のセッションへ引き継ぐ・名前が英語に戻る不具合（session-relay）設計 第3版
+# ボタン1つで次のセッションへ引き継ぐ・名前が英語に戻る不具合（session-relay）設計 第4版
 
-- 状態: 設計案 第3版（Opus 2026-10-14）。第1版・第2版は Fable 審査で REVISE（§12・§13 に対応表）。第3版の審査前。PO の実装承認は無い。実装未着手。
+- 状態: 設計案 第4版（Opus 2026-10-14）。第1版〜第3版は Fable 審査で REVISE、第4版は REVISE（中1件 N21）で本文を直した第4版の改（§12〜§15 に対応表）。PO の実装承認は無い。実装未着手。
 - 調査: recon.md（同じフォルダ）。行番号は基準 origin/main 0a8266c。コードの写しは /tmp/CC報告ファイル/session-relay/r3/code.txt・code2.txt。
 
 ## 1 目的（PO の言葉は recon.md の冒頭）
@@ -23,7 +23,7 @@
   - flushChatQueueOnce: 印は hub.ts:370 の current の判定の直後、:374 で予約を "sent" にする前に取る。取れなければ予約を "sent" にせず、chatSentGuard も立てずに戻る（次の定期取得で再び試す）。取れたら :381 の Enter（または :378-380 の早い return）まで持ち、finally で外す。
   - submitText（hub.ts:393-401）。取れなければ 200ms ごとに最大 10 秒待ち（hub.ts の定数 WRITE_WAIT_POLL_MS・WRITE_WAIT_MAX_MS）、取れなければ false。
 - 1回書き（`/rename …\r`）は、印が有れば書かない:
-  - applyRename の呼び出し元 requestRename（hub.ts:199-208）: 印が有れば pendingRenames に入れて "queued" を返す。
+  - applyRename の呼び出し元 requestRename（hub.ts:199-208）: 印が有れば pendingRenames に入れて "queued" を返す。applyRename（hub.ts:211-220）の中で印を取るときは、:212 の `this.pendingRenames.delete(sessionId)` より前に tryBeginWrite を呼ぶ（取れなければ delete せず "queued" を返す。返り値の型は RenameMode hub.ts:39 に広げる）。hasClaude が false の道（:218 sessions.rename、端末に書かない）は印を見ない。
   - flushPendingRenames（hub.ts:223-242）と §4 の flushInitialNames: 印が有ればその回は飛ばす。
 - 印は「書く直前に同期で」見る。checkInput などの await の後、端末に書く直前（applyRename の中など、await を挟まない所）で tryBeginWrite を呼ぶ。await の前に見た結果は使わない（await の間に他の処理が印を取り得るため）。1回書きも tryBeginWrite で取り、書いたら endWrite で外す。
 - 受け入れる危険: 人が端末に直接打つ文字（ws.ts:36 → sessions.write）は印を見ない（今も同じ）。印の間に人が打った文字は混ざり得る。今の改名の予約と同じ水準として受け入れる。
@@ -54,14 +54,14 @@
 - launchAndSend（launch.ts:82-94）: restore を `manualInitialName: true` で呼び、waitReady の後に次の順で送る: `hub.sendName(id, name)` → `waitName` → waitReady → `req.stillWanted()`（false なら今と同じく not_ready）→ submitText。
   - sendName: 印を取って `/rename <name>\r` を1回書き、外して true。取れなければ書かずに false。false のときは waitName を飛ばして次へ進み、console.warn を1行出す（名前は合わないが指示は送る。開いた直後の新しいセッションで印が取られていることは通常無い）。
   - waitName: `hub.displayNames().get(id)`（hub.ts:441-443、直近の snapshot の表示名）が name になるまで、timing.namePollMs ごと・最大 timing.nameTimeoutMs 待つ。超えても次へ進む。
-  - LaunchTiming（launch.ts:16）に `namePollMs`・`nameTimeoutMs` を足す。本番の既定は 3000・15000（routines.ts:50・reservations.ts:131 の既定値に足す）。
+  - LaunchTiming（launch.ts:17）に `namePollMs`・`nameTimeoutMs` を足す。本番の既定は 3000・15000（routines.ts:50・reservations.ts:131 の既定値に足す）。
   - waitReady（launch.ts:70-79）は export する。
 - routines（routines.ts:90）・reservations（reservations.ts:230）は launchAndSend を通るので、変更は launch.ts の1か所。
 ### 受入
 - K3: 名前「テスト5」で新しいセッションを作る → Claude の入力待ちから 30 秒以内に一覧の名前が「テスト5」になり、指示を1回送った後も「テスト5」のまま（実機のみ。e2e の stub は名前を1つしか持てない、tests/fixtures/claude-stub.sh:13-15）。
 - K4: 単体試験で、pendingRenames が有れば `/rename` は予約の名前で1回だけ書かれる。ok かつ hasClaude になるまで書かれない。名前が同じなら書かれず checkInput も呼ばれない。10 分で消える。
 - K5: 単体試験で、restore が claudeSessionId 付き・reattached・manualInitialName のときは initialName が入らない。
-- K6: 新しい試験ファイル tests/unit/launch-name.test.ts で、本物の Hub.prototype.sendName を call する偽の hub（書き込みを配列に記録する sessions.write）を使い、launchAndSend の書き込み順が「/rename <名前>\r → 指示の貼り付け → Enter」で、manualInitialName=true のため flushInitialNames は何も書かないことを見る。既存の routines・reservations の試験の偽の hub は `sendName: () => true` のままにし、K6 には使わない。
+- K6: 新しい試験ファイル tests/unit/launch-name.test.ts で、本物の Hub.prototype.sendName を call する偽の hub（書き込みを配列に記録する sessions.write）を使い、launchAndSend の書き込み順が「/rename <名前>\r → 指示の貼り付け → Enter」であることと、sessions.restore（偽物）の引数に manualInitialName: true があることを見る（「manualInitialName なら initialName が入らない」は K5 で見る）。既存の routines・reservations の試験の偽の hub は `sendName: () => true` のままにし、K6 には使わない。
 
 ## 5 B: 引き継ぎ
 ### 5-1 使える条件（server/config.ts）
@@ -87,7 +87,7 @@
 - 進行の記録 RelayView: `{ relayId, oldSessionId, oldName, newName, phase, newSessionId?, reason? }`。phase は "handoff" | "launching" | "sending" | "done" | "failed"。phase が変わるたびに `hub.setRelays(list)` を呼ぶ（hub.setRestoreNotices hub.ts:193 と同じ形で、publish する）。
 1. phase "handoff": 古いセッションに submitText で次の決まった文を送る（`<パス>` は 5-4 の絶対パス）。submitText が false なら failed "send_failed"。
    「このセッションの作業を次のセッションに引き継ぎます。<パス> に Markdown で引き継ぎ書を書いてください。書く項目: 目的と PO の言葉の原文／決まったこと／今の状態（作業場所・ブランチ・PR・動いている担当）／終わっていない作業と次の一手（順番つき）／注意点と守るルール／読むべきファイルのパス。書き終えたら、そのパスだけを返答してください。新しい作業は始めないでください。」
-2. 3 秒ごとに見る。まず this.agents（直近の取得結果）で見て、ok に見えたときだけ checkInput を呼んで取り直す（§4 手順6・7 と同じ作法）。次の全部で完了: HANDOFF.md が有り大きさが 0 より大きい／checkInput が今 ok／「送った後に一度 ok でない状態を見た」または「送ってから 60 秒過ぎた」（短い間に書き終えて作業中を一度も見られなかった場合の道）。許可待ちは、PO が古いセッションで許可すれば続く。relayHandoffTimeoutMs を超えたら failed "handoff_timeout"（ファイルが途中まであっても新しいセッションは開かない）。古いセッションが終了したら failed "gone"。
+2. 3 秒ごとに見る。まず `hub.peekInput(oldId)`（§11。直近の取得結果で見る、`claude agents` を走らせない）で見て、ok のときだけ checkInput を呼んで取り直す（§4 手順6・7 と同じ作法）。下の「ok でない状態を見た」は peekInput の結果で数えてよい。次の全部で完了: HANDOFF.md が有り大きさが 0 より大きい／checkInput が今 ok／「送った後に一度 ok でない状態を見た」または「送ってから 60 秒過ぎた」（短い間に書き終えて作業中を一度も見られなかった場合の道）。許可待ちは、PO が古いセッションで許可すれば続く。relayHandoffTimeoutMs を超えたら failed "handoff_timeout"（ファイルが途中まであっても新しいセッションは開かない）。古いセッションが終了したら failed "gone"。
 3. phase "launching": hasCapacity を見直す（false なら failed "full"）。`sessions.restore({ role: 古い役割, name: 新しい名前, cwd: 古い cwd, branch: 古い branch, manualInitialName: true })`。worktree は新しく作らず（sessions.ts:320-327）、claudeSessionId は渡さない（新しい会話）。例外は catch し、SessionInputError の "too many sessions" なら failed "full"、それ以外は failed "start_failed"。
 4. waitReady（120 秒）。false なら failed "not_ready"（開いたセッションは残す）。
 5. phase "sending": sendName → waitName → waitReady → submitText で次の文を送る（sendName が false の扱いは §4 の launchAndSend と同じ）。waitReady が false なら failed "not_ready"、submitText が false なら failed "send_failed"（どちらも開いたセッションは残す）。
@@ -150,9 +150,9 @@
 ## 11 実装の約束（Sonnet 向け）
 - 触るファイルと変更:
   - server/sessions.ts: Session（:59-74）に `initialName?: string`。restore() の入力に `manualInitialName?: boolean`。create()・restore() で §4 の条件で initialName を入れる。
-  - server/hub.ts: `writing` の Set と tryBeginWrite・endWrite（§3）。flushChatQueue・submitText・requestRename・flushPendingRenames に印を入れる（§3）。flushInitialNames を pollAgents の :158（flushPendingRenames）の直後に呼ぶ（§4）。sendName。Snapshot（:61）に `relays?`、setRelays、snapshot の返り値（:571）に relays を足す。chatQueueOf・pendingRenames を relay の 409 判定に使えるよう、`hasPendingWork(id): boolean`（予約の送信か改名の予約が残っていれば true）を足す。
-  - server/launch.ts: waitReady を export。launchAndSend の restore に manualInitialName: true、§4 の送る順。waitName を足す。
-  - server/relay.ts（新規）: nextRelayName、RelayManager（§5-2〜5-5）。RelayManager が waitReady・waitName を使うときは、RelayTiming から `{ pollMs: readyPollMs, timeoutMs: readyTimeoutMs, namePollMs, nameTimeoutMs }` を写した LaunchTiming（launch.ts:16 の型）を作って渡す（launch.ts の既定値を使わない）。
+  - server/hub.ts: `writing` の Set と tryBeginWrite・endWrite（§3）。flushChatQueue・submitText・requestRename・flushPendingRenames に印を入れる（§3）。flushInitialNames を pollAgents の :158（flushPendingRenames）の直後に呼ぶ（§4）。sendName。Snapshot（:61）に `relays?`、setRelays、snapshot の返り値（:571）に relays を足す。chatQueueOf・pendingRenames を relay の 409 判定に使えるよう、`hasPendingWork(id): boolean`（予約の送信か改名の予約が残っていれば true）を足す。`peekInput(id): InputVerdict` を足す（this.agents と readProcessTable で inputVerdict を作る。fetchAgents は走らせない。flushPendingRenames hub.ts:233 と同じ式。this.agents が null なら ok でない）。
+  - server/launch.ts: waitReady と waitName を export。launchAndSend の restore に manualInitialName: true、§4 の送る順。waitName を足す。
+  - server/relay.ts（新規）: nextRelayName、RelayManager（§5-2〜5-5）。RelayManager が waitReady・waitName を使うときは、RelayTiming から `{ pollMs: readyPollMs, timeoutMs: readyTimeoutMs, namePollMs, nameTimeoutMs }` を写した LaunchTiming（launch.ts:17 の型）を作って渡す（launch.ts の既定値を使わない）。
   - server/config.ts: relayDir・relayHandoffTimeoutMs（§5-1）。
   - server/index.ts: RelayManager を作って http の deps に渡す。
   - server/http.ts: `POST /api/sessions/:id/relay`。
@@ -161,13 +161,17 @@
   - src/components/SessionList/SessionList.tsx・src/pages/ConsolePage.tsx: §5-6。
   - src/locales/ja.json: §5-6 のキー。
   - tests/fixtures/e2e-env.ts: relayDir（一時フォルダ）。
-- 足す試験: tests/unit/relay.test.ts（K8〜K10）、tests/unit/hub-write-lock.test.ts（K1・K2）、tests/unit/initial-name.test.ts（K4・K5）、tests/unit/launch-name.test.ts（K6）、SessionList の画面試験（K7）、tests/e2e の引き継ぎ（K11）。
+- 足す試験: tests/unit/relay.test.ts（K8〜K10。偽の hub に peekInput を足す）、tests/unit/hub-write-lock.test.ts（K1・K2）、tests/unit/initial-name.test.ts（K4・K5）、tests/unit/launch-name.test.ts（K6。偽の hub は下の「既存の試験への最小の変更」と同じ writing・tryBeginWrite・endWrite の delegate を持つ）、SessionList の画面試験（K7）、tests/e2e の引き継ぎ（K11）。
 - 既存の試験への最小の変更（これ以外は変えない）:
-  - tests/unit/routines.test.ts:32・reservations.test.ts の TIMING に `namePollMs: 5, nameTimeoutMs: 20` を足す。
+  - tests/unit/routines.test.ts:27・reservations.test.ts:15 の TIMING に `namePollMs: 5, nameTimeoutMs: 20` を足す。
   - 偽の hub（routines.test.ts:34、reservations.test.ts:41）に `sendName: () => true`、`displayNames: () => new Map()`、`writing: new Set<string>()`、`tryBeginWrite: (id) => Hub.prototype.tryBeginWrite.call(hub, id)`、`endWrite: (id) => Hub.prototype.endWrite.call(hub, id)` を足す（hub はその偽の hub 自身。Hub.prototype.submitText.call の中の this.tryBeginWrite・this.endWrite がこれを呼ぶ）。
   - Hub の tryBeginWrite・endWrite は private にしない（tsconfig.server.json:16 で tests も typecheck されるため、private だと試験から call できない）。Hub の中では this.writing だけを見る。
 - 触らない: §2 の「触らない」すべて。既存の試験の期待値は、§3 の印のために書き込みの順が変わる所以外は変えない（変えたら PR 本文に理由を書く）。
 - 迷ったら止まって Opus に報告する（推測で決めない）。
+
+## 15 第4版の審査への対応（/tmp/CC報告ファイル/session-relay/review-design4/review.md）
+- N21（this.agents は private）→ 案(a)を採る: Hub に peekInput を足す（§11 hub.ts）、5-5 手順2、K9 の偽の hub。理由: 引き継ぎ書を待つ間は最大 30 分続き、3 秒ごとに `claude agents` を走らせ続けると負荷が大きいため。
+- F8（:27・:15）→ §11。F9（:17）→ §4・§11。F10（題・状態）→ 冒頭。N22（K6 の観測対象・偽の hub の delegate）→ K6、§11 足す試験。N23（waitName の export）→ §11 launch.ts。N24（delete の前に印）→ §3。
 
 ## 14 第3版の審査への対応（/tmp/CC報告ファイル/session-relay/review-design3/review.md）
 - N13（偽の hub の tryBeginWrite・endWrite、private にしない）→ §11 既存の試験への最小の変更。
