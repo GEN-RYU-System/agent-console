@@ -206,6 +206,12 @@ function readBytes(file: Blob): Promise<Uint8Array> {
   });
 }
 
+/** 端末に貼る画像以外のファイルを、元の名前（サーバーが安全に直す）で保存してもらい、保存先の絶対パスを受け取る。大きさはサーバーが検査する。 */
+export async function uploadFile(file: File): Promise<{ path: string }> {
+  const data = toBase64(await readBytes(file));
+  return request("/api/uploads/files", { method: "POST", body: JSON.stringify({ name: file.name, data }) });
+}
+
 /** 端末に貼る画像を保存してもらい、保存先の絶対パスを受け取る（PNG と JPEG だけ。形式と大きさはサーバーが検査する）。 */
 export async function uploadImage(file: Blob): Promise<{ path: string }> {
   const data = toBase64(await readBytes(file));
