@@ -94,6 +94,31 @@ describe("routine dispatch opens a new session", () => {
     expect(arg.name).toBe("daily 10/12 09:00");
   });
 
+  it("sends the name first, waits for the matching display name, then sends the prompt (v0.29.0)", async () => {
+    const { service, sessions, hub } = await setup();
+    const log: string[] = [];
+    let polls = 0;
+    (hub as Record<string, unknown>).sendName = vi.fn((_id: string, n: string) => { log.push(`rename:${n}`); return true; });
+    (hub as Record<string, unknown>).displayNames = vi.fn(() => { log.push("names"); polls += 1; return new Map([["s1", polls >= 2 ? "daily 10/12 09:00" : "auto-name"]]); });
+    sessions.write.mockImplementation((_s: unknown, d: string) => { log.push(`write:${d.length > 1 ? "paste" : "cr"}`); });
+    await run(service);
+    expect(log[0]).toBe("rename:daily 10/12 09:00");
+    expect(log.filter((x) => x === "names")).toHaveLength(2);
+    expect(log.indexOf("write:paste")).toBeGreaterThan(log.lastIndexOf("names"));
+    expect(outcomes(service)).toEqual(["sent"]);
+  });
+
+  it("still sends when the display name never matches within the limit (v0.29.0)", async () => {
+    const { service, sessions, hub } = await setup();
+    const sendName = vi.fn(() => true);
+    (hub as Record<string, unknown>).sendName = sendName;
+    (hub as Record<string, unknown>).displayNames = vi.fn(() => new Map([["s1", "auto-name"]]));
+    await run(service);
+    expect(sendName).toHaveBeenCalledTimes(1);
+    expect(sessions.write).toHaveBeenCalled();
+    expect(outcomes(service)).toEqual(["sent"]);
+  });
+
   it("cuts the session name on a character boundary and keeps it within 40 units", async () => {
     const { service, sessions } = await setup({ routines: [{ name: "😀".repeat(40) }] });
     await run(service);
@@ -105,7 +130,7 @@ describe("routine dispatch opens a new session", () => {
   it("K3 sends once with bracketed paste, then CR, after the second ready check", async () => {
     const { service, sessions, hub } = await setup({ verdicts: [{ ok: false, hasClaude: false }, { ok: true, hasClaude: true }], routines: [{ promptText: "go" }] });
     await run(service);
-    // 入力待ち（1回目は待ち・2回目で成立）→ /rename の後の入力待ちの確認（1回）。v0.29.0 で名前合わせの確認が増えた
+    // 入力待ち（1回目は待ち・2回目で成立）→ /rename の後の入力待ちの確認（1回）
     expect(hub.checkInput).toHaveBeenCalledTimes(3);
     expect(sessions.write.mock.calls.map((c) => c[1])).toEqual(["\u001b[200~go\u001b[201~", "\r"]);
     expect(outcomes(service)).toEqual(["sent"]);

@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { E2E_PORT, E2E_TOKEN } from "../fixtures/e2e-env";
 import { newPairingCode } from "../fixtures/e2e-pairing";
 
-// 引き継ぎ（v0.29.0）。画面のボタン → 確認 → 一時の relayDir の下にだけフォルダができ、古いセッションに文が送られ、
+// 引き継ぎ（v0.30.0）。画面のボタン → 確認 → 一時の relayDir の下にだけフォルダができ、古いセッションに文が送られ、
 // 引き継ぎ書ができると新しい名前（数字 +1）のセッションが増える。古いセッションは残る。
 const BASE = `http://127.0.0.1:${E2E_PORT}`;
 const RELAY_DIR = process.env.AC_E2E_RELAY_DIR as string;
