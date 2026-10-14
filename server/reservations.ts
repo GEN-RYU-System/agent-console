@@ -9,6 +9,8 @@ import { SessionConflictError, SessionInputError, type SessionManager } from "./
 
 export const RESERVATIONS_FILE = "reservations.json";
 const VERSION = 1;
+// 予約で開いたセッションを名前で見分けるため、先頭に付ける。
+const RESERVATION_SESSION_PREFIX = "[予約] ";
 const TIME_ZONE = "Asia/Tokyo";
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -228,7 +230,7 @@ export class ReservationService {
     let outcome: ReservationOutcome = "failed"; let sessionName: string | undefined;
     try {
       ({ outcome, sessionName } = await launchAndSend({ config: this.config, sessions: this.sessions, hub: this.hub, timing: this.timing }, {
-        roleId: reservation.roleId, name: reservation.name, slotKey: reservation.runAtJst, cwd: reservation.cwd,
+        roleId: reservation.roleId, name: `${RESERVATION_SESSION_PREFIX}${reservation.name}`, slotKey: reservation.runAtJst, cwd: reservation.cwd,
         ...(reservation.branch !== undefined ? { branch: reservation.branch } : {}), promptText: reservation.promptText,
         stillWanted: () => this.items.find((r) => r.id === reservation.id)?.status === "dispatching",
       }));
