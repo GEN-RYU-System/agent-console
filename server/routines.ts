@@ -33,7 +33,8 @@ const OUTCOMES = new Set<string>(["sent", "not_ready", "full", "cwd_invalid", "f
 export type RoutineEvent = { at: number; slot: string; outcome: RoutineOutcome | LegacyOutcome; sessionName?: string };
 export interface Routine { id: string; name: string; enabled: boolean; roleId: string; cwd: string; branch?: string; timeZone: typeof TIME_ZONE; weekdays: number[]; timeHHmm: string; promptText: string; lastSlot?: string; createdAt: number; updatedAt: number; events: RoutineEvent[]; createdBy?: "agent"; }
 export type RoutineTiming = LaunchTiming;
-export type RoutineInput = Pick<Routine, "name" | "enabled" | "roleId" | "cwd" | "weekdays" | "timeHHmm" | "promptText"> & { branch?: string };
+/** cwd は省ける（本店で動く役割のとき、validateLaunchTarget が本店にする）。保存される Routine の cwd は必須のまま */
+export type RoutineInput = Pick<Routine, "name" | "enabled" | "roleId" | "weekdays" | "timeHHmm" | "promptText"> & { cwd?: string; branch?: string };
 
 const object = (x: unknown): Record<string, unknown> => { if (typeof x !== "object" || x === null || Array.isArray(x)) throw new Error("routines.json: object required"); return x as Record<string, unknown>; };
 const string = (x: unknown, what: string): string => { if (typeof x !== "string" || x.trim() === "") throw new Error(`routines.json: ${what} required`); return x; };
@@ -67,7 +68,7 @@ export class RoutineService {
   /** 動いている実行がすべて終わるまで待つ（試験用） */
   async settled(): Promise<void> { while (this.inflight.size > 0) await Promise.all([...this.inflight]); }
   private async persist(): Promise<void> { await this.store.save(this.routines); }
-  private async validate(input: RoutineInput): Promise<RoutineInput> {
+  private async validate(input: RoutineInput): Promise<RoutineInput & { cwd: string }> {
     const text = validateLaunchText(input, "routine");
     if (!TIME.test(input.timeHHmm)) throw new SessionInputError("routine time invalid"); weekdays(input.weekdays);
     const target = await validateLaunchTarget(this.config, input, "routine");
