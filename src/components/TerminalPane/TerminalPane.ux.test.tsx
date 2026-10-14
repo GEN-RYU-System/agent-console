@@ -3,8 +3,14 @@ import { act, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const calls: string[] = [];
-let lastTerm: { options: Record<string, unknown> } | null = null;
+let lastTerm: {
+  options: Record<string, unknown>;
+  modes: { mouseTrackingMode: string };
+  element: HTMLElement;
+  wheelHandler: ((e: WheelEvent) => boolean) | null;
+} | null = null;
 let currentUpload: (file: Blob) => Promise<{ path: string }> = async () => ({ path: "/unset" });
+let currentFileUpload: (file: Blob) => Promise<{ path: string }> = async () => ({ path: "/unset" });
 
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
@@ -13,13 +19,25 @@ vi.mock("@xterm/xterm", () => ({
     loadAddon = vi.fn();
     open = vi.fn();
     write = vi.fn();
+    reset = vi.fn();
     paste = vi.fn((t: string) => calls.push(`paste:${t}`));
     input = vi.fn((d: string) => calls.push(`input:${d}`));
     options: Record<string, unknown>;
+    modes = { mouseTrackingMode: "none" };
+    element: HTMLElement;
+    wheelHandler: ((e: WheelEvent) => boolean) | null = null;
+    attachCustomWheelEventHandler = vi.fn((h: (e: WheelEvent) => boolean) => {
+      this.wheelHandler = h;
+    });
     onData = vi.fn(() => ({ dispose: vi.fn() }));
     dispose = vi.fn();
     constructor(opts: Record<string, unknown>) {
       this.options = { ...opts };
+      // xterm が作る要素の代役（行高を出すための .xterm-screen だけ持つ）
+      this.element = document.createElement("div");
+      const screen = document.createElement("div");
+      screen.className = "xterm-screen";
+      this.element.appendChild(screen);
       lastTerm = this;
     }
   },
@@ -29,6 +47,7 @@ vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 vi.mock("../../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../api")>()),
   uploadImage: (file: Blob) => currentUpload(file),
+  uploadFile: (file: Blob) => currentFileUpload(file),
 }));
 
 class FakeWebSocket {
@@ -37,11 +56,14 @@ class FakeWebSocket {
   close = vi.fn();
   send = vi.fn();
   onopen: (() => void) | null = null;
+  onmessage: ((e: { data: unknown }) => void) | null = null;
+  onclose: (() => void) | null = null;
 }
 
 beforeEach(() => {
   calls.length = 0;
   currentUpload = async () => ({ path: "/unset" });
+  currentFileUpload = async () => ({ path: "/unset" });
   vi.stubGlobal("WebSocket", FakeWebSocket);
   vi.stubGlobal("ResizeObserver", class { observe = vi.fn(); disconnect = vi.fn(); });
 });
@@ -94,6 +116,81 @@ describe("K2: smoothScrollDuration follows the input device", () => {
     for (let i = 0; i < 5; i++) notch(hostOf(container));
     rerender(<TerminalPane sessionId="a" smoothScrollMs={50} />);
     expect(smooth()).toBe(50);
+  });
+});
+
+describe("K3: wheel lines while the app tracks the mouse", () => {
+  const ROWS = 24;
+  const CELL = 17;
+  beforeEach(() => {
+    // 行高 = .xterm-screen の clientHeight / rows = 17（TerminalPane.test.tsx と同じ prototype 定義）
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => ROWS * CELL });
+  });
+  afterEach(() => {
+    delete (HTMLElement.prototype as unknown as Record<string, unknown>).clientHeight;
+  });
+
+  /** 合成イベントを数える（.xterm-screen に届いた deltaMode 1 の wheel）。frame は本物の rAF（約 16ms）なので vi.waitFor で待つ */
+  function collect(): WheelEvent[] {
+    const got: WheelEvent[] = [];
+    lastTerm?.element.querySelector(".xterm-screen")?.addEventListener("wheel", (e) => got.push(e as WheelEvent));
+    return got;
+  }
+  const real = (deltaY: number, extra: WheelEventInit = {}): WheelEvent => new WheelEvent("wheel", { deltaY, cancelable: true, ...extra });
+
+  it("returns true and emits nothing when the mouse is not tracked", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    render(<TerminalPane sessionId="a" />);
+    const got = collect();
+    expect(lastTerm?.wheelHandler?.(real(100))).toBe(true);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(got).toHaveLength(0);
+  });
+
+  it("returns false and emits one synthetic wheel per line when tracked (deltaY=100 at 17px => 5), and lets the synthetic ones through", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    render(<TerminalPane sessionId="a" />);
+    const term = lastTerm!;
+    term.modes.mouseTrackingMode = "any";
+    const got = collect();
+    expect(term.wheelHandler?.(real(100, { ctrlKey: true, clientX: 30, clientY: 40 }))).toBe(false);
+    await vi.waitFor(() => expect(got).toHaveLength(5));
+    expect(got.every((e) => e.deltaMode === 1 && e.deltaY === 1 && e.ctrlKey && e.clientX === 30 && e.clientY === 40)).toBe(true);
+    expect(term.wheelHandler?.(got[0]!)).toBe(true);
+  });
+
+  it("returns false for a real wheel that is less than one line (0 lines) and emits no synthetic wheel", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    render(<TerminalPane sessionId="a" />);
+    const term = lastTerm!;
+    term.modes.mouseTrackingMode = "any";
+    const got = collect();
+    expect(term.wheelHandler?.(real(4))).toBe(false);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(got).toHaveLength(0);
+  });
+
+  it("lets Shift-wheel, horizontal-only wheel and a mode without wheel (x10) through to xterm", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    render(<TerminalPane sessionId="a" />);
+    const term = lastTerm!;
+    term.modes.mouseTrackingMode = "any";
+    expect(term.wheelHandler?.(real(100, { shiftKey: true }))).toBe(true);
+    expect(term.wheelHandler?.(real(0))).toBe(true);
+    term.modes.mouseTrackingMode = "x10";
+    expect(term.wheelHandler?.(real(100))).toBe(true);
+  });
+
+  it("drops the queued lines when tracking ends before they are sent", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    render(<TerminalPane sessionId="a" />);
+    const term = lastTerm!;
+    term.modes.mouseTrackingMode = "any";
+    const got = collect();
+    term.wheelHandler?.(real(17 * 20));
+    term.modes.mouseTrackingMode = "none";
+    await new Promise((r) => setTimeout(r, 80));
+    expect(got).toHaveLength(0);
   });
 });
 
@@ -163,17 +260,66 @@ describe("K4: pasting and dropping images", () => {
     expect(calls).toEqual(["paste: /p/1.png "]);
   });
 
-  it("dropping a non-image file does nothing but tell the user (notImage)", async () => {
-    const upload = vi.fn(async () => ({ path: "/x" }));
-    currentUpload = upload;
+  it("dropping a non-image file uploads it through uploadFile (not uploadImage) and pastes the path", async () => {
+    const imageUpload = vi.fn(async () => ({ path: "/img" }));
+    const fileUpload = vi.fn(async () => ({ path: "/data/uploads/files/u/a.pdf" }));
+    currentUpload = imageUpload;
+    currentFileUpload = fileUpload;
     const notices: string[] = [];
     const { TerminalPane } = await import("./TerminalPane");
     const { container } = render(<TerminalPane sessionId="a" onUploadNotice={(k) => notices.push(k)} />);
     fire(hostOf(container), "drop", [new File(["x"], "a.pdf", { type: "application/pdf" })]);
     await flush();
-    expect(upload).not.toHaveBeenCalled();
+    expect(imageUpload).not.toHaveBeenCalled();
+    expect(fileUpload).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(["paste: /data/uploads/files/u/a.pdf "]);
+    expect(notices).toEqual([]);
+  });
+
+  it("a mixed drop is pasted one by one in the original order (file, image, file)", async () => {
+    currentUpload = async () => ({ path: "/p/img.png" });
+    currentFileUpload = async (f) => ({ path: `/p/${(f as File).name}` });
+    const { TerminalPane } = await import("./TerminalPane");
+    const { container } = render(<TerminalPane sessionId="a" />);
+    fire(hostOf(container), "drop", [new File(["1"], "a.csv", { type: "text/csv" }), png(), new File(["2"], "b.txt", { type: "" })]);
+    await flush();
+    expect(calls).toEqual(["paste: /p/a.csv ", "paste: /p/img.png ", "paste: /p/b.txt "]);
+  });
+
+  it("a non-image file that cannot be read (uploadFile rejects) tells the user (failed) and pastes nothing", async () => {
+    currentFileUpload = async () => {
+      throw new Error("read failed");
+    };
+    const notices: string[] = [];
+    const { TerminalPane } = await import("./TerminalPane");
+    const { container } = render(<TerminalPane sessionId="a" onUploadNotice={(k) => notices.push(k)} />);
+    fire(hostOf(container), "drop", [new File([""], "folder", { type: "" })]);
+    await flush();
     expect(calls).toEqual([]);
-    expect(notices).toEqual(["notImage"]);
+    expect(notices).toEqual(["failed"]);
+  });
+
+  it("a non-image file over uploadMaxBytes is not sent (tooLarge)", async () => {
+    const fileUpload = vi.fn(async () => ({ path: "/x" }));
+    currentFileUpload = fileUpload;
+    const notices: string[] = [];
+    const { TerminalPane } = await import("./TerminalPane");
+    const { container } = render(<TerminalPane sessionId="a" uploadMaxBytes={2} onUploadNotice={(k) => notices.push(k)} />);
+    fire(hostOf(container), "drop", [new File(["abcdef"], "big.csv", { type: "text/csv" })]);
+    await flush();
+    expect(fileUpload).not.toHaveBeenCalled();
+    expect(notices).toEqual(["tooLarge"]);
+  });
+
+  it("a file-only paste (no text) is stopped and uploaded; with text it is left to xterm", async () => {
+    currentFileUpload = async () => ({ path: "/p/a.csv" });
+    const { TerminalPane } = await import("./TerminalPane");
+    const { container } = render(<TerminalPane sessionId="a" />);
+    const csv = new File(["x"], "a.csv", { type: "text/csv" });
+    expect(fire(hostOf(container), "paste", [csv], "text").defaultPrevented).toBe(false);
+    expect(fire(hostOf(container), "paste", [csv]).defaultPrevented).toBe(true);
+    await flush();
+    expect(calls).toEqual(["paste: /p/a.csv "]);
   });
 
   it("a file over uploadMaxBytes is not sent, and the user is told (tooLarge)", async () => {

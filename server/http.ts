@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
-import { CHALLENGE_TTL_MS, PAIRING_TTL_MS, SESSION_MAX_MS, type Auth } from "./auth.ts";
+import { CHALLENGE_TTL_MS, PAIRING_TTL_MS, SESSION_MAX_MS, sameSecret, type Auth } from "./auth.ts";
 import type { ActivityStore } from "./activity.ts";
 import type { HookCheck } from "./activity-hooks.ts";
 import { handleActivity } from "./activity-routes.ts";
@@ -10,6 +10,7 @@ import { handleBoard } from "./board-routes.ts";
 import { handleUsage } from "./usage-routes.ts";
 import { handleAccount } from "./account-routes.ts";
 import { handleChat } from "./chat-routes.ts";
+import { handleFiles } from "./files-routes.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
 import type { MemoryCollector } from "./memory.ts";
@@ -20,13 +21,17 @@ import { handlePr } from "./pr-routes.ts";
 import type { PickerAccess } from "./picker-extension.ts";
 import { handlePickIngest, handlePicks } from "./picks-routes.ts";
 import type { PickStore } from "./picks.ts";
-import { handleUploads } from "./uploads-routes.ts";
+import { handleUploadFiles, handleUploads } from "./uploads-routes.ts";
 import type { UploadStore } from "./uploads.ts";
 import { listResumeTargets, resolveResumeTarget } from "./resume-targets.ts";
 import type { QuickPromptStore } from "./quick-prompts.ts";
-import { SessionConflictError, SessionInputError, SessionNotFoundError, validateName, type SessionManager } from "./sessions.ts";
+import { SessionConflictError, SessionInputError, SessionNotFoundError, isClaudeSessionId, validateName, type SessionManager } from "./sessions.ts";
 import { WorktreeError } from "./worktree.ts";
-import type { RoutineService } from "./routines.ts";
+import { RoutineLimitError, validateReason, type RoutineService } from "./routines.ts";
+import { RoutineAudit, type RoutineAuditAction, type RoutineAuditEntry } from "./routine-audit.ts";
+import type { ReservationService } from "./reservations.ts";
+import type { RelayManager } from "./relay.ts";
+import type { ReserveAccess } from "./reserve-token.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -58,6 +63,12 @@ export interface AppDeps {
   staticDir: string;
   meta: { saSource: string; claudeVersion: string; version: string; commit: string };
   routines: RoutineService;
+  /** 予約（日時を指定して 1 回送る）。正本は dataDir/reservations.json */
+  reservations: ReservationService;
+  /** 引き継ぎ（今のセッションに引き継ぎ書を書かせ、次のセッションへ渡す）。進行はメモリだけ */
+  relay: RelayManager;
+  /** AI 用コマンドの合言葉（dataDir/reserve-token）。作れなかった・本番のポートでないときは token が null */
+  reserve: ReserveAccess;
 }
 
 export function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -176,6 +187,10 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   const routineEnabledMatch = /^\/api\/routines\/([^/]+)\/enabled$/.exec(url.pathname);
   if (routineMatch && req.method === "PUT") { sendJson(res, 200, await deps.routines.update(routineMatch[1], jsonBody(await readJsonBody(req)) as never)); return; }
   if (routineEnabledMatch && req.method === "POST") { sendJson(res, 200, await deps.routines.setEnabled(routineEnabledMatch[1], jsonBody(await readJsonBody(req)).enabled)); return; }
+  if (req.method === "GET" && url.pathname === "/api/reservations") { sendJson(res, 200, { items: await deps.reservations.listReady() }); return; }
+  if (req.method === "POST" && url.pathname === "/api/reservations") { sendJson(res, 201, await deps.reservations.create(uiReservationInput(jsonBody(await readJsonBody(req))), "ui")); return; }
+  const reservationCancel = /^\/api\/reservations\/([^/]+)\/cancel$/.exec(url.pathname);
+  if (req.method === "POST" && reservationCancel) { sendJson(res, 200, await deps.reservations.cancel(reservationCancel[1])); return; }
   if (await handleDiff(deps, req, res, url)) return;
   if (await handlePr(deps, req, res, url)) return;
   if (await handlePicks(deps, req, res, url)) return;
@@ -184,7 +199,9 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   if (await handleUsage(deps, req, res, url)) return;
   if (await handleAccount(deps, req, res, url)) return;
   if (await handleChat(deps, req, res, url)) return;
+  if (await handleFiles(deps, req, res, url)) return;
   if (await handleUploads(deps, req, res, url)) return;
+  if (await handleUploadFiles(deps, req, res, url)) return;
   if (await handleDailyUse(deps, req, res, url)) return;
   const removeMatch = /^\/api\/sessions\/([^/]+)$/.exec(url.pathname);
   if (req.method === "DELETE" && removeMatch) {
@@ -248,7 +265,7 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
     sendJson(res, 201, { id: session.id });
     return true;
   }
-  const sessionMatch = /^\/api\/sessions\/([^/]+)\/(read|rename|send-check|close|move)$/.exec(url.pathname);
+  const sessionMatch = /^\/api\/sessions\/([^/]+)\/(read|rename|send-check|close|move|relay)$/.exec(url.pathname);
   if (method !== "POST" || !sessionMatch) return false;
   const [, id, action] = sessionMatch;
   const session = sessions.get(id);
@@ -257,6 +274,10 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
     // 止まっているものは一覧から外し、動いているものは端末（と子孫）を終わらせてから外す。確認は画面で行う
     await sessions.close(id);
     sendJson(res, 200, { closed: true });
+    return true;
+  }
+  if (action === "relay") {
+    sendJson(res, 202, await deps.relay.start(id));
     return true;
   }
   if (action === "move") {
@@ -278,7 +299,8 @@ async function handleDailyUse(deps: AppDeps, req: IncomingMessage, res: ServerRe
   }
   // send-check: サーバーは端末へ書かない。入れてよい状態なら本文を返し、画面が xterm の paste() で入れるだけ。Enter は人が端末で押す
   const prompt = await quickPrompts.get(str(jsonBody(await readJsonBody(req)).promptId));
-  const verdict = await hub.checkInput(id);
+  // 作業中（busy）でも可。確認待ち・状態不明・停止は不可（chatVerdict）
+  const verdict = await hub.checkChat(id);
   if (!verdict.ok) throw new SessionConflictError(verdict.reason ?? "cannot input now");
   sendJson(res, 200, { text: prompt.text });
   return true;
@@ -291,6 +313,105 @@ const NO_STORE = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer"
 export function jsonBody(body: unknown): Record<string, unknown> {
   if (typeof body !== "object" || body === null || Array.isArray(body)) throw new BadRequestError("JSON object required");
   return body as Record<string, unknown>;
+}
+
+/** 画面からの予約には purpose・measureNote を持たせない（測定目的の制限は AI 用の経路だけ） */
+function uiReservationInput(body: Record<string, unknown>): Record<string, unknown> {
+  const { purpose: _purpose, measureNote: _measureNote, ...rest } = body;
+  return rest;
+}
+
+const safeDecode = (raw: string): string => { try { return decodeURIComponent(raw); } catch { throw new BadRequestError("malformed id"); } };
+
+const AGENT_RESERVATION_PATH = /^\/api\/agent\/reservations(?:\/([^/]+)\/cancel)?$/;
+
+/**
+ * AI 用の予約の受け取り口（/api/agent/reservations の GET・POST と /:id/cancel の POST だけ）。認証の前に分ける。
+ * Host は検査済み。順序: Origin ヘッダーがあれば 403 → 合言葉が無ければ 401 → Bearer を定数時間比較（不一致 401）→ 本文 → 処理。
+ */
+async function handleAgentReservations(deps: AppDeps, req: IncomingMessage, res: ServerResponse, match: RegExpExecArray): Promise<void> {
+  if (req.headers.origin !== undefined) { sendJson(res, 403, { error: "forbidden" }); return; }
+  const presented = (req.headers.authorization ?? "").replace(/^Bearer /, "");
+  if (deps.reserve.token === null || !sameSecret(presented, deps.reserve.token)) { sendJson(res, 401, { error: "unauthorized" }); return; }
+  const id = match[1];
+  if (req.method === "GET" && id === undefined) { sendJson(res, 200, { items: await deps.reservations.listReady() }); return; }
+  if (req.method === "POST" && id === undefined) { sendJson(res, 201, await deps.reservations.create(jsonBody(await readJsonBody(req)), "agent")); return; }
+  if (req.method === "POST" && id !== undefined) { sendJson(res, 200, await deps.reservations.cancel(safeDecode(id))); return; }
+  sendJson(res, 404, { error: "not found" });
+}
+
+const AGENT_ROUTINE_PATH = /^\/api\/agent\/routines(?:\/([^/]+)(\/enabled)?)?$/;
+const FORBIDDEN_ROUTINE_MESSAGE = "ac-routine is limited to manager role sessions (起動直後は数秒〜数十秒待って再試行)";
+const routineAudits = new Map<string, RoutineAudit>();
+
+/** 呼び出し元の照合。正本は SessionManager のメモリ。生きていて claudeSessionId が一致する全セッションの役割が、すべて許可リストにあるときだけ通す */
+function checkRoutineCaller(deps: AppDeps, callerSessionId: string | null): { ok: boolean; roleId?: string } {
+  if (callerSessionId === null) return { ok: false };
+  const matches = deps.sessions.list().filter((s) => !s.exited && s.claudeSessionId === callerSessionId);
+  if (matches.length === 0) return { ok: false };
+  const allowed = new Set(deps.config.routineManagerRoles);
+  return { ok: matches.every((s) => allowed.has(s.roleId)), roleId: matches[0].roleId };
+}
+
+/**
+ * AI 用の定期実行の受け口（/api/agent/routines の GET・POST、/:id の PUT、/:id/enabled の POST だけ）。認証の前に分ける。
+ * 順序は予約と同じ（Origin があれば 403 → 合言葉 → 本文）。そのあと呼び出し元の役割を照合し（403）、reason を検査し（400）、処理する。
+ * 監査に残すのは、成功・403・上限の 400 だけ（入力の不備の 400 は残さない）。
+ */
+async function handleAgentRoutines(deps: AppDeps, req: IncomingMessage, res: ServerResponse, match: RegExpExecArray): Promise<void> {
+  if (req.headers.origin !== undefined) { sendJson(res, 403, { error: "forbidden" }); return; }
+  const presented = (req.headers.authorization ?? "").replace(/^Bearer /, "");
+  if (deps.reserve.token === null || !sameSecret(presented, deps.reserve.token)) { sendJson(res, 401, { error: "unauthorized" }); return; }
+  const id = match[1] === undefined ? undefined : safeDecode(match[1]);
+  const enabledPath = match[2] !== undefined;
+  const method = req.method ?? "";
+  const url = new URL(req.url ?? "/", "http://127.0.0.1");
+  let action: RoutineAuditAction | null = null;
+  if (method === "POST" && id === undefined) action = "add";
+  else if (method === "PUT" && id !== undefined && !enabledPath) action = "update";
+  else if (method === "POST" && id !== undefined && enabledPath) action = "enable";
+  const isList = method === "GET" && id === undefined;
+  if (!isList && action === null) { sendJson(res, 404, { error: "not found" }); return; }
+
+  const body = isList ? {} : jsonBody(await readJsonBody(req));
+  if (action === "enable" && body.enabled === false) action = "disable";
+  const rawCaller = isList ? url.searchParams.get("callerSessionId") : body.callerSessionId;
+  const callerSessionId = isClaudeSessionId(rawCaller) ? rawCaller : null;
+  const caller = checkRoutineCaller(deps, callerSessionId);
+  let audit = routineAudits.get(deps.config.dataDir);
+  if (audit === undefined) { audit = new RoutineAudit(deps.config.dataDir); routineAudits.set(deps.config.dataDir, audit); }
+  const record = async (entry: Omit<RoutineAuditEntry, "at" | "callerSessionId" | "roleId">): Promise<void> => {
+    try { await audit.append({ at: new Date().toISOString(), callerSessionId, ...(caller.roleId !== undefined ? { roleId: caller.roleId } : {}), ...entry }); } catch (e) { console.error("routine-audit: write failed:", e instanceof Error ? e.message : e); }
+  };
+  const reasonText = typeof body.reason === "string" && body.reason.length <= 200 ? body.reason.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "") : undefined;
+  if (!caller.ok) {
+    if (action !== null) await record({ action, outcome: "denied", ...(reasonText !== undefined ? { reason: reasonText } : {}), error: "forbidden: caller is not a routine manager session" });
+    sendJson(res, 403, { error: FORBIDDEN_ROUTINE_MESSAGE });
+    return;
+  }
+  if (isList) { sendJson(res, 200, { items: deps.routines.list() }); return; }
+
+  if (enabledPath && typeof body.enabled !== "boolean") throw new SessionInputError("enabled required");
+  const reason = validateReason(body.reason);
+  const { reason: _reason, callerSessionId: _caller, ...input } = body;
+  const act = action as RoutineAuditAction;
+  const target = id === undefined ? undefined : deps.routines.list().find((r) => r.id === id);
+  const targetCreatedBy: "agent" | "ui" | undefined = target === undefined ? undefined : target.createdBy === "agent" ? "agent" : "ui";
+  const withTarget = (routineId: string | undefined, by: "agent" | "ui" | undefined): Partial<RoutineAuditEntry> => (routineId !== undefined && by !== undefined ? { routineId, targetCreatedBy: by } : {});
+  try {
+    if (act === "add") {
+      const created = await deps.routines.create(input as never, "agent");
+      await record({ action: act, outcome: "ok", reason, ...withTarget(created.id, "agent") });
+      sendJson(res, 201, created);
+      return;
+    }
+    const result = act === "update" ? await deps.routines.update(id as string, input as never, true) : await deps.routines.setEnabled(id as string, act === "enable", true);
+    await record({ action: act, outcome: "ok", reason, ...withTarget(result.id, targetCreatedBy) });
+    sendJson(res, 200, result);
+  } catch (err) {
+    if (err instanceof RoutineLimitError) await record({ action: act, outcome: "denied", reason, error: err.message, ...withTarget(id, targetCreatedBy) });
+    throw err;
+  }
 }
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -383,6 +504,16 @@ export function createRequestHandler(deps: AppDeps) {
       // 拡張からの部品の受け取り口。認証の前に通すのはこの完全一致の 1 本だけ（Origin と合言葉で守る）
       if (req.method === "POST" && url.pathname === PICK_INGEST_PATH) {
         await handlePickIngest(deps, req, res);
+        return;
+      }
+      const agentReservation = AGENT_RESERVATION_PATH.exec(url.pathname);
+      if (agentReservation) {
+        await handleAgentReservations(deps, req, res, agentReservation);
+        return;
+      }
+      const agentRoutine = AGENT_ROUTINE_PATH.exec(url.pathname);
+      if (agentRoutine) {
+        await handleAgentRoutines(deps, req, res, agentRoutine);
         return;
       }
       if (url.pathname.startsWith("/api/")) {

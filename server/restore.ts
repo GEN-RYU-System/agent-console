@@ -74,6 +74,7 @@ export class OpenSessionRecorder {
         .filter((s) => !s.exited && s.roleId !== ACCOUNT_LOGIN_ROLE_ID)
         .map((s) =>
           normalizeItem({
+            id: s.id,
             roleId: s.roleId,
             name: storableName(names.get(s.id), s.name),
             cwd: s.cwd,
@@ -119,7 +120,10 @@ export async function restoreOnStartup(deps: RestoreDeps): Promise<RestoreNotice
     }
     const entries = await listWorktrees(config.salesanchorRoot).catch(() => [] as WorktreeEntry[]);
     const worktrees = entries.map((e) => e.path);
-    let launched = 0;
+    let needSleep = false;
+    let reattached = 0;
+    let resumed = 0;
+    const known = new Set<string>();
     for (const item of items) {
       const role = config.roles.find((r) => r.id === item.roleId);
       if (!role) {
@@ -135,15 +139,21 @@ export async function restoreOnStartup(deps: RestoreDeps): Promise<RestoreNotice
         notices.push({ reason: "overLimit", name: item.name });
         continue;
       }
-      if (launched > 0) await sleep(config.restoreStaggerMs);
+      if (item.id !== undefined) known.add(item.id);
+      // つなぎ直しは新しい claude を起動しないので、間を空けるのは直前に「開き直した（resume）」ときだけ
+      if (needSleep) await sleep(config.restoreStaggerMs);
       try {
-        sessions.restore({ role, name: item.name, cwd: verdict.real, branch: item.branch ?? null, claudeSessionId: item.claudeSessionId });
-        launched += 1;
+        const s = sessions.restore({ role, name: item.name, cwd: verdict.real, branch: item.branch ?? null, claudeSessionId: item.claudeSessionId, id: item.id });
+        needSleep = !s.reattached;
+        if (s.reattached) reattached += 1;
+        else resumed += 1;
       } catch (err) {
         console.error("open-sessions: restore failed:", err instanceof Error ? err.message : err);
         notices.push({ reason: "startFailed", name: item.name });
       }
     }
+    console.log(`open-sessions: つなぎ直し ${reattached}・resume ${resumed}`);
+    sessions.reportOrphans(known);
     return notices;
   } finally {
     hub.setRestoreNotices(notices);

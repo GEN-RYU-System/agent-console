@@ -36,10 +36,34 @@ export interface RestoreNotice {
   name?: string;
 }
 
+/** 端末の置き場（tmux）についての案内（文言は画面の i18n）。name はセッション名 */
+export interface TerminalNotice {
+  reason: "tmuxMissing" | "cannotAttach";
+  name?: string;
+}
+
+export type RelayPhase = "handoff" | "launching" | "sending" | "done" | "failed";
+export type RelayReason = "send_failed" | "handoff_timeout" | "gone" | "full" | "start_failed" | "not_ready";
+
+/** 引き継ぎの進行（server の RelayView の写し） */
+export interface RelayView {
+  relayId: string;
+  oldSessionId: string;
+  oldName: string;
+  newName: string;
+  phase: RelayPhase;
+  newSessionId?: string;
+  reason?: RelayReason;
+}
+
 export interface ConsoleState {
   sessions: SessionView[];
   agentsAvailable: boolean;
   restoreNotices: RestoreNotice[];
+  /** tmux が無い・つなげない時の案内。無ければ空（キー自体が無い） */
+  terminalNotices?: TerminalNotice[];
+  /** 引き継ぎの進行。無ければキー自体が無い */
+  relays?: RelayView[];
   /** まだ Claude に送っていない部品の数（「部品」タブの件数） */
   picksUnsent: number;
   /** セッションの様子の記録の版（進んだら、右の欄の「このセッション」を取り直す） */
@@ -88,7 +112,18 @@ export interface QuickPrompt {
 
 export interface RoutineEvent { at: number; slot: string; outcome: "sent" | "not_ready" | "full" | "cwd_invalid" | "failed" | "busy" | "waiting" | "unknown" | "stopped" | "missing"; sessionName?: string; }
 export interface Routine { id: string; name: string; enabled: boolean; roleId: string; cwd: string; branch?: string; timeZone: "Asia/Tokyo"; weekdays: number[]; timeHHmm: string; promptText: string; lastSlot?: string; createdAt: number; updatedAt: number; events: RoutineEvent[]; }
-export type RoutineInput = Pick<Routine, "name" | "enabled" | "roleId" | "cwd" | "weekdays" | "timeHHmm" | "promptText"> & { branch?: string };
+export type RoutineInput = Pick<Routine, "name" | "enabled" | "roleId" | "weekdays" | "timeHHmm" | "promptText"> & { cwd?: string; branch?: string };
+
+export type ReservationStatus = "pending" | "dispatching" | "done" | "cancelled";
+export type ReservationOutcome = "sent" | "not_ready" | "full" | "cwd_invalid" | "failed" | "interrupted";
+export interface Reservation {
+  id: string; name: string; roleId: string; cwd: string; branch?: string;
+  runAt: number; runAtJst: string; timeZone: "Asia/Tokyo"; promptText: string;
+  createdBy: "ui" | "agent"; createdAt: number; updatedAt: number; status: ReservationStatus;
+  startedAt?: number; lateMinutes?: number; finishedAt?: number; outcome?: ReservationOutcome; sessionName?: string;
+  purpose?: "measure"; measureNote?: string;
+}
+export interface ReservationInput { name: string; roleId: string; cwd?: string; branch?: string; date: string; time: string; promptText: string; }
 
 /** 再開先の1行（本店=Opus 設計役 / 本店の worktree=Sonnet 実装役）。会話の一覧は持たない。 */
 export interface ResumeTarget {
@@ -208,8 +243,9 @@ export interface ActivityInput {
 /** 記録の仕組み（hooks）の点検の結果。reason は ok でないときだけ */
 export interface HookCheck {
   ok: boolean;
-  reason?: "noSettings" | "unreadable" | "missingHandler" | "nodeMissing" | "hookFileMissing";
+  reason?: "noSettings" | "unreadable" | "missingHandler" | "nodeMissing" | "hookFileMissing" | "matcherDiffers";
   missingEvents?: string[];
+  matcherDiffersEvents?: string[];
 }
 export type ActivityResponse =
   | { status: "noSession" }
@@ -288,3 +324,23 @@ export type AccountResponse =
   | { status: "ok"; loggedIn: false }
   | { status: "invalid" }
   | { status: "error" };
+
+/** セッションが書いたファイル（file-viewer 設計 §3-4） */
+export interface SessionFile {
+  path: string;
+  name: string;
+  dir: string;
+  tool: string;
+  lastAt: number;
+  byAgent: boolean;
+}
+export type FilesResponse = { status: "noSession" } | { status: "ok"; files: SessionFile[] };
+export type FileContentResponse =
+  | { status: "noSession" }
+  | { status: "notListed" }
+  | { status: "missing" }
+  | { status: "notRegular" }
+  | { status: "unreadable" }
+  | { status: "tooLarge"; size: number }
+  | { status: "binary"; size: number }
+  | { status: "ok"; text: string; size: number; mtimeMs: number; kind: "markdown" | "text" };

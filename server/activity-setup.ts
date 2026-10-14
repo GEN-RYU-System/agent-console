@@ -14,6 +14,16 @@ export const hookPathIn = (dataDir: string): string => path.join(dataDir, "hooks
 export const isActivitySetupEnabled = (env: Readonly<Record<string, string | undefined>>): boolean =>
   env.AGENT_CONSOLE_PORT === undefined || env.AGENT_CONSOLE_PORT === "";
 
+export const GUARD_FILE_NAME = "ac-routine-guard.mjs";
+
+/** dataDir/hooks/ac-routine-guard.mjs（ac-routine をサブエージェントから打たせない同期 hook。設定に書くパス） */
+export const guardPathIn = (dataDir: string): string => path.join(dataDir, "hooks", GUARD_FILE_NAME);
+
+/** リポジトリの hooks/ac-routine-guard.mjs（正本）を dataDir/hooks/ へ写す */
+export function installGuardFile(sourceDir: string, dataDir: string): string {
+  return copyAtomically(sourceDir, GUARD_FILE_NAME, guardPathIn(dataDir));
+}
+
 export const BOARD_COMMAND_FILE_NAME = "ac-board.mjs";
 
 /** dataDir/bin/ac-board.mjs（Claude の Bash が打つ、作戦ボードの命令） */
@@ -42,6 +52,26 @@ export function installHookFile(sourceDir: string, dataDir: string): string {
 /** リポジトリの hooks/ac-board.mjs（正本）を dataDir/bin/ へ写す（hook を写す関数と同じ作法） */
 export function installBoardCommand(sourceDir: string, dataDir: string): string {
   return copyAtomically(sourceDir, BOARD_COMMAND_FILE_NAME, boardCommandPathIn(dataDir));
+}
+
+export const RESERVE_COMMAND_FILE_NAME = "ac-reserve.mjs";
+
+/** dataDir/bin/ac-reserve.mjs（Claude の Bash が打つ、予約の命令） */
+export const reserveCommandPathIn = (dataDir: string): string => path.join(dataDir, "bin", RESERVE_COMMAND_FILE_NAME);
+
+/** リポジトリの hooks/ac-reserve.mjs（正本）を dataDir/bin/ へ写す（ac-board と同じ作法） */
+export function installReserveCommand(sourceDir: string, dataDir: string): string {
+  return copyAtomically(sourceDir, RESERVE_COMMAND_FILE_NAME, reserveCommandPathIn(dataDir));
+}
+
+export const ROUTINE_COMMAND_FILE_NAME = "ac-routine.mjs";
+
+/** dataDir/bin/ac-routine.mjs（Claude の Bash が打つ、定期実行の命令。Opus 限定） */
+export const routineCommandPathIn = (dataDir: string): string => path.join(dataDir, "bin", ROUTINE_COMMAND_FILE_NAME);
+
+/** リポジトリの hooks/ac-routine.mjs（正本）を dataDir/bin/ へ写す（ac-board と同じ作法） */
+export function installRoutineCommand(sourceDir: string, dataDir: string): string {
+  return copyAtomically(sourceDir, ROUTINE_COMMAND_FILE_NAME, routineCommandPathIn(dataDir));
 }
 
 export const STATUSLINE_COMMAND_FILE_NAME = "ac-statusline.mjs";

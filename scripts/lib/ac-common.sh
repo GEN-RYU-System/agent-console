@@ -8,7 +8,7 @@
 # 本番実行では無視する（汚染された環境変数で取得元・security・curl・launchctl などが差し替わらないように）。
 if [ -z "${AC_STUB_LOG:-}" ]; then
   unset AC_HOME AC_LAUNCH_AGENTS_DIR AC_APPS_DIR AC_TRASH AC_LAUNCHCTL AC_SECURITY AC_GH AC_NPM AC_OSACOMPILE \
-    AC_PLUTIL AC_CODESIGN AC_CURL AC_REPO AC_PORT AC_DIAG_PORT AC_LABEL AC_UID AC_NODE AC_CLAUDE AC_HEALTH_WAIT_SEC
+    AC_PLUTIL AC_CODESIGN AC_TMUX AC_TMUX_SOCKET AC_CURL AC_REPO AC_PORT AC_DIAG_PORT AC_LABEL AC_UID AC_NODE AC_CLAUDE AC_HEALTH_WAIT_SEC
 fi
 
 AC_HOME="${AC_HOME:-$HOME/Library/Application Support/agent-console}"
@@ -23,6 +23,7 @@ AC_OSACOMPILE="${AC_OSACOMPILE:-osacompile}"
 AC_PLUTIL="${AC_PLUTIL:-plutil}"
 AC_CODESIGN="${AC_CODESIGN:-codesign}"
 AC_CURL="${AC_CURL:-curl}"
+AC_TMUX_SOCKET="${AC_TMUX_SOCKET:-agent-console}"
 AC_REPO="${AC_REPO:-GEN-RYU-System/agent-console}"
 AC_PORT="${AC_PORT:-4319}"
 AC_DIAG_PORT="${AC_DIAG_PORT:-4320}"
@@ -186,6 +187,98 @@ ac_switch_current() {
   local tag="$1"
   [ -d "$AC_HOME/versions/$tag" ] || ac_die "未導入の版です: $tag"
   ln -sfn "versions/$tag" "$AC_HOME/current"
+}
+
+# --- 切戻し（tmux のセッションを残したまま前の版へ戻す。設計 docs/handoff/keep-sessions/design.md §3-4・§11） ---
+# tmux の場所。AC_TMUX（テスト用の差し替え）→ PATH → homebrew の既定の場所
+ac_find_tmux() {
+  local c
+  if [ -n "${AC_TMUX:-}" ]; then
+    printf '%s' "$AC_TMUX"
+    return 0
+  fi
+  c="$(command -v tmux 2>/dev/null || true)"
+  if [ -z "$c" ]; then
+    for c in /opt/homebrew/bin/tmux /usr/local/bin/tmux; do
+      [ -x "$c" ] && break
+      c=""
+    done
+  fi
+  [ -n "$c" ] || return 1
+  printf '%s' "$c"
+}
+
+# アプリ専用の tmux サーバーにある ac-* のセッション名を 1 行ずつ出す（tmux が無い・サーバーが無い時は何も出さない）
+ac_tmux_sessions() {
+  local tmux_bin
+  tmux_bin="$(ac_find_tmux)" || return 0
+  "$tmux_bin" -L "$AC_TMUX_SOCKET" list-sessions -F '#{session_name}' 2>/dev/null | grep '^ac-' || true
+}
+
+# §11 #5: 戻す先の版が tmux の実装ファイルを持っていれば（= tmux を知っていれば）0
+# ファイル名は tests/unit/scripts.test.ts で固定している
+AC_TMUX_IMPL_REL="dist-server/server/terminal-host/tmux-terminal.js"
+ac_version_knows_tmux() {
+  [ -f "$AC_HOME/versions/$1/$AC_TMUX_IMPL_REL" ]
+}
+
+# §11 #2-1: 今のサーバーを SIGTERM で止め、pid が消えるまで待つ（消えなければ中止）
+ac_stop_server_and_wait() {
+  local i
+  "$AC_LAUNCHCTL" kill SIGTERM "gui/$AC_UID/$AC_LABEL" >/dev/null 2>&1 || true
+  for i in $(seq 1 100); do
+    if ! "$AC_LAUNCHCTL" print "gui/$AC_UID/$AC_LABEL" 2>/dev/null | grep -q 'pid = '; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  ac_die "サーバーが止まらないため、保存リストを移さずに中止します。launchctl の状態を確認してください"
+}
+
+# §11 #2-2・#6: <名前>.json を <名前>.tmux-held.json へ移す（退避が既にあれば上書きせず、合わせてから書く）
+ac_hold_file() {
+  local kind="$1" base="$2" node_bin="$3" cur held rc
+  cur="$AC_HOME/$base.json"
+  held="$AC_HOME/$base.tmux-held.json"
+  [ -f "$cur" ] || return 0
+  rc=0
+  "$node_bin" "$AC_SOURCE_DIR/scripts/lib/merge-held.mjs" "$kind" "$cur" "$held" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    ac_log "警告: $base.json を退避できませんでした（読めない形式です）。そのまま残します"
+    return 0
+  fi
+  ac_trash "$cur" "held-$base"
+}
+
+# 前の版へ戻して再起動する。成功 0 / 失敗 1（ac_restart_and_wait と同じ）
+# 戻す先が tmux を知らない版で、ac-* のセッションが 1 件以上ある時だけ、保存リストと routine を退避してから戻す。
+ac_revert_to() {
+  local tag="$1" node_bin names count
+  if ! ac_version_knows_tmux "$tag"; then
+    names="$(ac_tmux_sessions)"
+    count=0
+    [ -z "$names" ] || count="$(printf '%s\n' "$names" | grep -c .)"
+    if [ "$count" -ge 1 ]; then
+      node_bin="$(ac_resolve_node)"
+      ac_stop_server_and_wait
+      ac_hold_file open-sessions open-sessions "$node_bin"
+      ac_hold_file routines routines "$node_bin"
+      ac_switch_current "$tag"
+      ac_restart_and_wait "$tag" || { ac_report_held "$count" "$names"; return 1; }
+      ac_report_held "$count" "$names"
+      return 0
+    fi
+  fi
+  ac_switch_current "$tag"
+  ac_restart_and_wait "$tag"
+}
+
+ac_report_held() {
+  local count="$1" names="$2" n
+  ac_log "裏で ${count} 件が動いています。この間は会話を開き直さないでください（同じ会話を二重に起動しないため）"
+  ac_log "見るとき: tmux -L $AC_TMUX_SOCKET attach -t =<名前>（名前は下の一覧）"
+  for n in $names; do ac_log "  $n"; done
+  ac_log "tmux を知っている版に更新すると、画面につなぎ直されます"
 }
 
 # 導入済みの版を semver 昇順で 1 行ずつ出す（versions/ の中身が正本。一時ディレクトリは除く）

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { ActivityStore } from "./activity.ts";
 import { checkHooks, type HookCheck } from "./activity-hooks.ts";
-import { hookPathIn, installBoardCommand, installHookFile, installStatuslineCommand, isActivitySetupEnabled } from "./activity-setup.ts";
+import { hookPathIn, installBoardCommand, installGuardFile, installHookFile, installReserveCommand, installRoutineCommand, installStatuslineCommand, isActivitySetupEnabled } from "./activity-setup.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
 import { startPolling } from "./poll.ts";
@@ -46,9 +46,24 @@ export function startActivity(opts: StartOptions): ActivityRuntime {
       console.error("activity: cannot place the hook file:", err instanceof Error ? err.message : err);
     }
     try {
+      installGuardFile(opts.hooksSourceDir, config.dataDir);
+    } catch (err) {
+      console.error("activity: cannot place the routine guard hook file:", err instanceof Error ? err.message : err);
+    }
+    try {
       installBoardCommand(opts.hooksSourceDir, config.dataDir);
     } catch (err) {
       console.error("activity: cannot place the board command:", err instanceof Error ? err.message : err);
+    }
+    try {
+      installReserveCommand(opts.hooksSourceDir, config.dataDir);
+    } catch (err) {
+      console.error("activity: cannot place the reserve command:", err instanceof Error ? err.message : err);
+    }
+    try {
+      installRoutineCommand(opts.hooksSourceDir, config.dataDir);
+    } catch (err) {
+      console.error("activity: cannot place the routine command:", err instanceof Error ? err.message : err);
     }
     try {
       installStatuslineCommand(opts.hooksSourceDir, config.dataDir);

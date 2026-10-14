@@ -35,6 +35,8 @@ export const DEFAULT_RESTORE_STAGGER_MS = 3000;
 export const DEFAULT_DATA_DIR = "~/Library/Application Support/agent-console";
 export const DEFAULT_DIFF_BASE_REF = "origin/main";
 export const DEFAULT_DIFF_MAX_FILE_BYTES = 1024 * 1024;
+/** ファイルの表示（file-viewer）で読む上限。diff と同じ値 */
+export const DEFAULT_FILE_VIEW_MAX_BYTES = 1024 * 1024;
 export const DEFAULT_DIFF_SEND_MAX_BYTES = 16 * 1024;
 export const DEFAULT_PASTE_SUBMIT_DELAY_MS = 2000;
 export const DEFAULT_GH_BIN = "gh";
@@ -49,6 +51,8 @@ export const DEFAULT_CLAUDE_SETTINGS_PATH = "~/.claude/settings.json";
 export const DEFAULT_TERMINAL_SMOOTH_SCROLL_MS = 125;
 export const DEFAULT_UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
 export const DEFAULT_UPLOAD_MAX_KEEP = 100;
+/** 引き継ぎ書を待つ上限（30 分） */
+export const DEFAULT_RELAY_HANDOFF_TIMEOUT_MS = 30 * 60 * 1000;
 /** git に渡す基準の名前。`-` で始まるものはオプションと読まれるので許さない。 */
 const DIFF_BASE_REF_PATTERN = /^[A-Za-z0-9_./][A-Za-z0-9_./-]*$/;
 
@@ -63,6 +67,8 @@ export interface Config {
   ledgerPollMs: number;
   ringBufferBytes: number;
   roles: RoleConfig[];
+  /** ac-routine（AI による定期実行の登録・変更）を使ってよい役割の id（SSOT）。既定 ["opus-designer"]。roles に無い id は起動時エラー */
+  routineManagerRoles: string[];
   /** 「アカウントを切り替える」で動かす命令（config 固定）。無ければ切り替えボタンを出さない。roles には入れない */
   accountLoginCommand?: string[];
   /** よく使う指示などアプリが保存するデータの置き場 */
@@ -72,6 +78,12 @@ export interface Config {
   terminalEnv: Record<string, string>;
   /** 起動時の復元で、1 件ずつ開く間隔（ms） */
   restoreStaggerMs: number;
+  /** 端末の置き場。tmux（既定。更新しても切れない）か direct（node-pty。今までの方式）。parseConfig は既定 tmux、未指定の手組み設定は direct として扱う */
+  terminalHost?: "tmux" | "direct";
+  /** tmux の場所。無ければ PATH と /opt/homebrew/bin・/usr/local/bin から探す */
+  tmuxPath?: string;
+  /** tmux の専用ソケット名（-L）。既定 agent-console */
+  tmuxSocket?: string;
   /** 変更の基準にする git の参照（既定 origin/main。最後に取得した値で、アプリは fetch しない） */
   diffBaseRef: string;
   /** 1 ファイルの変更をこの大きさ（byte）まで表示する */
@@ -98,10 +110,14 @@ export interface Config {
   claudeSettingsPath: string;
   /** マウスのホイールでスクロールするときのなめらかさ（ms）。0 で無し */
   terminalSmoothScrollMs: number;
-  /** 端末に貼る画像 1 枚の上限（byte） */
+  /** 端末に貼る画像・ファイル 1 つの上限（byte） */
   uploadMaxBytes: number;
-  /** 貼った画像を残す枚数。超えたら古い順に消す */
+  /** 貼った画像・ファイルを残す数（画像とファイルは別に数える）。超えたら古い順に消す */
   uploadMaxKeep: number;
+  /** 引き継ぎ書を置く場所（`~` 可）。無ければ本番のポートのときだけ既定を使う（server/relay.ts の resolveRelayDir） */
+  relayDir?: string;
+  /** 引き継ぎ書ができるのを待つ上限（ms）。既定 30 分 */
+  relayHandoffTimeoutMs?: number;
 }
 
 const STRING_KEYS = ["salesanchorRoot", "newWorktreeScript", "ledgerLookupScript", "ledgerDir", "claudeBin"] as const;
@@ -204,6 +220,11 @@ function parseClaudeSettingsPath(raw: unknown): string {
   return expandHome(raw);
 }
 
+function parseRelayDir(raw: unknown): string {
+  if (typeof raw !== "string" || raw === "") throw new Error("config: relayDir must be a non-empty string");
+  return expandHome(raw);
+}
+
 const ENV_KEY = /^[A-Z_][A-Z0-9_]*$/;
 // eslint-disable-next-line no-control-regex
 const ENV_CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
@@ -250,6 +271,7 @@ export function parseConfig(raw: unknown): Config {
     if (scopes.has(role.resumeScope)) throw new Error(`config: duplicate resumeScope ${role.resumeScope}`);
     scopes.add(role.resumeScope);
   }
+  const routineManagerRoles = parseRoutineManagerRoles(o.routineManagerRoles, ids);
   return {
     port: o.port as number,
     salesanchorRoot: expandHome(o.salesanchorRoot as string),
@@ -261,11 +283,15 @@ export function parseConfig(raw: unknown): Config {
     ledgerPollMs: o.ledgerPollMs as number,
     ringBufferBytes: o.ringBufferBytes as number,
     roles,
+    routineManagerRoles,
     ...(o.accountLoginCommand !== undefined ? { accountLoginCommand: parseCommand(o.accountLoginCommand, "accountLoginCommand") } : {}),
     dataDir: parseDataDir(o.dataDir),
     notify: parseNotify(o.notify),
     terminalEnv: parseTerminalEnv(o.terminalEnv),
     restoreStaggerMs: parseStagger(o.restoreStaggerMs),
+    terminalHost: parseTerminalHost(o.terminalHost),
+    ...(o.tmuxPath !== undefined ? { tmuxPath: parseTmuxPath(o.tmuxPath) } : {}),
+    tmuxSocket: parseTmuxSocket(o.tmuxSocket),
     diffBaseRef: parseDiffBaseRef(o.diffBaseRef),
     diffMaxFileBytes: parsePositive(o.diffMaxFileBytes, "diffMaxFileBytes", DEFAULT_DIFF_MAX_FILE_BYTES),
     diffSendMaxBytes: parsePositive(o.diffSendMaxBytes, "diffSendMaxBytes", DEFAULT_DIFF_SEND_MAX_BYTES),
@@ -281,7 +307,39 @@ export function parseConfig(raw: unknown): Config {
     terminalSmoothScrollMs: parseSmoothScroll(o.terminalSmoothScrollMs),
     uploadMaxBytes: parsePositive(o.uploadMaxBytes, "uploadMaxBytes", DEFAULT_UPLOAD_MAX_BYTES),
     uploadMaxKeep: parsePositive(o.uploadMaxKeep, "uploadMaxKeep", DEFAULT_UPLOAD_MAX_KEEP),
+    ...(o.relayDir !== undefined ? { relayDir: parseRelayDir(o.relayDir) } : {}),
+    relayHandoffTimeoutMs: parsePositive(o.relayHandoffTimeoutMs, "relayHandoffTimeoutMs", DEFAULT_RELAY_HANDOFF_TIMEOUT_MS),
   };
+}
+
+export const DEFAULT_ROUTINE_MANAGER_ROLES: readonly string[] = ["opus-designer"];
+
+function parseRoutineManagerRoles(raw: unknown, roleIds: ReadonlySet<string>): string[] {
+  // 明示が無いときは、既定のうち roles に実在するものだけを使う（無ければ空＝全員 403。起動は止めない）
+  if (raw === undefined) return DEFAULT_ROUTINE_MANAGER_ROLES.filter((id) => roleIds.has(id));
+  const list = raw;
+  if (!Array.isArray(list) || list.some((x) => typeof x !== "string" || x === "")) throw new Error("config: routineManagerRoles must be an array of role ids");
+  for (const id of list as string[]) if (!roleIds.has(id)) throw new Error(`config: routineManagerRoles has unknown role id ${id}`);
+  return [...new Set(list as string[])];
+}
+
+const TMUX_SOCKET = /^[A-Za-z0-9_-]+$/;
+
+function parseTerminalHost(raw: unknown): "tmux" | "direct" {
+  if (raw === undefined) return "tmux";
+  if (raw === "tmux" || raw === "direct") return raw;
+  throw new Error('config: terminalHost must be "tmux" or "direct"');
+}
+
+function parseTmuxPath(raw: unknown): string {
+  if (typeof raw !== "string" || raw.length === 0 || !path.isAbsolute(raw)) throw new Error("config: tmuxPath must be an absolute path");
+  return raw;
+}
+
+function parseTmuxSocket(raw: unknown): string {
+  if (raw === undefined) return "agent-console";
+  if (typeof raw !== "string" || !TMUX_SOCKET.test(raw)) throw new Error("config: tmuxSocket must match [A-Za-z0-9_-]+");
+  return raw;
 }
 
 export function defaultConfigPath(): string {

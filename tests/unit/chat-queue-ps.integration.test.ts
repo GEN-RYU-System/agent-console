@@ -33,7 +33,7 @@ afterAll(async () => {
 describe("MEDIUM-2: ps が失敗したときは送らない", () => {
   it("手すきの行があっても、プロセス一覧を取れない間は端末に何も書かない。取れるようになったら送る", async () => {
     const write = vi.spyOn(h.sessions, "write");
-    const s = h.sessions.restore({ role: h.config.roles[0], name: "ps-fail", cwd: h.config.salesanchorRoot, branch: null });
+    const s = h.sessions.restore({ role: h.config.roles[0], name: "ps-fail", cwd: h.config.salesanchorRoot, branch: null, manualInitialName: true });
     h.sessions.setClaudeSessionId(s.id, CLAUDE_ID);
     writeFileSync(rowsFile, JSON.stringify([{ pid: s.term.pid, status: "idle", name: "n", sessionId: CLAUDE_ID, cwd: "/", startedAt: 1 }]));
     psState.fail = true;

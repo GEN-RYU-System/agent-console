@@ -1,8 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import {
   CHALLENGE_TTL_MS,
   createAuth,
   DEV_PAIRING_TTL_MS,
+  isAuthPersistEnabled,
   PAIRING_TTL_MS,
   resolveToken,
   SESSION_MAX_MS,
@@ -270,5 +274,109 @@ describe("resolveToken", () => {
     } catch (e) {
       expect((e as Error).message).not.toContain("secret!value");
     }
+  });
+});
+
+// ---- ログインの記録（keep-login K3・K4・K5） ----
+describe("persisted sessions (auth-sessions.json)", () => {
+  const tmp = (): string => mkdtempSync(path.join(os.tmpdir(), "ac-auth-"));
+  const make = (file: string, secret = SECRET, t = 1_000_000) => {
+    const clock = { t };
+    const errors: string[] = [];
+    const auth = createAuth(secret, 4319, { now: () => clock.t, sessionsFile: file, onPersistError: (m) => errors.push(m) });
+    return { auth, clock, errors };
+  };
+  const written = (file: string) => vi.waitFor(() => expect(existsSync(file)).toBe(true));
+
+  it("K3: the file holds digests, expiry and a secret tag only (never the token or the secret), mode 600, new dir 700", async () => {
+    const file = path.join(tmp(), "nested", "auth-sessions.json");
+    const { auth } = make(file);
+    const token = newSession(auth);
+    await written(file);
+    const text = readFileSync(file, "utf8");
+    expect(text).not.toContain(token);
+    expect(text).not.toContain(SECRET);
+    const parsed = JSON.parse(text) as { version: number; secretTag: string; items: Array<{ digest: string; expiresAt: number }> };
+    expect(parsed.version).toBe(1);
+    expect(parsed.secretTag).toMatch(/^[0-9a-f]{64}$/);
+    expect(parsed.items).toHaveLength(1);
+    expect(parsed.items[0]?.digest).toMatch(/^[0-9a-f]{64}$/);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(statSync(path.dirname(file)).mode & 0o777).toBe(0o700);
+  });
+
+  it("loads valid sessions, drops expired ones and keeps the newest 64", async () => {
+    const dir = tmp();
+    const file = path.join(dir, "auth-sessions.json");
+    const first = make(file);
+    const alive = newSession(first.auth);
+    await written(file);
+    const second = make(file, SECRET, first.clock.t + 1000);
+    expect(second.auth.isSessionValid(alive)).toBe(true);
+    const expired = make(file, SECRET, first.clock.t + SESSION_MAX_MS + 1);
+    expect(expired.auth.isSessionValid(alive)).toBe(false);
+  });
+
+  it("an unknown secret invalidates the saved sessions (secret tag mismatch)", async () => {
+    const file = path.join(tmp(), "auth-sessions.json");
+    const first = make(file);
+    const token = newSession(first.auth);
+    await written(file);
+    expect(make(file, "another-secret").auth.isSessionValid(token)).toBe(false);
+  });
+
+  it("revoked sessions are gone after reload", async () => {
+    const file = path.join(tmp(), "auth-sessions.json");
+    const first = make(file);
+    const token = newSession(first.auth);
+    const other = newSession(first.auth);
+    first.auth.revokeSession(token);
+    await vi.waitFor(() => expect((JSON.parse(readFileSync(file, "utf8")) as { items: unknown[] }).items).toHaveLength(1));
+    const again = make(file);
+    expect(again.auth.isSessionValid(token)).toBe(false);
+    expect(again.auth.isSessionValid(other)).toBe(true);
+  });
+
+  it("K4: a broken file starts empty and is renamed to auth-sessions.json.broken-<time>", () => {
+    for (const body of ["{not json", JSON.stringify({ version: 2, secretTag: "x", items: [] }), JSON.stringify({ version: 1, secretTag: "x", items: [{ digest: 1 }] })]) {
+      const dir = tmp();
+      const file = path.join(dir, "auth-sessions.json");
+      writeFileSync(file, body);
+      const { auth, errors } = make(file);
+      expect(auth.isSessionValid("anything")).toBe(false);
+      expect(errors).toEqual([]);
+      const names = readdirSync(dir);
+      expect(names.filter((n) => /^auth-sessions\.json\.broken-\d{8}T\d{6}$/.test(n))).toHaveLength(1);
+      expect(names).not.toContain("auth-sessions.json");
+    }
+  });
+
+  it("a rename failure is reported and the server still starts empty", () => {
+    const dir = tmp();
+    mkdirSync(path.join(dir, "auth-sessions.json")); // 読めない（EISDIR）
+    const { auth, errors } = make(path.join(dir, "auth-sessions.json"));
+    expect(auth.isSessionValid("x")).toBe(false);
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it("a write failure is reported and the session still works from memory", async () => {
+    const dir = tmp();
+    writeFileSync(path.join(dir, "blocker"), "x");
+    const { auth, errors } = make(path.join(dir, "blocker", "auth-sessions.json"));
+    const token = newSession(auth);
+    expect(auth.isSessionValid(token)).toBe(true);
+    await vi.waitFor(() => expect(errors.length).toBeGreaterThan(0));
+    expect(errors.join("\n")).not.toContain(token);
+  });
+
+  it("K5: persistence is enabled only when AGENT_CONSOLE_PORT is unset or empty", () => {
+    expect(isAuthPersistEnabled({})).toBe(true);
+    expect(isAuthPersistEnabled({ AGENT_CONSOLE_PORT: "" })).toBe(true);
+    expect(isAuthPersistEnabled({ AGENT_CONSOLE_PORT: "4320" })).toBe(false);
+  });
+
+  it("without sessionsFile nothing is read or written", () => {
+    const { auth } = makeAuth();
+    expect(newSession(auth)).toMatch(/^[0-9a-f]{64}$/);
   });
 });

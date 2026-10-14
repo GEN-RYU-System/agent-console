@@ -19,7 +19,7 @@ interface Props {
 }
 
 /** 行の名前: ブランチ名。detached などで無いときは作業場所の末尾。 */
-const nameOf = (target: ResumeTarget): string => target.branch ?? target.path.split("/").filter(Boolean).pop() ?? target.path;
+export const nameOf = (target: ResumeTarget): string => target.branch ?? target.path.split("/").filter(Boolean).pop() ?? target.path;
 
 /** 会話の一覧と選択は Claude 公式の選択リスト（端末内）に任せる。ここは再開する作業場所を選ぶだけ。 */
 export function ResumePicker({ items, busyPath, error, onResume }: Props) {

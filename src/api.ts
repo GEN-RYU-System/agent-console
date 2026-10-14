@@ -1,4 +1,4 @@
-import type { AccountResponse, ActivityResponse, BoardResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileDiff, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, ResumeTarget, Routine, RoutineInput, UsageResponse } from "./types";
+import type { AccountResponse, ActivityResponse, BoardResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileContentResponse, FileDiff, FilesResponse, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, Reservation, ReservationInput, ResumeTarget, Routine, RoutineInput, UsageResponse } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -56,6 +56,7 @@ export const markRead = (id: string): Promise<{ read: boolean }> => request(`/ap
 export const renameSession = (id: string, name: string): Promise<{ mode: "claude" | "app" | "queued" }> =>
   request(`/api/sessions/${encodeURIComponent(id)}/rename`, { method: "POST", body: JSON.stringify({ name }) });
 /** 動いているセッションを閉じる（止まっているものは一覧から外す）。確認は画面側で行ってから呼ぶ。 */
+export const relaySession = (id: string): Promise<{ relayId: string }> => request(`/api/sessions/${encodeURIComponent(id)}/relay`, { method: "POST" });
 export const closeSession = (id: string): Promise<{ closed: boolean }> => request(`/api/sessions/${encodeURIComponent(id)}/close`, { method: "POST" });
 /** セッションの並び順を変える（toIndex は動かしたあとの位置）。画面はサーバーの合図（snapshot）で並び直る。 */
 export const moveSession = (id: string, toIndex: number): Promise<{ moved: boolean }> =>
@@ -121,6 +122,16 @@ export async function fetchPickImage(id: string): Promise<string> {
   });
 }
 /** 右の欄「作戦ボード」の、動いている担当・最近の入力と、記録の仕組みの点検。 */
+export const fetchFiles = (sessionId: string): Promise<FilesResponse> => request(`${diffBase(sessionId)}/files`);
+/** 一覧に無いパスはサーバーが 404 notListed を返す。画面では理由として出すので、例外にせず status にする */
+export async function fetchFileContent(sessionId: string, path: string): Promise<FileContentResponse> {
+  try {
+    return await request<FileContentResponse>(`${diffBase(sessionId)}/files/content?path=${encodeURIComponent(path)}`);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return { status: "notListed" };
+    throw err;
+  }
+}
 export const fetchActivity = (sessionId: string): Promise<ActivityResponse> => request(`${diffBase(sessionId)}/activity`);
 /** 右の欄「作戦ボード」の計画（テーマ・KGI・KPI・ロードマップ）。 */
 export const fetchBoard = (sessionId: string): Promise<BoardResponse> => request(`${diffBase(sessionId)}/board`);
@@ -149,6 +160,9 @@ export const fetchRoutines = (): Promise<{ items: Routine[] }> => request("/api/
 export const createRoutine = (input: RoutineInput): Promise<Routine> => request("/api/routines", { method: "POST", body: JSON.stringify(input) });
 export const updateRoutine = (id: string, input: RoutineInput): Promise<Routine> => request(`/api/routines/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(input) });
 export const setRoutineEnabled = (id: string, enabled: boolean): Promise<Routine> => request(`/api/routines/${encodeURIComponent(id)}/enabled`, { method: "POST", body: JSON.stringify({ enabled }) });
+export const fetchReservations = (): Promise<{ items: Reservation[] }> => request("/api/reservations");
+export const createReservation = (input: ReservationInput): Promise<Reservation> => request("/api/reservations", { method: "POST", body: JSON.stringify(input) });
+export const cancelReservation = (id: string): Promise<Reservation> => request(`/api/reservations/${encodeURIComponent(id)}/cancel`, { method: "POST", body: "{}" });
 
 /** ペアリングコードを引換えてセッショントークンを得る（認証前の API）。 */
 export async function redeemCode(code: string): Promise<string> {
@@ -201,6 +215,12 @@ function readBytes(file: Blob): Promise<Uint8Array> {
     reader.onerror = () => reject(reader.error ?? new Error("read failed"));
     reader.readAsArrayBuffer(file);
   });
+}
+
+/** 端末に貼る画像以外のファイルを、元の名前（サーバーが安全に直す）で保存してもらい、保存先の絶対パスを受け取る。大きさはサーバーが検査する。 */
+export async function uploadFile(file: File): Promise<{ path: string }> {
+  const data = toBase64(await readBytes(file));
+  return request("/api/uploads/files", { method: "POST", body: JSON.stringify({ name: file.name, data }) });
 }
 
 /** 端末に貼る画像を保存してもらい、保存先の絶対パスを受け取る（PNG と JPEG だけ。形式と大きさはサーバーが検査する）。 */

@@ -21,6 +21,26 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      # tmux の統合試験に必要（tmux が無いと CI では失敗にする）
+      - name: Install tmux (macOS)
+        if: runner.os == 'macOS'
+        run: brew install tmux
+      # apt の tmux は 3.4（pane_private_modes が無い）。モードを戻すのは 3.8 以上なので、公式の 3.8 リリースをビルドする
+      - name: Install tmux 3.8 (Linux, official release tarball)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libevent-dev libncurses-dev
+          curl -fsSL -o "$RUNNER_TEMP/tmux-3.8.tar.gz" https://github.com/tmux/tmux/releases/download/3.8/tmux-3.8.tar.gz
+          echo "e79c699c7e949dccd0a4a125e17b8d1261e311b16979dbc8eb34542f3966d82e  $RUNNER_TEMP/tmux-3.8.tar.gz" | sha256sum -c -
+          mkdir "$RUNNER_TEMP/tmux-src"
+          tar -xzf "$RUNNER_TEMP/tmux-3.8.tar.gz" -C "$RUNNER_TEMP/tmux-src" --strip-components=1
+          cd "$RUNNER_TEMP/tmux-src"
+          ./configure --prefix=/usr/local
+          make -j"$(nproc)"
+          sudo make install
+      - name: tmux version
+        run: tmux -V
       - run: npm ci
       - name: npm audit (moderate 以上で失敗)
         run: npm audit --audit-level=moderate
@@ -40,6 +60,13 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      # 所要時間の閾値（設計 §7）は並列実行だと揺れるので、tmux の統合試験だけをファイル並列なしで 1 回、AC_TMUX_TIMING=1 で判定する
+      # npm test が赤でも走らせる（並列の負荷が原因か tmux の版が原因かを切り分けるため）
+      - name: tmux timing check (single file, no file parallelism)
+        if: always()
+        env:
+          AC_TMUX_TIMING: "1"
+        run: npx vitest run tests/unit/tmux-host.integration.test.ts --no-file-parallelism
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

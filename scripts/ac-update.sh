@@ -20,8 +20,7 @@ ac_install_version "$tag" "$node_bin" || ac_die "$tag の導入（自己診断�
 ac_switch_current "$tag"
 if ! ac_restart_and_wait "$tag"; then
   ac_log "$tag での起動確認（/healthz の版・コミットの一致）に失敗しました。$prev に戻します"
-  ac_switch_current "$prev"
-  ac_restart_and_wait "$prev" || ac_log "警告: $prev への切戻し後も /healthz が期待の版・コミットで応答しません"
+  ac_revert_to "$prev" || ac_log "警告: $prev への切戻し後も /healthz が期待の版・コミットで応答しません"
   ac_die "更新に失敗しました（current は $prev に戻しました）"
 fi
 ac_build_launcher_app "$node_bin" "$tag"

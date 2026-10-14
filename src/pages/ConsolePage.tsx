@@ -10,11 +10,13 @@ import {
   ApiError,
   checkQuickPromptSend,
   closeSession,
+  relaySession,
   moveSession,
   createSession,
   fetchLedger,
   fetchResumeTargets,
   fetchQuickPrompts,
+  clearSessionToken,
   fetchState,
   getSessionToken,
   logout,
@@ -29,6 +31,7 @@ import {
 import { AccountBadge } from "../components/AccountBadge/AccountBadge";
 import { ChatPane } from "../components/ChatPane/ChatPane";
 import { DiffPane } from "../components/DiffPane/DiffPane";
+import { FilesPane } from "../components/FilesPane/FilesPane";
 import { MemoryPanel } from "../components/MemoryPanel/MemoryPanel";
 import { PicksPane } from "../components/PicksPane/PicksPane";
 import { PrPane } from "../components/PrPane/PrPane";
@@ -42,8 +45,9 @@ import { SessionList } from "../components/SessionList/SessionList";
 import { ThemeToggle } from "../components/ThemeToggle/ThemeToggle";
 import { UsageMeter } from "../components/UsageMeter/UsageMeter";
 import { RoutinesPane } from "../components/Routines/RoutinesPane";
+import { ReservationsPane } from "../components/Reservations/ReservationsPane";
 import { TerminalPane, type PasteResult, type TerminalHandle, type UploadNotice } from "../components/TerminalPane/TerminalPane";
-import { ACCOUNT_LOGIN_ROLE_ID, type ConsoleState, type LedgerSnapshot, type QuickPrompt, type ResumeTarget, type SessionState, type SessionView } from "../types";
+import { ACCOUNT_LOGIN_ROLE_ID, type ConsoleState, type LedgerSnapshot, type QuickPrompt, type RelayView, type ResumeTarget, type SessionState, type SessionView } from "../types";
 import "./ConsolePage.css";
 
 const LEDGER_POLL_MS = 60000;
@@ -52,27 +56,84 @@ const RENAME_CONFIRM_MS = 10000;
 const UPLOAD_NOTICE_MS = 8000;
 const BYTES_PER_MB = 1024 * 1024;
 
-type CenterTab = "chat" | "terminal" | "changes" | "pr" | "picks" | "routines";
+type CenterTab = "chat" | "terminal" | "changes" | "files" | "pr" | "picks" | "routines" | "reservations";
+
+/** onopen の無いまま切れた回数がこの数に達したら、/api/state を取り直して原因（ログイン切れ）を確かめる */
+const CONNECT_FAILURES_BEFORE_CHECK = 3;
 
 function useConsoleState() {
   const [state, setState] = useState<ConsoleState | null>(null);
   const [loadFailed, setLoadFailed] = useState<"unauthorized" | "error" | null>(null);
+  /** 最初に読んだ版と違う版のサーバーにつながり直した（更新が入った） */
+  const [newVersion, setNewVersion] = useState(false);
 
   useEffect(() => {
     let closed = false;
+    let stopped = false;
     let ws: WebSocket | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    /** onopen が来ないまま onclose した回数（onopen で 0 に戻す） */
+    let failures = 0;
+    /** 一度でも切れたか（切れた後の onopen では取り直す） */
+    let dropped = false;
+    let checking = false;
+    let firstCommit: string | null = null;
 
-    fetchState().then(setState, (err: unknown) => setLoadFailed(err instanceof ApiError && err.status === 401 ? "unauthorized" : "error"));
+    // 取り直した state は丸ごと置き換える（版・commit など /api/state にしか無い項目も新しくなる）
+    const adopt = (next: ConsoleState): void => {
+      if (closed) return;
+      if (firstCommit === null) firstCommit = next.commit;
+      else if (firstCommit !== "" && next.commit !== "" && next.commit !== firstCommit) setNewVersion(true);
+      setState(next);
+    };
+
+    fetchState().then(adopt, (err: unknown) => setLoadFailed(err instanceof ApiError && err.status === 401 ? "unauthorized" : "error"));
+
+    const checkLogin = (): void => {
+      checking = true;
+      fetchState().then(
+        (next) => {
+          checking = false;
+          failures = 0;
+          adopt(next);
+        },
+        (err: unknown) => {
+          checking = false;
+          failures = 0;
+          if (closed) return;
+          if (err instanceof ApiError && err.status === 401) {
+            // ログインが切れている: 案内を出し、つなぎ直しをやめる
+            stopped = true;
+            clearTimeout(timer);
+            clearSessionToken();
+            setLoadFailed("unauthorized");
+          }
+          // それ以外（再起動中で接続できない・500）は画面をそのまま、つなぎ直しを続ける
+        },
+      );
+    };
+
     const connect = (): void => {
-      ws = openSocket("/ws/events");
-      ws.onmessage = (e) => {
+      const socket = openSocket("/ws/events");
+      ws = socket;
+      let opened = false;
+      socket.onopen = () => {
+        opened = true;
+        failures = 0;
+        if (dropped) fetchState().then(adopt, () => undefined);
+      };
+      socket.onmessage = (e) => {
         const snap = JSON.parse(String(e.data)) as { sessions: SessionView[]; agentsAvailable: boolean };
         setState((prev) => (prev ? { ...prev, ...snap } : prev));
       };
-      ws.onclose = () => {
+      socket.onclose = () => {
+        dropped = true;
         // トークンが無い（未ログイン・ログアウト後）ときは再接続しない
-        if (!closed && getSessionToken() !== null) timer = setTimeout(connect, RECONNECT_MS);
+        if (closed || stopped || getSessionToken() === null) return;
+        // onopen の無いまま閉じた回数だけ数える（つながってから切れたときは数え直し）
+        failures = opened ? 0 : failures + 1;
+        if (failures >= CONNECT_FAILURES_BEFORE_CHECK && !checking) checkLogin();
+        timer = setTimeout(connect, RECONNECT_MS);
       };
     };
     connect();
@@ -83,12 +144,19 @@ function useConsoleState() {
     };
   }, []);
 
-  return { state, loadFailed, setLoadFailed };
+  return { state, loadFailed, setLoadFailed, newVersion };
+}
+
+/** 端末のよく使う指示が押せない理由の文言キー（stopped・unknown 以外は確認待ち） */
+function quickBlockedKey(state: SessionState): string {
+  if (state === "stopped") return "ac.quick.blockedStopped";
+  if (state === "unknown") return "ac.quick.blockedUnknown";
+  return "ac.quick.blockedWaiting";
 }
 
 export function ConsolePage() {
   const { t } = useTranslation();
-  const { state, loadFailed, setLoadFailed } = useConsoleState();
+  const { state, loadFailed, setLoadFailed, newVersion } = useConsoleState();
   const [ledger, setLedger] = useState<LedgerSnapshot | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -118,11 +186,26 @@ export function ConsolePage() {
   const [diffCount, setDiffCount] = useState<number | null>(null);
   const [closeTargetId, setCloseTargetId] = useState<string | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
+  // 引き継ぎ: 確認中の古い側、失敗の案内、画面側で隠した relayId、選択を切り替え済みの relayId
+  const [relayTargetId, setRelayTargetId] = useState<string | null>(null);
+  const [relayError, setRelayError] = useState<string | null>(null);
+  const [dismissedRelays, setDismissedRelays] = useState<ReadonlySet<string>>(() => new Set<string>());
+  const handledRelaysRef = useRef<Set<string>>(new Set<string>());
   // 復元の案内は、閉じた内容を覚えておく（メモリだけ。同じ内容は出し直さない）
   const [dismissedNotices, setDismissedNotices] = useState<string | null>(null);
+  const [dismissedTerminalNotices, setDismissedTerminalNotices] = useState<string | null>(null);
   const terminalRef = useRef<TerminalHandle>(null);
   const selectedIdRef = useRef<string | null>(null);
   selectedIdRef.current = selectedId;
+  // 引き継ぎが終わったとき、選択中が古い側なら新しい側を選ぶ（同じ relayId では 1 回だけ）
+  const relays = state?.relays;
+  useEffect(() => {
+    for (const r of relays ?? []) {
+      if (r.phase !== "done" || r.newSessionId === undefined || handledRelaysRef.current.has(r.relayId)) continue;
+      handledRelaysRef.current.add(r.relayId);
+      if (selectedIdRef.current === r.oldSessionId) setSelectedId(r.newSessionId);
+    }
+  }, [relays]);
   const sessionsRef = useRef<SessionView[]>([]);
   sessionsRef.current = state?.sessions ?? [];
 
@@ -139,6 +222,11 @@ export function ConsolePage() {
   useEffect(() => {
     if (selectedId !== null && selectedUnread > 0 && document.visibilityState === "visible") void markRead(selectedId).catch(() => undefined);
   }, [selectedId, selectedUnread]);
+  // 送信の警告は、別のセッションを選んだとき、または今のセッションが送れる状態に戻ったときに消す
+  const selectedCanChat = state?.sessions.find((s) => s.id === selectedId)?.canChat;
+  useEffect(() => {
+    setQuickError(null);
+  }, [selectedId, selectedCanChat]);
 
   const handleSelect = (id: string): void => {
     setSelectedId(id);
@@ -185,6 +273,14 @@ export function ConsolePage() {
     setCloseTargetId(null);
     setCloseError(null);
     closeSession(id).catch((err: unknown) => setCloseError(err instanceof Error ? err.message : String(err)));
+  };
+
+  const handleConfirmRelay = (): void => {
+    if (relayTargetId === null) return;
+    const id = relayTargetId;
+    setRelayTargetId(null);
+    setRelayError(null);
+    relaySession(id).catch((err: unknown) => setRelayError(err instanceof Error ? err.message : String(err)));
   };
 
   const handleSendPrompt = (promptId: string): void => {
@@ -298,14 +394,21 @@ export function ConsolePage() {
     );
   }
   if (loadFailed) return <EmptyState title={t("ac.loadError")} />;
-  if (!state) return null;
+  if (!state) return <EmptyState title={t("ac.loading")} />;
   // 一覧から外れた（または存在しない）セッションは選択扱いにしない
   const activeId = state.sessions.some((s) => s.id === selectedId) ? selectedId : null;
   const activeSession = state.sessions.find((s) => s.id === activeId);
   const renameTarget = state.sessions.find((s) => s.id === renameTargetId);
   const closeTarget = state.sessions.find((s) => s.id === closeTargetId);
+  const relayTarget = state.sessions.find((s) => s.id === relayTargetId);
+  const activeRelays: RelayView[] = (state.relays ?? []).filter((r) => r.phase === "handoff" || r.phase === "launching" || r.phase === "sending");
+  const relayBusyIds = new Set<string>(activeRelays.flatMap((r) => (r.newSessionId !== undefined ? [r.oldSessionId, r.newSessionId] : [r.oldSessionId])));
+  const failedRelays = (state.relays ?? []).filter((r) => r.phase === "failed" && !dismissedRelays.has(r.relayId));
   const noticesKey = JSON.stringify(state.restoreNotices);
   const showNotices = state.restoreNotices.length > 0 && dismissedNotices !== noticesKey;
+  const terminalNotices = state.terminalNotices ?? [];
+  const terminalNoticesKey = JSON.stringify(terminalNotices);
+  const showTerminalNotices = terminalNotices.length > 0 && dismissedTerminalNotices !== terminalNoticesKey;
 
   return (
     <div className="ac-page">
@@ -321,6 +424,16 @@ export function ConsolePage() {
             {t("ac.resumeOpen")}
           </Button>
         </div>
+        {newVersion && (
+          <div data-testid="new-version">
+            <Callout variant="info" title={t("ac.newVersion.title")}>
+              <p>{t("ac.newVersion.body")}</p>
+              <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+                {t("ac.newVersion.reload")}
+              </Button>
+            </Callout>
+          </div>
+        )}
         {removeError !== null && (
           <Callout variant="warning" title={t("ac.removeError")}>
             {removeError}
@@ -331,6 +444,21 @@ export function ConsolePage() {
             {closeError}
           </Callout>
         )}
+        {relayError !== null && (
+          <Callout variant="warning" title={t("ac.relay.error")}>
+            {t("ac.relay.errorBody")}
+          </Callout>
+        )}
+        {failedRelays.map((r) => (
+          <div key={r.relayId} data-testid="relay-failed">
+            <Callout variant="warning" title={t("ac.relay.failedTitle")}>
+              {t(`ac.relay.failed.${r.reason ?? "start_failed"}`, { name: r.oldName })}
+              <Button variant="outline" size="sm" onClick={() => setDismissedRelays((prev) => new Set(prev).add(r.relayId))}>
+                {t("ac.relay.dismiss")}
+              </Button>
+            </Callout>
+          </div>
+        ))}
         {showNotices && (
           <div data-testid="restore-notices">
             <Callout variant="info" title={t("ac.restoreNotice.title")}>
@@ -341,6 +469,20 @@ export function ConsolePage() {
               </ul>
               <Button variant="outline" size="sm" onClick={() => setDismissedNotices(noticesKey)}>
                 {t("ac.restoreNotice.dismiss")}
+              </Button>
+            </Callout>
+          </div>
+        )}
+        {showTerminalNotices && (
+          <div data-testid="terminal-notices">
+            <Callout variant="info" title={t("ac.terminalNotice.title")}>
+              <ul>
+                {terminalNotices.map((n, i) => (
+                  <li key={`${n.reason}-${n.name ?? ""}-${i}`}>{t(`ac.terminalNotice.${n.reason}`, { name: n.name ?? "" })}</li>
+                ))}
+              </ul>
+              <Button variant="outline" size="sm" onClick={() => setDismissedTerminalNotices(terminalNoticesKey)}>
+                {t("ac.terminalNotice.dismiss")}
               </Button>
             </Callout>
           </div>
@@ -357,6 +499,11 @@ export function ConsolePage() {
           onSelect={handleSelect}
           onMove={(id, toIndex) => void moveSession(id, toIndex).catch(() => undefined)}
           onRemove={handleRemove}
+          relayBusyIds={relayBusyIds}
+          onRelay={(id) => {
+            setRelayError(null);
+            setRelayTargetId(id);
+          }}
           onClose={(id) => {
             setCloseError(null);
             setCloseTargetId(id);
@@ -382,15 +529,18 @@ export function ConsolePage() {
             { key: "chat", label: t("ac.tabs.chat") },
             { key: "terminal", label: t("ac.tabs.terminal") },
             { key: "changes", label: t("ac.tabs.changes"), ...(activeId !== null && diffCount !== null ? { count: diffCount } : {}) },
+            { key: "files", label: t("ac.tabs.files") },
             { key: "pr", label: t("ac.tabs.pr") },
             { key: "picks", label: t("ac.tabs.picks"), ...(state.picksUnsent > 0 ? { count: state.picksUnsent } : {}) },
             { key: "routines", label: t("ac.tabs.routines") },
+            { key: "reservations", label: t("ac.tabs.reservations") },
           ]}
         />
         {centerTab === "terminal" && (
           <QuickPromptBar
             prompts={quickPrompts}
-            canSend={activeSession?.canInput === true}
+            canSend={activeSession?.canChat === true}
+            {...(activeSession !== undefined && activeSession.canChat !== true ? { blockedHint: t(quickBlockedKey(activeSession.state)) } : {})}
             onSend={handleSendPrompt}
             onEdit={() => setQuickEditorOpen(true)}
             onChanged={loadQuickPrompts}
@@ -435,6 +585,7 @@ export function ConsolePage() {
         ) : (
           centerTab === "changes" && <EmptyState title={t("ac.selectSession")} />
         )}
+        {activeId ? <FilesPane sessionId={activeId} active={centerTab === "files"} rev={state.activityRev} /> : centerTab === "files" && <EmptyState title={t("ac.selectSession")} />}
         {activeId ? <PrPane sessionId={activeId} active={centerTab === "pr"} /> : centerTab === "pr" && <EmptyState title={t("ac.selectSession")} />}
         {/* 部品は、セッションを選んでいなくても見られる（送るときだけ送り先が要る） */}
         <PicksPane
@@ -446,6 +597,7 @@ export function ConsolePage() {
           paste={pasteToTerminal}
         />
         <RoutinesPane roles={state.roles} active={centerTab === "routines"} />
+        <ReservationsPane roles={state.roles} active={centerTab === "reservations"} />
       </main>
       <aside className="ac-page__right">
         <RightPane sessionId={activeId} rev={state.activityRev} ledger={ledger} onRefresh={handleRefresh} />
@@ -489,6 +641,15 @@ export function ConsolePage() {
         danger
         onConfirm={handleConfirmClose}
         onCancel={() => setCloseTargetId(null)}
+      />
+      <ConfirmModal
+        open={relayTarget !== undefined}
+        title={t("ac.relay.title")}
+        message={relayTarget !== undefined ? t("ac.relay.body", { name: relayTarget.name }) : ""}
+        confirmLabel={t("ac.relay.confirm")}
+        cancelLabel={t("ac.close.cancel")}
+        onConfirm={handleConfirmRelay}
+        onCancel={() => setRelayTargetId(null)}
       />
       <ConfirmModal
         open={accountConfirmOpen}

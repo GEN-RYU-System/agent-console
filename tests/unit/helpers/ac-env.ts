@@ -25,6 +25,7 @@ export interface AcEnv {
   trashDir: string;
   trashed(): string[];
   stubLog: string;
+  tmuxSessions: string;
   keychainFile: string;
   port: number;
   diagPort: number;
@@ -64,7 +65,7 @@ export async function makeAcEnv(): Promise<AcEnv> {
     binDir,
     "launchctl",
     `echo "launchctl $*" >> "${stubLog}"
-stop_server() { if [ -f "${pidFile}" ]; then kill "$(cat "${pidFile}")" 2>/dev/null || true; rm -f "${pidFile}"; sleep 0.2; fi; }
+stop_server() { if [ -f "${pidFile}" ]; then kill "$(cat "${pidFile}")" 2>/dev/null || true; rm -f "${pidFile}"; touch "${base}/server-stopped"; sleep 0.2; fi; }
 start_server() {
   stop_server
   cd "${home}/current" || exit 1
@@ -76,6 +77,14 @@ case "$1" in
   bootstrap) start_server ;;
   kickstart) [ "\${FAKE_NO_RESTART:-}" = 1 ] || start_server ;;
   bootout) stop_server ;;
+  kill)
+    echo "launchctl-kill-at $(date +%s)" >> "${stubLog}"
+    if [ -n "\${FAKE_KILL_DELAY:-}" ]; then
+      # サーバーはすぐには止まらない（止まった印のファイルを作る）。移す処理がこれより後であることを試験で確かめる
+      ( sleep "\${FAKE_KILL_DELAY}"; stop_server ) > /dev/null 2>&1 < /dev/null &
+    else
+      stop_server
+    fi ;;
   print) if [ -f "${pidFile}" ] && kill -0 "$(cat "${pidFile}")" 2>/dev/null; then echo "	state = running"; echo "	pid = $(cat "${pidFile}")"; else echo "	state = not running"; fi ;;
 esac
 exit 0`,
@@ -118,11 +127,24 @@ printf '{"name":"agent-console","version":"%s"}\\n' "\${tag#v}" > "$dir/package.
 cp "${fixture}" "$dir/dist-server/server/index.js"
 mkdir -p "$dir/ops/launcher/icon"
 case " \${FAKE_NO_ICON_TAGS:-} " in *" $tag "*) ;; *) cp "${path.join(REPO, "ops", "launcher", "icon", "AgentConsole.icns")}" "$dir/ops/launcher/icon/AgentConsole.icns" ;; esac
+case " \${FAKE_TMUX_TAGS:-} " in *" $tag "*) mkdir -p "$dir/dist-server/server/terminal-host"; echo "// tmux stub" > "$dir/dist-server/server/terminal-host/tmux-terminal.js" ;; esac
 echo "console.log('sa-sync stub')" > "$dir/scripts/sa-sync.mjs"
 echo "import { appendFileSync } from 'node:fs'; appendFileSync(process.env.AC_STUB_LOG, 'postinstall-ran\\n')" > "$dir/scripts/postinstall.mjs"
 git -C "$dir" init -q
 git -C "$dir" -c user.name=stub -c user.email=stub@example.invalid add -A
 git -C "$dir" -c user.name=stub -c user.email=stub@example.invalid commit -q -m "release $tag"
+exit 0`,
+  );
+
+  // tmux: list-sessions は tmux-sessions ファイルの中身（1 行 1 名前）を返す。無ければサーバー無しと同じ（rc 1）
+  const tmuxSessions = path.join(base, "tmux-sessions");
+  const tmux = stub(
+    binDir,
+    "tmux",
+    `echo "tmux $*" >> "${stubLog}"
+case " $* " in
+  *" list-sessions "*) [ -s "${tmuxSessions}" ] && cat "${tmuxSessions}" || exit 1 ;;
+esac
 exit 0`,
   );
 
@@ -154,6 +176,8 @@ exit 0`,
     AC_OSACOMPILE: osacompile,
     AC_PLUTIL: plutil,
     AC_CODESIGN: codesign,
+    AC_TMUX: tmux,
+    AC_TMUX_SOCKET: "agent-console",
     AC_NODE: process.execPath,
     AC_PORT: String(port),
     AC_DIAG_PORT: String(diagPort),
@@ -173,6 +197,7 @@ exit 0`,
     trashDir,
     trashed: () => (existsSync(trashDir) ? readdirSync(trashDir).sort() : []),
     stubLog,
+    tmuxSessions,
     keychainFile,
     port,
     diagPort,

@@ -1,4 +1,6 @@
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -20,18 +22,31 @@ describe("routine persistence and clock", () => {
     await expect(store.save([routine({ name: "replacement" })])).rejects.toThrow();
     expect(await readFile(file, "utf8")).toBe("not json");
   });
+
+  it("S7: reads a routines.json that has createdBy (and unknown keys) without error; unknown keys are not written back; an unknown createdBy value is dropped", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "ac-routine-")); const store = new RoutineStore(dir);
+    const file = path.join(dir, ROUTINES_FILE);
+    await writeFile(file, JSON.stringify({ version: 1, items: [{ ...routine({ id: "a1", createdBy: "agent" }), zzz: "x" }, { ...routine({ id: "u1" }), createdBy: "human" }] }));
+    const items = await store.list();
+    expect(items.map((r) => [r.id, r.createdBy])).toEqual([["a1", "agent"], ["u1", undefined]]);
+    await store.save(items);
+    const raw = await readFile(file, "utf8");
+    expect(raw).not.toContain("zzz");
+    expect(JSON.parse(raw).items[0].createdBy).toBe("agent");
+    expect(JSON.parse(raw).items[1]).not.toHaveProperty("createdBy");
+  });
 });
 
 type Verdict = { ok: boolean; hasClaude: boolean; reason?: string };
 const NOW = () => new Date("2026-10-12T00:00:10.000Z"); // 09:00 JST Monday
-const TIMING = { pollMs: 5, timeoutMs: 80 };
+const TIMING = { pollMs: 5, timeoutMs: 80, namePollMs: 5, nameTimeoutMs: 20 };
 const cfg = { salesanchorRoot: os.tmpdir(), roles: [{ id: "echo", needsWorktree: false, command: ["echo"] }], pasteSubmitDelayMs: 0 };
 
 /** hub.submitText は本物（Hub.prototype）を、偽の sessions/config で動かす */
 const makeHub = (sessions: unknown, verdicts: Verdict[] | (() => Verdict)) => {
   const queue = Array.isArray(verdicts) ? [...verdicts] : null;
   const checkInput = vi.fn(async () => (queue ? (queue.length > 1 ? queue.shift() : queue[0]) : (verdicts as () => Verdict)()));
-  const hub = { checkInput, sessions, config: cfg, submitText: (id: string, text: string) => Hub.prototype.submitText.call(hub, id, text) };
+  const hub = { checkInput, sessions, config: cfg, submitText: (id: string, text: string) => Hub.prototype.submitText.call(hub, id, text), sendName: () => true, displayNames: () => new Map<string, string>(), writing: new Set<string>(), tryBeginWrite: (id: string) => Hub.prototype.tryBeginWrite.call(hub, id), endWrite: (id: string) => Hub.prototype.endWrite.call(hub, id) };
   return hub;
 };
 
@@ -57,6 +72,17 @@ const setup = async (opts: { verdicts?: Verdict[] | (() => Verdict); routines?: 
 const run = async (service: RoutineService) => { await service.tick(); await service.settled(); };
 const outcomes = (service: RoutineService, i = 0) => service.list()[i].events.map((e) => e.outcome);
 
+describe("routine launch target cwd default (v0.24.0)", () => {
+  it("R7 create without cwd saves the real path of salesanchorRoot for a main-checkout role", async () => {
+    const root = realpathSync(await mkdtemp(path.join(os.tmpdir(), "ac-routine-root-")));
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    const dir = await mkdtemp(path.join(os.tmpdir(), "ac-routine-"));
+    const service = new RoutineService({ roles: [{ id: "echo", needsWorktree: false }], salesanchorRoot: root } as never, {} as never, {} as never, new RoutineStore(dir));
+    const created = await service.create({ name: "n", enabled: true, roleId: "echo", weekdays: [1], timeHHmm: "09:00", promptText: "hi" });
+    expect(created.cwd).toBe(root);
+  });
+});
+
 describe("routine dispatch opens a new session", () => {
   it("K2 opens one new session without resuming at the slot", async () => {
     const { service, sessions } = await setup();
@@ -66,6 +92,31 @@ describe("routine dispatch opens a new session", () => {
     expect(arg.claudeSessionId).toBeUndefined();
     expect(arg.routineId).toBeUndefined();
     expect(arg.name).toBe("daily 10/12 09:00");
+  });
+
+  it("sends the name first, waits for the matching display name, then sends the prompt (v0.29.0)", async () => {
+    const { service, sessions, hub } = await setup();
+    const log: string[] = [];
+    let polls = 0;
+    (hub as Record<string, unknown>).sendName = vi.fn((_id: string, n: string) => { log.push(`rename:${n}`); return true; });
+    (hub as Record<string, unknown>).displayNames = vi.fn(() => { log.push("names"); polls += 1; return new Map([["s1", polls >= 2 ? "daily 10/12 09:00" : "auto-name"]]); });
+    sessions.write.mockImplementation((_s: unknown, d: string) => { log.push(`write:${d.length > 1 ? "paste" : "cr"}`); });
+    await run(service);
+    expect(log[0]).toBe("rename:daily 10/12 09:00");
+    expect(log.filter((x) => x === "names")).toHaveLength(2);
+    expect(log.indexOf("write:paste")).toBeGreaterThan(log.lastIndexOf("names"));
+    expect(outcomes(service)).toEqual(["sent"]);
+  });
+
+  it("still sends when the display name never matches within the limit (v0.29.0)", async () => {
+    const { service, sessions, hub } = await setup();
+    const sendName = vi.fn(() => true);
+    (hub as Record<string, unknown>).sendName = sendName;
+    (hub as Record<string, unknown>).displayNames = vi.fn(() => new Map([["s1", "auto-name"]]));
+    await run(service);
+    expect(sendName).toHaveBeenCalledTimes(1);
+    expect(sessions.write).toHaveBeenCalled();
+    expect(outcomes(service)).toEqual(["sent"]);
   });
 
   it("cuts the session name on a character boundary and keeps it within 40 units", async () => {
@@ -79,7 +130,8 @@ describe("routine dispatch opens a new session", () => {
   it("K3 sends once with bracketed paste, then CR, after the second ready check", async () => {
     const { service, sessions, hub } = await setup({ verdicts: [{ ok: false, hasClaude: false }, { ok: true, hasClaude: true }], routines: [{ promptText: "go" }] });
     await run(service);
-    expect(hub.checkInput).toHaveBeenCalledTimes(2);
+    // 入力待ち（1回目は待ち・2回目で成立）→ /rename の後の入力待ちの確認（1回）
+    expect(hub.checkInput).toHaveBeenCalledTimes(3);
     expect(sessions.write.mock.calls.map((c) => c[1])).toEqual(["\u001b[200~go\u001b[201~", "\r"]);
     expect(outcomes(service)).toEqual(["sent"]);
     expect(service.list()[0].events[0].sessionName).toBe("daily 10/12 09:00");
