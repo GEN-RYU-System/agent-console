@@ -59,7 +59,7 @@ export class RoutineCloser {
   }
 
   private async keep(t: Tracked, reason: "decision" | "no-reply" | "waiting"): Promise<void> {
-    if (reason !== "waiting") this.tracked.delete(t.sessionId);
+    this.tracked.delete(t.sessionId); // kept 後は見ない（設計 §3-4）
     await this.deps.record(t.routineId, { outcome: "kept", slot: t.slot, sessionId: t.sessionId, ...(t.sessionName !== undefined ? { sessionName: t.sessionName } : {}) });
     await this.deps.audit({ action: "kept", outcome: "ok", routineId: t.routineId, targetCreatedBy: t.createdBy ?? "ui", callerSessionId: null, closeReason: reason });
   }

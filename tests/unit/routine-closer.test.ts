@@ -74,8 +74,8 @@ describe("S6 idle が連続して累計 10 分で閉じる", () => {
   });
 });
 
-describe("S7 waiting のまま 60 分は kept を 1 回だけ残す", () => {
-  it("60 分で kept(waiting) を 1 回だけ。閉じない。その後 idle になれば通常どおり数える", async () => {
+describe("S8 waiting のまま 60 分は kept を 1 回だけ残す", () => {
+  it("60 分で kept(waiting) を 1 回だけ。閉じない。その後 idle が 10 分続いても閉じない（kept 後は見ない）", async () => {
     const r = rig();
     for (let t = 0; t <= KEEP_WAITING_MS + 30 * MIN; t += 5 * MIN) await r.sample("waiting", t);
     expect(r.closed).toEqual([]);
@@ -85,7 +85,9 @@ describe("S7 waiting のまま 60 分は kept を 1 回だけ残す", () => {
     const base = KEEP_WAITING_MS + 40 * MIN;
     await r.sample("idle", base);
     await r.sample("idle", base + CLOSE_IDLE_MS);
-    expect(r.closed).toEqual([SID]);
+    expect(r.closed).toEqual([]);
+    expect(r.audits).toHaveLength(1);
+    expect(r.records).toHaveLength(1);
   });
 
   it("60 分に届く前に waiting が途切れたら数え直す", async () => {
@@ -101,7 +103,7 @@ describe("S7 waiting のまま 60 分は kept を 1 回だけ残す", () => {
   });
 });
 
-describe("S8 返答の中身で閉じるか残すかを決める", () => {
+describe("S7 返答の中身で閉じるか残すかを決める", () => {
   it.each([["NEEDS_DECISION: 方針を決めてください"], ["途中 BLOCKED: 権限がありません"]])("%s を含むと閉じずに kept(decision)", async (reply) => {
     const r = rig();
     r.set({ reply });

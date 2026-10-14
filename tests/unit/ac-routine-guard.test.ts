@@ -83,7 +83,7 @@ describe("S2 / S3 ac-hardening: the guard denies the token, the data dir, and th
     "curl -s http://127.0.0.1:4311/api/agent/routines/approval",
     "curl -s http://127.0.0.1:4311/api/sessions/x/routine-approval",
   ];
-  const passBash = ["ls -la", "curl -s http://127.0.0.1:4311/healthz", "curl https://example.com/api/routines", "echo localhost", "git show origin/main:hooks/ac-routine.mjs"];
+  const passBash = ["ls -la", "curl -s http://127.0.0.1:4311/healthz", "curl https://example.com/api/routines", "echo localhost", "git show origin/main:hooks/ac-routine.mjs", 'grep -n "/api/agent/routines" server/http.ts'];
 
   it("Bash: denied forms exit 2, unrelated forms pass silently", () => {
     for (const c of denyBash) expect(judge(input(c, "ab45")).code, c).toBe(2);

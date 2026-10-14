@@ -303,7 +303,11 @@ describe("closeWhenIdle (v0.30.0)", () => {
     expect((await service.create({ ...base, closeWhenIdle: true })).closeWhenIdle).toBe(true);
     expect((await service.create({ ...base, closeWhenIdle: false })).closeWhenIdle).toBeUndefined();
     await expect(service.create({ ...base, closeWhenIdle: "yes" as never })).rejects.toThrow("closeWhenIdle");
-    expect((await new RoutineStore(dir).list()).filter((r) => r.closeWhenIdle === true)).toHaveLength(1);
+    const made = await service.create({ ...base, closeWhenIdle: true });
+    expect((await service.update(made.id, { ...base, closeWhenIdle: false })).closeWhenIdle).toBeUndefined();
+    expect((await new RoutineStore(dir).list()).find((r) => r.id === made.id)?.closeWhenIdle).toBeUndefined();
+    expect((await service.update(made.id, { ...base, closeWhenIdle: true })).closeWhenIdle).toBe(true);
+    expect((await new RoutineStore(dir).list()).filter((r) => r.closeWhenIdle === true)).toHaveLength(2);
   });
 
   it("recordClose appends a closed event with its summary", async () => {

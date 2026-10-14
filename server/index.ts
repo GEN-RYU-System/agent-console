@@ -92,7 +92,7 @@ async function main(): Promise<void> {
     audit: (entry) => routineAudit.append({ at: new Date().toISOString(), ...entry }).catch((e) => console.error("routine-audit: write failed:", e instanceof Error ? e.message : e)),
   });
   routines.setCloser(closer);
-  hub.onAgentsSampled((states, at) => { void activity.store.refresh().catch(() => undefined).then(() => closer.sample(states, at)).catch((e) => console.error("routine-closer: sample failed:", e instanceof Error ? e.message : e)); });
+  hub.onAgentsSampled((states, at) => { void activity.store.refresh().then(() => states, () => null).then((st) => closer.sample(st, at)).catch((e) => console.error("routine-closer: sample failed:", e instanceof Error ? e.message : e)); });
   const uploads = new UploadStore(config.dataDir, config.uploadMaxBytes, config.uploadMaxKeep);
 
   const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity: activity.store, checkHooks: activity.check, memory: new MemoryCollector(), staticDir: path.join(process.cwd(), "dist"), meta, routines, reservations, reserve, routineApprovals }));
