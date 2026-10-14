@@ -1,6 +1,6 @@
 // agent-console の記録用 hook を、Claude の設定（~/.claude/settings.json）に足す・外す・点検する道具。
 // 使い方: node scripts/ac-hooks.mjs install|uninstall|check [--settings <settings.json>] [--data-dir <dataDir>]
-// - install: hook の本体を dataDir/hooks/ に置いてから、設定に自分の handler だけを足す（足す前に控えを取る。2 回実行しても増えない）。
+// - install: hook の本体（記録用 activity-hook と、ac-routine のサブエージェント拒否 ac-routine-guard の 2 本）を dataDir/hooks/ に、ac-routine 命令を dataDir/bin/ に置いてから、設定に自分の handler（10 本）だけを足す（足す前に控えを取る。2 回実行しても増えない）。
 //   そのあとに別の段として、利用量の命令を dataDir/bin/ に置き、statusLine を足す（別の statusLine があれば上書きせず、見送りの行を出す）
 // - uninstall: 自分の handler と自分の statusLine だけを外す（ほかの設定には触れない）
 // - check: 設定に handler があり、node と hook のファイルがあるかを JSON で返す（ok でなければ終了コード 1）。statusLine の結果は別の行で標準エラーに出す
@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { loadConfig } from "../server/config.ts";
 import { checkHooks, checkStatusLine, installHooks, installStatusLine, uninstallHooks, uninstallStatusLine } from "../server/activity-hooks.ts";
-import { hookPathIn, installHookFile, installStatuslineCommand, statuslineCommandPathIn } from "../server/activity-setup.ts";
+import { hookPathIn, installGuardFile, installHookFile, installRoutineCommand, installStatuslineCommand, statuslineCommandPathIn } from "../server/activity-setup.ts";
 
 const USAGE = "使い方: node scripts/ac-hooks.mjs install|uninstall|check [--settings <settings.json>] [--data-dir <dataDir>]";
 const COMMANDS = new Set(["install", "uninstall", "check"]);
@@ -43,6 +43,7 @@ const statuslinePath = statuslineCommandPathIn(dataDir);
 /** statusLine の段（hooks の段のあとに別に行う）。失敗は例外にせず、「hooks は入った・statusLine は入っていない」と分けて出して 1 を返す */
 function installStatusLineStage() {
   try {
+    installRoutineCommand(path.join(root, "hooks"), dataDir);
     installStatuslineCommand(path.join(root, "hooks"), dataDir);
     const r = installStatusLine({ settingsPath, nodePath: process.execPath, scriptPath: statuslinePath });
     const messages = {
@@ -64,8 +65,9 @@ const STATUSLINE_REASONS = { noSettings: "settings.json が無い", unreadable: 
 try {
   if (command === "install") {
     installHookFile(path.join(root, "hooks"), dataDir);
+    installGuardFile(path.join(root, "hooks"), dataDir);
     const r = installHooks({ settingsPath, nodePath: process.execPath, hookPath });
-    console.log(r.changed ? `記録用 hook を ${settingsPath} に足しました（控えは同じフォルダの settings.json.ac-backup-*）` : "記録用 hook はすでに入っています（変更なし）");
+    console.log(r.changed ? `記録用 hook と ac-routine の guard hook を ${settingsPath} に足しました（控えは同じフォルダの settings.json.ac-backup-*）` : "記録用 hook はすでに入っています（変更なし）");
     process.exitCode = installStatusLineStage();
   } else if (command === "uninstall") {
     const r = uninstallHooks({ settingsPath });

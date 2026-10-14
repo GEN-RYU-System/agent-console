@@ -98,6 +98,22 @@ describe("reservation create and dispatch", () => {
     expect(await late(120_000)).toBe(2);
   });
 
+  it("R-name prefixes the session name with [予約] and keeps it within 40 units", async () => {
+    const { service, sessions, clock, input } = await setup();
+    await service.create(input({ name: "measure" }), "ui");
+    clock.t = BASE_MS + 30 * MIN;
+    await run(service);
+    expect((sessions.restore.mock.calls[0] as unknown as [{ name: string }])[0].name).toBe("[予約] measure 10/12 09:10");
+    expect(service.list().find((r) => r.name === "measure")?.sessionName).toBe("[予約] measure 10/12 09:10");
+    const long = await setup();
+    await long.service.create(long.input({ name: "あ".repeat(40) }), "ui");
+    long.clock.t = BASE_MS + 30 * MIN;
+    await run(long.service);
+    const n = (long.sessions.restore.mock.calls[0] as unknown as [{ name: string }])[0].name;
+    expect(n).toBe(`[予約] ${"あ".repeat(23)} 10/12 09:10`);
+    expect(n.length).toBeLessThanOrEqual(40);
+  });
+
   it("R3b with three overdue reservations sends oldest first, one per 3 seconds or more", async () => {
     const { service, sessions, clock, input } = await setup();
     await service.create(input({ name: "c", time: "09:12" }), "ui");
@@ -113,7 +129,7 @@ describe("reservation create and dispatch", () => {
     clock.t += STAGGER; await run(service);
     expect(sessions.restore).toHaveBeenCalledTimes(3);
     const names = sessions.restore.mock.calls.map((c) => (c as unknown as [{ name: string }])[0].name);
-    expect(names.map((n) => n.split(" ")[0])).toEqual(["a", "b", "c"]);
+    expect(names.map((n) => n.split(" ")[1])).toEqual(["a", "b", "c"]);
   });
 
   it("R4 does not send when the dispatching save fails, and retries only after 60 seconds", async () => {
@@ -326,5 +342,36 @@ describe("reserve-token file", () => {
     expect(b.token).toBe(a.token);
     expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ port: 4002, token: a.token });
     expect((await setupReserveToken({ env: { AGENT_CONSOLE_PORT: "5000" }, dataDir: dir, port: 4003 })).token).toBeNull();
+  });
+});
+
+describe("launch target cwd default (v0.24.0)", () => {
+  it("R2 a main-checkout role without cwd is saved with the real path of salesanchorRoot", async () => {
+    const { service, root, input } = await setup();
+    const r = await service.create(input({ cwd: undefined }), "ui");
+    expect(r.cwd).toBe(realpathSync(root));
+    expect(r.branch).toBeUndefined();
+  });
+
+  it("R5 a worktree role without cwd is rejected as cwd invalid, and an explicit cwd still works", async () => {
+    const h2 = await startHarness();
+    try {
+      const date2 = new Date(Date.now() + 3 * 24 * 60 * MIN).toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+      const post = (over: Record<string, unknown>) => send(h2.port, "POST", "/api/reservations", { Authorization: `Bearer ${TOKEN}` }, { name: "m", roleId: "wt", date: date2, time: "10:00", promptText: "hi", ...over });
+      const missing = await post({ branch: "b" });
+      expect(missing.status).toBe(400);
+      expect(String(missing.json.error)).toContain("cwd invalid");
+      expect((await post({ cwd: h2.config.salesanchorRoot, branch: "b" })).status).toBe(201);
+    } finally { await h2.close(); }
+  });
+
+  it("R13 the agent route accepts a main-checkout role without cwd and saves the real path of salesanchorRoot", async () => {
+    const h2 = await startHarness();
+    try {
+      const date2 = new Date(Date.now() + 3 * 24 * 60 * MIN).toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+      const r = await send(h2.port, "POST", "/api/agent/reservations", { Authorization: `Bearer ${RESERVE_TOKEN}` }, { name: "m", roleId: "echo", date: date2, time: "10:00", promptText: "hi", ...AGENT });
+      expect(r.status).toBe(201);
+      expect(r.json.cwd).toBe(realpathSync(h2.config.salesanchorRoot));
+    } finally { await h2.close(); }
   });
 });

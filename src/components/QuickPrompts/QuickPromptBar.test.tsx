@@ -66,6 +66,14 @@ describe("QuickPromptBar (v0.10.0 K3)", () => {
     }
   });
 
+  it("shows blockedHint in the bar only when buttons are unusable and pinned prompts exist", () => {
+    renderBar({ canSend: false, blockedHint: "理由です" });
+    expect(screen.getByText("理由です")).toBeTruthy();
+    cleanup();
+    renderBar({ canSend: true, blockedHint: "理由です" });
+    expect(screen.queryByText("理由です")).toBeNull();
+  });
+
   it("shows pinned as aria-pressed and toggles it through update with pinned only, then asks for a reload", async () => {
     const { onChanged } = renderBar();
     fireEvent.click(screen.getByRole("button", { name: "よく使う指示" }));

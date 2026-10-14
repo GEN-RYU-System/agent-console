@@ -148,6 +148,7 @@ describe("K8: 記録の仕組みが外れているかを、呼ぶたびに点検
 
     mkdirSync(path.dirname(hookPath), { recursive: true });
     writeFileSync(hookPath, "// hook\n");
+    writeFileSync(path.join(path.dirname(hookPath), "ac-routine-guard.mjs"), "// guard\n");
     installHooks({ settingsPath, nodePath: process.execPath, hookPath });
     expect((await activity(s.id)).json.hooks).toEqual({ ok: true });
   });

@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, readdir, rename, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { SessionInputError } from "./sessions.ts";
+import { safeUploadName } from "./uploadName.ts";
 
 /** 端末に貼った画像（スクリーンショットなど）の保存。正本は dataDir/uploads/<UUID>.png|jpg。作法は picks.ts と同じ。 */
 
@@ -10,6 +11,10 @@ const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
 /** 消してよいのは、このアプリが作った名前（小文字の UUID + 拡張子）のファイルだけ */
 const UPLOAD_FILE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg)$/;
+
+/** 画像以外のファイルの置き場（uploads/files/<UUID>/<名前>）。消してよいのは小文字 UUID 名のフォルダだけ */
+export const UPLOAD_FILES_DIR = "files";
+const UPLOAD_DIR_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const JPEG_SIGNATURE = Buffer.from([0xff, 0xd8, 0xff]);
@@ -61,6 +66,59 @@ export class UploadStore {
       await this.prune(path.basename(file));
       return { path: file };
     });
+  }
+
+  /** 画像以外のファイルを、種類を問わず保存する。dataDir/uploads/files/<UUID>/<直した名前>。パスはここで作る。 */
+  async saveFile(name: string, data: Buffer): Promise<{ path: string }> {
+    if (data.length > this.maxBytes) throw new UploadTooLargeError("file too large");
+    return this.serial(async () => {
+      const files = path.join(this.dir, UPLOAD_FILES_DIR);
+      const id = randomUUID();
+      const dir = path.join(files, id);
+      await mkdir(files, { recursive: true, mode: DIR_MODE });
+      await chmod(files, DIR_MODE);
+      await mkdir(dir, { mode: DIR_MODE });
+      await chmod(dir, DIR_MODE);
+      const final = path.join(dir, safeUploadName(name));
+      if (path.dirname(final) !== dir) throw new Error("unsafe upload path");
+      const tmp = path.join(dir, `.${randomUUID()}.tmp`);
+      await writeFile(tmp, data, { mode: FILE_MODE });
+      await chmod(tmp, FILE_MODE);
+      await rename(tmp, final);
+      await this.pruneFiles(files, id);
+      return { path: final };
+    });
+  }
+
+  /** 残す数を超えた分を、フォルダの更新時刻が古い順に消す。消すのは UUID 名で中が普通のファイルだけのフォルダ。 */
+  private async pruneFiles(files: string, justSaved: string): Promise<void> {
+    const names = (await readdir(files)).filter((n) => UPLOAD_DIR_PATTERN.test(n));
+    const entries = await Promise.all(
+      names.map(async (name) => {
+        try {
+          const st = await lstat(path.join(files, name));
+          return st.isDirectory() ? { name, mtimeMs: st.mtimeMs } : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    const newestFirst = entries
+      .filter((e): e is { name: string; mtimeMs: number } => e !== null)
+      .sort((a, b) => b.mtimeMs - a.mtimeMs || (a.name < b.name ? 1 : -1));
+    for (const old of newestFirst.slice(this.maxKeep)) {
+      if (old.name === justSaved) continue;
+      try {
+        const dir = path.join(files, old.name);
+        const inner = await readdir(dir);
+        const stats = await Promise.all(inner.map((n) => lstat(path.join(dir, n))));
+        if (!stats.every((st) => st.isFile())) continue;
+        for (const n of inner) await unlink(path.join(dir, n));
+        await rmdir(dir);
+      } catch (err) {
+        if ((err as { code?: string }).code !== "ENOENT") throw err;
+      }
+    }
   }
 
   /** 残す枚数を超えた分を、更新時刻（rename の後の mtime）が古い順に消す。消すのは UUID の名前のファイルだけ。 */

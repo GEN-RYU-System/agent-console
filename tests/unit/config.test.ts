@@ -14,7 +14,21 @@ const valid = {
   ledgerPollMs: 60000,
   ringBufferBytes: 1048576,
   roles: [{ id: "shell", labelKey: "role.shell", command: ["/bin/zsh", "-i"], needsWorktree: false }],
+  routineManagerRoles: ["shell"],
 };
+
+describe("parseConfig: routineManagerRoles (ac-routine)", () => {
+  const { routineManagerRoles: _r, ...rest } = valid;
+  it("when not written: uses the default opus-designer only if it exists in roles; otherwise empty (everyone is refused) and startup is not blocked", () => {
+    const withOpus = { ...rest, roles: [...valid.roles, { id: "opus-designer", labelKey: "role.opus", command: ["/bin/zsh", "-i"], needsWorktree: false }] };
+    expect(parseConfig(withOpus).routineManagerRoles).toEqual(["opus-designer"]);
+    expect(parseConfig(rest).routineManagerRoles).toEqual([]);
+  });
+  it("when written, an id that is not in roles is a startup error; so is a wrong shape", () => {
+    expect(() => parseConfig({ ...valid, routineManagerRoles: ["nope"] })).toThrow(/routineManagerRoles has unknown role id nope/);
+    expect(() => parseConfig({ ...valid, routineManagerRoles: "shell" })).toThrow(/routineManagerRoles/);
+  });
+});
 
 describe("parseConfig", () => {
   it("expands ~ in salesanchorRoot", () => {

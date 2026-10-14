@@ -273,6 +273,7 @@ describe("input safety: /rename and quick prompts only when Claude is idle (M1/L
     expect((await api("POST", `/api/sessions/${id}/rename`, { name: "late" })).json).toEqual({ mode: "queued" });
     expect((await api("POST", `/api/sessions/${id}/send-check`, { promptId: "x" })).status).toBe(404);
     const created = await api("POST", "/api/quick-prompts", { label: "p", text: "late-text" });
+    setAgents([row(pid, "waiting")]); // よく使う指示は作業中でも可。取得の後に確認待ちへ変わった場合だけ 409
     expect((await api("POST", `/api/sessions/${id}/send-check`, { promptId: created.json.id })).status).toBe(409);
     await settle();
     expect(ringOf(id)).not.toContain("late");
@@ -343,14 +344,14 @@ describe("quick prompts (K3)", () => {
     await api("DELETE", `/api/quick-prompts/${b}`);
   });
 
-  it("answers 409 for busy and waiting Claude sessions", async () => {
+  it("answers 200 for busy and 409 for waiting Claude sessions", async () => {
     const created = await api("POST", "/api/quick-prompts", { label: "x", text: "y" });
     const id = await newSession("echo", "busy-target");
     const pid = pidOf(id);
-    for (const status of ["busy", "waiting"]) {
-      setAgents([row(pid, status)]);
-      expect((await api("POST", `/api/sessions/${id}/send-check`, { promptId: created.json.id })).status).toBe(409);
-    }
+    setAgents([row(pid, "busy")]);
+    expect((await api("POST", `/api/sessions/${id}/send-check`, { promptId: created.json.id })).status).toBe(200);
+    setAgents([row(pid, "waiting")]);
+    expect((await api("POST", `/api/sessions/${id}/send-check`, { promptId: created.json.id })).status).toBe(409);
     setAgents([row(pid, "idle")]);
     expect((await api("POST", `/api/sessions/${id}/send-check`, { promptId: created.json.id })).status).toBe(200);
     await api("DELETE", `/api/quick-prompts/${created.json.id as string}`);

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const calls: string[] = [];
 let lastTerm: { options: Record<string, unknown> } | null = null;
 let currentUpload: (file: Blob) => Promise<{ path: string }> = async () => ({ path: "/unset" });
+let currentFileUpload: (file: Blob) => Promise<{ path: string }> = async () => ({ path: "/unset" });
 
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
@@ -13,6 +14,7 @@ vi.mock("@xterm/xterm", () => ({
     loadAddon = vi.fn();
     open = vi.fn();
     write = vi.fn();
+    reset = vi.fn();
     paste = vi.fn((t: string) => calls.push(`paste:${t}`));
     input = vi.fn((d: string) => calls.push(`input:${d}`));
     options: Record<string, unknown>;
@@ -29,6 +31,7 @@ vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 vi.mock("../../api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../api")>()),
   uploadImage: (file: Blob) => currentUpload(file),
+  uploadFile: (file: Blob) => currentFileUpload(file),
 }));
 
 class FakeWebSocket {
@@ -37,11 +40,14 @@ class FakeWebSocket {
   close = vi.fn();
   send = vi.fn();
   onopen: (() => void) | null = null;
+  onmessage: ((e: { data: unknown }) => void) | null = null;
+  onclose: (() => void) | null = null;
 }
 
 beforeEach(() => {
   calls.length = 0;
   currentUpload = async () => ({ path: "/unset" });
+  currentFileUpload = async () => ({ path: "/unset" });
   vi.stubGlobal("WebSocket", FakeWebSocket);
   vi.stubGlobal("ResizeObserver", class { observe = vi.fn(); disconnect = vi.fn(); });
 });
@@ -163,17 +169,66 @@ describe("K4: pasting and dropping images", () => {
     expect(calls).toEqual(["paste: /p/1.png "]);
   });
 
-  it("dropping a non-image file does nothing but tell the user (notImage)", async () => {
-    const upload = vi.fn(async () => ({ path: "/x" }));
-    currentUpload = upload;
+  it("dropping a non-image file uploads it through uploadFile (not uploadImage) and pastes the path", async () => {
+    const imageUpload = vi.fn(async () => ({ path: "/img" }));
+    const fileUpload = vi.fn(async () => ({ path: "/data/uploads/files/u/a.pdf" }));
+    currentUpload = imageUpload;
+    currentFileUpload = fileUpload;
     const notices: string[] = [];
     const { TerminalPane } = await import("./TerminalPane");
     const { container } = render(<TerminalPane sessionId="a" onUploadNotice={(k) => notices.push(k)} />);
     fire(hostOf(container), "drop", [new File(["x"], "a.pdf", { type: "application/pdf" })]);
     await flush();
-    expect(upload).not.toHaveBeenCalled();
+    expect(imageUpload).not.toHaveBeenCalled();
+    expect(fileUpload).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(["paste: /data/uploads/files/u/a.pdf "]);
+    expect(notices).toEqual([]);
+  });
+
+  it("a mixed drop is pasted one by one in the original order (file, image, file)", async () => {
+    currentUpload = async () => ({ path: "/p/img.png" });
+    currentFileUpload = async (f) => ({ path: `/p/${(f as File).name}` });
+    const { TerminalPane } = await import("./TerminalPane");
+    const { container } = render(<TerminalPane sessionId="a" />);
+    fire(hostOf(container), "drop", [new File(["1"], "a.csv", { type: "text/csv" }), png(), new File(["2"], "b.txt", { type: "" })]);
+    await flush();
+    expect(calls).toEqual(["paste: /p/a.csv ", "paste: /p/img.png ", "paste: /p/b.txt "]);
+  });
+
+  it("a non-image file that cannot be read (uploadFile rejects) tells the user (failed) and pastes nothing", async () => {
+    currentFileUpload = async () => {
+      throw new Error("read failed");
+    };
+    const notices: string[] = [];
+    const { TerminalPane } = await import("./TerminalPane");
+    const { container } = render(<TerminalPane sessionId="a" onUploadNotice={(k) => notices.push(k)} />);
+    fire(hostOf(container), "drop", [new File([""], "folder", { type: "" })]);
+    await flush();
     expect(calls).toEqual([]);
-    expect(notices).toEqual(["notImage"]);
+    expect(notices).toEqual(["failed"]);
+  });
+
+  it("a non-image file over uploadMaxBytes is not sent (tooLarge)", async () => {
+    const fileUpload = vi.fn(async () => ({ path: "/x" }));
+    currentFileUpload = fileUpload;
+    const notices: string[] = [];
+    const { TerminalPane } = await import("./TerminalPane");
+    const { container } = render(<TerminalPane sessionId="a" uploadMaxBytes={2} onUploadNotice={(k) => notices.push(k)} />);
+    fire(hostOf(container), "drop", [new File(["abcdef"], "big.csv", { type: "text/csv" })]);
+    await flush();
+    expect(fileUpload).not.toHaveBeenCalled();
+    expect(notices).toEqual(["tooLarge"]);
+  });
+
+  it("a file-only paste (no text) is stopped and uploaded; with text it is left to xterm", async () => {
+    currentFileUpload = async () => ({ path: "/p/a.csv" });
+    const { TerminalPane } = await import("./TerminalPane");
+    const { container } = render(<TerminalPane sessionId="a" />);
+    const csv = new File(["x"], "a.csv", { type: "text/csv" });
+    expect(fire(hostOf(container), "paste", [csv], "text").defaultPrevented).toBe(false);
+    expect(fire(hostOf(container), "paste", [csv]).defaultPrevented).toBe(true);
+    await flush();
+    expect(calls).toEqual(["paste: /p/a.csv "]);
   });
 
   it("a file over uploadMaxBytes is not sent, and the user is told (tooLarge)", async () => {

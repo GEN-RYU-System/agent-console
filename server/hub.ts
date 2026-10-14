@@ -431,7 +431,7 @@ export class Hub {
   }
 
   /** チャットの払い出し用。checkInput と同じ取り直しだが、作業中（待ちなし）も可（chatVerdict） */
-  private async checkChat(sessionId: string): Promise<ReturnType<typeof chatVerdict>> {
+  async checkChat(sessionId: string): Promise<ReturnType<typeof chatVerdict>> {
     const session = this.sessions.get(sessionId);
     if (!session) return { ok: false, reason: "session not found", hasClaude: false };
     const [rows, table] = await Promise.all([fetchAgents(this.config.claudeBin), readProcessTable().catch(() => [])]);

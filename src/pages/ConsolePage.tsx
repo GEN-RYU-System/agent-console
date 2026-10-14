@@ -15,6 +15,7 @@ import {
   fetchLedger,
   fetchResumeTargets,
   fetchQuickPrompts,
+  clearSessionToken,
   fetchState,
   getSessionToken,
   logout,
@@ -29,6 +30,7 @@ import {
 import { AccountBadge } from "../components/AccountBadge/AccountBadge";
 import { ChatPane } from "../components/ChatPane/ChatPane";
 import { DiffPane } from "../components/DiffPane/DiffPane";
+import { FilesPane } from "../components/FilesPane/FilesPane";
 import { MemoryPanel } from "../components/MemoryPanel/MemoryPanel";
 import { PicksPane } from "../components/PicksPane/PicksPane";
 import { PrPane } from "../components/PrPane/PrPane";
@@ -53,27 +55,84 @@ const RENAME_CONFIRM_MS = 10000;
 const UPLOAD_NOTICE_MS = 8000;
 const BYTES_PER_MB = 1024 * 1024;
 
-type CenterTab = "chat" | "terminal" | "changes" | "pr" | "picks" | "routines" | "reservations";
+type CenterTab = "chat" | "terminal" | "changes" | "files" | "pr" | "picks" | "routines" | "reservations";
+
+/** onopen の無いまま切れた回数がこの数に達したら、/api/state を取り直して原因（ログイン切れ）を確かめる */
+const CONNECT_FAILURES_BEFORE_CHECK = 3;
 
 function useConsoleState() {
   const [state, setState] = useState<ConsoleState | null>(null);
   const [loadFailed, setLoadFailed] = useState<"unauthorized" | "error" | null>(null);
+  /** 最初に読んだ版と違う版のサーバーにつながり直した（更新が入った） */
+  const [newVersion, setNewVersion] = useState(false);
 
   useEffect(() => {
     let closed = false;
+    let stopped = false;
     let ws: WebSocket | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    /** onopen が来ないまま onclose した回数（onopen で 0 に戻す） */
+    let failures = 0;
+    /** 一度でも切れたか（切れた後の onopen では取り直す） */
+    let dropped = false;
+    let checking = false;
+    let firstCommit: string | null = null;
 
-    fetchState().then(setState, (err: unknown) => setLoadFailed(err instanceof ApiError && err.status === 401 ? "unauthorized" : "error"));
+    // 取り直した state は丸ごと置き換える（版・commit など /api/state にしか無い項目も新しくなる）
+    const adopt = (next: ConsoleState): void => {
+      if (closed) return;
+      if (firstCommit === null) firstCommit = next.commit;
+      else if (firstCommit !== "" && next.commit !== "" && next.commit !== firstCommit) setNewVersion(true);
+      setState(next);
+    };
+
+    fetchState().then(adopt, (err: unknown) => setLoadFailed(err instanceof ApiError && err.status === 401 ? "unauthorized" : "error"));
+
+    const checkLogin = (): void => {
+      checking = true;
+      fetchState().then(
+        (next) => {
+          checking = false;
+          failures = 0;
+          adopt(next);
+        },
+        (err: unknown) => {
+          checking = false;
+          failures = 0;
+          if (closed) return;
+          if (err instanceof ApiError && err.status === 401) {
+            // ログインが切れている: 案内を出し、つなぎ直しをやめる
+            stopped = true;
+            clearTimeout(timer);
+            clearSessionToken();
+            setLoadFailed("unauthorized");
+          }
+          // それ以外（再起動中で接続できない・500）は画面をそのまま、つなぎ直しを続ける
+        },
+      );
+    };
+
     const connect = (): void => {
-      ws = openSocket("/ws/events");
-      ws.onmessage = (e) => {
+      const socket = openSocket("/ws/events");
+      ws = socket;
+      let opened = false;
+      socket.onopen = () => {
+        opened = true;
+        failures = 0;
+        if (dropped) fetchState().then(adopt, () => undefined);
+      };
+      socket.onmessage = (e) => {
         const snap = JSON.parse(String(e.data)) as { sessions: SessionView[]; agentsAvailable: boolean };
         setState((prev) => (prev ? { ...prev, ...snap } : prev));
       };
-      ws.onclose = () => {
+      socket.onclose = () => {
+        dropped = true;
         // トークンが無い（未ログイン・ログアウト後）ときは再接続しない
-        if (!closed && getSessionToken() !== null) timer = setTimeout(connect, RECONNECT_MS);
+        if (closed || stopped || getSessionToken() === null) return;
+        // onopen の無いまま閉じた回数だけ数える（つながってから切れたときは数え直し）
+        failures = opened ? 0 : failures + 1;
+        if (failures >= CONNECT_FAILURES_BEFORE_CHECK && !checking) checkLogin();
+        timer = setTimeout(connect, RECONNECT_MS);
       };
     };
     connect();
@@ -84,12 +143,19 @@ function useConsoleState() {
     };
   }, []);
 
-  return { state, loadFailed, setLoadFailed };
+  return { state, loadFailed, setLoadFailed, newVersion };
+}
+
+/** 端末のよく使う指示が押せない理由の文言キー（stopped・unknown 以外は確認待ち） */
+function quickBlockedKey(state: SessionState): string {
+  if (state === "stopped") return "ac.quick.blockedStopped";
+  if (state === "unknown") return "ac.quick.blockedUnknown";
+  return "ac.quick.blockedWaiting";
 }
 
 export function ConsolePage() {
   const { t } = useTranslation();
-  const { state, loadFailed, setLoadFailed } = useConsoleState();
+  const { state, loadFailed, setLoadFailed, newVersion } = useConsoleState();
   const [ledger, setLedger] = useState<LedgerSnapshot | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -141,6 +207,11 @@ export function ConsolePage() {
   useEffect(() => {
     if (selectedId !== null && selectedUnread > 0 && document.visibilityState === "visible") void markRead(selectedId).catch(() => undefined);
   }, [selectedId, selectedUnread]);
+  // 送信の警告は、別のセッションを選んだとき、または今のセッションが送れる状態に戻ったときに消す
+  const selectedCanChat = state?.sessions.find((s) => s.id === selectedId)?.canChat;
+  useEffect(() => {
+    setQuickError(null);
+  }, [selectedId, selectedCanChat]);
 
   const handleSelect = (id: string): void => {
     setSelectedId(id);
@@ -300,7 +371,7 @@ export function ConsolePage() {
     );
   }
   if (loadFailed) return <EmptyState title={t("ac.loadError")} />;
-  if (!state) return null;
+  if (!state) return <EmptyState title={t("ac.loading")} />;
   // 一覧から外れた（または存在しない）セッションは選択扱いにしない
   const activeId = state.sessions.some((s) => s.id === selectedId) ? selectedId : null;
   const activeSession = state.sessions.find((s) => s.id === activeId);
@@ -326,6 +397,16 @@ export function ConsolePage() {
             {t("ac.resumeOpen")}
           </Button>
         </div>
+        {newVersion && (
+          <div data-testid="new-version">
+            <Callout variant="info" title={t("ac.newVersion.title")}>
+              <p>{t("ac.newVersion.body")}</p>
+              <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+                {t("ac.newVersion.reload")}
+              </Button>
+            </Callout>
+          </div>
+        )}
         {removeError !== null && (
           <Callout variant="warning" title={t("ac.removeError")}>
             {removeError}
@@ -401,6 +482,7 @@ export function ConsolePage() {
             { key: "chat", label: t("ac.tabs.chat") },
             { key: "terminal", label: t("ac.tabs.terminal") },
             { key: "changes", label: t("ac.tabs.changes"), ...(activeId !== null && diffCount !== null ? { count: diffCount } : {}) },
+            { key: "files", label: t("ac.tabs.files") },
             { key: "pr", label: t("ac.tabs.pr") },
             { key: "picks", label: t("ac.tabs.picks"), ...(state.picksUnsent > 0 ? { count: state.picksUnsent } : {}) },
             { key: "routines", label: t("ac.tabs.routines") },
@@ -410,7 +492,8 @@ export function ConsolePage() {
         {centerTab === "terminal" && (
           <QuickPromptBar
             prompts={quickPrompts}
-            canSend={activeSession?.canInput === true}
+            canSend={activeSession?.canChat === true}
+            {...(activeSession !== undefined && activeSession.canChat !== true ? { blockedHint: t(quickBlockedKey(activeSession.state)) } : {})}
             onSend={handleSendPrompt}
             onEdit={() => setQuickEditorOpen(true)}
             onChanged={loadQuickPrompts}
@@ -455,6 +538,7 @@ export function ConsolePage() {
         ) : (
           centerTab === "changes" && <EmptyState title={t("ac.selectSession")} />
         )}
+        {activeId ? <FilesPane sessionId={activeId} active={centerTab === "files"} rev={state.activityRev} /> : centerTab === "files" && <EmptyState title={t("ac.selectSession")} />}
         {activeId ? <PrPane sessionId={activeId} active={centerTab === "pr"} /> : centerTab === "pr" && <EmptyState title={t("ac.selectSession")} />}
         {/* 部品は、セッションを選んでいなくても見られる（送るときだけ送り先が要る） */}
         <PicksPane

@@ -115,3 +115,60 @@ describe("/api/state hands the screen the two values it needs (4. SSOT)", () => 
     expect(r.json.uploadMaxBytes).toBe(MAX);
   });
 });
+
+const uploadFileReq = (body: Record<string, unknown>, headers: Record<string, string> = bearer): Promise<Reply> => raw("POST", "/api/uploads/files", headers, JSON.stringify(body));
+const filesDir = (): string => path.join(uploadsDir(), "files");
+
+describe("POST /api/uploads/files (K1/K4/K8/K9)", () => {
+  it("saves a CSV byte for byte under uploads/files/<UUID>/<name> and answers 201 with the path", async () => {
+    const csv = Buffer.from("品名,数量\nりんご,3\n", "utf8");
+    const r = await uploadFileReq({ name: "売上 10月.csv", data: b64(csv) });
+    expect(r.status).toBe(201);
+    const p = r.json.path as string;
+    expect(path.isAbsolute(p)).toBe(true);
+    expect(path.dirname(path.dirname(p))).toBe(filesDir());
+    expect(path.basename(p)).toBe("売上_10月.csv");
+    expect(readFileSync(p).equals(csv)).toBe(true);
+    expect(statSync(p).mode & 0o777).toBe(0o600);
+  });
+
+  it("accepts an empty file (data \"\") as 0 bytes", async () => {
+    const r = await uploadFileReq({ name: "empty.txt", data: "" });
+    expect(r.status).toBe(201);
+    expect(statSync(r.json.path as string).size).toBe(0);
+  });
+
+  it("413 above uploadMaxBytes, 201 at exactly uploadMaxBytes", async () => {
+    expect((await uploadFileReq({ name: "big.bin", data: b64(Buffer.alloc(MAX + 1, 1)) })).status).toBe(413);
+    expect((await uploadFileReq({ name: "ok.bin", data: b64(Buffer.alloc(MAX, 1)) })).status).toBe(201);
+    expect((await uploadFileReq({ name: "x.bin", data: "A".repeat(MAX * 4) })).status).toBe(413);
+  });
+
+  it("400 for a bad name (missing, non-string, empty, over 1024 chars) and bad data", async () => {
+    const data = b64(Buffer.from("x"));
+    expect((await uploadFileReq({ data })).status).toBe(400);
+    expect((await uploadFileReq({ name: 5, data })).status).toBe(400);
+    expect((await uploadFileReq({ name: "", data })).status).toBe(400);
+    expect((await uploadFileReq({ name: "a".repeat(1025), data })).status).toBe(400);
+    expect((await uploadFileReq({ name: "a".repeat(1024), data })).status).toBe(201);
+    expect((await uploadFileReq({ name: "a.txt", data: "***not base64***" })).status).toBe(400);
+    expect((await uploadFileReq({ name: "a.txt", data: 123 })).status).toBe(400);
+    expect((await uploadFileReq({ name: "a.txt" })).status).toBe(400);
+  });
+
+  it("401 without a credential, 403 for a session token without Origin, 201 with the app's Origin", async () => {
+    const body = { name: "a.txt", data: b64(Buffer.from("x")) };
+    expect((await uploadFileReq(body, json)).status).toBe(401);
+    expect((await uploadFileReq(body, { ...json, Authorization: "Bearer wrong" })).status).toBe(401);
+    const session = h.auth.consumePairingCode(h.auth.issuePairingCode(PAIRING_TTL_MS)) as string;
+    const headers = { ...json, Authorization: `Bearer ${session}` };
+    expect((await uploadFileReq(body, headers)).status).toBe(403);
+    expect((await uploadFileReq(body, { ...headers, Origin: "https://evil.example" })).status).toBe(403);
+    expect((await uploadFileReq(body, { ...headers, Origin: `http://127.0.0.1:${h.port}` })).status).toBe(201);
+  });
+
+  it("keeps only uploadMaxKeep (3) folders", async () => {
+    for (let i = 0; i < 5; i++) expect((await uploadFileReq({ name: `k${i}.txt`, data: b64(Buffer.from("x")) })).status).toBe(201);
+    expect(readdirSync(filesDir())).toHaveLength(3);
+  });
+});

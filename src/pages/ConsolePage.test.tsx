@@ -23,6 +23,7 @@ const state: ConsoleState = {
 
 const removeSession = vi.fn();
 const fetchState = vi.fn();
+const clearSessionToken = vi.fn();
 const logout = vi.fn();
 const markRead = vi.fn();
 const checkQuickPromptSend = vi.fn();
@@ -51,6 +52,7 @@ vi.mock("../api", () => ({
   createSession: vi.fn(),
   removeSession: (id: string) => removeSession(id),
   getSessionToken: () => "session-token",
+  clearSessionToken: () => clearSessionToken(),
   logout: () => logout(),
   markRead: (id: string) => markRead(id),
   checkQuickPromptSend: (id: string, promptId: string) => checkQuickPromptSend(id, promptId),
@@ -67,6 +69,8 @@ vi.mock("../api", () => ({
   fetchAccount: vi.fn(async () => ({ status: "error" })),
   startAccountLogin: vi.fn(),
   fetchChat: vi.fn(async () => ({ status: "noSession", queued: [] })),
+  fetchFiles: vi.fn(async () => ({ status: "noSession" })),
+  fetchFileContent: vi.fn(async () => ({ status: "noSession" })),
   checkChatSend: vi.fn(),
   fetchMemory: vi.fn(async () => ({ sessions: [], serverRssMb: 1, system: null })),
   fetchDiff: () => fetchDiff(),
@@ -118,18 +122,23 @@ vi.mock("../components/TerminalPane/TerminalPane", async () => {
 const { ConsolePage } = await import("./ConsolePage");
 
 let lastSocket: FakeWebSocket | null = null;
+const sockets: FakeWebSocket[] = [];
 class FakeWebSocket {
   constructor() {
     lastSocket = this;
+    sockets.push(this);
   }
   static OPEN = 1;
   readyState = 0;
+  onopen: unknown = null;
   onmessage: unknown = null;
   onclose: unknown = null;
   close = vi.fn();
 }
 
 beforeEach(() => {
+  sockets.length = 0;
+  clearSessionToken.mockReset();
   removeSession.mockReset();
   fetchState.mockReset();
   logout.mockReset();
@@ -311,7 +320,7 @@ describe("ConsolePage footer and authorization", () => {
 });
 
 describe("ConsolePage daily use", () => {
-  const live = { ...state.sessions[0], state: "idle" as const, unread: 2, hasClaude: true, canInput: true };
+  const live = { ...state.sessions[0], state: "idle" as const, unread: 2, hasClaude: true, canInput: true, canChat: true };
 
   it("puts the total unread count in the window title", async () => {
     fetchState.mockResolvedValue({ ...state, sessions: [live, { ...live, id: "s2", unread: 1 }] });
@@ -370,12 +379,57 @@ describe("ConsolePage daily use", () => {
     expect(pasteOnly).not.toHaveBeenCalled();
   });
 
-  it("disables the quick prompt buttons while input is not allowed", async () => {
-    fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0, canInput: false }] });
+  it("clears the send warning when another session is selected", async () => {
+    checkQuickPromptSend.mockRejectedValue(new Error("claude is busy"));
+    const other = { ...live, id: "s2", name: "other", unread: 0 };
+    fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0 }, other] });
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    await openTerminalTab();
+    await waitFor(() => expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "テスト実行" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("claude is busy");
+    fireEvent.click(screen.getByText("other"));
+    await waitFor(() => expect(screen.queryByText("claude is busy")).toBeNull());
+  });
+
+  it("clears the send warning when canChat changes from false to true (state pushed over the event socket)", async () => {
+    let refuse: (e: Error) => void = () => {};
+    checkQuickPromptSend.mockReturnValue(new Promise((_, reject) => (refuse = reject)));
+    fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0 }] });
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    await openTerminalTab();
+    await waitFor(() => expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "テスト実行" }));
+    await waitFor(() => expect(checkQuickPromptSend).toHaveBeenCalled());
+    const onmessage = lastSocket?.onmessage as (e: { data: string }) => void;
+    const push = (canChat: boolean): void =>
+      act(() => onmessage({ data: JSON.stringify({ sessions: [{ ...live, unread: 0, canChat, canInput: canChat, state: canChat ? "idle" : "waiting" }], agentsAvailable: true }) }));
+    // 確認している間に waiting へ変わり、そのあとサーバーが 409 を返す（警告は canChat が false の間に出る）
+    push(false);
+    await waitFor(() => expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(true));
+    act(() => refuse(new Error("claude is waiting")));
+    expect((await screen.findByRole("alert")).textContent).toContain("claude is waiting");
+    push(true);
+    await waitFor(() => expect(screen.queryByText("claude is waiting")).toBeNull());
+  });
+
+  it("disables the quick prompt buttons and shows the reason while Claude waits for an answer", async () => {
+    fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0, canInput: false, canChat: false, state: "waiting" as const }] });
     render(<ConsolePage />);
     fireEvent.click(await screen.findByText("dead"));
     await openTerminalTab();
     expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/許可・質問への返事を待っている/)).toBeTruthy();
+  });
+
+  it("enables the quick prompt buttons while Claude is busy (canChat true, canInput false)", async () => {
+    fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0, canInput: false, canChat: true, state: "working" as const }] });
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    await openTerminalTab();
+    await waitFor(() => expect((screen.getByRole("button", { name: "テスト実行" }) as HTMLButtonElement).disabled).toBe(false));
   });
 
   it("explains that a break is the app's own definition", async () => {
@@ -385,7 +439,7 @@ describe("ConsolePage daily use", () => {
 });
 
 describe("ConsolePage center tabs (v0.10.0 K1)", () => {
-  it("puts ac-center-tabs on the center tablist only (all 7 tabs share it), not on the right pane", async () => {
+  it("puts ac-center-tabs on the center tablist only (all 8 tabs share it), not on the right pane", async () => {
     render(<ConsolePage />);
     fireEvent.click(await screen.findByText("dead"));
     const tab = await screen.findByRole("tab", { name: /変更/ });
@@ -393,7 +447,7 @@ describe("ConsolePage center tabs (v0.10.0 K1)", () => {
     expect(list.className).toContain("ac-center-tabs");
     expect(list.className).toContain("comp-tabs");
     const labels = within(list).getAllByRole("tab").map((n) => n.textContent);
-    expect(labels).toHaveLength(7);
+    expect(labels).toHaveLength(8);
     const others = screen.getAllByRole("tablist").filter((n) => n !== list);
     for (const other of others) expect(other.className).not.toContain("ac-center-tabs");
   });
@@ -415,7 +469,7 @@ describe("ConsolePage チャット tab (v0.11.0 K1, K6, K7)", () => {
     const tab = await screen.findByRole("tab", { name: /変更/ });
     const list = tab.closest('[role="tablist"]') as HTMLElement;
     const tabs = within(list).getAllByRole("tab");
-    expect(tabs.map((n) => (n.textContent ?? "").replace(/\d+$/, ""))).toEqual(["チャット", "端末", "変更", "PR", "部品", "定期実行", "予約"]);
+    expect(tabs.map((n) => (n.textContent ?? "").replace(/\d+$/, ""))).toEqual(["チャット", "端末", "変更", "ファイル", "PR", "部品", "定期実行", "予約"]);
     expect(tabs[0].getAttribute("aria-selected")).toBe("true");
     expect(screen.getByTestId("chat-pane").hasAttribute("hidden")).toBe(false);
     expect(screen.getByTestId("terminal-stub").parentElement?.hasAttribute("hidden")).toBe(true);
@@ -538,7 +592,137 @@ describe("ConsolePage 部品 tab (K3, §3-8)", () => {
     expect(stub.getAttribute("data-max")).toBe(String(5 * 1024 * 1024));
     fireEvent.click(within(stub).getByText("stub-notice"));
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("画像を貼れませんでした");
-    expect(alert.textContent).toContain("画像が大きすぎます（1枚 5 MB まで）");
+    expect(alert.textContent).toContain("ファイルを貼れませんでした");
+    expect(alert.textContent).toContain("ファイルが大きすぎます（1つ 5 MB まで）");
+  });
+});
+
+// ---- keep-login: 更新（サーバーの再起動）の後も画面が止まらない（K6・K7・K9・K10） ----
+describe("ConsolePage after the server restarts", () => {
+  const fire = (socket: FakeWebSocket | undefined, name: "onopen" | "onclose"): void => {
+    const handler = socket?.[name] as (() => void) | null | undefined;
+    act(() => handler?.());
+  };
+  const advance = async (ms: number): Promise<void> => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  };
+  /** 一覧が出た後に setTimeout だけ偽物にする（画面の読み込みは本物の時間で待つ） */
+  const withFakeTimers = async (run: () => Promise<void>): Promise<void> => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await run();
+    } finally {
+      vi.useRealTimers();
+    }
+  };
+
+  it("K6: refetches the state when /ws/events reconnects (version and commit become new)", async () => {
+    render(<ConsolePage />);
+    await screen.findByText("dead");
+    expect(screen.getByTestId("app-version").textContent).toContain("0.3.6");
+    fetchState.mockClear();
+    fetchState.mockResolvedValue({ ...state, appVersion: "0.4.0", commit: "1111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" });
+    await withFakeTimers(async () => {
+      fire(sockets[0], "onopen");
+      expect(fetchState).not.toHaveBeenCalled(); // 最初のつながりでは取り直さない
+      fire(sockets[0], "onclose");
+      await advance(1000);
+      expect(sockets).toHaveLength(2);
+      fire(sockets[1], "onopen");
+    });
+    await waitFor(() => expect(screen.getByTestId("app-version").textContent).toContain("0.4.0"));
+    expect(fetchState).toHaveBeenCalledOnce();
+    expect(screen.getByTestId("commit").textContent).toContain("1111111");
+  });
+
+  it("K7: after 3 connections in a row without onopen it calls fetchState; a 401 shows the login guide and stops reconnecting", async () => {
+    const { ApiError } = await import("../api");
+    render(<ConsolePage />);
+    await screen.findByText("dead");
+    fetchState.mockClear();
+    fetchState.mockRejectedValue(new ApiError("unauthorized", 401));
+    await withFakeTimers(async () => {
+      fire(sockets[0], "onclose");
+      await advance(1000);
+      fire(sockets[1], "onclose");
+      expect(fetchState).not.toHaveBeenCalled();
+      await advance(1000);
+      fire(sockets[2], "onclose");
+    });
+    expect((await screen.findByRole("alert")).textContent).toContain("ログインが必要です");
+    expect(fetchState).toHaveBeenCalledOnce();
+    expect(clearSessionToken).toHaveBeenCalledOnce();
+    const count = sockets.length;
+    await withFakeTimers(async () => {
+      await advance(5000);
+      fire(sockets[count - 1], "onclose");
+      await advance(5000);
+    });
+    expect(sockets).toHaveLength(count);
+  });
+
+  it.each([
+    ["500", () => Promise.reject(new Error("HTTP 500"))],
+    ["cannot connect", () => Promise.reject(new TypeError("Failed to fetch"))],
+  ])("K7: a non-401 failure (%s) keeps the screen and keeps reconnecting", async (_name, failure) => {
+    render(<ConsolePage />);
+    await screen.findByText("dead");
+    fetchState.mockClear();
+    fetchState.mockImplementation(failure);
+    await withFakeTimers(async () => {
+      fire(sockets[0], "onclose");
+      await advance(1000);
+      fire(sockets[1], "onclose");
+      await advance(1000);
+      fire(sockets[2], "onclose");
+      await advance(0);
+      await advance(1000);
+      expect(sockets).toHaveLength(4);
+    });
+    expect(fetchState).toHaveBeenCalledOnce();
+    expect(screen.getByText("dead")).toBeTruthy();
+    expect(screen.queryByText("ログインが必要です")).toBeNull();
+    expect(clearSessionToken).not.toHaveBeenCalled();
+  });
+
+  it("K9: shows a loading state (not a blank page) while the first state is loading", async () => {
+    fetchState.mockReturnValue(new Promise(() => undefined));
+    const { container } = render(<ConsolePage />);
+    expect(await screen.findByText("読み込み中")).toBeTruthy();
+    expect(container.textContent).not.toBe("");
+  });
+
+  it("K10: shows a reload banner when the refetched commit differs from the first one, and never reloads by itself", async () => {
+    const reload = vi.fn();
+    vi.stubGlobal("location", { ...window.location, reload });
+    render(<ConsolePage />);
+    await screen.findByText("dead");
+    expect(screen.queryByTestId("new-version")).toBeNull();
+    fetchState.mockResolvedValue({ ...state, commit: "2222222bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" });
+    await withFakeTimers(async () => {
+      fire(sockets[0], "onclose");
+      await advance(1000);
+      fire(sockets[1], "onopen");
+    });
+    const banner = await screen.findByTestId("new-version");
+    expect(banner.textContent).toContain("新しい版が入りました");
+    expect(reload).not.toHaveBeenCalled();
+    fireEvent.click(within(banner).getByRole("button", { name: "再読み込み" }));
+    expect(reload).toHaveBeenCalledOnce();
+    vi.unstubAllGlobals();
+  });
+
+  it("K10: no banner when the refetched commit is the same", async () => {
+    render(<ConsolePage />);
+    await screen.findByText("dead");
+    await withFakeTimers(async () => {
+      fire(sockets[0], "onclose");
+      await advance(1000);
+      fire(sockets[1], "onopen");
+    });
+    await waitFor(() => expect(fetchState).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId("new-version")).toBeNull();
   });
 });

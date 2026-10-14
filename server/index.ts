@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import path from "node:path";
-import { createAuth, DEV_PAIRING_TTL_MS } from "./auth.ts";
+import { createAuth, DEV_PAIRING_TTL_MS, isAuthPersistEnabled } from "./auth.ts";
 import { startActivity } from "./activity-start.ts";
 import { fetchClaudeVersion } from "./agents.ts";
 import { loadConfig } from "./config.ts";
@@ -62,7 +62,7 @@ async function main(): Promise<void> {
   assertSpawnHelperExecutable();
   const config = loadConfig();
   const { token, mode } = await resolveSecret(process.env);
-  const auth = createAuth(token, config.port);
+  const auth = createAuth(token, config.port, { sessionsFile: isAuthPersistEnabled(process.env) ? path.join(config.dataDir, "auth-sessions.json") : undefined });
   const sessions = new SessionManager(config);
   const hub = new Hub(config, sessions);
   const openSessions = new OpenSessionStore(config.dataDir);
