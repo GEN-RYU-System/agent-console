@@ -6,8 +6,8 @@
 
 ## R1 ファイルを読む口・表示
 - 任意のファイルを読む API は無い。中身を返すのは git の差分だけ（server/diff-routes.ts:29-38、server/diff.ts:56-81,115-125）。範囲はセッションの作業場所（server/workplace.ts:22-34 resolveWorkplace、realpath で照合）。未追跡ファイルは名前だけ。/tmp は見えない。
-- 差分の許可は「git が出した一覧と完全一致」（server/diff-routes.ts:14-21 matchFile）。
-- 上限の前例: server/config.ts:37 DEFAULT_DIFF_MAX_FILE_BYTES = 1 MiB、バイナリは numstat の "-"（server/diff.ts:49,99）。
+- 差分の許可は「git が出した一覧と完全一致」（server/diff-routes.ts:12-18 matchFile）。
+- 上限の前例: server/config.ts:37 DEFAULT_DIFF_MAX_FILE_BYTES = 1 MiB、バイナリは numstat の "-"（server/diff.ts:49、戻しは :117）。
 - 認証: /api/ 全体に server/http.ts:389 authenticate。Host 完全一致 server/auth.ts:158-160（http.ts:372）。Origin は非 GET のみ必須（http.ts:394-397）。新しい口は handleApi（http.ts:132-、並び 179-188）に足せば認証の内側に入る。
 
 ## R2 会話の中身の出所（SSOT）
@@ -15,7 +15,9 @@
 - hook はファイルへ直書き（hooks/activity-hook.mjs:171-201 appendRecord → dataDir/activity/events-YYYYMMDD.jsonl、1 行 64KiB まで）。server は 2 秒ごとに読む（server/activity-start.ts:10,40）。
 - 記録に残す項目は決め打ち。「transcript のパスなどは残さない」（hooks/activity-hook.mjs:113-114）。cwd も残さない。
 - PostToolUse は Agent だけ記録（hooks/activity-hook.mjs:99-107）。登録 matcher も "Agent"（server/activity-hooks.ts:24-34 HOOK_SPECS）。Write/Edit は今は記録されていない。
-- 起動時の復元は「今日と昨日」の 2 ファイルだけ（server/activity.ts:227-239 readNew、229 行）。古い日付のファイルは keepDays（既定 7、server/config.ts:46）を過ぎると消す（server/activity.ts:433-451 pruneOldFiles）。
+- install（server/activity-hooks.ts:90-118 addHandlers）は、自分の handler が入った group があり handler の中身が同じなら何もしない。group の matcher は比べない。check（:161-168 findHandler）も matcher を見ない（Opus が実物で確認）。
+- 短い項目は clip（hooks/activity-hook.mjs:26-30）で制御文字と連続する空白を 1 つにまとめる。
+- 起動時の復元は「今日と昨日」の 2 ファイルだけ（server/activity.ts:227-239 readNew、229 行）。古い日付のファイルは keepDays（既定 7、server/config.ts:46）を過ぎると消す（server/activity.ts:434-451 pruneOldFiles）。
 
 ## R3 セッションの持つ情報
 - server/sessions.ts:59-77 Session（id, name, roleId, branch, cwd, createdAt, term, …, claudeSessionId?）。claudeSessionId は UUID 形だけ（sessions.ts:25-30）、hub.ts:409-410 で claude agents --json と pid で突き合わせて控える。
@@ -38,7 +40,7 @@
 - 中央のタブ: src/pages/ConsolePage.tsx:55 CenterTab（chat|terminal|changes|pr|picks|routines）、items :393-407、描画 :428-466。文言 src/locales/ja.json:204-211 ac.tabs.*（ja のみ、src/i18n.ts）。
 - Markdown 部品は src/components/ChatPane/ChatMarkdown.tsx（38 行。skipHtml、defaultUrlTransform、a は別タブ、img は alt 文字）。見た目は ChatPane.css:79- の .ac-chat__md。使うのは ChatPane.tsx:12,159 だけ。
 - アプリ独自のトークンは src/tokens.app.css（--ac- のみ）。SA 部品は @sa/…（.sa-cache、scripts/sa-sync.mjs）。SA にファイル表示・Markdown の部品は無い（r2/q5-sa-components.txt）。
-- 生要素の検査は src/pages/ 配下の .tsx（scripts/check-design-governance.mjs:164）。
+- 生要素の検査は src/pages/ 配下の .tsx（scripts/check-design-governance.mjs:165-166）。
 
 ## R7 試験・CI
 - 単体・統合 tests/unit/*.test.ts（HTTP は tests/unit/helpers/harness.ts startHarness）。画面は src/**/*.test.tsx。e2e は tests/e2e/*.spec.ts（chat.spec.ts は本物の hook に JSON を流す）。
