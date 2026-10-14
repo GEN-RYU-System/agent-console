@@ -20,7 +20,7 @@ import { handlePr } from "./pr-routes.ts";
 import type { PickerAccess } from "./picker-extension.ts";
 import { handlePickIngest, handlePicks } from "./picks-routes.ts";
 import type { PickStore } from "./picks.ts";
-import { handleUploads } from "./uploads-routes.ts";
+import { handleUploadFiles, handleUploads } from "./uploads-routes.ts";
 import type { UploadStore } from "./uploads.ts";
 import { listResumeTargets, resolveResumeTarget } from "./resume-targets.ts";
 import type { QuickPromptStore } from "./quick-prompts.ts";
@@ -195,6 +195,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   if (await handleAccount(deps, req, res, url)) return;
   if (await handleChat(deps, req, res, url)) return;
   if (await handleUploads(deps, req, res, url)) return;
+  if (await handleUploadFiles(deps, req, res, url)) return;
   if (await handleDailyUse(deps, req, res, url)) return;
   const removeMatch = /^\/api\/sessions\/([^/]+)$/.exec(url.pathname);
   if (req.method === "DELETE" && removeMatch) {
