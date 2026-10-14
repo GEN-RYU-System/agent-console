@@ -538,7 +538,7 @@ describe("ConsolePage 部品 tab (K3, §3-8)", () => {
     expect(stub.getAttribute("data-max")).toBe(String(5 * 1024 * 1024));
     fireEvent.click(within(stub).getByText("stub-notice"));
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("画像を貼れませんでした");
-    expect(alert.textContent).toContain("画像が大きすぎます（1枚 5 MB まで）");
+    expect(alert.textContent).toContain("ファイルを貼れませんでした");
+    expect(alert.textContent).toContain("ファイルが大きすぎます（1つ 5 MB まで）");
   });
 });

@@ -104,9 +104,9 @@ export interface Config {
   claudeSettingsPath: string;
   /** マウスのホイールでスクロールするときのなめらかさ（ms）。0 で無し */
   terminalSmoothScrollMs: number;
-  /** 端末に貼る画像 1 枚の上限（byte） */
+  /** 端末に貼る画像・ファイル 1 つの上限（byte） */
   uploadMaxBytes: number;
-  /** 貼った画像を残す枚数。超えたら古い順に消す */
+  /** 貼った画像・ファイルを残す数（画像とファイルは別に数える）。超えたら古い順に消す */
   uploadMaxKeep: number;
 }
 
