@@ -36,6 +36,50 @@ const stop = (agentId: string, over: Rec = {}): Rec => rec({ event: "SubagentSto
 
 const start = (agentId: string, over: Rec = {}): Rec => rec({ event: "SubagentStart", agent_id: agentId, agent_type: "general-purpose", ...over });
 
+const denied = (id: string, over: Rec = {}): Rec => rec({ event: "PermissionDenied", tool: "Agent", tool_use_id: id, ...over });
+
+describe("v0.36.0: 安全判定に止められた Agent の呼び出しは動作中から外す", () => {
+  it("P3: pre → PermissionDenied（同じ tool_use_id）で running が 0、runningCount も 0", async () => {
+    write([pre("t1", { ts: T0 })]);
+    await store.refresh();
+    expect(store.view(SID).running).toHaveLength(1);
+    write([denied("t1", { ts: T0 + 1000 })]);
+    await store.refresh();
+    expect(store.view(SID).running).toHaveLength(0);
+    expect(store.runningCount(SID)).toBe(0);
+  });
+
+  it("P4: 別の tool_use_id の PermissionDenied では running は減らない", async () => {
+    write([pre("t1", { ts: T0 }), denied("other", { ts: T0 + 1000 })]);
+    await store.refresh();
+    expect(store.view(SID).running.map((a) => a.description)).toEqual(["仕事 t1"]);
+  });
+
+  it("P5: PermissionDenied の行を jsonl から読み直しても（新しい store）同じ結果になる", async () => {
+    write([pre("t1", { ts: T0 }), denied("t1", { ts: T0 + 1000 })]);
+    const again = new ActivityStore(dataDir, { keepDays: 7, now: () => nowMs });
+    await again.refresh();
+    expect(again.view(SID).running).toHaveLength(0);
+    expect(again.invalidLines).toBe(0);
+  });
+
+  it("P6: PermissionDenied → pre（逆の順）でも running は 0", async () => {
+    write([denied("t1", { ts: T0 + 1000 }), pre("t1", { ts: T0 })]);
+    await store.refresh();
+    expect(store.view(SID).running).toHaveLength(0);
+  });
+
+  it("P7: 拒否の記憶が上限（400）を1件超えると、最初に拒否した id の pre は running に出る", async () => {
+    const lines: Rec[] = [];
+    for (let i = 0; i <= 400; i += 1) lines.push(denied(`d${i}`, { ts: T0 + i }));
+    write(lines);
+    await store.refresh();
+    write([pre("d0", { ts: T0 + 5000 }), pre("d400", { ts: T0 + 5001 })]);
+    await store.refresh();
+    expect(store.view(SID).running.map((a) => a.key)).toEqual(["d0"]);
+  });
+});
+
 describe("K2 / §3-1: 動いている担当の結び方", () => {
   it("呼ぶと動いている。報告と停止が戻ると外れる（終わった担当の一覧は持たない）", async () => {
     write([pre("t1", { ts: T0 }), post("t1", "A", { ts: T0 + 1000 })]);

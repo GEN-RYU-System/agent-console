@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { Hub } from "../../server/hub.ts";
-import { ROUTINES_FILE, RoutineService, RoutineStore, jstSlot, type Routine } from "../../server/routines.ts";
+import { RETRACK_MAX_AGE_MS, ROUTINES_FILE, RoutineService, RoutineStore, jstSlot, type Routine } from "../../server/routines.ts";
 
 const routine = (overrides: Partial<Routine> = {}): Routine => ({ id: "r1", name: "daily", enabled: true, roleId: "echo", cwd: "/tmp", timeZone: "Asia/Tokyo", weekdays: [1], timeHHmm: "09:00", promptText: "hello", createdAt: 1, updatedAt: 1, events: [], ...overrides });
 
@@ -314,5 +314,85 @@ describe("closeWhenIdle (v0.30.0)", () => {
     const { service } = await setup();
     await service.recordClose("r1", { outcome: "closed", slot: "x", sessionId: "s9", summary: "done" });
     expect(service.list()[0].events.at(-1)).toMatchObject({ outcome: "closed", sessionId: "s9", summary: "done" });
+  });
+});
+
+describe("retrack (v0.36.0)", () => {
+  const NOW = 1_800_000_000_000;
+  const ev = (o: Partial<Routine["events"][number]> = {}): Routine["events"][number] => ({ at: NOW - 1000, slot: "sl", outcome: "sent", sessionName: "sess-a", sessionId: "s1", ...o });
+  const prep = async (routineOver: Partial<Routine>, withCloser = true) => {
+    const { service } = await setup({ routines: [routineOver] });
+    const tracked: unknown[] = [];
+    if (withCloser) service.setCloser({ track: (t: unknown) => tracked.push(t) } as never);
+    return { service, tracked };
+  };
+
+  it("R1: puts a sent, recent session back under watch, with sentAt = event.at", async () => {
+    const { service, tracked } = await prep({ closeWhenIdle: true, events: [ev()] });
+    expect(service.retrack(NOW)).toEqual(["sess-a"]);
+    expect(tracked).toHaveLength(1);
+    expect(tracked[0]).toMatchObject({ routineId: "r1", slot: "sl", sessionId: "s1", sessionName: "sess-a", sentAt: NOW - 1000 });
+  });
+
+  it("R1b: passes exactly routineId, slot, sessionId, sessionName and sentAt to track (no createdBy for a non-agent routine)", async () => {
+    const track = vi.fn();
+    const { service } = await setup({ routines: [{ closeWhenIdle: true, events: [ev()] }] });
+    service.setCloser({ track } as never);
+    service.retrack(NOW);
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith({ routineId: "r1", slot: "sl", sessionId: "s1", sessionName: "sess-a", sentAt: NOW - 1000 });
+  });
+
+  it("R1c: passes createdBy 'agent' to track when the routine was created by an agent", async () => {
+    const track = vi.fn();
+    const { service } = await setup({ routines: [{ closeWhenIdle: true, createdBy: "agent", events: [ev()] }] });
+    service.setCloser({ track } as never);
+    service.retrack(NOW);
+    expect(track).toHaveBeenCalledWith({ routineId: "r1", createdBy: "agent", slot: "sl", sessionId: "s1", sessionName: "sess-a", sentAt: NOW - 1000 });
+  });
+
+  it("R1d: without a sessionName, track gets no sessionName and retrack returns the sessionId", async () => {
+    const track = vi.fn();
+    const { service } = await setup({ routines: [{ closeWhenIdle: true, events: [ev({ sessionName: undefined })] }] });
+    service.setCloser({ track } as never);
+    expect(service.retrack(NOW)).toEqual(["s1"]);
+    expect(track).toHaveBeenCalledWith({ routineId: "r1", slot: "sl", sessionId: "s1", sentAt: NOW - 1000 });
+  });
+
+  it("R2: does not put back a session whose latest event is closed or kept", async () => {
+    for (const outcome of ["closed", "kept"] as const) {
+      const { service, tracked } = await prep({ closeWhenIdle: true, events: [ev(), ev({ at: NOW - 500, outcome })] });
+      expect(service.retrack(NOW)).toEqual([]);
+      expect(tracked).toHaveLength(0);
+    }
+  });
+
+  it("R3: does nothing when closeWhenIdle is false or unset", async () => {
+    const { service, tracked } = await prep({ events: [ev()] });
+    expect(service.retrack(NOW)).toEqual([]);
+    expect(tracked).toHaveLength(0);
+    const off = await prep({ closeWhenIdle: false, events: [ev()] });
+    expect(off.service.retrack(NOW)).toEqual([]);
+    expect(off.tracked).toHaveLength(0);
+  });
+
+  it("R4: ignores events without a sessionId (e.g. not_ready)", async () => {
+    const { service, tracked } = await prep({ closeWhenIdle: true, events: [ev({ sessionId: undefined, outcome: "not_ready" }), ev({ sessionId: undefined })] });
+    expect(service.retrack(NOW)).toEqual([]);
+    expect(tracked).toHaveLength(0);
+  });
+
+  it("R5: returns an empty array when there is no closer", async () => {
+    const { service } = await prep({ closeWhenIdle: true, events: [ev()] }, false);
+    expect(service.retrack(NOW)).toEqual([]);
+  });
+
+  it("R6: does not put back a session sent more than 24 hours ago; exactly 24 hours is put back", async () => {
+    const old = await prep({ closeWhenIdle: true, events: [ev({ at: NOW - RETRACK_MAX_AGE_MS - 1 })] });
+    expect(old.service.retrack(NOW)).toEqual([]);
+    expect(old.tracked).toHaveLength(0);
+    const edge = await prep({ closeWhenIdle: true, events: [ev({ at: NOW - RETRACK_MAX_AGE_MS })] });
+    expect(edge.service.retrack(NOW)).toEqual(["sess-a"]);
+    expect(edge.tracked).toHaveLength(1);
   });
 });

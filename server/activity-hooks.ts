@@ -42,7 +42,7 @@ export interface HookSpec {
 }
 
 /**
- * 記録する 9 つのイベント（＋ ac-routine の guard 6 本・board-guard 1 本、計 16 本の handler）。Notification は使わない（状態は claude agents --json が正本）。
+ * 記録する 10 のイベント（＋ ac-routine の guard 6 本・board-guard 1 本、計 17 本の handler）。Notification は使わない（状態は claude agents --json が正本）。
  * Stop（返事）と StopFailure（API エラー）はチャット画面の会話の記録のため（v0.11.0）。状態の判定には使わない。
  * SubagentStart は担当の呼び出しと再開の印（v0.12.0 作戦ボード）。再開した担当を「動いている担当」に戻すために使う。
  */
@@ -56,6 +56,8 @@ export const HOOK_SPECS: readonly HookSpec[] = [
   { event: "Stop" },
   { event: "StopFailure" },
   { event: "SubagentStart" },
+  // auto mode に拒否された担当の呼び出しを「動作中」から外すため（v0.36.0。拒否には PostToolUse も SubagentStop も来ない）
+  { event: "PermissionDenied", matcher: "Agent" },
   // ac-routine と、その合言葉・宛先を、サブエージェントから触らせない同期の guard（v0.25.0。v0.30.0 で 6 本に増やした。設計 ac-hardening §3-2）。async を付けると拒否できない。
   // `if` は 1 つの規則しか書けない（recon B7）ので、規則ごとに handler を分ける。第0段 U5: `if` は Bash と Read で効き、Grep と Glob では効かない（Grep・Glob は対象外）。
   ...GUARD_IFS.map((rule): HookSpec => ({ event: "PreToolUse", matcher: rule.startsWith("Read(") ? "Read" : "Bash", file: GUARD_HOOK_FILE, async: false, timeout: 5, if: rule })),
@@ -149,7 +151,7 @@ function withMatcher(group: Json, spec: HookSpec): Json {
 }
 
 /**
- * HOOK_SPECS のすべて（記録用 9 つ＋ guard 2 本）に自分の handler を足した新しい設定を返す。すでにあれば足さない。内容が違えば（node のパス変更など）その場で直す。
+ * HOOK_SPECS のすべて（記録用 10 個＋ guard 6 本＋ board-guard 1 本）に自分の handler を足した新しい設定を返す。すでにあれば足さない。内容が違えば（node のパス変更など）その場で直す。
  * その spec の handler（isHandlerOf）がある group の matcher が spec と違う時（file-viewer 設計 §3-2・§16。判定は spec ごと。他の spec の handler、たとえば guard の group には触れない）:
  * 自分の handler だけの group は matcher を書き換え、他の handler と同居する group からはその spec の分だけ抜いて、spec の matcher の新しい group を末尾に足す。
  */
@@ -267,7 +269,7 @@ export interface CheckInput {
   hookPath: string;
 }
 
-/** 設定ファイルを読むだけ（書かない）。全 handler（記録用 9 つ＋ guard 2 本）・node・hook のファイルがそろっているか */
+/** 設定ファイルを読むだけ（書かない）。全 handler（記録用 10 個＋ guard 6 本＋ board-guard 1 本）・node・hook のファイルがそろっているか */
 export function checkHooks(input: CheckInput): HookCheck {
   let raw: string;
   try {

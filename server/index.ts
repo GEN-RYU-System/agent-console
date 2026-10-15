@@ -106,7 +106,8 @@ async function main(): Promise<void> {
     hub.start();
     // 切戻しで退避された保存リストと routine を、つなぎ直しと routine の読込より先に元へ戻す（復元が有効な本番のポートのみ）
     const heldRestored = isRestoreEnabled(process.env) ? restoreHeldFiles(config.dataDir) : Promise.resolve(0);
-    void heldRestored.then(() => routines.start()).catch((err) => console.error("routines failed:", err));
+    const routinesStarted = heldRestored.then(() => routines.start());
+    void routinesStarted.catch((err) => console.error("routines failed:", err));
     if (mode === "fixed") console.warn("agent-console: 警告: AGENT_CONSOLE_TOKEN で固定したトークンを使用中です（テスト用途のみ）");
     if (mode === "keychain") {
       // 本番（起動アプリ経由）。秘密・セッション・コードはログに出さない
@@ -120,6 +121,8 @@ async function main(): Promise<void> {
     const restored = heldRestored.then(() => startOpenSessionRestore(process.env, { config, sessions, hub, store: openSessions, recorder })).catch((err) => console.error("restore failed:", err));
     // 予約の時計は復元の完了を待ってから動かす（復元が先に席を取れるように）。復元の成否・無効に関わらず始まる
     void reservations.start(restored).catch((err) => console.error("reservations failed:", err));
+    // 復元のあとで見張りに戻す（復元より前だと session が無く、すぐ外される）。失敗はログだけ
+    void Promise.all([routinesStarted, restored]).then(() => { const names = routines.retrack(); console.log(`[routines] retrack ${names.length}: ${names.join(", ")}`); }).catch((e) => console.error("[routines] retrack failed", e));
   });
 
   const shutdown = (): void => {

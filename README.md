@@ -51,12 +51,12 @@ node "<dataDir>/bin/ac-routine.mjs" disable <id> < reason.json
 - **担当が動いている間は書き込みを止める（第1層）**: 呼び出した会話で担当（サブエージェント）が running のとき、add / update / enable / disable は 403 になる（list は通る）。担当が終われば通る。
 - **承認で通す**: 止まったら、Opus は `node "<dataDir>/bin/ac-routine.mjs" approve --reason <理由>`（理由 1〜200 字）で、次の書き込み 1 回だけを通す一時承認（10 分・1 回限り）を出す。画面からは、右の「作戦ボード」タブの「ルーティンの変更を 1 回承認する」ボタン（30 分・1 回限り、残り時間を表示）。承認は 1 セッション 1 件で、後から出した方が上書きする。承認は次の書き込み 1 回で（担当がいなくても）消える。発行と使用は `routine-audit.jsonl` に残る（approvalIssued、approvedBy）。担当からの `approve` は guard が拒否する。
 - **guard の強化（第2層）**: 担当（`agent_id` あり）の Bash が ac-routine の実行・reserve-token・`Application Support/agent-console` に触れる、または 127.0.0.1 / localhost の routines 系の API を叩く場合と、Read が `Application Support/agent-console` を読む場合を拒否する。hook は 6 規則に分けた `if` 付きで 15 本になる。Grep と Glob は `if` が効かないため対象外。
-- **自動クローズ（`closeWhenIdle`、既定 false）**: 定期実行の入力欄「終わったら自動で閉じる」（`ac-routine` の routine.json にも `closeWhenIdle: true` を書ける）。指示を送ったあとから数え、idle が連続して累計 10 分で閉じる。busy / waiting / 不明 / 取得失敗 / 担当が動いている間は 0 からやり直す。waiting のまま 60 分で「閉じずに残した」を 1 回だけ記録する。最後の返答に `NEEDS_DECISION:` か `BLOCKED:` があるとき、返答が 1 件も無いときは閉じずに残す（kept）。閉じたときは返答の先頭 500 字を履歴に残す。closed / kept は監査にも 1 行ずつ残る（token と指示文は書かない）。
+- **自動クローズ（`closeWhenIdle`、既定 false）**: 定期実行の入力欄「終わったら自動で閉じる」（`ac-routine` の routine.json にも `closeWhenIdle: true` を書ける）。指示を送ったあとから数え、idle が連続して累計 10 分で閉じる。busy / waiting / 不明 / 取得失敗 / 担当が動いている間は 0 からやり直す。waiting のまま 60 分で「閉じずに残した」を 1 回だけ記録する。最後の返答に `NEEDS_DECISION:` か `BLOCKED:` があるとき、返答が 1 件も無いときは閉じずに残す（kept）。閉じたときは返答の先頭 500 字を履歴に残す。closed / kept は監査にも 1 行ずつ残る（token と指示文は書かない）。再起動しても、送ってから24時間以内で閉じていないセッションは見張りに戻る（v0.36.0）。
 
 #### 限界（この強化で防げないこと）
 
 - 防げるのは「担当が running の間に会話が書き込む」ことと、担当が guard の対象の道具で ac-routine・reserve-token に触れることまで。設計 §1 の表の (d2)（guard の対象外の道具・間接的な呼び出し）、(e)（担当が起動していない経路）、(h)（Opus 自身が承認して通す正規の経路）は残る。R3（hook の取りこぼし）も残る。
-- 第0段の実測（U2）: 担当が動いている最中に中断（SIGINT）や親の終了（SIGTERM）が起きると、SubagentStop も Stop も来ず、running は 24 時間の上限まで残る。その間の書き込みは 403 のままだが、Opus の承認（approve）で越えられる。
+- 第0段の実測（U2）: 担当が動いている最中に中断（SIGINT）や親の終了（SIGTERM）が起きると、SubagentStop も Stop も来ず、running は 24 時間の上限まで残る。その間の書き込みは 403 のままだが、Opus の承認（approve）で越えられる。auto mode に拒否された担当の呼び出しは、すぐ動作中から外れる（v0.36.0。更新後に ac-hooks install を1回）。
 - 導入後に `node scripts/ac-hooks.mjs install` をもう一度実行する（guard の `if` を 6 規則に分けて足す。実行するまで第2層は効かない）。
 - 自動クローズの idle 判定は `claude agents --json` の定期取得（`agentsPollMs`）の標本で数える。取得が続けて失敗すると閉じない。
 - 標本の間が gapLimitMs（既定 60 秒）を超えたとき（Mac のスリープなど）も、取得失敗と同じく 0 から数え直す（v0.35.0）。
@@ -67,7 +67,7 @@ node "<dataDir>/bin/ac-routine.mjs" disable <id> < reason.json
 
 ### 入れる（1 回だけ・実行する人が自分で）
 
-アプリは Claude の設定を書き換えません。次を実行すると、`~/.claude/settings.json` に記録用の hook（9 つのイベント。v0.11.0 で Stop と StopFailure、v0.12.0 で SubagentStart が増えました）と、ac-routine のサブエージェント拒否 hook（v0.25.0、v0.33.0 で 6 規則に分割）、作戦ボードの書き忘れ防止 hook（board-guard、v0.32.0、計 16 本）を足します。足す前に控え `settings.json.ac-backup-<日時>` を作り（新しい 6 つだけ残します。1 回の install で控えが 2 つ作られます: hooks の段と statusLine の段）、足すのは自分の hook だけです。足りないイベントを足し、自分の hook の matcher（どの道具のときに動くか）が古ければ直します。2 回実行しても増えません。
+アプリは Claude の設定を書き換えません。次を実行すると、`~/.claude/settings.json` に記録用の hook（10 のイベント。v0.11.0 で Stop と StopFailure、v0.12.0 で SubagentStart、v0.36.0 で PermissionDenied が増えました）と、ac-routine のサブエージェント拒否 hook（v0.25.0、v0.33.0 で 6 規則に分割）、作戦ボードの書き忘れ防止 hook（board-guard、v0.32.0、計 17 本）を足します。足す前に控え `settings.json.ac-backup-<日時>` を作り（新しい 6 つだけ残します。1 回の install で控えが 2 つ作られます: hooks の段と statusLine の段）、足すのは自分の hook だけです。足りないイベントを足し、自分の hook の matcher（どの道具のときに動くか）が古ければ直します。2 回実行しても増えません。
 
 ```
 node scripts/ac-hooks.mjs install      # 足す（hook の本体を dataDir/hooks/ に置いてから、設定に足す）
