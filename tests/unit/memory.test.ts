@@ -6,8 +6,8 @@ describe("parsePsOutput with rss", () => {
   const ps = "  1     0  8448\n 10     1  2048\n 11    10  1024\n 12    11  512\n 20     1  4096\nbad line\n 30 1\n";
   it("reads rss in KB and treats a missing column as 0", () => {
     const rows = parsePsOutput(ps);
-    expect(rows.find((r) => r.pid === 10)).toEqual({ pid: 10, ppid: 1, rssKb: 2048 });
-    expect(rows.find((r) => r.pid === 30)).toEqual({ pid: 30, ppid: 1, rssKb: 0 });
+    expect(rows.find((r) => r.pid === 10)).toEqual({ pid: 10, ppid: 1, rssKb: 2048, cpu: 0 });
+    expect(rows.find((r) => r.pid === 30)).toEqual({ pid: 30, ppid: 1, rssKb: 0, cpu: 0 });
     expect(rows).toHaveLength(6);
   });
   it("sums the RSS of the root and every descendant", () => {
@@ -28,9 +28,9 @@ describe("sessionMemory", () => {
       rows,
     );
     expect(out).toEqual([
-      { id: "a", name: "A", rssMb: 3 },
-      { id: "b", name: "B", rssMb: 4 },
-      { id: "c", name: "C", rssMb: 0 },
+      { id: "a", name: "A", rssMb: 3, cpuPercent: 0, ramPercent: null },
+      { id: "b", name: "B", rssMb: 4, cpuPercent: 0, ramPercent: null },
+      { id: "c", name: "C", rssMb: 0, cpuPercent: 0, ramPercent: null },
     ]);
   });
 });

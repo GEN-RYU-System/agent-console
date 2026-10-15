@@ -1,0 +1,13 @@
+
+ RUN  v5.0.3 /Users/tanizawashingo/agent-console-wt/pc-meter
+
+
+ Test Files  3 passed (3)
+      Tests  37 passed (37)
+   Start at  15:45:30
+   Duration  3.68s (transform 59%, tests 22%, import 12%, worker 6%)
+
+  Transform  transforming modules took 3.27s · 59% of tracked time, re-done on every run
+             persist transforms across runs with fsModuleCache: true
+             learn more: https://vitest.dev/guide/improving-performance#caching-between-reruns
+

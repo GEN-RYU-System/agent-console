@@ -8,14 +8,16 @@ export interface PsRow {
   ppid: number;
   /** resident set size（KB。`man ps`: 1024 byte 単位）。列が無い出力では 0 */
   rssKb: number;
+  /** ps の %cpu（`man ps`: 直近約 1 分の減衰平均。1 コアで 100）。列が無い出力では 0 */
+  cpu: number;
 }
 
-/** `ps -axo pid=,ppid=,rss=`（rss は省略可）の出力を解析する。解釈できない行は捨てる。 */
+/** `ps -axo pid=,ppid=,rss=,%cpu=`（rss・%cpu は省略可）の出力を解析する。解釈できない行は捨てる。 */
 export function parsePsOutput(text: string): PsRow[] {
   const rows: PsRow[] = [];
   for (const line of text.split("\n")) {
-    const m = /^\s*(\d+)\s+(\d+)(?:\s+(\d+))?\s*$/.exec(line);
-    if (m) rows.push({ pid: Number(m[1]), ppid: Number(m[2]), rssKb: m[3] === undefined ? 0 : Number(m[3]) });
+    const m = /^\s*(\d+)\s+(\d+)(?:\s+(\d+)(?:\s+(\d+(?:\.\d+)?))?)?\s*$/.exec(line);
+    if (m) rows.push({ pid: Number(m[1]), ppid: Number(m[2]), rssKb: m[3] === undefined ? 0 : Number(m[3]), cpu: m[4] === undefined ? 0 : Number(m[4]) });
   }
   return rows;
 }
@@ -24,6 +26,13 @@ export function parsePsOutput(text: string): PsRow[] {
 export function sumRssKb(pids: ReadonlySet<number>, rows: PsRow[]): number {
   let total = 0;
   for (const r of rows) if (pids.has(r.pid)) total += r.rssKb;
+  return total;
+}
+
+/** 指定した pid 群の %cpu 合計（1 コアを 100 とした値の和）。 */
+export function sumCpu(pids: ReadonlySet<number>, rows: PsRow[]): number {
+  let total = 0;
+  for (const r of rows) if (pids.has(r.pid)) total += r.cpu;
   return total;
 }
 
@@ -51,6 +60,6 @@ export function descendantPids(root: number, rows: PsRow[]): Set<number> {
 }
 
 export async function readProcessTable(): Promise<PsRow[]> {
-  const { stdout } = await execFileAsync("ps", ["-axo", "pid=,ppid=,rss="], { maxBuffer: 8 * 1024 * 1024 });
+  const { stdout } = await execFileAsync("ps", ["-axo", "pid=,ppid=,rss=,%cpu="], { maxBuffer: 8 * 1024 * 1024 });
   return parsePsOutput(stdout);
 }

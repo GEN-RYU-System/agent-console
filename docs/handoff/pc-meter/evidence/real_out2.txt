@@ -1,0 +1,5 @@
+{"system":{"totalMb":8192,"freePercent":30,"usedPercent":70,"cpuPercent":null,"diskUsedPercent":93.8,"diskTotalGb":228.3},"s":{"id":"x","name":"x","rssMb":94.7,"cpuPercent":8.2,"ramPercent":1.2}}
+{"system":{"totalMb":8192,"freePercent":29,"usedPercent":71,"cpuPercent":98.6,"diskUsedPercent":93.8,"diskTotalGb":228.3},"s":{"id":"x","name":"x","rssMb":72.9,"cpuPercent":0.2,"ramPercent":0.9}}
+{"system":{"totalMb":8192,"freePercent":29,"usedPercent":71,"cpuPercent":99.2,"diskUsedPercent":93.8,"diskTotalGb":228.3},"s":{"id":"x","name":"x","rssMb":55,"cpuPercent":0,"ramPercent":0.7}}
+{"system":{"totalMb":8192,"freePercent":30,"usedPercent":70,"cpuPercent":99.9,"diskUsedPercent":93.8,"diskTotalGb":228.3},"s":{"id":"x","name":"x","rssMb":26,"cpuPercent":0,"ramPercent":0.3}}
+durations ms 56,57,81,107,112,113,130,136,140,150,158,171,174,204,209,210,211,215,234,298 median 158

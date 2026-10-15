@@ -190,6 +190,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     pasteSubmitDelayMs: options.pasteSubmitDelayMs ?? DEFAULT_PASTE_SUBMIT_DELAY_MS,
     ghBin: options.ghBin ?? DEFAULT_GH_BIN,
     prPollMs: DEFAULT_PR_POLL_MS,
+    metricsPollMs: 60000,
     prRefreshMinMs: options.prRefreshMinMs ?? DEFAULT_PR_REFRESH_MIN_MS,
     pickMaxKeep: options.pickMaxKeep ?? DEFAULT_PICK_MAX_KEEP,
     pickSendMaxBytes: options.pickSendMaxBytes ?? DEFAULT_PICK_SEND_MAX_BYTES,

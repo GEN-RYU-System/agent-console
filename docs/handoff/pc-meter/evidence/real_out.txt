@@ -1,0 +1,5 @@
+{"system":{"totalMb":8192,"freePercent":25,"usedPercent":75,"cpuPercent":null,"diskUsedPercent":94.9,"diskTotalGb":228.3},"s":{"id":"x","name":"x","rssMb":73.5,"cpuPercent":3,"ramPercent":0.9}}
+{"system":{"totalMb":8192,"freePercent":25,"usedPercent":75,"cpuPercent":98.5,"diskUsedPercent":94.9,"diskTotalGb":228.3},"s":{"id":"x","name":"x","rssMb":48.3,"cpuPercent":0.4,"ramPercent":0.6}}
+{"system":{"totalMb":8192,"freePercent":25,"usedPercent":75,"cpuPercent":99.3,"diskUsedPercent":94.9,"diskTotalGb":228.3},"s":{"id":"x","name":"x","rssMb":46.9,"cpuPercent":0,"ramPercent":0.6}}
+{"system":{"totalMb":8192,"freePercent":25,"usedPercent":75,"cpuPercent":93.1,"diskUsedPercent":94.9,"diskTotalGb":228.3},"s":{"id":"x","name":"x","rssMb":44.6,"cpuPercent":0,"ramPercent":0.5}}
+durations ms 210,278,302,325,340,346,409,417,435,464,496,501,558,605,624,631,705,713,911,1012 median 496
