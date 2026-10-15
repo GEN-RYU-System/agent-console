@@ -115,7 +115,7 @@ export function QuickPromptEditor({ prompts, onChanged, onTogglePinned, onUse, u
                 >
                   ↓
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => startEdit(p)}>
+                <Button variant="outline" size="sm" disabled={busy} onClick={() => startEdit(p)}>
                   {t("ac.quick.editItem")}
                 </Button>
                 <Button variant="danger" size="sm" disabled={busy} onClick={() => void run(() => deleteQuickPrompt(p.id))}>

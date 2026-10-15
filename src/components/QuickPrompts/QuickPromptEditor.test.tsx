@@ -45,6 +45,19 @@ describe("QuickPromptEditor", () => {
     expect(createQuickPrompt).not.toHaveBeenCalled();
   });
 
+  it("処理中（busy）は「編集」が押せない（保存の保留を解くと戻る）", async () => {
+    let release: (v: unknown) => void = () => {};
+    updateQuickPrompt.mockReturnValue(new Promise((resolve) => (release = resolve)));
+    render(<QuickPromptEditor prompts={prompts} onChanged={() => {}} />);
+    const edit = () => screen.getByRole("button", { name: "編集" }) as HTMLButtonElement;
+    expect(edit().disabled).toBe(false);
+    fireEvent.click(edit());
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(edit().disabled).toBe(true));
+    release({});
+    await waitFor(() => expect(edit().disabled).toBe(false));
+  });
+
   it("deletes a prompt", async () => {
     render(<QuickPromptEditor prompts={prompts} onChanged={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "削除" }));
