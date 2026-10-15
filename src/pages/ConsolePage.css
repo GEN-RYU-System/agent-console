@@ -84,12 +84,16 @@
   flex: 0 0 auto;
 }
 
-/* 1項目1行。横幅を最長の1項目分に抑え、左の空きを確保する */
+/* 横並び・折り返しあり・右寄せ。幅は MacMeter と同じ --ac-provider-w（高さを抑える） */
 .ac-page__footer-meta {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  column-gap: var(--space-2);
+  row-gap: 0;
+  width: var(--ac-provider-w);
   color: var(--text-muted);
   opacity: var(--opacity-muted);
 }

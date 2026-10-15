@@ -135,9 +135,9 @@ export interface ResumeTarget {
 }
 
 export interface MemorySnapshot {
-  sessions: Array<{ id: string; name: string; rssMb: number }>;
+  sessions: Array<{ id: string; name: string; rssMb: number; cpuPercent?: number; ramPercent?: number | null }>;
   serverRssMb: number;
-  system: { totalMb: number; freePercent: number; usedPercent: number } | null;
+  system: { totalMb: number; freePercent: number; usedPercent: number; cpuPercent?: number | null; diskUsedPercent?: number | null; diskTotalGb?: number | null } | null;
 }
 
 /** 基準から変わったファイルの 1 行。untracked は git にまだ追加されていないファイル。 */

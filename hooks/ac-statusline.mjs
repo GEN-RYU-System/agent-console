@@ -10,6 +10,12 @@ import { fileURLToPath } from "node:url";
 
 export const USAGE_VERSION = 1;
 export const USAGE_FILE_NAME = "usage.json";
+export const SESSION_METRICS_VERSION = 1;
+export const SESSION_METRICS_FILE_NAME = "session-metrics.json";
+/** session-metrics.json の updatedAt がこれより古ければ、セッション行に値を出さない（サーバーが止まったときの古い値を見せない） */
+export const SESSION_METRICS_FRESH_MS = 30 * 1000;
+/** session_id の長さの上限（暴走した入力だけを止める） */
+const MAX_SESSION_ID_CHARS = 128;
 /** 標準入力の上限（byte）。statusLine の入力は数 KB。暴走した入力だけを止める */
 const MAX_INPUT_BYTES = 1024 * 1024;
 const FILE_MODE = 0o600;
@@ -59,12 +65,11 @@ export function formatLine(usage) {
   return parts.join(" · ");
 }
 
-/** dataDir/usage.json に書く（一時ファイル→600→rename。同時に書かれても、半分だけのファイルを読む人は出ない） */
-export function writeUsage(dataDir, usage, now = Date.now()) {
+/** dataDir/<fileName> に JSON を書く（一時ファイル→600→rename。同時に書かれても、半分だけのファイルを読む人は出ない） */
+function writeJsonAtomic(dataDir, fileName, body) {
   mkdirSync(dataDir, { recursive: true, mode: DIR_MODE });
-  const file = path.join(dataDir, USAGE_FILE_NAME);
+  const file = path.join(dataDir, fileName);
   const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-  const body = { version: USAGE_VERSION, observedAt: now, ...usage };
   let fd = null;
   try {
     fd = openSync(tmp, "wx", FILE_MODE);
@@ -79,6 +84,71 @@ export function writeUsage(dataDir, usage, now = Date.now()) {
     throw err;
   }
   return file;
+}
+
+/** dataDir/usage.json に書く */
+export function writeUsage(dataDir, usage, now = Date.now()) {
+  return writeJsonAtomic(dataDir, USAGE_FILE_NAME, { version: USAGE_VERSION, observedAt: now, ...usage });
+}
+
+/** 0〜100 の有限な数か（セッションの CPU・RAM の検査） */
+const isPercent = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= MAX_PERCENT;
+
+/**
+ * サーバーの定期計測（MemoryCollector）の写しを dataDir/session-metrics.json に書く。
+ * sessions は { "<claudeSessionId>": { cpuPercent, ramPercent } }。範囲外の値の項目は載せない（ramPercent は null も可）。
+ */
+export function writeSessionMetrics(dataDir, sessions, now = Date.now()) {
+  const out = {};
+  for (const [id, m] of Object.entries(sessions)) {
+    if (id === "" || id.length > MAX_SESSION_ID_CHARS || !isObject(m) || !isPercent(m.cpuPercent)) continue;
+    if (m.ramPercent !== null && !isPercent(m.ramPercent)) continue;
+    out[id] = { cpuPercent: m.cpuPercent, ramPercent: m.ramPercent };
+  }
+  return writeJsonAtomic(dataDir, SESSION_METRICS_FILE_NAME, { version: SESSION_METRICS_VERSION, updatedAt: now, sessions: out });
+}
+
+/** dataDir/session-metrics.json から session_id の項目を引く。無い・壊れた・古い（30 秒超）・未来のときは null */
+export function readSessionMetrics(dataDir, sessionId, now = Date.now()) {
+  if (typeof sessionId !== "string" || sessionId === "" || sessionId.length > MAX_SESSION_ID_CHARS) return null;
+  let raw;
+  try {
+    raw = JSON.parse(readFileSync(path.join(dataDir, SESSION_METRICS_FILE_NAME), "utf8"));
+  } catch {
+    return null;
+  }
+  if (!isObject(raw) || raw.version !== SESSION_METRICS_VERSION || typeof raw.updatedAt !== "number" || !Number.isFinite(raw.updatedAt)) return null;
+  const age = now - raw.updatedAt;
+  if (age < 0 || age > SESSION_METRICS_FRESH_MS) return null;
+  if (!isObject(raw.sessions) || !Object.prototype.hasOwnProperty.call(raw.sessions, sessionId)) return null;
+  const m = raw.sessions[sessionId];
+  if (!isObject(m) || !isPercent(m.cpuPercent)) return null;
+  if (m.ramPercent !== null && !isPercent(m.ramPercent)) return null;
+  return { cpuPercent: m.cpuPercent, ramPercent: m.ramPercent };
+}
+
+/** セッション行に足す文字列。「 · CPU N% · RAM M%」（先頭に区切りを含む）。ramPercent が null なら CPU だけ。metrics が null なら空 */
+export function formatMetrics(metrics) {
+  if (metrics === null || metrics === undefined) return "";
+  const parts = [` · CPU ${Math.round(metrics.cpuPercent)}%`];
+  if (metrics.ramPercent !== null) parts.push(` · RAM ${Math.round(metrics.ramPercent)}%`);
+  return parts.join("");
+}
+
+/**
+ * --metrics モードの本体。標準入力の session_id で session-metrics.json を引き、セッション行に足す文字列を返す（改行なし）。
+ * 何があっても例外を投げず、出せないときは空文字列。何も書かない。
+ */
+export function runMetrics({ stdinText, dataDir, now = Date.now() }) {
+  if (typeof stdinText !== "string" || Buffer.byteLength(stdinText, "utf8") > MAX_INPUT_BYTES) return { code: 0, stdout: "" };
+  let parsed;
+  try {
+    parsed = JSON.parse(stdinText);
+  } catch {
+    return { code: 0, stdout: "" };
+  }
+  if (!isObject(parsed)) return { code: 0, stdout: "" };
+  return { code: 0, stdout: formatMetrics(readSessionMetrics(dataDir, parsed.session_id, now)) };
 }
 
 /** dataDir/usage.json の読み出し。無ければ none、壊れていれば invalid（ファイルは書き換えない） */
@@ -147,8 +217,13 @@ if (isMain()) {
   } catch {
     stdinText = "";
   }
-  // dataDir/bin に写された場所から動くときだけ書く（リポジトリの hooks/ から直接動かしても、どこにも書かない）
-  const result = path.basename(here) === "bin" ? runStatusline({ stdinText, dataDir: path.resolve(here, "..") }) : { code: 0, stdout: "\n" };
+  // dataDir/bin に写された場所から動くときだけ書く・読む（リポジトリの hooks/ から直接動かしても、どこにも書かない）
+  const inBin = path.basename(here) === "bin";
+  const dataDir = path.resolve(here, "..");
+  // --metrics は読むだけ。セッション行に足す文字列（改行なし）を出す。ふつうの動作は usage.json を書き、利用量の 1 行を出す
+  const result = process.argv.includes("--metrics")
+    ? inBin ? runMetrics({ stdinText, dataDir }) : { code: 0, stdout: "" }
+    : inBin ? runStatusline({ stdinText, dataDir }) : { code: 0, stdout: "\n" };
   process.stdout.write(result.stdout);
   process.exitCode = result.code;
 }

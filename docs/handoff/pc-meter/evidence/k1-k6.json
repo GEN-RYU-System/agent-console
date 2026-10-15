@@ -1,0 +1,34 @@
+[
+  {
+    "viewport": "1400x800",
+    "theme": "dark",
+    "K1_macTop_minus_claudeTop": 0,
+    "K6_footerHeight": 180.125,
+    "K6_barRight_minus_macRight_max": -42.46875,
+    "K6_gap_claudeRight_to_macLeft": 736
+  },
+  {
+    "viewport": "1400x800",
+    "theme": "light",
+    "K1_macTop_minus_claudeTop": 0,
+    "K6_footerHeight": 180.125,
+    "K6_barRight_minus_macRight_max": -42.46875,
+    "K6_gap_claudeRight_to_macLeft": 736
+  },
+  {
+    "viewport": "1024x800",
+    "theme": "dark",
+    "K1_macTop_minus_claudeTop": 0,
+    "K6_footerHeight": 180.125,
+    "K6_barRight_minus_macRight_max": -42.46875,
+    "K6_gap_claudeRight_to_macLeft": 360
+  },
+  {
+    "viewport": "1024x800",
+    "theme": "light",
+    "K1_macTop_minus_claudeTop": 0,
+    "K6_footerHeight": 180.125,
+    "K6_barRight_minus_macRight_max": -42.46875,
+    "K6_gap_claudeRight_to_macLeft": 360
+  }
+]

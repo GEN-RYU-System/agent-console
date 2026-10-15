@@ -1,0 +1,153 @@
+
+ RUN  v5.0.3 /Users/tanizawashingo/agent-console-wt/pc-meter
+
+stdout | tests/unit/session-restore.integration.test.ts > restore on startup (K4, K5, K6, K8) > K4: reopens with restoreCommand and AC_RESUME_ID when the sessionId is known, otherwise with the normal command, keeping the saved name
+open-sessions: つなぎ直し 0・resume 3
+
+stdout | tests/unit/session-restore.integration.test.ts > restore on startup (K4, K5, K6, K8) > K7: a non-UUID sessionId in the list is never passed to the command
+open-sessions: つなぎ直し 0・resume 1
+
+ ❯ tests/unit/daily-use.integration.test.ts (27 tests | 2 failed) 75621ms
+   ❯ resume targets (K1-K4) (4)
+     × K2: resuming the main row starts the Opus resume command in the main checkout (no session id passed) 2754ms
+     × K3: resuming a worktree row starts the Sonnet resume command in that worktree 2237ms
+ ❯ tests/unit/session-restore.integration.test.ts (22 tests | 2 failed) 80491ms
+   ❯ restore on startup (K4, K5, K6, K8) (6)
+     × K4: reopens with restoreCommand and AC_RESUME_ID when the sessionId is known, otherwise with the normal command, keeping the saved name 4884ms
+     × K7: a non-UUID sessionId in the list is never passed to the command 4200ms
+Error: Uncaught [Error: render failed on purpose]
+    at reportException (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+    at invokeEventListeners (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/react-dom/cjs/react-dom.development.js:4213:16)
+    at invokeGuardedCallback (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/react-dom/cjs/react-dom.development.js:4277:31)
+    at beginWork$1 (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/react-dom/cjs/react-dom.development.js:27490:7)
+    at performUnitOfWork (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/react-dom/cjs/react-dom.development.js:26599:12) Error: render failed on purpose
+    at Boom (/Users/tanizawashingo/agent-console-wt/pc-meter/src/components/ErrorBoundary/ErrorBoundary.test.tsx:8:9)
+    at renderWithHooks (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/react-dom/cjs/react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/react-dom/cjs/react-dom.development.js:20103:13)
+    at beginWork (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/react-dom/cjs/react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/react-dom/cjs/react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+    at innerInvokeEventListeners (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+    at invokeEventListeners (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+Error: Uncaught [Error: render failed on purpose]
+    at reportException (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+    at invokeEventListeners (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/react-dom/cjs/react-dom.development.js:4213:16)
+    at invokeGuardedCallback (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/react-dom/cjs/react-dom.development.js:4277:31)
+    at beginWork$1 (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/react-dom/cjs/react-dom.development.js:27490:7)
+    at performUnitOfWork (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/react-dom/cjs/react-dom.development.js:26599:12) Error: render failed on purpose
+    at Boom (/Users/tanizawashingo/agent-console-wt/pc-meter/src/components/ErrorBoundary/ErrorBoundary.test.tsx:8:9)
+    at renderWithHooks (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/react-dom/cjs/react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/react-dom/cjs/react-dom.development.js:20103:13)
+    at beginWork (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/react-dom/cjs/react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/react-dom/cjs/react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+    at innerInvokeEventListeners (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+    at invokeEventListeners (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/Users/tanizawashingo/agent-console-wt/pc-meter/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+.: replacing existing signature
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/daily-use.integration.test.ts > resume targets (K1-K4) > K2: resuming the main row starts the Opus resume command in the main checkout (no session id passed)
+AssertionError: expected 'RESUMED_MAIN cwd=/private/var/folders…' to contain 'RESUMED_MAIN cwd=/private/var/folders…'
+
+- Expected
++ Received
+
+- RESUMED_MAIN cwd=/private/var/folders/wv/1plfwzs513782w2f4_zqh5m80000gn/T/ac-it-JzBx10/root id=[]
++ RESUMED_MAIN cwd=/private/var/folders/wv/1plfwzs513782w2f4_zqh5m80000gn/T/ac-it-JzBx10/root id=[ffa7d9cd-9c66-4f11-8bca-d449b16e994b]
++
+
+ ❯ tests/unit/daily-use.integration.test.ts:385:47
+    383|     expect(resumed.status).toBe(201);
+    384|     const id = resumed.json.id as string;
+    385|     await vi.waitFor(() => expect(ringOf(id)).toContain(`RESUMED_MAIN …
+       |                                               ^
+    386|     expect(h.sessions.get(id)?.cwd).toBe(mainRoot());
+    387|     expect(h.sessions.get(id)?.roleId).toBe("resumable-main");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/unit/daily-use.integration.test.ts > resume targets (K1-K4) > K3: resuming a worktree row starts the Sonnet resume command in that worktree
+AssertionError: expected 'RESUMED_WT cwd=/private/var/folders/w…' to contain 'RESUMED_WT cwd=/private/var/folders/w…'
+
+- Expected
++ Received
+
+- RESUMED_WT cwd=/private/var/folders/wv/1plfwzs513782w2f4_zqh5m80000gn/T/ac-it-JzBx10/wt-one id=[]
++ RESUMED_WT cwd=/private/var/folders/wv/1plfwzs513782w2f4_zqh5m80000gn/T/ac-it-JzBx10/wt-one id=[ffa7d9cd-9c66-4f11-8bca-d449b16e994b]
++
+
+ ❯ tests/unit/daily-use.integration.test.ts:394:47
+    392|     expect(resumed.status).toBe(201);
+    393|     const id = resumed.json.id as string;
+    394|     await vi.waitFor(() => expect(ringOf(id)).toContain(`RESUMED_WT cw…
+       |                                               ^
+    395|     expect(h.sessions.get(id)?.cwd).toBe(worktree);
+    396|     expect(h.sessions.get(id)?.roleId).toBe("resumable");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  tests/unit/session-restore.integration.test.ts > restore on startup (K4, K5, K6, K8) > K4: reopens with restoreCommand and AC_RESUME_ID when the sessionId is known, otherwise with the normal command, keeping the saved name
+AssertionError: expected 'FRESH cwd=/private/var/folders/wv/1pl…' to contain 'id=[]'
+
+- Expected
++ Received
+
+- id=[]
++ FRESH cwd=/private/var/folders/wv/1plfwzs513782w2f4_zqh5m80000gn/T/ac-it-Nx0kWW/root id=[ffa7d9cd-9c66-4f11-8bca-d449b16e994b]
++
+
+ ❯ tests/unit/session-restore.integration.test.ts:295:34
+    293|     expect(ringOf("with-id")).toContain(`cwd=${root}`);
+    294|     await vi.waitFor(() => expect(ringOf("without-id")).toContain("FRE…
+    295|     expect(ringOf("without-id")).toContain("id=[]");
+       |                                  ^
+    296|     // restoreCommand を持たない役割は、sessionId があっても通常の命令（環境変数も渡さない）
+    297|     await vi.waitFor(() => expect(ringOf("shell-with-id")).toContain("…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  tests/unit/session-restore.integration.test.ts > restore on startup (K4, K5, K6, K8) > K7: a non-UUID sessionId in the list is never passed to the command
+AssertionError: expected 'FRESH cwd=/private/var/folders/wv/1pl…' to contain 'id=[]'
+
+- Expected
++ Received
+
+- id=[]
++ FRESH cwd=/private/var/folders/wv/1plfwzs513782w2f4_zqh5m80000gn/T/ac-it-vJVRVh/root id=[ffa7d9cd-9c66-4f11-8bca-d449b16e994b]
++
+
+ ❯ tests/unit/session-restore.integration.test.ts:313:28
+    311|     expect(await run()).toEqual([]);
+    312|     await vi.waitFor(() => expect(ringOf("evil")).toContain("FRESH"), …
+    313|     expect(ringOf("evil")).toContain("id=[]");
+       |                            ^
+    314|     expect(ringOf("evil")).not.toContain("pwned");
+    315|     await closeAll();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  2 failed | 116 passed (118)
+      Tests  4 failed | 1723 passed (1727)
+   Start at  17:20:50
+   Duration  660.42s (tests 83%, environment 7%, import 6%, transform 3%)
+
+    Isolate  118 workers spawned · ~2.12s startup each (spawn + environment, per file)
+             at least ~81.37s faster with isolate: false — reuses workers across files instead of one per file
+
+exit 1

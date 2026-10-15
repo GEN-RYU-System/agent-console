@@ -1,0 +1,47 @@
+[WebServer] agent-console: 警告: AGENT_CONSOLE_TOKEN で固定したトークンを使用中です（テスト用途のみ）
+[WebServer] activity: 記録の仕組みが外れています（noSettings）。README の手順で node scripts/ac-hooks.mjs install を実行してください
+[WebServer] agent-console: 警告: AGENT_CONSOLE_TOKEN で固定したトークンを使用中です（テスト用途のみ）
+
+Running 6 tests using 1 worker
+
+  ✘  1 [app] › tests/e2e/console.spec.ts:720:1 › 段階2 K3: よく使う指示を登録・編集・削除でき、ボタン 1 回で選択中の端末の入力欄に入り（Enter は送らない）、再読込後も残る（保存は 1 ファイル・権限 600） (30.3s)
+  -  2 [app] › tests/e2e/console.spec.ts:1462:1 › v0.10.0 K3・K4: よく使う指示のバーは1行で折り返さず、「よく使う指示」の一覧から使える。「常に表示」の切り替えがバーと保存ファイル（version 1 のまま）に反映され、Esc で閉じる
+  -  3 [app] › tests/e2e/console.spec.ts:1554:1 › v0.33.0 K2・K3: 「よく使う指示」の1つの画面で、常に表示の切替・↑↓・追加・編集・削除ができ、閉じなくてもバーに出る/消え、保存ファイルに反映される
+  -  4 [app] › tests/e2e/console.spec.ts:1618:1 › v0.33.0 K6: 指示5件・常に表示3件のバーと、開いた「よく使う指示」の画面を、明・暗で撮る（AC_SHOT_DIR のときだけ保存。行の6つの操作が1行に入る）
+  ✓  5 [app] › tests/e2e/pc-meter.spec.ts:44:1 › MacMeter: K1 Claude 欄と上端がそろう / K6 高さ・はみ出し・空き幅（1400・1024 × ライト・ダーク） (6.7s)
+  ✓  6 [app] › tests/e2e/pc-meter.spec.ts:99:1 › MacMeter: K2 Disk は statfs と ±0.5 / K3 RAM は memory_pressure と ±1 / K4 CPU は top と ±15（3 回） (17.9s)
+
+
+  1) [app] › tests/e2e/console.spec.ts:720:1 › 段階2 K3: よく使う指示を登録・編集・削除でき、ボタン 1 回で選択中の端末の入力欄に入り（Enter は送らない）、再読込後も残る（保存は 1 ファイル・権限 600） 
+
+    Test timeout of 30000ms exceeded.
+
+    Error: expect(locator).toHaveAttribute(expected) failed
+
+    Locator:  locator('[data-testid="session-row"][data-session-id="5cdecae8-5ad4-4d53-97b1-b481cf8bf5d6"]').getByTestId('status')
+    Expected: "idle"
+    Received: "waiting"
+
+    Call log:
+      - Expect "toHaveAttribute" locator('[data-testid="session-row"][data-session-id="5cdecae8-5ad4-4d53-97b1-b481cf8bf5d6"]').getByTestId('status') with timeout 5000ms
+      - waiting for locator('[data-testid="session-row"][data-session-id="5cdecae8-5ad4-4d53-97b1-b481cf8bf5d6"]').getByTestId('status')
+        9 × locator resolved to <span class="ac-status" data-testid="status" data-state="waiting">…</span>
+          - unexpected value "waiting"
+      - Test timeout of 30000ms exceeded.
+
+
+      752 |   await expect(page.getByTestId("terminal")).not.toContainText("echo-quick-prompt-v2");
+      753 |   writeFileSync(STATUS_FILE, "idle");
+    > 754 |   await expect(rowOf(page, id).getByTestId("status")).toHaveAttribute("data-state", "idle", { timeout: STATE_DEADLINE_MS });
+          |                                                       ^
+      755 |   await bar.getByRole("button", { name: "テスト実行", exact: true }).click();
+      756 |   // 貼るだけなら端末の反響で 1 回だけ出る。Enter は送られていない
+      757 |   const countEcho = (): Promise<number> => page.getByTestId("terminal").innerText().then((s) => (s.match(/echo-quick-prompt-v2/g) ?? []).length);
+        at /Users/tanizawashingo/agent-console-wt/pc-meter/tests/e2e/console.spec.ts:754:55
+
+    Error Context: test-results/console-段階2-K3-よく使う指示を登録・編-0c58d-、再読込後も残る（保存は-1-ファイル・権限-600）-app/error-context.md
+
+  1 failed
+    [app] › tests/e2e/console.spec.ts:720:1 › 段階2 K3: よく使う指示を登録・編集・削除でき、ボタン 1 回で選択中の端末の入力欄に入り（Enter は送らない）、再読込後も残る（保存は 1 ファイル・権限 600） 
+  3 did not run
+  2 passed (1.4m)

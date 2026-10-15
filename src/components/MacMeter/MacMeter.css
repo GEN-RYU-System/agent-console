@@ -1,0 +1,54 @@
+/* 3 列: ラベル | バー | %（UsageMeter と同じ並び）。幅は下の帯の 1 列分 */
+.ac-macmeter {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
+  align-items: center;
+  width: var(--ac-provider-w);
+  min-width: 0;
+}
+
+.ac-macmeter__title {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+}
+
+.ac-macmeter__row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  min-width: 0;
+}
+
+.ac-macmeter__label {
+  grid-column: 1;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.ac-macmeter__bar {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.ac-macmeter__pct {
+  grid-column: 3;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.ac-macmeter__row > [data-level] {
+  grid-column: 4;
+}
+
+.ac-macmeter__text {
+  grid-column: 2 / -1;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.ac-macmeter > .ac-macmeter__text {
+  grid-column: 1 / -1;
+}

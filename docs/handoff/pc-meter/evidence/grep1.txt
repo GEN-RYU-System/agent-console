@@ -1,0 +1,91 @@
+README.md:61:- 自動クローズの idle 判定は `claude agents --json` の定期取得（`agentsPollMs`）の標本で数える。取得が続けて失敗すると閉じない。
+agent-console.config.json:8:  "agentsPollMs": 3000,
+docs/CHANGELOG.md:6:- 0.35.0 小さな改善3件: ①書き込みが失敗（入力不備・上限超過）したとき、取り出していた ac-routine の一時承認を戻す（`RoutineApprovals.restore`。最後に出した承認と同一・空き・期限内のときだけ。期限は延長しない。上限超過の denied 行に `approvalRestored`）。②自動クローズ: 標本の間が `gapLimitMs`（max(agentsPollMs×5, 60秒)）を超えたら（Mac のスリープなど）取得失敗と同じく 0 から数え直す（`gapLimitMsFor`）。③tmux の 10MB の速さ試験の上限を、macOS の CI だけ 1.5 秒にする（手元は 1 秒のまま）。更新後の install は不要。
+docs/handoff/ac-hardening/design.md:92:  - `claude agents --json` の標本（agentsPollMs ごと、server/hub.ts:129,:154-156）を使う。
+docs/handoff/ac-hardening/design.md:94:  - busy、waiting、unknown、取得失敗の標本が1つでもあれば0からやり直す。前の標本との間隔が gapLimitMs（max(agentsPollMs×5, 60秒)）を超えた標本（Mac のスリープなど）も、取得失敗と同じ扱いで0からやり直す（v0.35.0）。
+docs/handoff/ac-hardening/recon.md:12:- `claude agents --json` は `Hub.pollAgents()` が `agentsPollMs` ごとに取る。取得失敗は null（状態不明）。`server/hub.ts:153`。状態への写しは `server/agents.ts` の `stateForSession`。
+docs/handoff/ac-routine/design.md:39:1. **役割の照合（サーバー側）**: `ac-routine` は `CLAUDE_CODE_SESSION_ID` を本文の `callerSessionId` に入れて送る。サーバーは正本である SessionManager のメモリ（`sessions.list()`）から `!exited && claudeSessionId === callerSessionId` のセッションを探し、その `roleId` が設定 `routineManagerRoles` に入っているかを見る（照合元をファイルの open-sessions.json にしない。http.ts:273、sessions.ts:330-335。review-1 M2）。一致する生きたセッションが複数あれば、すべての roleId が `routineManagerRoles` に入っているときだけ通す（1件でも違えば403。review-2 L4）。見つからない・役割が違う・`callerSessionId` が無いか UUID の形でないときは403（監査に denied、形が違えば callerSessionId は null。review-2 L5）。403 の文言に「起動直後は数秒〜数十秒待って再試行」（agentsPollMs=3000）を含める（claudeSessionId は hub.ts:404-410 の周期で入るため）。→ S3, S5
+docs/handoff/chat-busy-send/recon.md:11:- server/hub.ts:150-157 pollAgents（agentsPollMs=3000、agent-console.config.json:8）の末尾で flushChatQueues（:322-325）。enqueueChat（:249-260）直後にも1回。
+docs/handoff/chat2/recon.md:10:- `server/hub.ts:228-233` `checkInput`: `Promise.all([fetchAgents(claudeBin), readProcessTable()])` で `claude agents --json` と `ps -axo pid=,ppid=,rss=` を毎回取り直し、`inputVerdict` を返す。
+docs/handoff/keep-sessions/design.md:386:  - server/process-tree.ts の descendantPids は root <= 0 なら空の集合を返す。
+docs/handoff/keep-sessions/design.md:389:  - 単体試験: pid 0 の端末を閉じても process.kill が呼ばれないこと（spy）。descendantPids(0, …) が空であること。
+docs/handoff/keep-sessions/recon.md:105:- 【事実】サーバー側で pty の pid に依存する箇所: `server/hub.ts:194,210,232,341`、`server/memory.ts:62,121`、`server/sessions.ts:344-352`（`descendantPids(session.term.pid, ps の一覧)` で子孫を辿り、作業中判定・メモリ・close の SIGKILL を行う）。番人／tmux に置くと、`session.term.pid` に相当する pid（tmux では `#{pane_pid}`）の取り方が変わる。pid の木は同じ Mac の ps で引けるので辿り方自体は使い回せるが、起点 pid の取得が必要【推測】。
+docs/handoff/keep-sessions/recon.md:180:- 【事実】`/ws/events` は hub（`server/hub.ts:386` 行）が購読者へ送る。hub は端末の出力そのものは見ず、`ps` の子孫（`readProcessTable`、`server/process-tree.ts:52-55`）と `claude agents --json`（`server/agents.ts:104`）、hooks の記録で状態を決める。
+docs/handoff/routines-new-session/design.md:35:   e. 準備を待つ: `READY_POLL_MS = 3000`（定数。config の agentsPollMs と同じ間隔）ごとに `hub.checkInput(sessionId)` を呼ぶ。`ok && hasClaude` になったら次へ。終了の判定は `this.sessions.get(sessionId)` が undefined か `.exited === true`（checkInput の reason 文字列は使わない）→ outcome=`failed`。`READY_TIMEOUT_MS = 120000` を過ぎた → outcome=`not_ready`（セッションは残す）。
+docs/handoff/session-relay/design.md:156:  - server/hub.ts: `writing` の Set と tryBeginWrite・endWrite（§3）。flushChatQueue・submitText・requestRename・flushPendingRenames に印を入れる（§3）。flushInitialNames を pollAgents の :158（flushPendingRenames）の直後に呼ぶ（§4）。sendName。Snapshot（:61）に `relays?`、setRelays、snapshot の返り値（:571）に relays を足す。chatQueueOf・pendingRenames を relay の 409 判定に使えるよう、`hasPendingWork(id): boolean`（予約の送信か改名の予約が残っていれば true）を足す。`peekInput(id): Promise<InputVerdict>` を足す（readProcessTable が async のため Promise。this.agents と readProcessTable で inputVerdict を作る。fetchAgents は走らせない。flushPendingRenames hub.ts:233 と同じ式。this.agents が null なら ok でない。5-5 手順2 で null を「ok でない状態を見た」に数えても、完了には HANDOFF.md と checkInput の ok が要るので先へ進みすぎない）。
+docs/handoff/stage1/card.md:66:  "agentsPollMs": 3000,
+docs/handoff/stage1/card.md:84:4. 状態（K1）: agentsPollMs ごとに `execFile(claudeBin, ['agents','--json'])`。出力から ANSI エスケープを除去し `\r\n`→`\n`、JSON 配列を解析（不正なら前回値を保持し状態「不明」）。各セッションの pty pid の子孫 pid 集合（process-tree）に含まれる `pid` の行を当該セッションの状態とする（busy→作業中、waiting→待ち、idle→待機、該当なし→「Claude 未起動」、pty 終了→停止）。未知キーは無視。
+docs/handoff/stage2/recon.md:10:- 更新間隔: agent-console.config.json:8 `agentsPollMs: 3000`、:9 `ledgerPollMs: 60000`。ポーリング実装 server/poll.ts:2-20（前回完了後に次を予約）
+docs/handoff/stage2/recon.md:102:- server/process-tree.ts:42-45 `ps -axo pid=,ppid=`（rss 無し）、:11-18 parsePsOutput（正規表現 `^\s*(\d+)\s+(\d+)\s*$` で2列限定）、:21-40 descendantPids（BFS）。利用: hub.ts:86,94（snapshot ごとに ps 実行）。rss/comm を読む実装は無い
+docs/handoff/v0.10.1-card-labels/evidence/grep-after.txt:17:docs/handoff/stage1/card.md:84:4. 状態（K1）: agentsPollMs ごとに `execFile(claudeBin, ['agents','--json'])`。出力から ANSI エスケープを除去し `\r\n`→`\n`、JSON 配列を解析（不正なら前回値を保持し状態「不明」）。各セッションの pty pid の子孫 pid 集合（process-tree）に含まれる `pid` の行を当該セッションの状態とする（busy→作業中、waiting→待ち、idle→待機、該当なし→「Claude 未起動」、pty 終了→停止）。未知キーは無視。
+docs/handoff/v0.10.1-card-labels/evidence/grep-before.txt:16:docs/handoff/stage1/card.md:84:4. 状態（K1）: agentsPollMs ごとに `execFile(claudeBin, ['agents','--json'])`。出力から ANSI エスケープを除去し `\r\n`→`\n`、JSON 配列を解析（不正なら前回値を保持し状態「不明」）。各セッションの pty pid の子孫 pid 集合（process-tree）に含まれる `pid` の行を当該セッションの状態とする（busy→作業中、waiting→待ち、idle→待機、該当なし→「Claude 未起動」、pty 終了→停止）。未知キーは無視。
+docs/handoff/v0.3.7-rename-queue/recon.md:13:- 【事実】hub の取得間隔に「定数」は無い。設定値 `agentsPollMs`（`agent-console.config.json:8` = 3000）。画面側の定数は `LEDGER_POLL_MS`・`RECONNECT_MS`・`RENAME_CONFIRM_MS`。
+docs/handoff/v0.3.7-rename-queue/recon.md:22:57:      startPolling(() => this.pollAgents(), this.config.agentsPollMs, (err) => this.onPollError("agents", err)),
+docs/handoff/v0.3.7-rename-queue/recon.md:24:間隔の設定値: `agent-console.config.json:8: "agentsPollMs": 3000,`（型 `server/config.ts:35`、必須数値キー `server/config.ts:47`、代入 `server/config.ts:148`）。試験用: `tests/unit/helpers/harness.ts:92: agentsPollMs: 60000`、`tests/fixtures/e2e-env.ts:85: agentsPollMs: 1000`。
+docs/handoff/v0.3.7-rename-queue/recon.md:36:91:    const table = await readProcessTable().catch(() => []);
+docs/handoff/v0.3.7-rename-queue/recon.md:38:93:      const agent = agentForSession({ exited: s.exited, pids: descendantPids(s.term.pid, table) }, this.agents);
+docs/handoff/v0.3.7-rename-queue/recon.md:54:112:    const [rows, table] = await Promise.all([fetchAgents(this.config.claudeBin), readProcessTable().catch(() => [])]);
+docs/handoff/v0.3.7-rename-queue/recon.md:55:113:    return inputVerdict({ exited: session.exited, pids: descendantPids(session.term.pid, table) }, rows);
+docs/handoff/v0.3.7-rename-queue/recon.md:308:1. 取得は 3 秒ごと（`agentsPollMs`）。予約の発火は「定期取得で state が idle かつ waitingFor 無し（= canInput）になった時点」を観測して行うのが既存の入口（`server/hub.ts:81-86` の pollAgents 直後）。ただし送信前の判定は既存どおり `checkInput` で取り直せる（`server/hub.ts:109-114`）。
+docs/handoff/v0.3.8-session-restore/design.md:87:  - 5秒たっても終わらない場合は、SIGKILL を送る。送る先は、端末のプロセスと、その子孫のプロセス（process-tree.ts の descendantPids）の両方。
+docs/handoff/v0.4.0-diff-comments/recon.md:67:5. checkInput server/hub.ts:185-190: 要求の都度 `claude agents --json`（fetchAgents server/agents.ts:102-110、timeout 15000）と ps（readProcessTable）を取り直す。
+docs/handoff/v0.5.0-pr-ci/recon.md:178:- `server/hub.ts:70-79` start(): startPolling で agents（config.agentsPollMs = 3000）と ledger（config.ledgerPollMs = 60000）の 2 本。
+docs/handoff/v0.5.0-pr-ci/recon.md:182:- `agent-console.config.json:8-9` agentsPollMs 3000 / ledgerPollMs 60000。config の数値キーの検査は `server/config.ts:69` NUMBER_KEYS（port / agentsPollMs / ledgerPollMs / ringBufferBytes）。新しいキーは parse 側への追加が必要（diffBaseRef 等は個別の parse 関数: :133、:210-212）。
+server/config.ts:66:  agentsPollMs: number;
+server/config.ts:124:const NUMBER_KEYS = ["port", "agentsPollMs", "ledgerPollMs", "ringBufferBytes"] as const;
+server/config.ts:282:    agentsPollMs: o.agentsPollMs as number,
+server/hub.ts:9:import { descendantPids, readProcessTable } from "./process-tree.ts";
+server/hub.ts:145:      startPolling(() => this.pollAgents(), this.config.agentsPollMs, (err) => this.onPollError("agents", err)),
+server/hub.ts:253:    const table = await readProcessTable().catch(() => null);
+server/hub.ts:255:    return inputVerdict({ exited: session.exited, pids: descendantPids(session.term.pid, table) }, this.agents);
+server/hub.ts:312:    const table = await readProcessTable().catch(() => []);
+server/hub.ts:321:        const polled = inputVerdict({ exited: false, pids: descendantPids(session.term.pid, table) }, this.agents);
+server/hub.ts:340:    const table = await readProcessTable().catch(() => null);
+server/hub.ts:351:        const info = { exited: false, pids: descendantPids(session.term.pid, table) };
+server/hub.ts:498:    const table = await readProcessTable().catch(() => null);
+server/hub.ts:500:    const info = { exited: false, pids: descendantPids(session.term.pid, table) };
+server/hub.ts:567:    const table = await readProcessTable().catch(() => []);
+server/hub.ts:570:      const agent = agentForSession({ exited: s.exited, pids: descendantPids(s.term.pid, table) }, this.agents);
+server/hub.ts:571:      states.set(s.id, stateForSession({ exited: s.exited, pids: descendantPids(s.term.pid, table) }, this.agents));
+server/hub.ts:593:    const [rows, table] = await Promise.all([fetchAgents(this.config.claudeBin), readProcessTable().catch(() => [])]);
+server/hub.ts:594:    return inputVerdict({ exited: session.exited, pids: descendantPids(session.term.pid, table) }, rows);
+server/hub.ts:601:    const [rows, table] = await Promise.all([fetchAgents(this.config.claudeBin), readProcessTable().catch(() => [])]);
+server/hub.ts:602:    return chatVerdict({ exited: session.exited, pids: descendantPids(session.term.pid, table) }, rows);
+server/hub.ts:709:    const table = await readProcessTable().catch(() => []);
+server/hub.ts:711:      const info = { exited: s.exited, pids: descendantPids(s.term.pid, table) };
+server/index.ts:95:  }, CLOSE_IDLE_MS, KEEP_WAITING_MS, gapLimitMsFor(config.agentsPollMs));
+server/memory.ts:3:import { descendantPids, readProcessTable, sumRssKb, type PsRow } from "./process-tree.ts";
+server/memory.ts:58:export function sessionMemory(sessions: ReadonlyArray<SessionForMemory>, table: PsRow[]): SessionMemory[] {
+server/memory.ts:62:    rssMb: s.exited ? 0 : toMb(sumRssKb(descendantPids(s.term.pid, table), table)),
+server/memory.ts:84:  table: PsRow[];
+server/memory.ts:100:      table: await readProcessTable().catch(() => []),
+server/process-tree.ts:6:export interface PsRow {
+server/process-tree.ts:14:export function parsePsOutput(text: string): PsRow[] {
+server/process-tree.ts:15:  const rows: PsRow[] = [];
+server/process-tree.ts:24:export function sumRssKb(pids: ReadonlySet<number>, rows: PsRow[]): number {
+server/process-tree.ts:31:export function descendantPids(root: number, rows: PsRow[]): Set<number> {
+server/process-tree.ts:53:export async function readProcessTable(): Promise<PsRow[]> {
+server/routine-closer.ts:33: * 1 周は agentsPollMs ＋ fetchAgents の timeout 15 秒などで、正常でも 20 秒前後になり得るので 60 秒を下限にする
+server/routine-closer.ts:35:export const gapLimitMsFor = (agentsPollMs: number): number => Math.max(agentsPollMs * 5, 60_000);
+server/sessions.ts:6:import { descendantPids, readProcessTable } from "./process-tree.ts";
+server/sessions.ts:525:    const family = new Set(descendantPids(session.term.pid, await readProcessTable().catch(() => [])));
+server/sessions.ts:538:      for (const pid of descendantPids(session.term.pid, await readProcessTable().catch(() => []))) family.add(pid);
+tests/fixtures/e2e-env.ts:119:    agentsPollMs: 1000,
+tests/unit/chat-queue-ps.integration.test.ts:9:// ps（プロセス一覧）の取得が失敗する場面を作るため、readProcessTable だけを差し替える
+tests/unit/chat-queue-ps.integration.test.ts:13:  return { ...original, readProcessTable: async () => (psState.fail ? Promise.reject(new Error("ps failed")) : original.readProcessTable()) };
+tests/unit/config.test.ts:13:  agentsPollMs: 3000,
+tests/unit/helpers/harness.ts:179:    agentsPollMs: 60000,
+tests/unit/memory.test.ts:3:import { descendantPids, parsePsOutput, sumRssKb } from "../../server/process-tree.ts";
+tests/unit/memory.test.ts:15:    expect(sumRssKb(descendantPids(10, rows), rows)).toBe(2048 + 1024 + 512);
+tests/unit/process-tree.test.ts:2:import { descendantPids, parsePsOutput } from "../../server/process-tree.ts";
+tests/unit/process-tree.test.ts:10:    const set = descendantPids(10, parsePsOutput(ps));
+tests/unit/process-tree.test.ts:14:    expect([...descendantPids(20, parsePsOutput(ps))]).toEqual([20]);
+tests/unit/process-tree.test.ts:21:    expect(descendantPids(0, parsePsOutput(ps)).size).toBe(0);
+tests/unit/process-tree.test.ts:24:    expect(descendantPids(-1, parsePsOutput(ps)).size).toBe(0);
+tests/unit/routine-closer.test.ts:173:  it("B4 gapLimitMsFor は agentsPollMs の 5 倍。ただし下限は 60 秒", () => {
+tests/unit/server-process.test.ts:60:    agentsPollMs: 60000,
+tests/unit/session-restore.integration.test.ts:8:import { descendantPids, readProcessTable } from "../../server/process-tree.ts";
+tests/unit/session-restore.integration.test.ts:127:    await vi.waitFor(async () => expect(descendantPids(session.term.pid, await readProcessTable()).size).toBeGreaterThan(1), WAIT);
+tests/unit/session-restore.integration.test.ts:128:    const family = [...descendantPids(session.term.pid, await readProcessTable())];
+tests/unit/session-restore.integration.test.ts:138:    await vi.waitFor(async () => expect(descendantPids(session.term.pid, await readProcessTable()).size).toBeGreaterThan(1), WAIT);
+tests/unit/session-restore.integration.test.ts:139:    const family = [...descendantPids(session.term.pid, await readProcessTable())];

@@ -1,0 +1,25 @@
+
+> agent-console@0.38.0 build
+> node scripts/build-picker-tokens.mjs && vite build && tsc -p tsconfig.server.json && node scripts/copy-board-command.mjs
+
+build-picker-tokens: extension/picker-tokens.css
+vite v8.3.4 building client environment for production...
+transforming...
+✓ 2962 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                     0.39 kB │ gzip:   0.27 kB
+dist/assets/index-ClyGVHfl.css     79.49 kB │ gzip:  15.00 kB
+dist/assets/index-BPN557jZ.js   1,358.91 kB │ gzip: 382.14 kB
+
+[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 7.01s
+copy-board-command: dist-server/hooks/ac-board.mjs
+copy-board-command: dist-server/hooks/ac-reserve.mjs
+copy-board-command: dist-server/hooks/ac-routine.mjs
+copy-board-command: dist-server/hooks/ac-routine-guard.mjs
+copy-board-command: dist-server/hooks/ac-statusline.mjs

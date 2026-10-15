@@ -41,6 +41,7 @@ export const DEFAULT_DIFF_SEND_MAX_BYTES = 16 * 1024;
 export const DEFAULT_PASTE_SUBMIT_DELAY_MS = 2000;
 export const DEFAULT_GH_BIN = "gh";
 export const DEFAULT_PR_POLL_MS = 120000;
+export const DEFAULT_METRICS_POLL_MS = 5000;
 export const DEFAULT_PR_REFRESH_MIN_MS = 10000;
 export const DEFAULT_PICK_MAX_KEEP = 50;
 export const DEFAULT_PICK_SEND_MAX_BYTES = 16 * 1024;
@@ -96,6 +97,8 @@ export interface Config {
   ghBin: string;
   /** PR と検査の状態を取り直す間隔（ms） */
   prPollMs: number;
+  /** Mac の CPU・RAM・Disk とセッションごとの CPU・RAM の定期計測の間隔（ms）。既定 5000 */
+  metricsPollMs: number;
   /** PR タブの「更新」を受け付ける最小の間隔（ms）。連打で GitHub の利用上限を使い切らないため */
   prRefreshMinMs: number;
   /** 部品（Chrome で選んだ画面の一部）を残す件数。超えたら古い順に消す */
@@ -298,6 +301,7 @@ export function parseConfig(raw: unknown): Config {
     pasteSubmitDelayMs: parsePasteDelay(o.pasteSubmitDelayMs),
     ghBin: parseGhBin(o.ghBin),
     prPollMs: parsePositive(o.prPollMs, "prPollMs", DEFAULT_PR_POLL_MS),
+    metricsPollMs: parsePositive(o.metricsPollMs, "metricsPollMs", DEFAULT_METRICS_POLL_MS),
     prRefreshMinMs: parsePositive(o.prRefreshMinMs, "prRefreshMinMs", DEFAULT_PR_REFRESH_MIN_MS),
     pickMaxKeep: parsePositive(o.pickMaxKeep, "pickMaxKeep", DEFAULT_PICK_MAX_KEEP),
     pickSendMaxBytes: parsePositive(o.pickSendMaxBytes, "pickSendMaxBytes", DEFAULT_PICK_SEND_MAX_BYTES),

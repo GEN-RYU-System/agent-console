@@ -11,6 +11,8 @@ import { DiffCommentStore } from "./diff-comments.ts";
 import { Hub } from "./hub.ts";
 import { createRequestHandler } from "./http.ts";
 import { MemoryCollector } from "./memory.ts";
+import { startPolling } from "./poll.ts";
+import { writeSessionMetrics } from "../hooks/ac-statusline.mjs";
 import { setupPicker } from "./picker-extension.ts";
 import { PickStore } from "./picks.ts";
 import { UploadStore } from "./uploads.ts";
@@ -97,13 +99,29 @@ async function main(): Promise<void> {
   hub.onAgentsSampled((states, at) => { void activity.store.refresh().then(() => states, () => null).then((st) => closer.sample(st, at)).catch((e) => console.error("routine-closer: sample failed:", e instanceof Error ? e.message : e)); });
   const uploads = new UploadStore(config.dataDir, config.uploadMaxBytes, config.uploadMaxKeep);
 
-  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity: activity.store, checkHooks: activity.check, memory: new MemoryCollector(), staticDir: path.join(process.cwd(), "dist"), meta, routines, reservations, relay, reserve, routineApprovals }));
+  const memory = new MemoryCollector();
+  let stopMetrics: (() => void) | null = null;
+  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity: activity.store, checkHooks: activity.check, memory, staticDir: path.join(process.cwd(), "dist"), meta, routines, reservations, relay, reserve, routineApprovals }));
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   // 期限切れ（12 時間）になったセッションの WebSocket を閉じる
   setInterval(() => controls.sweep(), SESSION_SWEEP_MS).unref();
 
   server.listen(config.port, LISTEN_HOST, () => {
     hub.start();
+    // Mac とセッションの CPU・RAM・Disk の定期計測。計測は MemoryCollector 1 か所、statusline への受け渡しは session-metrics.json（設計 docs/handoff/pc-meter/design.md §4.1-4.2）
+    stopMetrics = startPolling(async () => {
+      const names = hub.displayNames();
+      const live = sessions.list();
+      const snap = await memory.measure(live.map((s) => ({ id: s.id, name: names.get(s.id) ?? s.name, exited: s.exited, term: s.term })));
+      const byId = new Map(snap.sessions.map((m) => [m.id, m]));
+      const out: Record<string, { cpuPercent: number; ramPercent: number | null }> = {};
+      for (const s of live) {
+        const m = byId.get(s.id);
+        if (s.exited || s.claudeSessionId === undefined || m === undefined) continue;
+        out[s.claudeSessionId] = { cpuPercent: m.cpuPercent, ramPercent: m.ramPercent };
+      }
+      writeSessionMetrics(config.dataDir, out);
+    }, config.metricsPollMs, (err) => console.error("metrics: poll failed:", err instanceof Error ? err.message : err));
     // 切戻しで退避された保存リストと routine を、つなぎ直しと routine の読込より先に元へ戻す（復元が有効な本番のポートのみ）
     const heldRestored = isRestoreEnabled(process.env) ? restoreHeldFiles(config.dataDir) : Promise.resolve(0);
     const routinesStarted = heldRestored.then(() => routines.start());
@@ -126,6 +144,7 @@ async function main(): Promise<void> {
   });
 
   const shutdown = (): void => {
+    stopMetrics?.();
     hub.stop();
     activity.stop();
     routines.stop();

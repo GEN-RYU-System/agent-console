@@ -53,6 +53,15 @@
       "busy": "すでに切り替え中です",
       "switchError": "切り替えを始められませんでした"
     },
+    "macMeter": {
+      "title": "この Mac",
+      "cpu": "CPU",
+      "ram": "RAM",
+      "disk": "Disk",
+      "percent": "{{percent}}%",
+      "measuring": "計測中",
+      "error": "Mac の使用率を取得できません"
+    },
     "usage": {
       "week": "週",
       "fiveHour": "5時間",
