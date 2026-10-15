@@ -5,6 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../../i18n";
 import type { TerminalHandle } from "./TerminalPane";
 
+const webglMock = vi.hoisted(() => ({
+  /** 作られた WebglAddon の代役（新しい順に末尾へ） */
+  instances: [] as { dispose: ReturnType<typeof vi.fn>; lossCb: (() => void) | null }[],
+  throwOnLoad: false,
+  throwOnConstruct: false,
+}));
 const disposeTerm = vi.fn();
 let lastTerm: { options: Record<string, unknown>; paste: ReturnType<typeof vi.fn>; input: ReturnType<typeof vi.fn> } | null = null;
 const calls: string[] = [];
@@ -18,7 +24,9 @@ vi.mock("@xterm/xterm", () => ({
   Terminal: class {
     cols = 80;
     rows = 24;
-    loadAddon = vi.fn();
+    loadAddon = vi.fn((a: unknown) => {
+      if (webglMock.instances.includes(a as never) && webglMock.throwOnLoad) throw new Error("webgl2 unavailable");
+    });
     open = vi.fn();
     write = vi.fn((d: string) => termEvents.push(`write:${d}`));
     reset = vi.fn(() => termEvents.push("reset"));
@@ -37,6 +45,20 @@ vi.mock("@xterm/xterm", () => ({
   },
 }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit = vi.fn(); } }));
+vi.mock("@xterm/addon-webgl", () => ({
+  WebglAddon: class {
+    dispose = vi.fn();
+    lossCb: (() => void) | null = null;
+    onContextLoss = vi.fn((cb: () => void) => {
+      this.lossCb = cb;
+      return { dispose: vi.fn() };
+    });
+    constructor() {
+      if (webglMock.throwOnConstruct) throw new Error("no WebGL");
+      webglMock.instances.push(this);
+    }
+  },
+}));
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
 class FakeWebSocket {
@@ -60,6 +82,9 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  webglMock.instances.length = 0;
+  webglMock.throwOnLoad = false;
+  webglMock.throwOnConstruct = false;
   disposeTerm.mockClear();
   calls.length = 0;
   termEvents.length = 0;
@@ -316,5 +341,67 @@ describe("TerminalPane size sync while hidden (K12)", () => {
         vi.useRealTimers();
       }
     });
+  });
+});
+
+describe("TerminalPane renderer (WebGL)", () => {
+  const rendererOf = () => screen.getByTestId("terminal").dataset.renderer;
+
+  it("W1: does not create a WebglAddon when renderer is unset or dom", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    const { unmount } = render(<TerminalPane sessionId="abc" />);
+    expect(webglMock.instances).toHaveLength(0);
+    expect(rendererOf()).toBe("dom");
+    unmount();
+    render(<TerminalPane sessionId="abc" renderer="dom" />);
+    expect(webglMock.instances).toHaveLength(0);
+    expect(rendererOf()).toBe("dom");
+  });
+
+  it("W2: loads the WebglAddon after open when renderer is webgl", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    render(<TerminalPane sessionId="abc" renderer="webgl" />);
+    expect(webglMock.instances).toHaveLength(1);
+    const term = lastTerm as unknown as { open: ReturnType<typeof vi.fn>; loadAddon: ReturnType<typeof vi.fn> };
+    expect(term.loadAddon).toHaveBeenCalledWith(webglMock.instances[0]);
+    const openOrder = term.open.mock.invocationCallOrder[0] ?? 0;
+    const webglLoadOrder = term.loadAddon.mock.invocationCallOrder[term.loadAddon.mock.calls.findIndex((c) => c[0] === webglMock.instances[0])] ?? 0;
+    expect(webglLoadOrder).toBeGreaterThan(openOrder);
+    expect(rendererOf()).toBe("webgl");
+  });
+
+  it("W3a: keeps the terminal usable when loadAddon throws for the WebglAddon", async () => {
+    webglMock.throwOnLoad = true;
+    const { TerminalPane } = await import("./TerminalPane");
+    render(<TerminalPane sessionId="abc" renderer="webgl" />);
+    expect(webglMock.instances[0]?.dispose).toHaveBeenCalled();
+    expect(rendererOf()).toBe("dom");
+    const term = lastTerm as unknown as { onData: ReturnType<typeof vi.fn>; write: ReturnType<typeof vi.fn> };
+    expect(term.onData).toHaveBeenCalled();
+    expect(sockets).toHaveLength(1);
+    act(() => {
+      sockets[0]!.onopen?.();
+      sockets[0]!.onmessage?.({ data: "hello" });
+    });
+    expect(term.write).toHaveBeenCalled();
+  });
+
+  it("W3b: keeps the terminal usable when the WebglAddon constructor throws", async () => {
+    webglMock.throwOnConstruct = true;
+    const { TerminalPane } = await import("./TerminalPane");
+    render(<TerminalPane sessionId="abc" renderer="webgl" />);
+    expect(rendererOf()).toBe("dom");
+    const term = lastTerm as unknown as { onData: ReturnType<typeof vi.fn> };
+    expect(term.onData).toHaveBeenCalled();
+    expect(sockets).toHaveLength(1);
+  });
+
+  it("W4: disposes the addon and falls back to dom when the context is lost", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    render(<TerminalPane sessionId="abc" renderer="webgl" />);
+    expect(rendererOf()).toBe("webgl");
+    act(() => webglMock.instances[0]!.lossCb?.());
+    expect(webglMock.instances[0]!.dispose).toHaveBeenCalled();
+    expect(rendererOf()).toBe("dom");
   });
 });

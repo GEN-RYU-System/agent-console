@@ -1,0 +1,175 @@
+{
+  "k1": {
+    "perPair": [
+      {
+        "pair": 1,
+        "load": "104.71 130.64 100.39",
+        "loadAfter": "108.06 127.52 100.96",
+        "mem": "System-wide memory free percentage: 29%",
+        "dom": {
+          "spanMs": 8496,
+          "framesOver33": 60,
+          "rendererCpuSec": 0.9904969999999997,
+          "cpuPerRowMs": 0.14726390127862024,
+          "longtaskMaxMs": 296,
+          "signals": 177
+        },
+        "webgl": {
+          "spanMs": 5214.5,
+          "framesOver33": 52,
+          "rendererCpuSec": 0.5234160000000001,
+          "cpuPerRowMs": 0.09499382940108894,
+          "longtaskMaxMs": 143,
+          "signals": 145
+        }
+      },
+      {
+        "pair": 2,
+        "load": "108.06 127.52 100.96",
+        "loadAfter": "110.40 125.45 101.57",
+        "mem": "System-wide memory free percentage: 30%",
+        "dom": {
+          "spanMs": 7449.200000000186,
+          "framesOver33": 63,
+          "rendererCpuSec": 1.0876740000000003,
+          "cpuPerRowMs": 0.15813812154696136,
+          "longtaskMaxMs": 348,
+          "signals": 181
+        },
+        "webgl": {
+          "spanMs": 3683.5999999996275,
+          "framesOver33": 30,
+          "rendererCpuSec": 0.45278300000000016,
+          "cpuPerRowMs": 0.0637184069800169,
+          "longtaskMaxMs": 115,
+          "signals": 187
+        }
+      },
+      {
+        "pair": 3,
+        "load": "110.40 125.45 101.57",
+        "loadAfter": "105.54 122.64 101.50",
+        "mem": "System-wide memory free percentage: 30%",
+        "dom": {
+          "spanMs": 6451.4000000003725,
+          "framesOver33": 50,
+          "rendererCpuSec": 0.9519779999999998,
+          "cpuPerRowMs": 0.13840913056120963,
+          "longtaskMaxMs": 253,
+          "signals": 181
+        },
+        "webgl": {
+          "spanMs": 2534.5,
+          "framesOver33": 23,
+          "rendererCpuSec": 0.48000600000000015,
+          "cpuPerRowMs": 0.07655598086124404,
+          "longtaskMaxMs": 78,
+          "signals": 165
+        }
+      },
+      {
+        "pair": 4,
+        "load": "105.54 122.64 101.50",
+        "loadAfter": "97.00 115.88 100.93",
+        "mem": "System-wide memory free percentage: 31%",
+        "dom": {
+          "spanMs": 18052,
+          "framesOver33": 93,
+          "rendererCpuSec": 2.1184660000000006,
+          "cpuPerRowMs": 0.2981235575569942,
+          "longtaskMaxMs": 924,
+          "signals": 187
+        },
+        "webgl": {
+          "spanMs": 6436.700000000186,
+          "framesOver33": 58,
+          "rendererCpuSec": 0.6634019999999996,
+          "cpuPerRowMs": 0.14670544007076505,
+          "longtaskMaxMs": 326,
+          "signals": 119
+        }
+      }
+    ],
+    "median4": {
+      "spanMs": {
+        "dom": 7972.600000000093,
+        "webgl": 4449.049999999814
+      },
+      "framesOver33": {
+        "dom": 61.5,
+        "webgl": 41
+      },
+      "rendererCpuSec": {
+        "dom": 1.0390855,
+        "webgl": 0.5017110000000001
+      },
+      "cpuPerRowMs": {
+        "dom": 0.1527010114127908,
+        "webgl": 0.08577490513116649
+      },
+      "longtaskMaxMs": {
+        "dom": 322,
+        "webgl": 129
+      },
+      "signals": {
+        "dom": 181,
+        "webgl": 155
+      }
+    },
+    "pass": {
+      "spanMs": true,
+      "framesOver33": true,
+      "rendererCpuSec": true
+    }
+  },
+  "k2": {
+    "perPair": [
+      {
+        "pair": 1,
+        "load": "122.75 115.33 102.46",
+        "loadAfter": "131.93 119.47 104.83",
+        "mem": "System-wide memory free percentage: 29%",
+        "domMedian": 116.09999999962747,
+        "webglMedian": 54.09999999962747,
+        "domNull": 0,
+        "webglNull": 0
+      },
+      {
+        "pair": 2,
+        "load": "131.93 119.47 104.83",
+        "loadAfter": "115.67 116.53 104.55",
+        "mem": "System-wide memory free percentage: 32%",
+        "domMedian": 166.5,
+        "webglMedian": 79.64999999990687,
+        "domNull": 0,
+        "webglNull": 0
+      },
+      {
+        "pair": 3,
+        "load": "115.67 116.53 104.55",
+        "loadAfter": "126.45 119.23 106.02",
+        "mem": "System-wide memory free percentage: 38%",
+        "domMedian": 85.8000000002794,
+        "webglMedian": 16.950000000186265,
+        "domNull": 0,
+        "webglNull": 0
+      },
+      {
+        "pair": 4,
+        "load": "126.45 119.23 106.02",
+        "loadAfter": "128.19 120.12 106.71",
+        "mem": "System-wide memory free percentage: 39%",
+        "domMedian": 42.10000000055879,
+        "webglMedian": 20.700000000186265,
+        "domNull": 0,
+        "webglNull": 0
+      }
+    ],
+    "median4": {
+      "dom": 100.94999999995343,
+      "webgl": 37.39999999990687
+    },
+    "ratio": 0.37048043585858464,
+    "pass": true
+  }
+}

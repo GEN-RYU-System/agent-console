@@ -1,0 +1,220 @@
+{
+  "chrome": "155.0.8059.40",
+  "startedAt": "2026-10-15T13:45:47.465Z",
+  "mode": "k1",
+  "gpu": {
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)",
+    "vendor": "Google Inc. (Apple)"
+  },
+  "pairs": [
+    {
+      "pair": 1,
+      "load": "104.71 130.64 100.39",
+      "mem": "System-wide memory free percentage: 29%",
+      "trials": {
+        "dom": {
+          "variant": "dom",
+          "env": {
+            "renderer": "dom",
+            "cols": 97,
+            "rows": 38,
+            "canvases": 0,
+            "domRows": 38
+          },
+          "signals": 177,
+          "rows": 38,
+          "spanMs": 8496,
+          "framesOver33": 60,
+          "framesInWindow": 133,
+          "rendererCpuSec": 0.9904969999999997,
+          "gpuCpuSec": 0.3943699999999999,
+          "nRenderer": 3,
+          "cpuPerRowMs": 0.14726390127862024,
+          "longtaskMaxMs": 296,
+          "longtaskCount": 36,
+          "maxFrameDeltaMs": 287
+        },
+        "webgl": {
+          "variant": "webgl",
+          "env": {
+            "renderer": "webgl",
+            "cols": 99,
+            "rows": 38,
+            "canvases": 2,
+            "domRows": 0
+          },
+          "signals": 145,
+          "rows": 38,
+          "spanMs": 5214.5,
+          "framesOver33": 52,
+          "framesInWindow": 147,
+          "rendererCpuSec": 0.5234160000000001,
+          "gpuCpuSec": 0.24936900000000017,
+          "nRenderer": 3,
+          "cpuPerRowMs": 0.09499382940108894,
+          "longtaskMaxMs": 143,
+          "longtaskCount": 13,
+          "maxFrameDeltaMs": 148.60000000000036
+        }
+      },
+      "loadAfter": "108.06 127.52 100.96"
+    },
+    {
+      "pair": 2,
+      "load": "108.06 127.52 100.96",
+      "mem": "System-wide memory free percentage: 30%",
+      "trials": {
+        "dom": {
+          "variant": "dom",
+          "env": {
+            "renderer": "dom",
+            "cols": 97,
+            "rows": 38,
+            "canvases": 0,
+            "domRows": 38
+          },
+          "signals": 181,
+          "rows": 38,
+          "spanMs": 7449.200000000186,
+          "framesOver33": 63,
+          "framesInWindow": 126,
+          "rendererCpuSec": 1.0876740000000003,
+          "gpuCpuSec": 0.3725480000000001,
+          "nRenderer": 3,
+          "cpuPerRowMs": 0.15813812154696136,
+          "longtaskMaxMs": 348,
+          "longtaskCount": 39,
+          "maxFrameDeltaMs": 365.60000000000036
+        },
+        "webgl": {
+          "variant": "webgl",
+          "env": {
+            "renderer": "webgl",
+            "cols": 99,
+            "rows": 38,
+            "canvases": 2,
+            "domRows": 0
+          },
+          "signals": 187,
+          "rows": 38,
+          "spanMs": 3683.5999999996275,
+          "framesOver33": 30,
+          "framesInWindow": 137,
+          "rendererCpuSec": 0.45278300000000016,
+          "gpuCpuSec": 0.18585199999999968,
+          "nRenderer": 3,
+          "cpuPerRowMs": 0.0637184069800169,
+          "longtaskMaxMs": 115,
+          "longtaskCount": 10,
+          "maxFrameDeltaMs": 112.79999999999927
+        }
+      },
+      "loadAfter": "110.40 125.45 101.57"
+    },
+    {
+      "pair": 3,
+      "load": "110.40 125.45 101.57",
+      "mem": "System-wide memory free percentage: 30%",
+      "trials": {
+        "dom": {
+          "variant": "dom",
+          "env": {
+            "renderer": "dom",
+            "cols": 97,
+            "rows": 38,
+            "canvases": 0,
+            "domRows": 38
+          },
+          "signals": 181,
+          "rows": 38,
+          "spanMs": 6451.4000000003725,
+          "framesOver33": 50,
+          "framesInWindow": 106,
+          "rendererCpuSec": 0.9519779999999998,
+          "gpuCpuSec": 0.3477479999999993,
+          "nRenderer": 3,
+          "cpuPerRowMs": 0.13840913056120963,
+          "longtaskMaxMs": 253,
+          "longtaskCount": 33,
+          "maxFrameDeltaMs": 267.1999999999989
+        },
+        "webgl": {
+          "variant": "webgl",
+          "env": {
+            "renderer": "webgl",
+            "cols": 99,
+            "rows": 38,
+            "canvases": 2,
+            "domRows": 0
+          },
+          "signals": 165,
+          "rows": 38,
+          "spanMs": 2534.5,
+          "framesOver33": 23,
+          "framesInWindow": 95,
+          "rendererCpuSec": 0.48000600000000015,
+          "gpuCpuSec": 0.18122099999999985,
+          "nRenderer": 3,
+          "cpuPerRowMs": 0.07655598086124404,
+          "longtaskMaxMs": 78,
+          "longtaskCount": 10,
+          "maxFrameDeltaMs": 80.60000000000036
+        }
+      },
+      "loadAfter": "105.54 122.64 101.50"
+    },
+    {
+      "pair": 4,
+      "load": "105.54 122.64 101.50",
+      "mem": "System-wide memory free percentage: 31%",
+      "trials": {
+        "dom": {
+          "variant": "dom",
+          "env": {
+            "renderer": "dom",
+            "cols": 97,
+            "rows": 38,
+            "canvases": 0,
+            "domRows": 38
+          },
+          "signals": 187,
+          "rows": 38,
+          "spanMs": 18052,
+          "framesOver33": 93,
+          "framesInWindow": 152,
+          "rendererCpuSec": 2.1184660000000006,
+          "gpuCpuSec": 0.8513289999999998,
+          "nRenderer": 3,
+          "cpuPerRowMs": 0.2981235575569942,
+          "longtaskMaxMs": 924,
+          "longtaskCount": 64,
+          "maxFrameDeltaMs": 950.8999999999942
+        },
+        "webgl": {
+          "variant": "webgl",
+          "env": {
+            "renderer": "webgl",
+            "cols": 99,
+            "rows": 38,
+            "canvases": 2,
+            "domRows": 0
+          },
+          "signals": 119,
+          "rows": 38,
+          "spanMs": 6436.700000000186,
+          "framesOver33": 58,
+          "framesInWindow": 136,
+          "rendererCpuSec": 0.6634019999999996,
+          "gpuCpuSec": 0.31638399999999933,
+          "nRenderer": 3,
+          "cpuPerRowMs": 0.14670544007076505,
+          "longtaskMaxMs": 326,
+          "longtaskCount": 29,
+          "maxFrameDeltaMs": 350.5
+        }
+      },
+      "loadAfter": "97.00 115.88 100.93"
+    }
+  ],
+  "finishedAt": "2026-10-15T13:50:02.964Z"
+}

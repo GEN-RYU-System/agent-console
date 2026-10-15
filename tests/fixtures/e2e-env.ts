@@ -133,6 +133,7 @@ export function prepareE2eEnv(): void {
     claudeSettingsPath,
     relayDir,
     terminalSmoothScrollMs: 125,
+    terminalRenderer: "dom",
     uploadMaxBytes: 5242880,
     uploadMaxKeep: 100,
     accountLoginCommand: ["/bin/sh", "-c", `"${claudeBin}" auth logout; "${claudeBin}" auth login`],

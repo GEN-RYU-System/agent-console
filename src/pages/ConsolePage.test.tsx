@@ -17,6 +17,7 @@ const state: ConsoleState = {
   appVersion: "0.3.6",
   commit: "abcdef0123456789abcdef0123456789abcdef01",
   terminalSmoothScrollMs: 125,
+  terminalRenderer: "webgl",
   uploadMaxBytes: 5 * 1024 * 1024,
   accountSwitchEnabled: false,
 };
@@ -97,7 +98,7 @@ vi.mock("../components/TerminalPane/TerminalPane", async () => {
   const { forwardRef, useImperativeHandle } = await import("react");
   const { Button } = await import("@sa/components/Button");
   return {
-    TerminalPane: forwardRef(function TerminalStub(props: { sessionId: string; smoothScrollMs?: number; uploadMaxBytes?: number; onUploadNotice?: (n: string) => void }, ref) {
+    TerminalPane: forwardRef(function TerminalStub(props: { sessionId: string; smoothScrollMs?: number; renderer?: string; uploadMaxBytes?: number; onUploadNotice?: (n: string) => void }, ref) {
       // 本物と同じく、確認したセッションと表示中のセッションが同じときだけ入れる
       useImperativeHandle(
         ref,
@@ -112,7 +113,7 @@ vi.mock("../components/TerminalPane/TerminalPane", async () => {
         [props.sessionId],
       );
       return (
-        <div data-testid="terminal-stub" data-smooth={props.smoothScrollMs} data-max={props.uploadMaxBytes}>
+        <div data-testid="terminal-stub" data-smooth={props.smoothScrollMs} data-renderer={props.renderer} data-max={props.uploadMaxBytes}>
           <Button onClick={() => props.onUploadNotice?.("tooLarge")}>stub-notice</Button>
         </div>
       );
@@ -593,6 +594,7 @@ describe("ConsolePage 部品 tab (K3, §3-8)", () => {
     fireEvent.click(await screen.findByText("dead"));
     const stub = await screen.findByTestId("terminal-stub");
     expect(stub.getAttribute("data-smooth")).toBe("125");
+    expect(stub.getAttribute("data-renderer")).toBe("webgl");
     expect(stub.getAttribute("data-max")).toBe(String(5 * 1024 * 1024));
     fireEvent.click(within(stub).getByText("stub-notice"));
     const alert = await screen.findByRole("alert");

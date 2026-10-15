@@ -198,6 +198,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     activityKeepDays: DEFAULT_ACTIVITY_KEEP_DAYS,
     claudeSettingsPath: path.join(dir, "home", ".claude", "settings.json"),
     terminalSmoothScrollMs: options.terminalSmoothScrollMs ?? DEFAULT_TERMINAL_SMOOTH_SCROLL_MS,
+    terminalRenderer: "dom",
     uploadMaxBytes: options.uploadMaxBytes ?? DEFAULT_UPLOAD_MAX_BYTES,
     uploadMaxKeep: options.uploadMaxKeep ?? DEFAULT_UPLOAD_MAX_KEEP,
     routineManagerRoles: options.routineManagerRoles ?? ["echo"],

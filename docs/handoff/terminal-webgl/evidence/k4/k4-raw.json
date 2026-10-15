@@ -1,0 +1,69 @@
+{
+  "chrome": "155.0.8059.40",
+  "before": {
+    "renderer": "webgl",
+    "domRows": 0,
+    "canvases": 2
+  },
+  "loseContextCall": {
+    "ok": true,
+    "isLost": true
+  },
+  "after5s": {
+    "renderer": "dom",
+    "domRows": 38,
+    "canvases": 0
+  },
+  "typedEchoed": true,
+  "pass1": true,
+  "switch": {
+    "renderersPerSwitch": [
+      "webgl",
+      "webgl",
+      "webgl",
+      "webgl",
+      "webgl",
+      "webgl",
+      "webgl",
+      "webgl",
+      "webgl",
+      "webgl",
+      "webgl",
+      "webgl",
+      "webgl",
+      "webgl",
+      "webgl",
+      "webgl",
+      "webgl",
+      "webgl",
+      "webgl",
+      "webgl"
+    ],
+    "finalRenderer": "webgl",
+    "tooMany": [],
+    "webglMessages": [],
+    "allWarnErr": [
+      {
+        "type": "warning",
+        "text": "task queue exceeded allotted deadline by 28ms"
+      },
+      {
+        "type": "warning",
+        "text": "task queue exceeded allotted deadline by 24ms"
+      },
+      {
+        "type": "warning",
+        "text": "task queue exceeded allotted deadline by 28ms"
+      }
+    ]
+  },
+  "pass2": true,
+  "pass": true,
+  "consoleFirstPage": [
+    {
+      "type": "warning",
+      "text": "webgl context not restored; firing onContextLoss",
+      "t": 1792072744809
+    }
+  ]
+}

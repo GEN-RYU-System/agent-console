@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import { useTranslation } from "react-i18next";
 import { Callout } from "@sa/components/Callout";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { ApiError, openSocket, uploadFile, uploadImage } from "../../api";
@@ -50,13 +51,15 @@ export interface TerminalPaneProps {
   sessionId: string;
   /** 物理的なマウスのホイールのときの、なめらかなスクロールの時間（ms。config の値。0 で無し）。トラックパッドなどでは常に 0 */
   smoothScrollMs?: number;
+  /** 文字の描き方（config の terminalRenderer）。"webgl" は GPU で描く。端末を作るときに 1 回だけ読む。既定は "dom" */
+  renderer?: "webgl" | "dom";
   /** 画像 1 枚の上限（byte。config の値）。超えるものは送らずに案内する。サーバーも同じ上限で検査する */
   uploadMaxBytes?: number;
   onUploadNotice?: (notice: UploadNotice) => void;
 }
 
 /** 表示中の 1 本だけ xterm を生成する。sessionId が変わる/外れるたびに破棄して再接続する。 */
-export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(function TerminalPane({ sessionId, smoothScrollMs = 0, uploadMaxBytes, onUploadNotice }, ref) {
+export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(function TerminalPane({ sessionId, smoothScrollMs = 0, renderer = "dom", uploadMaxBytes, onUploadNotice }, ref) {
   const { t } = useTranslation();
   const hostRef = useRef<HTMLDivElement>(null);
   /** 端末の WebSocket が切れて、つなぎ直している間は true（案内を出す） */
@@ -64,8 +67,8 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
   /** 今の端末と、それがどのセッションのものか（effect で差し替わるので、同じ組で持つ） */
   const termRef = useRef<{ sessionId: string; term: Terminal } | null>(null);
   /** 画面から渡された値は、端末を作り直さずに読み直せるよう ref で持つ */
-  const latest = useRef({ smoothScrollMs, uploadMaxBytes, onUploadNotice });
-  latest.current = { smoothScrollMs, uploadMaxBytes, onUploadNotice };
+  const latest = useRef({ smoothScrollMs, renderer, uploadMaxBytes, onUploadNotice });
+  latest.current = { smoothScrollMs, renderer, uploadMaxBytes, onUploadNotice };
   /** 今の入力機器が物理ホイールか（変わったときだけ smoothScrollDuration を更新する） */
   const physicalWheelRef = useRef(false);
 
@@ -112,6 +115,29 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
+    let webgl: WebglAddon | null = null;
+    // 今どちらで描いているかを外から見えるようにする（試験・点検用）
+    const markRenderer = (r: "webgl" | "dom"): void => {
+      host.dataset.renderer = r;
+    };
+    markRenderer("dom");
+    if (latest.current.renderer === "webgl") {
+      try {
+        webgl = new WebglAddon();
+        // GPU の文脈を失って 3 秒で戻らなければ DOM 描画に戻す（addon の dispose で xterm が DOM レンダラへ切り替える）
+        webgl.onContextLoss(() => {
+          webgl?.dispose();
+          webgl = null;
+          markRenderer("dom");
+        });
+        term.loadAddon(webgl);
+        markRenderer("webgl");
+      } catch {
+        // WebGL2 が無い環境では loadAddon の中で throw する。addon を外して DOM のまま続ける
+        webgl?.dispose();
+        webgl = null;
+      }
+    }
     termRef.current = { sessionId, term };
 
     // マウス追跡中（Claude など）のホイールは、行の数に直して 1 行 1 信号で少しずつ送る（設計: docs/handoff/terminal-wheel/design.md）。
