@@ -1,0 +1,101 @@
+[WebServer] agent-console: 警告: AGENT_CONSOLE_TOKEN で固定したトークンを使用中です（テスト用途のみ）
+[WebServer] activity: 記録の仕組みが外れています（noSettings）。README の手順で node scripts/ac-hooks.mjs install を実行してください
+[WebServer] agent-console: 警告: AGENT_CONSOLE_TOKEN で固定したトークンを使用中です（テスト用途のみ）
+
+Running 9 tests using 2 workers
+
+  ✓  1 [app] › tests/e2e/chat.spec.ts:125:1 › K2/K3/K4: 本物の hook に流した記録が、右に自分・左に Claude の吹き出しで出る。包み・担当の報告の戻りは出ず、HTML は描画されない (23.1s)
+  ✘  2 [app] › tests/e2e/console.spec.ts:258:1 › 下の帯に利用量（週・5時間）の 2 本のバーが出る: 値が無い→まだ値がありません、命令が書くと棒・N%・リセット・N分前、80/95/100% の Badge (54.2s)
+  -  4 [app] › tests/e2e/console.spec.ts:307:1 › 下の帯の配置: K1〜K4（Claude のまとまりが左上・バーは幅 320px の中・メタは右下・Codex/Grok 用の空き）
+  -  5 [app] › tests/e2e/console.spec.ts:362:1 › 下の帯のスクリーンショット（K6: 1400・1024 幅 × 値あり・値なし・80%以上 × ライト・ダーク。AC_FOOTER_SHOT_DIR 指定時だけ保存）
+  -  6 [app] › tests/e2e/console.spec.ts:430:1 › 下の帯に「ログアウト」「メモリ」のボタンが無い（v0.36.0 で外した。サーバーの /api/logout・/api/memory は残る）
+  -  7 [app] › tests/e2e/console.spec.ts:1382:1 › v0.7.0 K4/K5/K6: 画像の貼り付け・ドロップで保存され、その絶対パスが端末に入る（Enter なし）。文字つきの貼り付け・画像以外のドロップは別の口で保存される
+  -  8 [app] › tests/e2e/console.spec.ts:1722:3 › アカウント切り替え › K1: 下の帯に「Claude ログイン: <メール>」とプランが出る。メールは auth status の email と一字一句同じ
+RELAY-DIAG {"sessions":[{"id":"4c5d4a78-c98d-40bb-93c5-69f6abacee52","name":"relay-eneo-1","roleId":"e2e-plain","branch":null,"cwd":"/private/var/folders/wv/1plfwzs513782w2f4_zqh5m80000gn/T/agent-console-e2e-me1mLl/repo","createdAt":1792048502498,"state":"idle","unread":0,"hasClaude":true,"canInput":true,"canChat":true}],"agentsAvailable":true,"restoreNotices":[],"picksUnsent":0,"activityRev":4,"roles":[{"id":"e2e-plain","labelKey":"role.shell","needsWorktree":false},{"id":"e2e-wt","labelKey":"role.sonnetImpl","needsWorktree":true},{"id":"e2e-resume","labelKey":"role.sonnetImpl","needsWorktree":false},{"id":"e2e-resume-main","labelKey":"role.opusDesigner","needsWorktree":false},{"id":"e2e-bracketed","labelKey":"role.shell","needsWorktree":false},{"id":"e2e-size","labelKey":"role.shell","needsWorktree":false},{"id":"e2e-punct","labelKey":"role.shell","needsWorktree":false},{"id":"e2e-mouse","labelKey":"role.shell","needsWorktree":false},{"id":"e2e-short","labelKey":"role.shell","needsWorktree":false}],"saSource":"8df481c0eee1ff0a43f02f51b283f5dd1f21a3a8","claudeVersion":"0.0.0-stub (Claude Code)","appVersion":"0.37.0","commit":"bbb97245f8503c0fc541d300149d4c97bd2df12a","terminalSmoothScrollMs":125,"uploadMaxBytes":5242880,"accountSwitchEnabled":true}
+  ✘  3 [app] › tests/e2e/relay.spec.ts:15:1 › K11: 引き継ぎを押すと一時の置き場にだけフォルダができ、古いセッションに文が送られ、引き継ぎ書ができると名前の数字が 1 増えた新しいセッションが増える (58.9s)
+  ✘  9 [picker] › tests/e2e/picker.spec.ts:121:1 › K1・K2: ほかのサイトの部品を選ぶ。ページの偽のクリックでは選ばれず、本物のクリックで選ばれ、内容と切り抜き画像がアプリに届く。Esc でやめられる (11.2s)
+
+
+  1) [app] › tests/e2e/console.spec.ts:258:1 › 下の帯に利用量（週・5時間）の 2 本のバーが出る: 値が無い→まだ値がありません、命令が書くと棒・N%・リセット・N分前、80/95/100% の Badge 
+
+    Error: expect(locator).toHaveText(expected) failed
+
+    Locator: getByTestId('footer').getByTestId('usage-meter-pct-week')
+    Expected: "97%"
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toHaveText" getByTestId('footer').getByTestId('usage-meter-pct-week') with timeout 5000ms
+      - waiting for getByTestId('footer').getByTestId('usage-meter-pct-week')
+
+
+      280 |       fireStatusline(week, five, 3 * 3600);
+      281 |       await page.reload();
+    > 282 |       await expect(footer.getByTestId("usage-meter-pct-week")).toHaveText(`${week}%`);
+          |                                                                ^
+      283 |       if (name === "warning") {
+      284 |         await expect(footer.getByTestId("usage-meter-badge-week")).toHaveText("ほぼ上限");
+      285 |         await expect(footer.getByTestId("usage-meter-badge-fiveHour")).toHaveText("上限に近い");
+        at /Users/tanizawashingo/agent-console-wt/footer-layout/tests/e2e/console.spec.ts:282:64
+
+    Error Context: test-results/console-下の帯に利用量（週・5時間）の-2--a660b-・リセット・N分前、80-95-100-の-Badge-app/error-context.md
+
+  2) [app] › tests/e2e/relay.spec.ts:15:1 › K11: 引き継ぎを押すと一時の置き場にだけフォルダができ、古いセッションに文が送られ、引き継ぎ書ができると名前の数字が 1 増えた新しいセッションが増える 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('button', { name: '新しいセッション', exact: true })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByRole('button', { name: '新しいセッション', exact: true }) with timeout 5000ms
+      - waiting for getByRole('button', { name: '新しいセッション', exact: true })
+
+
+      28 |   try {
+      29 |     await page.goto(`${BASE}/pair?code=${await newPairingCode()}`);
+    > 30 |     await expect(page.getByRole("button", { name: "新しいセッション", exact: true })).toBeVisible();
+         |                                                                               ^
+      31 |     const oldRow = page.locator(`[data-testid="session-row"][data-session-id="${oldId}"]`);
+      32 |     await expect(oldRow).toBeVisible();
+      33 |     const button = oldRow.getByTestId("relay-session");
+        at /Users/tanizawashingo/agent-console-wt/footer-layout/tests/e2e/relay.spec.ts:30:79
+
+    Error Context: test-results/relay-K11-引き継ぎを押すと一時の置き場にだ-6af35-きると名前の数字が-1-増えた新しいセッションが増える-app/error-context.md
+
+  3) [picker] › tests/e2e/picker.spec.ts:121:1 › K1・K2: ほかのサイトの部品を選ぶ。ページの偽のクリックでは選ばれず、本物のクリックで選ばれ、内容と切り抜き画像がアプリに届く。Esc でやめられる 
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('button', { name: '新しいセッション', exact: true })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByRole('button', { name: '新しいセッション', exact: true }) with timeout 5000ms
+      - waiting for getByRole('button', { name: '新しいセッション', exact: true })
+
+
+      124 |   appPage = await ctx.newPage();
+      125 |   await appPage.goto(`${BASE}/pair?code=${await newPairingCode()}`);
+    > 126 |   await expect(appPage.getByRole("button", { name: "新しいセッション", exact: true })).toBeVisible();
+          |                                                                                ^
+      127 |   await expect(appPage.getByRole("tab", { name: /部品/ })).toHaveText("部品");
+      128 |
+      129 |   const page = await ctx.newPage();
+        at /Users/tanizawashingo/agent-console-wt/footer-layout/tests/e2e/picker.spec.ts:126:80
+
+    Error Context: test-results/picker-K1・K2-ほかのサイトの部品を選ぶ。-98231-内容と切り抜き画像がアプリに届く。Esc-でやめられる-picker/error-context.md
+
+    Error Context: test-results/picker-K1・K2-ほかのサイトの部品を選ぶ。-98231-内容と切り抜き画像がアプリに届く。Esc-でやめられる-picker/error-context.md
+
+  3 failed
+    [app] › tests/e2e/console.spec.ts:258:1 › 下の帯に利用量（週・5時間）の 2 本のバーが出る: 値が無い→まだ値がありません、命令が書くと棒・N%・リセット・N分前、80/95/100% の Badge 
+    [app] › tests/e2e/relay.spec.ts:15:1 › K11: 引き継ぎを押すと一時の置き場にだけフォルダができ、古いセッションに文が送られ、引き継ぎ書ができると名前の数字が 1 増えた新しいセッションが増える 
+    [picker] › tests/e2e/picker.spec.ts:121:1 › K1・K2: ほかのサイトの部品を選ぶ。ページの偽のクリックでは選ばれず、本物のクリックで選ばれ、内容と切り抜き画像がアプリに届く。Esc でやめられる 
+  5 did not run
+  1 passed (2.9m)

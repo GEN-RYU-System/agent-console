@@ -9,4 +9,6 @@
   --ac-font-mono: Menlo, Monaco, "Hiragino Mincho ProN", monospace;
   /* 中央の上部タブの高さ。SA に 56px のタブ用トークンが無いための置き場（ConsolePage.css が var() で参照する）。 */
   --ac-tab-h: 56px;
+  /* 下の帯の「プロバイダのまとまり」（Claude・後の Codex/Grok）1つの幅。SA に該当する幅のトークンが無いための置き場（ConsolePage.css が var() で参照する）。 */
+  --ac-provider-w: 320px;
 }

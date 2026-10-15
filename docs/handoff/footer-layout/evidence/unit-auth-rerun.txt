@@ -1,0 +1,34 @@
+
+ RUN  v5.0.3 /Users/tanizawashingo/agent-console-wt/footer-layout
+
+ ❯ tests/unit/auth.test.ts (39 tests | 1 failed) 880ms
+   ❯ persisted sessions (auth-sessions.json) (9)
+     × revoked sessions are gone after reload 155ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/auth.test.ts > persisted sessions (auth-sessions.json) > revoked sessions are gone after reload
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/unit/auth.test.ts:336:46
+    334|     await vi.waitFor(() => expect((JSON.parse(readFileSync(file, "utf8…
+    335|     const again = make(file);
+    336|     expect(again.auth.isSessionValid(token)).toBe(false);
+       |                                              ^
+    337|     expect(again.auth.isSessionValid(other)).toBe(true);
+    338|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 38 passed (39)
+   Start at  16:13:31
+   Duration  6.36s (transform 56%, tests 25%, worker 11%, import 8%)
+

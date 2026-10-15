@@ -1,0 +1,80 @@
+
+ RUN  v5.0.3 /Users/tanizawashingo/agent-console-wt/footer-layout
+
+ ❯ tests/unit/auth.test.ts (39 tests | 1 failed) 1219ms
+   ❯ persisted sessions (auth-sessions.json) (9)
+     × revoked sessions are gone after reload 175ms
+Error: Uncaught [Error: render failed on purpose]
+    at reportException (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+    at invokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:4213:16)
+    at invokeGuardedCallback (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:4277:31)
+    at beginWork$1 (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:27490:7)
+    at performUnitOfWork (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:26599:12) Error: render failed on purpose
+    at Boom (/Users/tanizawashingo/agent-console-wt/footer-layout/src/components/ErrorBoundary/ErrorBoundary.test.tsx:8:9)
+    at renderWithHooks (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:20103:13)
+    at beginWork (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+    at innerInvokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+    at invokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+Error: Uncaught [Error: render failed on purpose]
+    at reportException (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+    at invokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:4213:16)
+    at invokeGuardedCallback (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:4277:31)
+    at beginWork$1 (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:27490:7)
+    at performUnitOfWork (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:26599:12) Error: render failed on purpose
+    at Boom (/Users/tanizawashingo/agent-console-wt/footer-layout/src/components/ErrorBoundary/ErrorBoundary.test.tsx:8:9)
+    at renderWithHooks (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:20103:13)
+    at beginWork (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+    at innerInvokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+    at invokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+.: replacing existing signature
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/auth.test.ts > persisted sessions (auth-sessions.json) > revoked sessions are gone after reload
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/unit/auth.test.ts:336:46
+    334|     await vi.waitFor(() => expect((JSON.parse(readFileSync(file, "utf8…
+    335|     const again = make(file);
+    336|     expect(again.auth.isSessionValid(token)).toBe(false);
+       |                                              ^
+    337|     expect(again.auth.isSessionValid(other)).toBe(true);
+    338|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 114 passed (115)
+      Tests  1 failed | 1679 passed (1680)
+   Start at  14:10:19
+   Duration  852.21s (tests 82%, environment 7%, import 7%, transform 3%)
+
+    Isolate  115 workers spawned · ~2.51s startup each (spawn + environment, per file)
+             at least ~93.52s faster with isolate: false — reuses workers across files instead of one per file
+

@@ -1,0 +1,19 @@
+npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+
+> agent-console@0.37.0 postinstall
+> node scripts/postinstall.mjs
+
+
+added 217 packages, and audited 218 packages in 1m
+
+107 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+
+> agent-console@0.37.0 sa-sync
+> node scripts/sa-sync.mjs
+
+From https://github.com/shingo-ops/salesanchor
+ * branch                main       -> FETCH_HEAD
+sa-sync: 8df481c0eee1ff0a43f02f51b283f5dd1f21a3a8

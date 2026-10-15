@@ -19,7 +19,6 @@ import {
   clearSessionToken,
   fetchState,
   getSessionToken,
-  logout,
   markRead,
   openSocket,
   refreshLedger,
@@ -32,7 +31,6 @@ import { AccountBadge } from "../components/AccountBadge/AccountBadge";
 import { ChatPane } from "../components/ChatPane/ChatPane";
 import { DiffPane } from "../components/DiffPane/DiffPane";
 import { FilesPane } from "../components/FilesPane/FilesPane";
-import { MemoryPanel } from "../components/MemoryPanel/MemoryPanel";
 import { PicksPane } from "../components/PicksPane/PicksPane";
 import { PrPane } from "../components/PrPane/PrPane";
 import { RightPane } from "../components/RightPane/RightPane";
@@ -173,7 +171,6 @@ export function ConsolePage() {
   const [resumeItems, setResumeItems] = useState<ResumeTarget[] | null>(null);
   const [resumeBusyPath, setResumeBusyPath] = useState<string | null>(null);
   const [resumeError, setResumeError] = useState<string | null>(null);
-  const [memoryOpen, setMemoryOpen] = useState(false);
   const [accountConfirmOpen, setAccountConfirmOpen] = useState(false);
   const [accountError, setAccountError] = useState<string | null>(null);
   // アカウント切り替えの端末が「停止」に変わったら（一覧に初めて載ったときにもう停止していた場合を含む）、下の帯のアカウント表示を取り直す
@@ -361,12 +358,6 @@ export function ConsolePage() {
     } catch (err) {
       setAccountError(err instanceof ApiError && err.status === 409 ? t("ac.account.busy") : t("ac.account.switchError"));
     }
-  };
-
-  const handleLogout = (): void => {
-    void logout()
-      .catch(() => undefined)
-      .finally(() => setLoadFailed("unauthorized"));
   };
 
   useEffect(() => {
@@ -599,34 +590,36 @@ export function ConsolePage() {
         <RightPane sessionId={activeId} rev={state.activityRev} ledger={ledger} onRefresh={handleRefresh} />
       </aside>
       <footer className="ac-page__footer" data-testid="footer">
-        <span data-testid="sa-source">
-          {t("ac.footer.saSource")}: {state.saSource.slice(0, 12)}
-        </span>
-        <span data-testid="app-version">
-          {t("ac.footer.version")}: {state.appVersion}
-        </span>
-        {state.commit !== "" && (
-          <span data-testid="commit">
-            {t("ac.footer.commit")}: {state.commit.slice(0, 7)}
-          </span>
-        )}
-        <span data-testid="claude-version">
-          {t("ac.footer.claudeVersion")}: {state.claudeVersion}
-        </span>
-        <AccountBadge refreshKey={accountRefreshKey} switchEnabled={state.accountSwitchEnabled} onSwitch={() => setAccountConfirmOpen(true)} />
-        {accountError !== null && (
-          <span className="ac-page__footer-error" data-testid="account-error">
-            {accountError}
-          </span>
-        )}
-        <UsageMeter />
-        <Button variant="ghost" size="sm" onClick={() => setMemoryOpen(true)}>
-          {t("ac.memory.open")}
-        </Button>
-        <ThemeToggle />
-        <Button variant="ghost" size="sm" onClick={handleLogout}>
-          {t("ac.logout")}
-        </Button>
+        <div className="ac-page__providers" data-testid="footer-providers">
+          <section className="ac-provider" data-testid="provider-claude">
+            <AccountBadge refreshKey={accountRefreshKey} switchEnabled={state.accountSwitchEnabled} onSwitch={() => setAccountConfirmOpen(true)} />
+            {accountError !== null && (
+              <span className="ac-page__footer-error" data-testid="account-error">
+                {accountError}
+              </span>
+            )}
+            <UsageMeter />
+          </section>
+        </div>
+        <div className="ac-page__footer-side">
+          <div className="ac-page__footer-meta" data-testid="footer-meta">
+            <ThemeToggle />
+            <span data-testid="sa-source">
+              {t("ac.footer.saSource")}: {state.saSource.slice(0, 12)}
+            </span>
+            <span data-testid="app-version">
+              {t("ac.footer.version")}: {state.appVersion}
+            </span>
+            {state.commit !== "" && (
+              <span data-testid="commit">
+                {t("ac.footer.commit")}: {state.commit.slice(0, 7)}
+              </span>
+            )}
+            <span data-testid="claude-version">
+              {t("ac.footer.claudeVersion")}: {state.claudeVersion}
+            </span>
+          </div>
+        </div>
       </footer>
       <ConfirmModal
         open={closeTarget !== undefined}
@@ -663,9 +656,6 @@ export function ConsolePage() {
       </Modal>
       <Modal open={resumeOpen} onClose={() => setResumeOpen(false)} title={t("ac.resume.title")} size="lg">
         <ResumePicker items={resumeItems} busyPath={resumeBusyPath} error={resumeError} onResume={(target) => void handleResume(target)} />
-      </Modal>
-      <Modal open={memoryOpen} onClose={() => setMemoryOpen(false)} title={t("ac.memory.title")} size="md">
-        <MemoryPanel open={memoryOpen} />
       </Modal>
       <Modal open={formOpen} onClose={() => setFormOpen(false)} title={t("ac.newSession")} size="sm">
         <NewSessionForm roles={state.roles} busy={busy} error={formError} onSubmit={(v) => void handleCreate(v)} />

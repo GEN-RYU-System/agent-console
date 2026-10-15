@@ -1,0 +1,9 @@
+
+ RUN  v5.0.3 /Users/tanizawashingo/agent-console-wt/footer-layout
+
+
+ Test Files  3 passed (3)
+      Tests  94 passed (94)
+   Start at  12:59:25
+   Duration  128.89s (tests 69%, transform 17%, import 11%, environment 3%)
+

@@ -1,0 +1,5 @@
+
+> agent-console@0.37.0 lint
+> node scripts/check-design-governance.mjs
+
+design governance: OK
