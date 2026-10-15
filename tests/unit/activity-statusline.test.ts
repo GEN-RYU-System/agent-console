@@ -9,7 +9,7 @@ vi.setConfig({ testTimeout: 60000 });
 
 const REPO = process.cwd();
 const CLI = path.join(REPO, "scripts", "ac-hooks.mjs");
-const HOOK_EVENTS = 9;
+const HOOK_EVENTS = 10; // PermissionDenied 追加で9→10
 
 const dirs: string[] = [];
 function tmp(): string {

@@ -20,7 +20,7 @@ const INPUTS_KEEP = 20;
 const READ_CHUNK_BYTES = 1024 * 1024;
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const EVENT_FILE = /^events-(\d{4})(\d{2})(\d{2})\.jsonl$/;
-const EVENTS = new Set(["PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "TaskCreated", "TaskCompleted", "UserPromptSubmit", "Stop", "StopFailure"]);
+const EVENTS = new Set(["PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "TaskCreated", "TaskCompleted", "UserPromptSubmit", "Stop", "StopFailure", "PermissionDenied"]);
 /** 右の欄の「最近の入力」に出す文字数（表示のときに切る。記録は全文） */
 const INPUT_PREVIEW_CHARS = 80;
 /** チャットに残す会話の件数（1 セッション） */
@@ -140,6 +140,8 @@ interface SessionState {
   /** agent_id → 最後の SubagentStart の時刻（担当を呼んだとき・再開したとき） */
   restarts: Map<string, number>;
   tasks: Map<string, Task>;
+  /** 拒否された Agent 呼び出しの tool_use_id → 拒否の時刻（PermissionDenied が PreToolUse より先に書かれても外せるように） */
+  denied: Map<string, number>;
   inputs: InputItem[];
   chat: ChatItem[];
   /** chat に入っている会話の重なり防止の鍵（同じ記録を読み直しても二重に出さない） */
@@ -157,6 +159,7 @@ const newSession = (): SessionState => ({
   handbacks: new Map(),
   restarts: new Map(),
   tasks: new Map(),
+  denied: new Map(),
   inputs: [],
   chat: [],
   chatKeys: new Set(),
@@ -366,6 +369,14 @@ export class ActivityStore {
         if (FILE_TOOLS.includes(text(rec.tool))) this.applyFile(state, rec, ts, agentId);
         else this.applyPost(state, rec, ts);
         break;
+      case "PermissionDenied":
+        if (text(rec.tool) === "Agent" && text(rec.tool_use_id) !== "") {
+          const id = text(rec.tool_use_id);
+          state.denied.set(id, ts);
+          trimOldest(state.denied, STARTS_KEEP, (v) => v);
+          state.starts.delete(id);
+        }
+        break;
       case "SubagentStart":
         if (agentId !== "") rememberLatest(state.restarts, agentId, ts, RESTARTS_KEEP, () => linkedAgentIds(state));
         break;
@@ -412,6 +423,7 @@ export class ActivityStore {
     const toolUseId = text(rec.tool_use_id) || `noid-${(this.seq += 1)}`;
     // agent_id が付いた呼び出しは、担当がさらに呼んだ担当（孫）。出さない（開始として覚えない）
     if (agentId !== "") return;
+    if (state.denied.has(toolUseId)) return;
     state.starts.set(toolUseId, { toolUseId, ts, description: text(rec.description), subagentType: text(rec.subagent_type), model: text(rec.model) });
     if (state.starts.size > STARTS_KEEP) {
       const oldest = [...state.starts.values()].sort((a, b) => a.ts - b.ts)[0];

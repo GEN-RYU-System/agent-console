@@ -93,6 +93,7 @@
   - 指示を送った（sent）あとから数える。連続する標本がすべて idle で、waitingFor が無い時間が累計10分になったら閉じる。
   - busy、waiting、unknown、取得失敗の標本が1つでもあれば0からやり直す。前の標本との間隔が gapLimitMs（max(agentsPollMs×5, 60秒)）を超えた標本（Mac のスリープなど）も、取得失敗と同じ扱いで0からやり直す（v0.35.0）。
   - 第1層の running の担当がいる間も0からやり直す（U3 の結果によらず入れる。安全側）。
+  - 再起動のあとは、復元の完了後に、closeWhenIdle が true で最新の記録が sent の、送ってから24時間以内のセッションを見張りに戻す（v0.36.0。`RoutineService.retrack`。途中経過は戻さず0から数え直す）。
 - 返答の元: 既存の chat（Stop の last_assistant_message。server/activity.ts:368-370、chat() :457-462、claudeSessionId で引く）の最後の1件。transcript は読まない。
 - 判定:
   - 最後の返答に `NEEDS_DECISION:` か `BLOCKED:` → `kept`（decision）
@@ -128,6 +129,7 @@ recon A4（21:09）の時点で、すでに開いていない。対応は不要�
 - R3（残る弱点。PO 承知の上）: わざと別のセッションを名乗る (d2) と、秘密を読む (e) は止めない。(d2) は監査に残る。(e) は画面用の /api/routines を通るので、監査に残らない。週次保守で、定期実行の一覧の変化（作成者・作成日時）を前週と比べて報告する。
 - R4: hook の誤爆で、Sonnet の agent-console 開発が止まる。→ §3-2 で repo の文字列を対象から外した。S9 の3つの形を単体試験で固定する。
 - R5: 一時承認の押し間違い。→ 1回・30分・セッション限定とし、発行と使用の両方を監査に残す。
+- R6（v0.36.0）: auto mode に拒否された担当の呼び出しは終わりの印が来ず、24時間「動作中」に残って 403 と idle 判定を誤らせる。→ PermissionDenied を記録して動作中から外す。PreToolUse hook による block は PermissionDenied が走らないため対象外（24時間で消える）。
 
 ## 7. 維持の仕組み
 - 監査ファイル routine-audit.jsonl に、拒否、一時承認の発行と使用、自動クローズ（closed と kept）を残す。

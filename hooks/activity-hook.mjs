@@ -144,6 +144,12 @@ export function buildRecord(input, now = Date.now()) {
       rec = withText(rec, "last_assistant_message", input.last_assistant_message, REPORT_CHARS);
       return rec;
     }
+    case "PermissionDenied": {
+      // auto mode が Agent の呼び出しを拒否した（v0.36.0）。tool_use_id だけ残す（reason・tool_input は書かない）
+      if (input.tool_name !== "Agent") return null;
+      const rec = withText({ ...common, tool: "Agent" }, "tool_use_id", input.tool_use_id, ID_CHARS);
+      return rec.tool_use_id === undefined ? null : rec;
+    }
     case "SubagentStart":
       // 担当を呼んだとき、そして再開したとき（SendMessage など）にも来る（工程0 (a)）。agent_id と agent_type だけ残す
       return withText(common, "agent_type", input.agent_type, NAME_CHARS);
