@@ -472,18 +472,23 @@ async function handleAgentRoutines(deps: AppDeps, req: IncomingMessage, res: Ser
     return;
   }
   const approvedBy: Partial<RoutineAuditEntry> = runningCount > 0 && used !== null ? { approvedBy: used.by } : {};
+  let written = false;
   try {
     if (act === "add") {
       const created = await deps.routines.create(input as never, "agent");
+      written = true;
       await record({ action: act, outcome: "ok", reason, ...approvedBy, ...withTarget(created.id, "agent") });
       sendJson(res, 201, created);
       return;
     }
     const result = act === "update" ? await deps.routines.update(id as string, input as never, true) : await deps.routines.setEnabled(id as string, act === "enable", true);
+    written = true;
     await record({ action: act, outcome: "ok", reason, ...approvedBy, ...withTarget(result.id, targetCreatedBy) });
     sendJson(res, 200, result);
   } catch (err) {
-    if (err instanceof RoutineLimitError) await record({ action: act, outcome: "denied", reason, error: err.message, ...withTarget(id, targetCreatedBy) });
+    // 書き込みが失敗したら、取り出していた承認を戻す（期限は延長しない。戻せたかは上限超過の監査行に残す）
+    const restored = !written && used !== null ? approvalsOf(deps).restore(callerSessionId as string, used) : undefined;
+    if (err instanceof RoutineLimitError) await record({ action: act, outcome: "denied", reason, error: err.message, ...(used !== null && restored !== undefined ? { approvalRestored: restored } : {}), ...withTarget(id, targetCreatedBy) });
     throw err;
   }
 }

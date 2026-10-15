@@ -13,12 +13,15 @@ export interface Approval {
 
 export class RoutineApprovals {
   private readonly items = new Map<string, Approval>();
+  /** 最後に出した承認（consume では消さない）。restore が「後から新しい承認が出ていないか」を同一性で確かめる */
+  private readonly lastIssued = new Map<string, Approval>();
   constructor(private readonly now: () => number = Date.now) {}
 
   /** 承認を出す。同じ claudeSessionId の前の承認は上書きされる */
   issue(claudeSessionId: string, by: ApprovalBy): Approval {
     const approval: Approval = { by, expiresAt: this.now() + APPROVAL_TTL_MS[by] };
     this.items.set(claudeSessionId, approval);
+    this.lastIssued.set(claudeSessionId, approval);
     return approval;
   }
 
@@ -38,5 +41,17 @@ export class RoutineApprovals {
     const approval = this.peek(claudeSessionId);
     if (approval !== null) this.items.delete(claudeSessionId);
     return approval;
+  }
+
+  /**
+   * 使った承認を、書き込みが失敗したときに戻す。次をすべて満たすときだけ同じ参照を戻す:
+   * 最後に出した承認と同一（後から新しい承認が出ていれば戻さない）・今の Map に承認が無い・期限内（延長しない）。戻せたかを返す
+   */
+  restore(claudeSessionId: string, approval: Approval): boolean {
+    if (this.lastIssued.get(claudeSessionId) !== approval) return false;
+    if (this.items.has(claudeSessionId)) return false;
+    if (approval.expiresAt <= this.now()) return false;
+    this.items.set(claudeSessionId, approval);
+    return true;
   }
 }

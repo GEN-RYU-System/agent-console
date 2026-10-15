@@ -28,9 +28,16 @@ export interface CloserDeps {
   audit: (entry: Omit<RoutineAuditEntry, "at">) => Promise<void>;
 }
 
+/**
+ * 標本の間隔の上限。これを超えたら（Mac のスリープなど）その標本を取得失敗と同じ unknown として 0 から数え直す。
+ * 1 周は agentsPollMs ＋ fetchAgents の timeout 15 秒などで、正常でも 20 秒前後になり得るので 60 秒を下限にする
+ */
+export const gapLimitMsFor = (agentsPollMs: number): number => Math.max(agentsPollMs * 5, 60_000);
+export const DEFAULT_GAP_LIMIT_MS = gapLimitMsFor(3000);
+
 export class RoutineCloser {
   private readonly tracked = new Map<string, Tracked>();
-  constructor(private readonly deps: CloserDeps, private readonly idleMs = CLOSE_IDLE_MS, private readonly waitingMs = KEEP_WAITING_MS) {}
+  constructor(private readonly deps: CloserDeps, private readonly idleMs = CLOSE_IDLE_MS, private readonly waitingMs = KEEP_WAITING_MS, private readonly gapLimitMs = DEFAULT_GAP_LIMIT_MS) {}
 
   track(target: CloserTarget): void {
     this.tracked.set(target.sessionId, { ...target, prevAt: null, prevIdle: false, idleMs: 0, waitingSince: null, keptWaiting: false });
@@ -42,7 +49,9 @@ export class RoutineCloser {
     for (const t of [...this.tracked.values()]) {
       const info = this.deps.session(t.sessionId);
       if (info === undefined || info.exited) { this.tracked.delete(t.sessionId); continue; }
-      const state = states?.get(t.sessionId) ?? "unknown";
+      // 前の標本から gapLimitMs を超えて空いたら、取得失敗と同じ unknown 扱い（スリープ明けにすぐ閉じない）
+      const gapped = t.prevAt !== null && at - t.prevAt > this.gapLimitMs;
+      const state = gapped ? "unknown" : (states?.get(t.sessionId) ?? "unknown");
       const running = info.claudeSessionId !== undefined ? this.deps.runningCount(info.claudeSessionId) : 0;
       const idle = state === "idle" && running === 0;
       t.idleMs = idle && t.prevIdle && t.prevAt !== null ? t.idleMs + (at - t.prevAt) : 0;

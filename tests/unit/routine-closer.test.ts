@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionState } from "../../server/agents.ts";
-import { CLOSE_IDLE_MS, KEEP_WAITING_MS, RoutineCloser, SUMMARY_CHARS } from "../../server/routine-closer.ts";
+import { CLOSE_IDLE_MS, KEEP_WAITING_MS, RoutineCloser, SUMMARY_CHARS, gapLimitMsFor } from "../../server/routine-closer.ts";
 import type { RoutineAuditEntry } from "../../server/routine-audit.ts";
 
 const MIN = 60_000;
@@ -8,7 +8,7 @@ const SID = "app-1";
 const CID = "cccccccc-1111-4111-8111-111111111111";
 
 interface Rig { closer: RoutineCloser; closed: string[]; records: Record<string, unknown>[]; audits: Omit<RoutineAuditEntry, "at">[]; set: (o: { reply?: string | null; running?: number; exited?: boolean }) => void; sample: (state: SessionState | null, at: number) => Promise<void> }
-function rig(): Rig {
+function rig(gapLimitMs = Number.POSITIVE_INFINITY): Rig {
   let reply: string | null = "完了しました";
   let running = 0;
   let exited = false;
@@ -22,7 +22,7 @@ function rig(): Rig {
     close: async (id) => { closed.push(id); },
     record: async (routineId, event) => { records.push({ routineId, ...event }); },
     audit: async (entry) => { audits.push(entry); },
-  });
+  }, CLOSE_IDLE_MS, KEEP_WAITING_MS, gapLimitMs);
   closer.track({ routineId: "R1", createdBy: "agent", slot: "2026-10-14T09:00+09:00", sessionId: SID, sessionName: "朝 10-14 09:00", sentAt: 0 });
   return {
     closer, closed, records, audits,
@@ -129,5 +129,49 @@ describe("S7 返答の中身で閉じるか残すかを決める", () => {
     await r.closer.sample(new Map<string, SessionState>([["app-2", "idle"]]), 0);
     await r.closer.sample(new Map<string, SessionState>([["app-2", "idle"]]), CLOSE_IDLE_MS);
     expect(r.audits.find((a) => a.routineId === "R2")).toMatchObject({ action: "closed", targetCreatedBy: "ui" });
+  });
+});
+
+describe("B 標本の間が gapLimitMs を超えたら（Mac のスリープなど）0 から数え直す", () => {
+  const HOUR = 60 * MIN;
+  it("B1 idle が 9 分たまった後、次の標本が 2 時間後なら閉じない。そこから idle が 10 分続けば閉じる", async () => {
+    const r = rig(60_000);
+    for (let t = 0; t <= 9 * MIN; t += MIN) await r.sample("idle", t);
+    const wake = 9 * MIN + 2 * HOUR;
+    await r.sample("idle", wake);
+    expect(r.closed).toEqual([]);
+    // 跳んだ標本は unknown 扱い。次の idle の標本から数え直す
+    for (let t = wake + MIN; t < wake + MIN + CLOSE_IDLE_MS; t += MIN) await r.sample("idle", t);
+    expect(r.closed).toEqual([]);
+    await r.sample("idle", wake + MIN + CLOSE_IDLE_MS);
+    expect(r.closed).toEqual([SID]);
+  });
+
+  it("B2 waiting が 59 分の後、次の標本が 2 時間後なら kept を記録しない。そこから waiting が 60 分で kept", async () => {
+    const r = rig(60_000);
+    for (let t = 0; t <= 59 * MIN; t += MIN) await r.sample("waiting", t);
+    const wake = 59 * MIN + 2 * HOUR;
+    await r.sample("waiting", wake);
+    expect(r.records).toEqual([]);
+    for (let t = wake + MIN; t < wake + MIN + KEEP_WAITING_MS; t += MIN) await r.sample("waiting", t);
+    expect(r.records).toEqual([]);
+    await r.sample("waiting", wake + MIN + KEEP_WAITING_MS);
+    expect(r.audits).toEqual([{ action: "kept", outcome: "ok", routineId: "R1", targetCreatedBy: "agent", callerSessionId: null, closeReason: "waiting" }]);
+  });
+
+  it("B3 間隔がちょうど gapLimitMs なら今どおり足す。gapLimitMs+1 なら数え直す", async () => {
+    const exact = rig(CLOSE_IDLE_MS);
+    await exact.sample("idle", 0);
+    await exact.sample("idle", CLOSE_IDLE_MS);
+    expect(exact.closed).toEqual([SID]);
+    const over = rig(CLOSE_IDLE_MS);
+    await over.sample("idle", 0);
+    await over.sample("idle", CLOSE_IDLE_MS + 1);
+    expect(over.closed).toEqual([]);
+  });
+
+  it("B4 gapLimitMsFor は agentsPollMs の 5 倍。ただし下限は 60 秒", () => {
+    expect(gapLimitMsFor(3000)).toBe(60_000);
+    expect(gapLimitMsFor(20_000)).toBe(100_000);
   });
 });

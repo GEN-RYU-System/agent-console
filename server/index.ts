@@ -20,7 +20,7 @@ import { OpenSessionRecorder, isRestoreEnabled, startOpenSessionRestore } from "
 import { OpenSessionStore } from "./session-store.ts";
 import { RoutineApprovals } from "./routine-approvals.ts";
 import { RoutineAudit } from "./routine-audit.ts";
-import { RoutineCloser } from "./routine-closer.ts";
+import { CLOSE_IDLE_MS, KEEP_WAITING_MS, RoutineCloser, gapLimitMsFor } from "./routine-closer.ts";
 import { RoutineService, RoutineStore } from "./routines.ts";
 import { ReservationService, ReservationStore } from "./reservations.ts";
 import { RelayManager, resolveRelayDir } from "./relay.ts";
@@ -92,7 +92,7 @@ async function main(): Promise<void> {
     close: (id) => sessions.close(id),
     record: (routineId, event) => routines.recordClose(routineId, event),
     audit: (entry) => routineAudit.append({ at: new Date().toISOString(), ...entry }).catch((e) => console.error("routine-audit: write failed:", e instanceof Error ? e.message : e)),
-  });
+  }, CLOSE_IDLE_MS, KEEP_WAITING_MS, gapLimitMsFor(config.agentsPollMs));
   routines.setCloser(closer);
   hub.onAgentsSampled((states, at) => { void activity.store.refresh().then(() => states, () => null).then((st) => closer.sample(st, at)).catch((e) => console.error("routine-closer: sample failed:", e instanceof Error ? e.message : e)); });
   const uploads = new UploadStore(config.dataDir, config.uploadMaxBytes, config.uploadMaxKeep);

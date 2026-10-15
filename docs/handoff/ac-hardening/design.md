@@ -91,7 +91,7 @@
 - 観測の定義:
   - `claude agents --json` の標本（agentsPollMs ごと、server/hub.ts:129,:154-156）を使う。
   - 指示を送った（sent）あとから数える。連続する標本がすべて idle で、waitingFor が無い時間が累計10分になったら閉じる。
-  - busy、waiting、unknown、取得失敗の標本が1つでもあれば0からやり直す。
+  - busy、waiting、unknown、取得失敗の標本が1つでもあれば0からやり直す。前の標本との間隔が gapLimitMs（max(agentsPollMs×5, 60秒)）を超えた標本（Mac のスリープなど）も、取得失敗と同じ扱いで0からやり直す（v0.35.0）。
   - 第1層の running の担当がいる間も0からやり直す（U3 の結果によらず入れる。安全側）。
 - 返答の元: 既存の chat（Stop の last_assistant_message。server/activity.ts:368-370、chat() :457-462、claudeSessionId で引く）の最後の1件。transcript は読まない。
 - 判定:
