@@ -59,6 +59,7 @@ node "<dataDir>/bin/ac-routine.mjs" disable <id> < reason.json
 - 第0段の実測（U2）: 担当が動いている最中に中断（SIGINT）や親の終了（SIGTERM）が起きると、SubagentStop も Stop も来ず、running は 24 時間の上限まで残る。その間の書き込みは 403 のままだが、Opus の承認（approve）で越えられる。
 - 導入後に `node scripts/ac-hooks.mjs install` をもう一度実行する（guard の `if` を 6 規則に分けて足す。実行するまで第2層は効かない）。
 - 自動クローズの idle 判定は `claude agents --json` の定期取得（`agentsPollMs`）の標本で数える。取得が続けて失敗すると閉じない。
+- 標本の間が gapLimitMs（既定 60 秒）を超えたとき（Mac のスリープなど）も、取得失敗と同じく 0 から数え直す（v0.35.0）。
 
 ## v0.9.0 セッションの様子の記録
 
