@@ -427,7 +427,7 @@ test("未ログインで開くとログインが必要の案内（Callout）が�
   await expect(page.getByRole("alert")).toContainText("ログインが必要です");
 });
 
-test("下の帯に「ログアウト」「メモリ」のボタンが無い（v0.36.0 で外した。サーバーの /api/logout・/api/memory は残る）", async ({ page }) => {
+test("下の帯に「ログアウト」「メモリ」のボタンが無い（v0.37.0 で外した。サーバーの /api/logout・/api/memory は残る）", async ({ page }) => {
   await openPaired(page);
   const footer = page.getByTestId("footer");
   await expect(footer.getByRole("button", { name: "ログアウト", exact: true })).toHaveCount(0);

@@ -313,7 +313,7 @@ describe("ConsolePage footer and authorization", () => {
     expect(screen.getByTestId("commit").textContent).not.toContain("abcdef01234");
   });
 
-  it("has no memory or logout button in the footer (removed in v0.36.0)", async () => {
+  it("has no memory or logout button in the footer (removed in v0.37.0)", async () => {
     render(<ConsolePage />);
     await screen.findByTestId("footer");
     const footer = screen.getByTestId("footer");
