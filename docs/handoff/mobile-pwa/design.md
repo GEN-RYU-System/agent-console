@@ -1,6 +1,6 @@
 # 設計: スマホのホーム画面から agent-console を使う（mobile-pwa）第2版
 
-- 状態: 設計案 第2版＋§14（Opus、2026-10-14）。第1版は Fable 審査で REVISE（/tmp/CC報告ファイル/mobile-pwa/review-design1/review.md）。第2版は Fable 再審査で条件付き APPROVE（Medium 4・Low 5、/tmp/CC報告ファイル/mobile-pwa/review-design2/review.md）。条件の Medium 4 件と Low 5 件は §14 で取り込み済み。工程0の結果で §5 の分岐を確定した第3版を作ってから実装カードを出す。実装未着手。第1版の控え: /tmp/CC報告ファイル/mobile-pwa/design-v1.md
+- 状態: 設計案 第2版＋§14＋§15（Opus、2026-10-14、§15 は 2026-10-16）。第1版は Fable 審査で REVISE（/tmp/CC報告ファイル/mobile-pwa/review-design1/review.md）。第2版は Fable 再審査で条件付き APPROVE（Medium 4・Low 5、/tmp/CC報告ファイル/mobile-pwa/review-design2/review.md）。条件の Medium 4 件と Low 5 件は §14 で取り込み済み。工程0の結果で §5 の分岐を確定した第3版を作ってから実装カードを出す。実装未着手。第1版の控え: /tmp/CC報告ファイル/mobile-pwa/design-v1.md
 - 依頼（PO 原文、2026-10-14）: 「スマホのアプリ→webアプリでホームアイコンに固定して使用したい、個人利用なので」「まずwifi環境だけで作り、段階的に外出先からも使えるように設計」「配線とDBのSSOTは遵守してデータを分散させることは禁止。フロントエンドのパーツもデザイントークンとデザインシステム を遵守して、金型登録のないハードコードを禁止する」
 - PO 決定（2026-10-14）: つなぎ方は Tailscale（Serve）。プランは無料 Personal（PO 原文「私が個人利用するので無料プランで進める」）。
 - 根拠（生出力・引用）:
@@ -134,7 +134,7 @@ iPhone（Tailscale 接続中）→ https://<mac名>.<tailnet>.ts.net（Tailscale
 - Service Worker は入れない（WebKit 公式「Safari から作るホーム画面アプリは Service Worker 不要」、external2/facts.md 項目1。工程0 (b) で実測）。
 
 ### 5-9 README
-- Tailscale の入れ方と守りの設定（新しい端末の承認、Tailnet Lock、ログインアカウントの2段階認証、Mac の名前に個人情報を入れない）、`tailscale serve` の設定、`remoteAccess` の書き方、iPhone のつなぎ方、端末の外し方。
+- Tailscale の入れ方と守りの設定（Tailnet Lock、ログインアカウントの2段階認証、Mac の名前に個人情報を入れない、鍵の期限、自動更新。§15）、`tailscale serve` の設定、`remoteAccess` の書き方、iPhone のつなぎ方、端末の外し方。
 
 ## 6. 工程
 - 工程0（実機の事実確認。製品コードは触らない）: 使い捨ての確認用サーバー（scratchpad の小さな node スクリプト、127.0.0.1 の別ポート）を Tailscale Serve の別ポートで出し、iPhone で測る。各項目に「否のとき」を書く。
@@ -153,7 +153,7 @@ iPhone（Tailscale 接続中）→ https://<mac名>.<tailnet>.ts.net（Tailscale
 | (k) | `tailscale status --json` の `Self.DNSName` と CLI のパス | 取れなければ §5-1 を改版 |
 | (l) | standalone 表示で 100dvh が画面の高さと合うか、キーボードを出した時の高さ | 合わなければ visualViewport で高さを合わせる案に改版 |
 
-- 前提として PO の手作業が要る: Mac と iPhone に Tailscale を入れる、新しい端末の承認・Tailnet Lock・HTTPS（MagicDNS）を管理画面でオンにする、ログインアカウントの2段階認証。手順書は工程0の前に渡す。
+- 前提として PO の手作業が要る: Mac と iPhone に Tailscale を入れる、Tailnet Lock・HTTPS（MagicDNS）を管理画面でオンにする、ログインアカウントの2段階認証、鍵の期限と自動更新（§15）。手順書は docs/handoff/mobile-pwa/po-steps.md。
 - 工程0の結果を docs/handoff/mobile-pwa/step0.md に書き、§5 の分岐を確定してから実装カードを出す。
 - 工程1（実装、Sonnet）: 試験を先に書く。§5-1〜5-9。版は次の minor。
 - 工程2（審査・反映）: Fable のコード審査 → CI → マージ → タグ → 更新ジョブ。
@@ -183,9 +183,9 @@ iPhone（Tailscale 接続中）→ https://<mac名>.<tailnet>.ts.net（Tailscale
 ## 9. リスクと対処
 | リスク | 対処 |
 |---|---|
-| 「localhost なら信用」で外から素通り（外部事例: AI エージェントの管理画面 900超が露出、cases.md C6） | 接続元 IP を判定に使う箇所は 0 件（recon2 項目1）。今後も使わない。K8 で外の Host・Origin を拒否する試験 |
+| 「localhost なら信用」で外から素通り（外部事例: AI エージェントの管理画面 数百件（"hundreds"）が露出、cases.md C6） | 接続元 IP を判定に使う箇所は 0 件（recon2 項目1）。今後も使わない。K8 で外の Host・Origin を拒否する試験 |
 | スマホの紛失・盗難 | 端末トークンを Mac から外せる（K7）。Tailscale 側でも端末を外せる（README）。スマホのトークンでは端末を増やせない（K13、トークンの種類で判定） |
-| Tailscale のアカウント乗っ取り | ログインアカウントの2段階認証、新しい端末の承認、Tailnet Lock（trust.md 項目5）。アプリ側の端末トークンが別に要る |
+| Tailscale のアカウント乗っ取り | ログインアカウントの2段階認証、Tailnet Lock（trust.md 項目5、§15）。アプリ側の端末トークンが別に要る |
 | Serve が Host を 127.0.0.1 に書き換える場合、Host 検査が外に効かない | 工程0 (a) で確定。その時の守りは Origin（ブラウザ）と認証、届くのは承認済み端末だけ（§5-2 (ii)） |
 | Mac の名前が公開の証明書記録に載る（Tailscale 公式） | 名前に個人情報を入れない（README・手順書）。リポジトリには書かない（§5-1） |
 | 短いコードの総当たり | 有効2分・1つだけ・5回失敗で無効（約40bit に対し最大5回）。launcher 用とは別 |
@@ -198,10 +198,10 @@ iPhone（Tailscale 接続中）→ https://<mac名>.<tailnet>.ts.net（Tailscale
 - 許可ホスト・CSP・端末トークン・コードの試験は vitest に入れ、CI（既存）で毎回走る。
 - 狭い画面の e2e を1本足し、CI で走る。
 - 文言・トークン・金型は check-design-governance.mjs（lint、CI）。manifest は生成スクリプトで作り、手書きしない。
-- Tailscale 側の設定（承認・Tailnet Lock）は PO の管理画面。README に確認手順を書く。
+- Tailscale 側の設定（Tailnet Lock・鍵の期限・自動更新）は PO の管理画面と各端末。README に確認手順を書く。
 
 ## 11. 外部事例（要約。詳細と出典は cases.md・facts.md・trust.md）
-- 失敗: Docker API の認証なし公開 1,400超（Unit 42、2020-01）。Ollama の DNS rebinding は最短3秒（CVE-2024-28224）。AI エージェントの管理画面 900超が露出（2026-01、「localhost なら自動承認」＋リバースプロキシ、cases.md C6）。共通要因は「認証なし」または「接続元で信用」。本設計は両方を持たない。
+- 失敗: Docker API の認証なし公開 1,400超（Unit 42、2020-01）。Ollama の DNS rebinding は最短3秒（CVE-2024-28224）。AI エージェントの管理画面 数百件（"hundreds"、Bitdefender）が露出（2026-01、「localhost なら自動承認」＋リバースプロキシ、cases.md C6）。共通要因は「認証なし」または「接続元で信用」。本設計は両方を持たない。
 - 成功・制約: code-server 公式は、IP 直指定の自己署名証明書では Safari が WebSocket を止めると記載 → 正規の証明書と名前を Tailscale が用意する。WebKit 公式は、ホーム画面アプリは Service Worker 不要で、保存は Safari と別の数え方と記載。
 - 数値の限界: PWA の効果の数値（Twitter Lite など）は数億人規模のサービスで、個人用の本件の成功の根拠には使わない。本件の成功は K1〜K13 の実測で判定する。
 
@@ -245,3 +245,18 @@ iPhone（Tailscale 接続中）→ https://<mac名>.<tailnet>.ts.net（Tailscale
 
 - 実装を始める条件（再審査 §7）: PO が工程0の前提（Tailscale の導入・管理画面の設定）を済ませ、工程0の結果 step0.md と、§5 の分岐を確定した第3版が揃うこと。
 - 【事実】この Mac には今 Tailscale の CLI が無い（再審査の ls・which が not found）。工程0 (k) は PO が入れた後にだけ確かめられる。
+
+## 15. 第2.1版の決め（2026-10-16、Opus）
+- 根拠: ~/CC報告ファイル-keep/tailscale-research/（summary.md・security.md・cases.md）。公式ページの写しと照合記録は /tmp/CC報告ファイル/tailscale-verify/（再起動で消える。要点は本節に転記）。旧根拠 /tmp/CC報告ファイル/mobile-pwa/ は再起動で消えた（冒頭の参照先は記録として残す）。
+
+| 項目 | 決め | 根拠（公式原文） |
+|---|---|---|
+| 新しい端末の承認と Tailnet Lock | Tailnet Lock だけを使う。Device approval は使わない | kb/1226 "they are mutually exclusive features"。Device approval はアカウントを奪った人が自分で承認できるが、Tailnet Lock は署名鍵が端末にあり、アカウントや Tailscale 側を奪われても署名の無い端末は入れない |
+| 署名する端末 | Mac と iPhone の2台 | kb/1226 "You must select at least two signing nodes" |
+| 無効化用の合言葉 | PO がパスワード管理アプリ等に控える。サポートへの送付はオフ | kb/1226 "If you lose your disablement secrets, and you did not provide one to Tailscale support, the tailnet cannot be recovered"。失くした時の被害は端末2台の網の作り直しで済む。送付をオンにすると Tailscale 側が外せる |
+| 鍵の期限 | Mac は無効、iPhone は既定180日を残し期限前に家で再認証 | kb/1028 "of 180 days"。kb/1226 "When a signed node key expires, the new node key will not need to be re-signed"。security.md:119 の「無効化しない」は全端末一律の案で、本節で Mac だけ外すに改める（家に固定・外から直せないため。iPhone は紛失しうるので残す） |
+| 更新 | Mac・iPhone とも自動更新 | 公式の弱点公表に Mac 用（TS-2026-001、修正 1.94.0）がある（security.md:51） |
+| 外部事例の件数 | §9・§11 の「900超」を「数百件（hundreds）」に直した | cases.md:134・171 |
+
+- 【未確認】Tailnet Lock 下で iPhone を失くした時の外し方（署名の取り消し tailscale lock revoke-keys は複数の署名端末の共同署名が要る、kb/1226）。2台構成で1台を失くすと残りは Mac 1台になる。工程0の後、README を書く時に公式手順で確かめる。実装の開始条件（§14 末尾）には含めない（工程0は使い捨てサーバーで、本物を外に出さないため）。
+
