@@ -303,6 +303,94 @@ test("下の帯に利用量（週・5時間）の 2 本のバーが出る: 値�
   }
 });
 
+/** 下の帯の組み直し（docs/handoff/footer-layout/design.md §7）。K1〜K4 は 1400×800 の boundingBox で見る */
+test("下の帯の配置: K1〜K4（Claude のまとまりが左上・バーは幅 320px の中・メタは右下・Codex/Grok 用の空き）", async ({ page }) => {
+  rmSync(USAGE_FILE, { force: true });
+  try {
+    fireStatusline(41, 23, 3 * 3600);
+    await openPaired(page);
+    const footer = page.getByTestId("footer");
+    await expect(footer.getByTestId("usage-meter-bar-week")).toBeVisible();
+    await expect(footer.getByTestId("usage-meter-bar-fiveHour")).toBeVisible();
+    const box = async (id: string) => {
+      const b = await page.getByTestId(id).boundingBox();
+      if (b === null) throw new Error(`boundingBox が取れません: ${id}`);
+      return b;
+    };
+    const right = (b: { x: number; width: number }): number => b.x + b.width;
+    const bottom = (b: { y: number; height: number }): number => b.y + b.height;
+    const f = await box("footer");
+    const claude = await box("provider-claude");
+    const badge = await box("account-badge");
+    const meter = await box("usage-meter");
+    const barWeek = await box("usage-meter-bar-week");
+    const barFive = await box("usage-meter-bar-fiveHour");
+    const meta = await box("footer-meta");
+    const side = await page.locator(".ac-page__footer-side").boundingBox();
+    if (side === null) throw new Error("footer-side の boundingBox が取れません");
+    const m = {
+      K1_meterTop_minus_badgeBottom: meter.y - bottom(badge),
+      K2_claudeWidth: claude.width,
+      K2_barWeekRight_minus_claudeRight: right(barWeek) - right(claude),
+      K2_barFiveRight_minus_claudeRight: right(barFive) - right(claude),
+      K3_footerRight_minus_metaRight: right(f) - right(meta),
+      K3_footerBottom_minus_metaBottom: bottom(f) - bottom(meta),
+      K4_sideLeft_minus_claudeRight: side.x - right(claude),
+      footerHeight: f.height,
+    };
+    if (process.env.AC_FOOTER_METRICS_FILE) writeFileSync(process.env.AC_FOOTER_METRICS_FILE, JSON.stringify({ viewport: "1400x800", ...m }, null, 2));
+    // K1: usage-meter は account-badge の下
+    expect(meter.y).toBeGreaterThanOrEqual(bottom(badge));
+    // K2: まとまりの幅は 320px±2、2 本のバーの右端はまとまりの右端を超えない
+    expect(Math.abs(claude.width - 320)).toBeLessThanOrEqual(2);
+    expect(right(barWeek)).toBeLessThanOrEqual(right(claude));
+    expect(right(barFive)).toBeLessThanOrEqual(right(claude));
+    // K3: footer-meta は右下（右端 24px 以内・下端 16px 以内）
+    expect(right(f) - right(meta)).toBeLessThanOrEqual(24);
+    expect(bottom(f) - bottom(meta)).toBeLessThanOrEqual(16);
+    // テーマ切替は footer-meta の中。「メモリ」「ログアウト」は footer に無い
+    await expect(page.getByTestId("footer-meta").getByRole("button", { name: /ダークモード|ライトモード/ })).toHaveCount(1);
+    await expect(footer.getByRole("button", { name: "メモリ", exact: true })).toHaveCount(0);
+    await expect(footer.getByRole("button", { name: "ログアウト", exact: true })).toHaveCount(0);
+    // K4: Claude のまとまりの右から footer-side の左まで 600px 以上空く
+    expect(side.x - right(claude)).toBeGreaterThanOrEqual(600);
+  } finally {
+    rmSync(USAGE_FILE, { force: true });
+  }
+});
+
+test("下の帯のスクリーンショット（K6: 1400・1024 幅 × 値あり・値なし・80%以上 × ライト・ダーク。AC_FOOTER_SHOT_DIR 指定時だけ保存）", async ({ page }) => {
+  const dir = process.env.AC_FOOTER_SHOT_DIR;
+  test.skip(!dir, "AC_FOOTER_SHOT_DIR が未指定のためスキップ");
+  test.setTimeout(120000); // 12 枚の撮影（3 状態 × 2 幅 × 2 テーマ）が 30 秒の既定に収まらない
+  rmSync(USAGE_FILE, { force: true });
+  try {
+    mkdirSync(dir as string, { recursive: true });
+    const states: Array<[string, number | null, number | null]> = [["value", 41, 23], ["none", null, null], ["high", 85, 82]];
+    await openPaired(page);
+    for (const [name, week, five] of states) {
+      rmSync(USAGE_FILE, { force: true });
+      if (week !== null && five !== null) fireStatusline(week, five, 3 * 3600);
+      // ペアリングは最初の 1 回だけ。2 回目以降は同じページを再読み込みする（同じページで /pair を開き直すと「読み込み中」のまま進まない）
+      await page.reload();
+      const footer = page.getByTestId("footer");
+      if (week === null) await expect(footer.getByTestId("usage-meter-message")).toBeVisible();
+      else await expect(footer.getByTestId("usage-meter-pct-week")).toHaveText(`${week}%`);
+      for (const theme of ["light", "dark"] as const) {
+        await page.evaluate((t) => document.documentElement.classList.toggle("force-dark", t === "dark"), theme);
+        for (const width of [1400, 1024]) {
+          await page.setViewportSize({ width, height: 800 });
+          await footer.screenshot({ path: path.join(dir as string, `footer-${name}-${theme}-${width}.png`) });
+        }
+      }
+      await page.evaluate(() => document.documentElement.classList.remove("force-dark"));
+      await page.setViewportSize({ width: 1400, height: 800 });
+    }
+  } finally {
+    rmSync(USAGE_FILE, { force: true });
+  }
+});
+
 test("ペアリング: /pair?code で一覧が開き、URL に秘密もコードも残らず、トークンは sessionStorage のみ（Cookie 無し）", async ({ page, context }) => {
   const code = await newPairingCode();
   await page.goto(`${BASE}/pair?code=${code}`);
@@ -339,14 +427,12 @@ test("未ログインで開くとログインが必要の案内（Callout）が�
   await expect(page.getByRole("alert")).toContainText("ログインが必要です");
 });
 
-test("ログアウト: サーバー側でセッションが失効し、画面はログインが必要になる", async ({ page }) => {
+test("下の帯に「ログアウト」「メモリ」のボタンが無い（v0.37.0 で外した。サーバーの /api/logout・/api/memory は残る）", async ({ page }) => {
   await openPaired(page);
-  const token = (await page.evaluate(() => window.sessionStorage.getItem("ac.session"))) as string;
-  await page.getByRole("button", { name: "ログアウト", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("ログインが必要です");
-  expect(await page.evaluate(() => window.sessionStorage.getItem("ac.session"))).toBeNull();
-  const res = await fetch(`${BASE}/api/state`, { headers: { Authorization: `Bearer ${token}` } });
-  expect(res.status).toBe(401);
+  const footer = page.getByTestId("footer");
+  await expect(footer.getByRole("button", { name: "ログアウト", exact: true })).toHaveCount(0);
+  await expect(footer.getByRole("button", { name: "メモリ", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "メモリ", exact: true })).toHaveCount(0);
 });
 
 test("別のタブ（別の sessionStorage）にはセッションが共有されない", async ({ page, context }) => {
@@ -855,44 +941,6 @@ test("段階2 K5: 台帳は既定で作業中・レビュー・WIP かつ直近 
   await page.reload();
   await expect(page.getByTestId("ledger-filters").getByLabel("ブランチ名で検索", { exact: false })).toHaveValue("SEED-OLD");
   await expect(page.getByTestId("ledger-card")).toHaveCount(1);
-});
-
-test("段階2 K6: メモリ画面にセッションごと・サーバー・Mac 全体が MB と % で出て、10 秒ごとに更新される（値は OS の実出力と一致）", async ({ page }) => {
-  test.setTimeout(45000);
-  const id = await apiCreate("mem-view", "e2e-plain");
-  await openPaired(page);
-  await page.getByRole("button", { name: "メモリ", exact: true }).click();
-  const serverBox = page.getByTestId("memory-server");
-  await expect(serverBox).toContainText("MB");
-  await expect(serverBox).toContainText("%");
-  await expect(page.getByTestId(`memory-session-${id}`)).toContainText("MB");
-
-  const serverPid = execFileSync("lsof", ["-ti", `tcp:${E2E_PORT}`, "-sTCP:LISTEN"], { encoding: "utf8" }).trim().split("\n")[0];
-  const psRssMb = Number(execFileSync("ps", ["-o", "rss=", "-p", serverPid], { encoding: "utf8" }).trim()) / 1024;
-  const shown = Number(/([\d.]+) MB/.exec((await serverBox.textContent()) ?? "")?.[1]);
-  expect(Math.abs(shown - psRssMb)).toBeLessThan(40);
-  const sessionMb = Number(await page.getByTestId(`memory-session-${id}`).getAttribute("data-rss-mb"));
-  expect(sessionMb).toBeGreaterThan(0);
-  expect(sessionMb).toBeLessThan(psRssMb + 200);
-
-  if (process.platform === "darwin") {
-    const totalMb = Number(execFileSync("sysctl", ["-n", "hw.memsize"], { encoding: "utf8" }).trim()) / 1024 / 1024;
-    const detail = (await page.getByTestId("memory-system-detail").textContent()) ?? "";
-    expect(detail).toContain(`物理メモリ ${Math.round(totalMb)} MB`);
-    const pressure = execFileSync("memory_pressure", { encoding: "utf8" });
-    const freeNow = Number(/free percentage: (\d+)%/.exec(pressure)?.[1]);
-    const freeShown = Number(/空き率 (\d+) %/.exec(detail)?.[1]);
-    expect(Math.abs(freeShown - freeNow)).toBeLessThanOrEqual(10);
-  } else {
-    await expect(page.getByTestId("memory-system")).toContainText("取得できません");
-  }
-  await shoot(page, "02-memory");
-
-  // 開いている間は 10 秒ごとに読み直す
-  const first = await page.waitForResponse((r) => r.url().endsWith("/api/memory"), { timeout: 15000 });
-  const second = await page.waitForResponse((r) => r.url().endsWith("/api/memory"), { timeout: 15000 });
-  expect(first.status()).toBe(200);
-  expect(second.status()).toBe(200);
 });
 
 test("v0.3.8 K1: 閉じるボタン -> 確認画面 -> 「やめる」では何も起きず、「閉じる」で行が消えて端末のプロセスも終わる", async ({ page }) => {

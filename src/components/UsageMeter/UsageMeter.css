@@ -1,36 +1,57 @@
+/* 4列: ラベル | バー | % | 警告バッジ。週と5時間の列を揃えるため、各行は subgrid で親の列を使う */
 .ac-usage {
-  display: flex;
-  flex: 1 1 100%;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
   align-items: center;
-  gap: var(--space-1) var(--space-4);
   min-width: 0;
+  width: 100%;
 }
 
 .ac-usage__win {
-  display: flex;
-  flex: 1 1 40%;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  row-gap: 0;
   align-items: center;
-  gap: var(--space-2);
   min-width: 0;
 }
 
 .ac-usage__label {
+  grid-column: 1;
   color: var(--text-secondary);
   white-space: nowrap;
 }
 
 .ac-usage__bar {
-  flex: 1 1 0;
+  grid-column: 2;
   min-width: 0;
 }
 
 .ac-usage__pct {
+  grid-column: 3;
   color: var(--text-primary);
   white-space: nowrap;
+}
+
+.ac-usage__win > [data-level] {
+  grid-column: 4;
 }
 
 .ac-usage__text {
   color: var(--text-muted);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* リセット日時・リセット済みはバーの下（ラベルの右）の行 */
+.ac-usage__win > .ac-usage__text {
+  grid-column: 2 / -1;
+}
+
+/* 「N分前」・案内文は全幅の最後の行 */
+.ac-usage > .ac-usage__text {
+  grid-column: 1 / -1;
 }

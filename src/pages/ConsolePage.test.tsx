@@ -313,11 +313,13 @@ describe("ConsolePage footer and authorization", () => {
     expect(screen.getByTestId("commit").textContent).not.toContain("abcdef01234");
   });
 
-  it("logs out: calls the server logout and then shows the login-required callout", async () => {
+  it("has no memory or logout button in the footer (removed in v0.37.0)", async () => {
     render(<ConsolePage />);
-    fireEvent.click(await screen.findByText("ログアウト"));
-    expect((await screen.findByRole("alert")).textContent).toContain("ログインが必要です");
-    expect(logout).toHaveBeenCalledOnce();
+    await screen.findByTestId("footer");
+    const footer = screen.getByTestId("footer");
+    expect(within(footer).queryByRole("button", { name: "メモリ" })).toBeNull();
+    expect(within(footer).queryByRole("button", { name: "ログアウト" })).toBeNull();
+    expect(logout).not.toHaveBeenCalled();
   });
 });
 

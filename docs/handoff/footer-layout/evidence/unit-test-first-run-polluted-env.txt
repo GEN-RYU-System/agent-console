@@ -1,0 +1,269 @@
+
+> agent-console@0.36.0 test
+> vitest run
+
+
+ RUN  v5.0.3 /Users/tanizawashingo/agent-console-wt/footer-layout
+
+ ❯ tests/unit/daily-use.integration.test.ts (27 tests | 3 failed) 35081ms
+   ❯ input safety: /rename and quick prompts only when Claude is idle (M1/L1) (10)
+     × K5: sends the queued /rename once, only after idle (busy -> waiting -> idle) 5140ms
+   ❯ resume targets (K1-K4) (4)
+     × K2: resuming the main row starts the Opus resume command in the main checkout (no session id passed) 1535ms
+     × K3: resuming a worktree row starts the Sonnet resume command in that worktree 1200ms
+stdout | tests/unit/session-restore.integration.test.ts > restore on startup (K4, K5, K6, K8) > K4: reopens with restoreCommand and AC_RESUME_ID when the sessionId is known, otherwise with the normal command, keeping the saved name
+open-sessions: つなぎ直し 0・resume 3
+
+stdout | tests/unit/session-restore.integration.test.ts > restore on startup (K4, K5, K6, K8) > K7: a non-UUID sessionId in the list is never passed to the command
+open-sessions: つなぎ直し 0・resume 1
+
+ ❯ tests/unit/session-restore.integration.test.ts (22 tests | 2 failed) 49125ms
+   ❯ restore on startup (K4, K5, K6, K8) (6)
+     × K4: reopens with restoreCommand and AC_RESUME_ID when the sessionId is known, otherwise with the normal command, keeping the saved name 1909ms
+     × K7: a non-UUID sessionId in the list is never passed to the command 886ms
+ ❯ src/pages/ConsolePage.test.tsx (45 tests | 2 failed) 83983ms
+   ❯ ConsolePage removing a stopped session (2)
+     × shows an error callout when removal fails (409 / 404 / network) 5437ms
+   ❯ ConsolePage daily use (10)
+     × clears the send warning when another session is selected 5733ms
+ ❯ tests/unit/relay.test.ts (22 tests | 1 failed) 3913ms
+   ❯ K9 RelayManager の流れ (5)
+     × 決まった順に進み、HANDOFF.md ができるまで launching に進まない。新しいセッションは古い cwd・branch・新しい名前・manualInitialName で開く 1660ms
+ ❯ tests/unit/activity.integration.test.ts (7 tests | 1 failed) 13128ms
+   ❯ K2 / §3-1: 本物の hook に流して、担当の再開が「動いている担当」に戻る (2)
+     × 呼ぶ→終わる→再開（SubagentStart）→終わる、の順に流すと、動いている担当が 出る→消える→戻る→消える 6885ms
+ ❯ tests/unit/pair-proof.test.ts (5 tests | 1 failed) 14898ms
+   ❯ ops/launcher/pair-proof.mjs matches the server implementation (5)
+     × rejects malformed arguments and never echoes the secret 6386ms
+ ❯ src/components/RightPane/RoutineApprovalBar.test.tsx (3 tests | 1 failed) 8866ms
+   ❯ ルーティン承認ボタン (3)
+     × 承認が無いときはボタンが出て、押すと「承認中（残り n 分・未使用）」に変わる 6930ms
+Error: Uncaught [Error: render failed on purpose]
+    at reportException (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+    at invokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:4213:16)
+    at invokeGuardedCallback (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:4277:31)
+    at beginWork$1 (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:27490:7)
+    at performUnitOfWork (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:26599:12) Error: render failed on purpose
+    at Boom (/Users/tanizawashingo/agent-console-wt/footer-layout/src/components/ErrorBoundary/ErrorBoundary.test.tsx:8:9)
+    at renderWithHooks (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:20103:13)
+    at beginWork (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+    at innerInvokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+    at invokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+Error: Uncaught [Error: render failed on purpose]
+    at reportException (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+    at invokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:4213:16)
+    at invokeGuardedCallback (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:4277:31)
+    at beginWork$1 (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:27490:7)
+    at performUnitOfWork (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:26599:12) Error: render failed on purpose
+    at Boom (/Users/tanizawashingo/agent-console-wt/footer-layout/src/components/ErrorBoundary/ErrorBoundary.test.tsx:8:9)
+    at renderWithHooks (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:20103:13)
+    at beginWork (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+    at innerInvokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+    at invokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+.: replacing existing signature
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 11 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage removing a stopped session > shows an error callout when removal fails (409 / 404 / network)
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:176:3
+    174|
+    175| describe("ConsolePage removing a stopped session", () => {
+    176|   it("shows an error callout when removal fails (409 / 404 / network)"…
+       |   ^
+    177|     removeSession.mockRejectedValue(new Error("session is still runnin…
+    178|     render(<ConsolePage />);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/11]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage daily use > clears the send warning when another session is selected
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:384:3
+    382|   });
+    383|
+    384|   it("clears the send warning when another session is selected", async…
+       |   ^
+    385|     checkQuickPromptSend.mockRejectedValue(new Error("claude is busy")…
+    386|     const other = { ...live, id: "s2", name: "other", unread: 0 };
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/11]⎯
+
+ FAIL  tests/unit/activity.integration.test.ts > K2 / §3-1: 本物の hook に流して、担当の再開が「動いている担当」に戻る > 呼ぶ→終わる→再開（SubagentStart）→終わる、の順に流すと、動いている担当が 出る→消える→戻る→消える
+TypeError: fetch failed
+ ❯ get tests/unit/activity.integration.test.ts:26:15
+     24| }
+     25| async function get(p: string, auth = true): Promise<{ status: number; …
+     26|   const res = await fetch(`${h.base}${p}`, { headers: auth ? headers :…
+       |               ^
+     27|   return { status: res.status, json: (await res.json()) as Json };
+     28| }
+ ❯ runningOf tests/unit/activity.integration.test.ts:105:64
+ ❯ tests/unit/activity.integration.test.ts:118:12
+
+Caused by: Error: read ECONNRESET
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { errno: -54, code: 'ECONNRESET', syscall: 'read' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/11]⎯
+
+ FAIL  tests/unit/daily-use.integration.test.ts > input safety: /rename and quick prompts only when Claude is idle (M1/L1) > K5: sends the queued /rename once, only after idle (busy -> waiting -> idle)
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/daily-use.integration.test.ts:177:3
+    175|   });
+    176|
+    177|   it("K5: sends the queued /rename once, only after idle (busy -> wait…
+       |   ^
+    178|     const id = await newSession("echo", "queue-flow");
+    179|     const pid = pidOf(id);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/11]⎯
+
+ FAIL  tests/unit/daily-use.integration.test.ts > resume targets (K1-K4) > K2: resuming the main row starts the Opus resume command in the main checkout (no session id passed)
+AssertionError: expected 'RESUMED_MAIN cwd=/private/var/folders…' to contain 'RESUMED_MAIN cwd=/private/var/folders…'
+
+- Expected
++ Received
+
+- RESUMED_MAIN cwd=/private/var/folders/wv/1plfwzs513782w2f4_zqh5m80000gn/T/ac-it-qpIGsV/root id=[]
++ RESUMED_MAIN cwd=/private/var/folders/wv/1plfwzs513782w2f4_zqh5m80000gn/T/ac-it-qpIGsV/root id=[ffa7d9cd-9c66-4f11-8bca-d449b16e994b]
++
+
+ ❯ tests/unit/daily-use.integration.test.ts:385:47
+    383|     expect(resumed.status).toBe(201);
+    384|     const id = resumed.json.id as string;
+    385|     await vi.waitFor(() => expect(ringOf(id)).toContain(`RESUMED_MAIN …
+       |                                               ^
+    386|     expect(h.sessions.get(id)?.cwd).toBe(mainRoot());
+    387|     expect(h.sessions.get(id)?.roleId).toBe("resumable-main");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/11]⎯
+
+ FAIL  tests/unit/daily-use.integration.test.ts > resume targets (K1-K4) > K3: resuming a worktree row starts the Sonnet resume command in that worktree
+AssertionError: expected 'RESUMED_WT cwd=/private/var/folders/w…' to contain 'RESUMED_WT cwd=/private/var/folders/w…'
+
+- Expected
++ Received
+
+- RESUMED_WT cwd=/private/var/folders/wv/1plfwzs513782w2f4_zqh5m80000gn/T/ac-it-qpIGsV/wt-one id=[]
++ RESUMED_WT cwd=/private/var/folders/wv/1plfwzs513782w2f4_zqh5m80000gn/T/ac-it-qpIGsV/wt-one id=[ffa7d9cd-9c66-4f11-8bca-d449b16e994b]
++
+
+ ❯ tests/unit/daily-use.integration.test.ts:394:47
+    392|     expect(resumed.status).toBe(201);
+    393|     const id = resumed.json.id as string;
+    394|     await vi.waitFor(() => expect(ringOf(id)).toContain(`RESUMED_WT cw…
+       |                                               ^
+    395|     expect(h.sessions.get(id)?.cwd).toBe(worktree);
+    396|     expect(h.sessions.get(id)?.roleId).toBe("resumable");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/11]⎯
+
+ FAIL  tests/unit/pair-proof.test.ts > ops/launcher/pair-proof.mjs matches the server implementation > rejects malformed arguments and never echoes the secret
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/pair-proof.test.ts:28:3
+     26|   });
+     27|
+     28|   it("rejects malformed arguments and never echoes the secret", () => {
+       |   ^
+     29|     for (const args of [["exchange"], ["exchange", "zz", SNONCE, "aa"]…
+     30|       const r = run(args, SECRET);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/11]⎯
+
+ FAIL  tests/unit/relay.test.ts > K9 RelayManager の流れ > 決まった順に進み、HANDOFF.md ができるまで launching に進まない。新しいセッションは古い cwd・branch・新しい名前・manualInitialName で開く
+AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+ ❯ tests/unit/relay.test.ts:111:32
+    109|     await writeFile(file, "# 引き継ぎ\n");
+    110|     await t.manager.settled();
+    111|     expect(t.sessions.restore).toHaveBeenCalledTimes(1);
+       |                                ^
+    112|     expect(t.sessions.restore.mock.calls[0][0]).toMatchObject({ name: …
+    113|     expect(t.sessions.restore.mock.calls[0][0].role.id).toBe("echo");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/11]⎯
+
+ FAIL  tests/unit/session-restore.integration.test.ts > restore on startup (K4, K5, K6, K8) > K4: reopens with restoreCommand and AC_RESUME_ID when the sessionId is known, otherwise with the normal command, keeping the saved name
+AssertionError: expected 'FRESH cwd=/private/var/folders/wv/1pl…' to contain 'id=[]'
+
+- Expected
++ Received
+
+- id=[]
++ FRESH cwd=/private/var/folders/wv/1plfwzs513782w2f4_zqh5m80000gn/T/ac-it-jFyiXY/root id=[ffa7d9cd-9c66-4f11-8bca-d449b16e994b]
++
+
+ ❯ tests/unit/session-restore.integration.test.ts:295:34
+    293|     expect(ringOf("with-id")).toContain(`cwd=${root}`);
+    294|     await vi.waitFor(() => expect(ringOf("without-id")).toContain("FRE…
+    295|     expect(ringOf("without-id")).toContain("id=[]");
+       |                                  ^
+    296|     // restoreCommand を持たない役割は、sessionId があっても通常の命令（環境変数も渡さない）
+    297|     await vi.waitFor(() => expect(ringOf("shell-with-id")).toContain("…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/11]⎯
+
+ FAIL  tests/unit/session-restore.integration.test.ts > restore on startup (K4, K5, K6, K8) > K7: a non-UUID sessionId in the list is never passed to the command
+AssertionError: expected 'FRESH cwd=/private/var/folders/wv/1pl…' to contain 'id=[]'
+
+- Expected
++ Received
+
+- id=[]
++ FRESH cwd=/private/var/folders/wv/1plfwzs513782w2f4_zqh5m80000gn/T/ac-it-OWcZkw/root id=[ffa7d9cd-9c66-4f11-8bca-d449b16e994b]
++
+
+ ❯ tests/unit/session-restore.integration.test.ts:313:28
+    311|     expect(await run()).toEqual([]);
+    312|     await vi.waitFor(() => expect(ringOf("evil")).toContain("FRESH"), …
+    313|     expect(ringOf("evil")).toContain("id=[]");
+       |                            ^
+    314|     expect(ringOf("evil")).not.toContain("pwned");
+    315|     await closeAll();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/11]⎯
+
+ FAIL  src/components/RightPane/RoutineApprovalBar.test.tsx > ルーティン承認ボタン > 承認が無いときはボタンが出て、押すと「承認中（残り n 分・未使用）」に変わる
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/components/RightPane/RoutineApprovalBar.test.tsx:15:3
+     13|
+     14| describe("ルーティン承認ボタン", () => {
+     15|   it("承認が無いときはボタンが出て、押すと「承認中（残り n 分・未使用）」に変わる", async () => {
+       |   ^
+     16|     fetchRoutineApproval.mockResolvedValue({ approval: null });
+     17|     issueRoutineApproval.mockResolvedValue({ approved: true, expiresAt…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/11]⎯
+
+
+ Test Files  7 failed | 108 passed (115)
+      Tests  11 failed | 1669 passed (1680)
+   Start at  12:36:20
+   Duration  837.25s (tests 69%, environment 14%, import 11%, transform 6%, worker 1%)
+
+    Isolate  115 workers spawned · ~6.03s startup each (spawn + environment, per file)
+             at least ~92.97s faster with isolate: false — reuses workers across files instead of one per file
+

@@ -1,0 +1,4 @@
+
+> agent-console@0.37.0 typecheck
+> tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit
+

@@ -1,0 +1,11 @@
+{
+  "viewport": "1400x800",
+  "K1_meterTop_minus_badgeBottom": 4,
+  "K2_claudeWidth": 320,
+  "K2_barWeekRight_minus_claudeRight": -41.875,
+  "K2_barFiveRight_minus_claudeRight": -41.875,
+  "K3_footerRight_minus_metaRight": 12,
+  "K3_footerBottom_minus_metaBottom": 8,
+  "K4_sideLeft_minus_claudeRight": 832.453125,
+  "footerHeight": 177.78125
+}

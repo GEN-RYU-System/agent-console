@@ -2,6 +2,7 @@
 
 版を出すたびに 1 行追記する（版の正本は git タグ `vX.Y.Z`）。
 
+- 0.37.0 下の帯（フッター）の組み直し: 左上に「Claude のまとまり」（ログイン・メール・プラン・アカウントを切り替える・週と5時間のバー・N分前）を幅 320px（アプリ固有トークン `--ac-provider-w`）で縦に並べ、右隣は Codex・Grok のまとまりを足す空きにした。右下に、テーマ切替（🌙）・Sales Anchor 展開元・版・コミット・Claude Code の版を薄く縦に1項目1行で並べた。下の帯から「メモリ」「ログアウト」のボタンを外した（MemoryPanel 部品・/api/memory・/api/logout は残す）。ConsolePage.tsx は入れ物（`footer-providers`・`provider-claude`・`footer-meta`）を足しただけで、メモリ・ログアウト以外の要素・data-testid・文言・条件は同じ。AccountBadge・UsageMeter は CSS だけの変更（UsageMeter は grid と subgrid で週・5時間の列を揃える）。設計の正本は docs/handoff/footer-layout/design.md。
 - 0.36.1 v0.36.0 の審査の小さな指摘4件: 文言の直し（activity-hooks.ts のコメント「記録用 10 個＋ guard 6 本＋ board-guard 1 本」。HOOK_SPECS の実数に合わせた）と、retrack の試験の追加（closeWhenIdle: false で戻さない・sessionName が無いと sessionId を使う・track に渡す値）。動作は変わらない。更新後の install は不要。
 - 0.36.0 見張りの取りこぼし2件: ①自動クローズの見張りを再起動のあとも続ける（`RoutineService.retrack`。復元の完了後に、closeWhenIdle が true で、最新の記録が sent で、送ってから24時間以内のセッションを見張りに戻す。途中経過は保存せず 0 から数え直す。起動ログ `[routines] retrack N: …`）。②auto mode に拒否された担当（Agent）の呼び出しを「動作中」から外す（hook に PermissionDenied を足して 17 本に。拒否された tool_use_id を覚え、順番が入れ替わっても外す）。更新後に `node scripts/ac-hooks.mjs install` を1回実行する。PreToolUse hook による block は PermissionDenied が走らないため対象外。
 - 0.35.0 小さな改善3件: ①書き込みが失敗（入力不備・上限超過）したとき、取り出していた ac-routine の一時承認を戻す（`RoutineApprovals.restore`。最後に出した承認と同一・空き・期限内のときだけ。期限は延長しない。上限超過の denied 行に `approvalRestored`）。②自動クローズ: 標本の間が `gapLimitMs`（max(agentsPollMs×5, 60秒)）を超えたら（Mac のスリープなど）取得失敗と同じく 0 から数え直す（`gapLimitMsFor`）。③tmux の 10MB の速さ試験の上限を、macOS の CI だけ 1.5 秒にする（手元は 1 秒のまま）。更新後の install は不要。

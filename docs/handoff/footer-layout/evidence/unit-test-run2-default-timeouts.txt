@@ -1,0 +1,932 @@
+
+> agent-console@0.36.0 test
+> vitest run
+
+
+ RUN  v5.0.3 /Users/tanizawashingo/agent-console-wt/footer-layout
+
+stderr | src/pages/ConsolePage.test.tsx > ConsolePage removing a stopped session > clears the error after a later successful removal
+Warning: An update to AccountBadge inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at AccountBadge (/Users/tanizawashingo/agent-console-wt/footer-layout/src/components/AccountBadge/AccountBadge.tsx:20:25)
+    at section
+    at div
+    at footer
+    at div
+    at ConsolePage (/Users/tanizawashingo/agent-console-wt/footer-layout/src/pages/ConsolePage.tsx:161:56)
+Warning: An update to UsageMeter inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at UsageMeter (/Users/tanizawashingo/agent-console-wt/footer-layout/src/components/UsageMeter/UsageMeter.tsx:135:56)
+    at section
+    at div
+    at footer
+    at div
+    at ConsolePage (/Users/tanizawashingo/agent-console-wt/footer-layout/src/pages/ConsolePage.tsx:161:56)
+Warning: An update to UsageMeter inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at UsageMeter (/Users/tanizawashingo/agent-console-wt/footer-layout/src/components/UsageMeter/UsageMeter.tsx:135:56)
+    at section
+    at div
+    at footer
+    at div
+    at ConsolePage (/Users/tanizawashingo/agent-console-wt/footer-layout/src/pages/ConsolePage.tsx:161:56)
+Warning: An update to UsageMeter inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://reactjs.org/link/wrap-tests-with-act
+    at UsageMeter (/Users/tanizawashingo/agent-console-wt/footer-layout/src/components/UsageMeter/UsageMeter.tsx:135:56)
+    at section
+    at div
+    at footer
+    at div
+    at ConsolePage (/Users/tanizawashingo/agent-console-wt/footer-layout/src/pages/ConsolePage.tsx:161:56)
+
+ ❯ tests/unit/design-governance.test.ts (65 tests | 1 failed) 114449ms
+   ❯ check-design-governance (65)
+     ❯ extension/ is checked too (K9) (10)
+       × reports a direct value in extension CSS 9575ms
+ ❯ tests/unit/pr.integration.test.ts (25 tests | 1 failed) 136781ms
+   ❯ K6: gh が失敗したとき (5)
+     × 時間切れは timeout 7889ms
+ ❯ tests/unit/server-process.test.ts (5 tests | 1 failed) 76797ms
+   ❯ server process: no secrets in logs, argv or child env (5)
+     × never uses the production default dataDir: the child config points under its own temp directory and no restore list is written 15702ms
+ ❯ tests/unit/daily-use.integration.test.ts (27 tests | 7 failed) 75818ms
+   ❯ input safety: /rename and quick prompts only when Claude is idle (M1/L1) (10)
+     × K3/K4: sends /rename at once when idle; queues without writing to the terminal when busy, waiting, waitingFor or unknown 5200ms
+     × K5: sends the queued /rename once, only after idle (busy -> waiting -> idle) 4664ms
+     × K5: does not send when the poll says idle but the fresh check says busy; the reservation stays 5293ms
+     × K6: a second reservation overwrites the first; only the last name is sent 5241ms
+     × K6: drops the reservation when the session stops or is removed from the list 5216ms
+     × K5: a reservation made while the state was unknown becomes an app-side rename once Claude is known to be absent 5309ms
+     × uses the status at request time, not the one polled a few seconds ago 5099ms
+ ❯ tests/unit/reservations.test.ts (20 tests | 1 failed) 62854ms
+   ❯ reservation create and dispatch (10)
+     × R3 sends after the restore is ready with lateMinutes, and only past 60 seconds 5126ms
+ ❯ tests/unit/tmux-terminal-fake.test.ts (7 tests | 1 failed) 27335ms
+   ❯ R7: retry count and the pending-input limit (2)
+     × a client that answers once and then dies every time still stops after 3 attempts (the count is not reset by the first answer) 15714ms
+ ❯ src/pages/ConsolePage.test.tsx (45 tests | 18 failed) 229375ms
+   ❯ ConsolePage removing a stopped session (2)
+     × shows an error callout when removal fails (409 / 404 / network) 7841ms
+     × clears the error after a later successful removal 7140ms
+   ❯ ConsolePage resume picker (K1-K3 screen side) (1)
+     × opens the picker, lists the worktree row and sends only kind and path when 再開 is pressed 7774ms
+   ❯ ConsolePage footer and authorization (5)
+     × shows the app version in the footer 11464ms
+   ❯ ConsolePage daily use (10)
+     × asks the server first and pastes the returned text into the terminal only when a button is pressed 6706ms
+     × discards the text and says so when the selection changed while the server was checking 6590ms
+     × does not paste and shows the server's reason when the state check is refused (409) 7305ms
+     × clears the send warning when another session is selected 15031ms
+     × clears the send warning when canChat changes from false to true (state pushed over the event socket) 7654ms
+     × disables the quick prompt buttons and shows the reason while Claude waits for an answer 25369ms
+     × enables the quick prompt buttons while Claude is busy (canChat true, canInput false) 26143ms
+     × explains that a break is the app's own definition 8807ms
+   ❯ ConsolePage center tabs (v0.10.0 K1) (2)
+     × puts ac-center-tabs on the center tablist only (all 8 tabs share it), not on the right pane 7334ms
+   ❯ ConsolePage terminal / changes tabs (K1, K12) (3)
+     × drops the count from the 変更 tab when the selected session disappears 10168ms
+   ❯ ConsolePage 部品 tab (K3, §3-8) (3)
+     × shows 部品 with the unsent count from the state and hides the other panes (not removing the terminal) when chosen 6528ms
+     × drops the count when nothing is unsent, and follows the count the server pushes 6343ms
+     × hands the terminal the scroll time and the image limit from the state, and shows an upload notice from the terminal 11160ms
+   ❯ ConsolePage after the server restarts (7)
+     × K6: refetches the state when /ws/events reconnects (version and commit become new) 5554ms
+ ❯ src/components/PrPane/PrPane.test.tsx (19 tests | 1 failed) 24128ms
+   ❯ PrPane の表示 (K1, K2) (6)
+     × #番号 題名 をリンクにし、状態の Badge・マージできるか・5 つの集計を出す 11925ms
+ ❯ src/components/DiffPane/DiffPane.test.tsx (24 tests | 4 failed) 65622ms
+   ❯ DiffPane: list and file (K1, K2, K7, K8) (6)
+     × lists the changed files with the counts and marks untracked ones, and reports the count 8441ms
+   ❯ DiffPane: comments (K3) (9)
+     × uses the old side for a deleted line and the new side for a context line 6679ms
+     × comments on the whole file with side=file and no line 7127ms
+     × edits and deletes an existing comment 5453ms
+ ❯ tests/unit/activity.integration.test.ts (7 tests | 1 failed) 20107ms
+   ❯ K2 / §3-1: 本物の hook に流して、担当の再開が「動いている担当」に戻る (2)
+     × 呼ぶ→終わる→再開（SubagentStart）→終わる、の順に流すと、動いている担当が 出る→消える→戻る→消える 7899ms
+ ❯ src/components/QuickPrompts/QuickPromptEditor.test.tsx (12 tests | 1 failed) 27173ms
+   ❯ QuickPromptEditor (12)
+     × adds a prompt and asks for a reload 5880ms
+ ❯ src/components/Routines/RoutineEditor.test.tsx (4 tests | 3 failed) 25910ms
+   ❯ RoutineEditor launch target (new) (3)
+     × R7/R1: a main-checkout role shows no input and sends neither cwd nor branch 11133ms
+     × R7/R3/R4: a worktree role picks from worktree rows and sends cwd and branch 5828ms
+     × R7/R6: load failure or an empty list blocks saving for a worktree role only 6715ms
+ ❯ src/components/PicksPane/PicksPane.test.tsx (19 tests | 2 failed) 35023ms
+   ❯ PicksPane の一覧 (K3) (6)
+     × 各部品に、画像（data: URL）・URL のホスト名・文字の先頭を出し、画像が無いものは理由を出す 5947ms
+     × 文字と HTML は React のテキストとして出し、HTML として解釈しない 5817ms
+ ❯ src/components/Reservations/ReservationEditor.test.tsx (5 tests | 1 failed) 14735ms
+   ❯ ReservationEditor launch target (5)
+     × R1: a main-checkout role shows no cwd/branch input and sends neither 7138ms
+ ❯ src/components/FilesPane/FilesPane.test.tsx (12 tests | 1 failed) 15108ms
+   ❯ FilesPane (12)
+     × K1 開いたまま rev が進むと一覧を取り直す 2030ms
+ ❯ src/App.test.tsx (2 tests | 1 failed) 8450ms
+   ❯ App routing (2)
+     × shows the pairing guidance on /pair 7677ms
+ ❯ src/components/TerminalPane/TerminalPane.ux.test.tsx (23 tests | 1 failed) 13714ms
+   ❯ K2: smoothScrollDuration follows the input device (4)
+     × starts at 0 (unknown means the browser's own movement) 5655ms
+Error: Uncaught [Error: render failed on purpose]
+    at reportException (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+    at invokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:4213:16)
+    at invokeGuardedCallback (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:4277:31)
+    at beginWork$1 (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:27490:7)
+    at performUnitOfWork (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:26599:12) Error: render failed on purpose
+    at Boom (/Users/tanizawashingo/agent-console-wt/footer-layout/src/components/ErrorBoundary/ErrorBoundary.test.tsx:8:9)
+    at renderWithHooks (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:20103:13)
+    at beginWork (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+    at innerInvokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+    at invokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+Error: Uncaught [Error: render failed on purpose]
+    at reportException (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/helpers/runtime-script-errors.js:66:24)
+    at innerInvokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:353:9)
+    at invokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+    at HTMLUnknownElement.dispatchEvent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/generated/EventTarget.js:241:34)
+    at Object.invokeGuardedCallbackDev (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:4213:16)
+    at invokeGuardedCallback (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:4277:31)
+    at beginWork$1 (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:27490:7)
+    at performUnitOfWork (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:26599:12) Error: render failed on purpose
+    at Boom (/Users/tanizawashingo/agent-console-wt/footer-layout/src/components/ErrorBoundary/ErrorBoundary.test.tsx:8:9)
+    at renderWithHooks (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:15486:18)
+    at mountIndeterminateComponent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:20103:13)
+    at beginWork (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:21626:16)
+    at HTMLUnknownElement.callCallback (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/react-dom/cjs/react-dom.development.js:4164:14)
+    at HTMLUnknownElement.callTheUserObjectsOperation (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/generated/EventListener.js:26:30)
+    at innerInvokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:350:25)
+    at invokeEventListeners (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:286:3)
+    at HTMLUnknownElementImpl._dispatch (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:233:9)
+    at HTMLUnknownElementImpl.dispatchEvent (/Users/tanizawashingo/agent-console-wt/footer-layout/node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:104:17)
+ ❯ tests/unit/ac-routine-guard.test.ts (10 tests | 1 failed) 8879ms
+   ❯ S4 ac-routine-guard process (the real script) (2)
+     × passing is completely silent (nothing is added to the conversation context) 7322ms
+ ❯ tests/unit/auth.test.ts (39 tests | 1 failed) 3120ms
+   ❯ persisted sessions (auth-sessions.json) (9)
+     × revoked sessions are gone after reload 684ms
+.: replacing existing signature
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 48 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/App.test.tsx > App routing > shows the pairing guidance on /pair
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/App.test.tsx:12:3
+     10|
+     11| describe("App routing", () => {
+     12|   it("shows the pairing guidance on /pair", async () => {
+       |   ^
+     13|     window.history.replaceState(null, "", "/pair?code=x");
+     14|     const { App } = await import("./App");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/48]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage removing a stopped session > shows an error callout when removal fails (409 / 404 / network)
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:176:3
+    174|
+    175| describe("ConsolePage removing a stopped session", () => {
+    176|   it("shows an error callout when removal fails (409 / 404 / network)"…
+       |   ^
+    177|     removeSession.mockRejectedValue(new Error("session is still runnin…
+    178|     render(<ConsolePage />);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/48]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage removing a stopped session > clears the error after a later successful removal
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:185:3
+    183|   });
+    184|
+    185|   it("clears the error after a later successful removal", async () => {
+       |   ^
+    186|     removeSession.mockRejectedValueOnce(new Error("boom")).mockResolve…
+    187|     render(<ConsolePage />);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/48]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage resume picker (K1-K3 screen side) > opens the picker, lists the worktree row and sends only kind and path when 再開 is pressed
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:282:3
+    280|
+    281| describe("ConsolePage resume picker (K1-K3 screen side)", () => {
+    282|   it("opens the picker, lists the worktree row and sends only kind and…
+       |   ^
+    283|     render(<ConsolePage />);
+    284|     fireEvent.click(await screen.findByRole("button", { name: "過去の会話を再…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/48]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage footer and authorization > shows the app version in the footer
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:292:3
+    290|
+    291| describe("ConsolePage footer and authorization", () => {
+    292|   it("shows the app version in the footer", async () => {
+       |   ^
+    293|     render(<ConsolePage />);
+    294|     expect((await screen.findByTestId("app-version")).textContent).toC…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/48]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage daily use > asks the server first and pastes the returned text into the terminal only when a button is pressed
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:341:3
+    339|   });
+    340|
+    341|   it("asks the server first and pastes the returned text into the term…
+       |   ^
+    342|     fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unr…
+    343|     render(<ConsolePage />);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/48]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage daily use > discards the text and says so when the selection changed while the server was checking
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:355:3
+    353|   });
+    354|
+    355|   it("discards the text and says so when the selection changed while t…
+       |   ^
+    356|     let release: (v: { text: string }) => void = () => {};
+    357|     checkQuickPromptSend.mockReturnValue(new Promise((resolve) => (rel…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/48]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage daily use > does not paste and shows the server's reason when the state check is refused (409)
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:372:3
+    370|   });
+    371|
+    372|   it("does not paste and shows the server's reason when the state chec…
+       |   ^
+    373|     checkQuickPromptSend.mockRejectedValue(new Error("claude is busy")…
+    374|     fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unr…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/48]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage daily use > clears the send warning when another session is selected
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:384:3
+    382|   });
+    383|
+    384|   it("clears the send warning when another session is selected", async…
+       |   ^
+    385|     checkQuickPromptSend.mockRejectedValue(new Error("claude is busy")…
+    386|     const other = { ...live, id: "s2", name: "other", unread: 0 };
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/48]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage daily use > clears the send warning when canChat changes from false to true (state pushed over the event socket)
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:398:3
+    396|   });
+    397|
+    398|   it("clears the send warning when canChat changes from false to true …
+       |   ^
+    399|     let refuse: (e: Error) => void = () => {};
+    400|     checkQuickPromptSend.mockReturnValue(new Promise((_, reject) => (r…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/48]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage daily use > disables the quick prompt buttons and shows the reason while Claude waits for an answer
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:420:3
+    418|   });
+    419|
+    420|   it("disables the quick prompt buttons and shows the reason while Cla…
+       |   ^
+    421|     fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unr…
+    422|     render(<ConsolePage />);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/48]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage daily use > enables the quick prompt buttons while Claude is busy (canChat true, canInput false)
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:429:3
+    427|   });
+    428|
+    429|   it("enables the quick prompt buttons while Claude is busy (canChat t…
+       |   ^
+    430|     fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unr…
+    431|     render(<ConsolePage />);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/48]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage daily use > explains that a break is the app's own definition
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:437:3
+    435|   });
+    436|
+    437|   it("explains that a break is the app's own definition", async () => {
+       |   ^
+    438|     render(<ConsolePage />);
+    439|     expect((await screen.findByTestId("notify-help")).textContent).toC…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/48]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage center tabs (v0.10.0 K1) > puts ac-center-tabs on the center tablist only (all 8 tabs share it), not on the right pane
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:444:3
+    442|
+    443| describe("ConsolePage center tabs (v0.10.0 K1)", () => {
+    444|   it("puts ac-center-tabs on the center tablist only (all 8 tabs share…
+       |   ^
+    445|     render(<ConsolePage />);
+    446|     fireEvent.click(await screen.findByText("dead"));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/48]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage terminal / changes tabs (K1, K12) > drops the count from the 変更 tab when the selected session disappears
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:551:3
+    549|   });
+    550|
+    551|   it("drops the count from the 変更 tab when the selected session disapp…
+       |   ^
+    552|     render(<ConsolePage />);
+    553|     fireEvent.click(await screen.findByText("dead"));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/48]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage 部品 tab (K3, §3-8) > shows 部品 with the unsent count from the state and hides the other panes (not removing the terminal) when chosen
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:562:3
+    560|
+    561| describe("ConsolePage 部品 tab (K3, §3-8)", () => {
+    562|   it("shows 部品 with the unsent count from the state and hides the othe…
+       |   ^
+    563|     fetchPicks.mockResolvedValue({ items: [], extensionDir: "/data/chr…
+    564|     render(<ConsolePage />);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/48]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage 部品 tab (K3, §3-8) > drops the count when nothing is unsent, and follows the count the server pushes
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:579:3
+    577|   });
+    578|
+    579|   it("drops the count when nothing is unsent, and follows the count th…
+       |   ^
+    580|     render(<ConsolePage />);
+    581|     await screen.findByText("dead");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/48]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage 部品 tab (K3, §3-8) > hands the terminal the scroll time and the image limit from the state, and shows an upload notice from the terminal
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:589:3
+    587|   });
+    588|
+    589|   it("hands the terminal the scroll time and the image limit from the …
+       |   ^
+    590|     render(<ConsolePage />);
+    591|     fireEvent.click(await screen.findByText("dead"));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/48]⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage after the server restarts > K6: refetches the state when /ws/events reconnects (version and commit become new)
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:623:3
+    621|   };
+    622|
+    623|   it("K6: refetches the state when /ws/events reconnects (version and …
+       |   ^
+    624|     render(<ConsolePage />);
+    625|     await screen.findByText("dead");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/48]⎯
+
+ FAIL  src/components/DiffPane/DiffPane.test.tsx > DiffPane: list and file (K1, K2, K7, K8) > lists the changed files with the counts and marks untracked ones, and reports the count
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/components/DiffPane/DiffPane.test.tsx:86:3
+     84|
+     85| describe("DiffPane: list and file (K1, K2, K7, K8)", () => {
+     86|   it("lists the changed files with the counts and marks untracked ones…
+       |   ^
+     87|     renderPane();
+     88|     expect(await screen.findByRole("button", { name: /src\/a\.ts/ })).…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/48]⎯
+
+ FAIL  src/components/DiffPane/DiffPane.test.tsx > DiffPane: comments (K3) > uses the old side for a deleted line and the new side for a context line
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/components/DiffPane/DiffPane.test.tsx:146:3
+    144|   });
+    145|
+    146|   it("uses the old side for a deleted line and the new side for a cont…
+       |   ^
+    147|     renderPane();
+    148|     await openFile("src/a.ts");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/48]⎯
+
+ FAIL  src/components/DiffPane/DiffPane.test.tsx > DiffPane: comments (K3) > comments on the whole file with side=file and no line
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/components/DiffPane/DiffPane.test.tsx:155:3
+    153|   });
+    154|
+    155|   it("comments on the whole file with side=file and no line", async ()…
+       |   ^
+    156|     renderPane();
+    157|     await openFile("src/a.ts");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/48]⎯
+
+ FAIL  src/components/DiffPane/DiffPane.test.tsx > DiffPane: comments (K3) > edits and deletes an existing comment
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/components/DiffPane/DiffPane.test.tsx:164:3
+    162|   });
+    163|
+    164|   it("edits and deletes an existing comment", async () => {
+       |   ^
+    165|     fetchDiffComments.mockResolvedValue({ items: [comment()] });
+    166|     renderPane();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/48]⎯
+
+ FAIL  src/components/FilesPane/FilesPane.test.tsx > FilesPane > K1 開いたまま rev が進むと一覧を取り直す
+TestingLibraryElementError: Unable to find an element with the text: このセッションが書いたファイルはまだありません. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"ac-files"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"ac-files__toolbar"[39m
+      [36m>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"ac-files__hint"[39m
+        [36m>[39m
+          [0mこのセッションが Write・Edit などで書いたファイル（新しい順）。読むだけです。[0m
+        [36m</span>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"comp-btn comp-btn--outline comp-btn--sm comp-btn-layout--ml-auto"[39m
+        [36m>[39m
+          [0m再読込[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"comp-empty comp-empty--compact"[39m
+      [36m>[39m
+        [36m<p[39m
+          [33mclass[39m=[32m"comp-empty__title"[39m
+        [36m>[39m
+          [0m読み込み中[0m
+        [36m</p>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"ac-files"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"ac-files__toolbar"[39m
+      [36m>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"ac-files__hint"[39m
+        [36m>[39m
+          [0mこのセッションが Write・Edit などで書いたファイル（新しい順）。読むだけです。[0m
+        [36m</span>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"comp-btn comp-btn--outline comp-btn--sm comp-btn-layout--ml-auto"[39m
+        [36m>[39m
+          [0m再読込[0m
+        [36m</button>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"comp-empty comp-empty--compact"[39m
+      [36m>[39m
+        [36m<p[39m
+          [33mclass[39m=[32m"comp-empty__title"[39m
+        [36m>[39m
+          [0m読み込み中[0m
+        [36m</p>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/components/FilesPane/FilesPane.test.tsx:38:25
+     36|     fetchFiles.mockResolvedValueOnce({ status: "ok", files: [] });
+     37|     const { rerender } = render(<FilesPane sessionId="s1" active rev={…
+     38|     expect(await screen.findByText("このセッションが書いたファイルはまだありません")).toBeTru…
+       |                         ^
+     39|     expect(screen.getByText(/コマンドの出力（> など）/)).toBeTruthy();
+     40|     fetchFiles.mockResolvedValueOnce({ status: "ok", files: [file("/w/…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/48]⎯
+
+ FAIL  src/components/PicksPane/PicksPane.test.tsx > PicksPane の一覧 (K3) > 各部品に、画像（data: URL）・URL のホスト名・文字の先頭を出し、画像が無いものは理由を出す
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/components/PicksPane/PicksPane.test.tsx:74:3
+     72|
+     73| describe("PicksPane の一覧 (K3)", () => {
+     74|   it("各部品に、画像（data: URL）・URL のホスト名・文字の先頭を出し、画像が無いものは理由を出す", async () =…
+       |   ^
+     75|     renderPane();
+     76|     const cards = await screen.findAllByTestId("pick-item");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[25/48]⎯
+
+ FAIL  src/components/PicksPane/PicksPane.test.tsx > PicksPane の一覧 (K3) > 文字と HTML は React のテキストとして出し、HTML として解釈しない
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/components/PicksPane/PicksPane.test.tsx:89:3
+     87|   });
+     88|
+     89|   it("文字と HTML は React のテキストとして出し、HTML として解釈しない", async () => {
+       |   ^
+     90|     fetchPicks.mockResolvedValue({ items: [pick(A, { text: "<img src=x…
+     91|     const { container } = renderPane();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[26/48]⎯
+
+ FAIL  src/components/PrPane/PrPane.test.tsx > PrPane の表示 (K1, K2) > #番号 題名 をリンクにし、状態の Badge・マージできるか・5 つの集計を出す
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/components/PrPane/PrPane.test.tsx:50:3
+     48|
+     49| describe("PrPane の表示 (K1, K2)", () => {
+     50|   it("#番号 題名 をリンクにし、状態の Badge・マージできるか・5 つの集計を出す", async () => {
+       |   ^
+     51|     fetchPr.mockResolvedValue(OK);
+     52|     renderPane();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[27/48]⎯
+
+ FAIL  src/components/QuickPrompts/QuickPromptEditor.test.tsx > QuickPromptEditor > adds a prompt and asks for a reload
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/components/QuickPrompts/QuickPromptEditor.test.tsx:28:3
+     26|
+     27| describe("QuickPromptEditor", () => {
+     28|   it("adds a prompt and asks for a reload", async () => {
+       |   ^
+     29|     const onChanged = vi.fn();
+     30|     render(<QuickPromptEditor prompts={[]} onChanged={onChanged} />);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[28/48]⎯
+
+ FAIL  src/components/TerminalPane/TerminalPane.ux.test.tsx > K2: smoothScrollDuration follows the input device > starts at 0 (unknown means the browser's own movement)
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/components/TerminalPane/TerminalPane.ux.test.tsx:84:3
+     82|
+     83| describe("K2: smoothScrollDuration follows the input device", () => {
+     84|   it("starts at 0 (unknown means the browser's own movement)", async (…
+       |   ^
+     85|     const { TerminalPane } = await import("./TerminalPane");
+     86|     render(<TerminalPane sessionId="a" smoothScrollMs={125} />);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[29/48]⎯
+
+ FAIL  src/components/Routines/RoutineEditor.test.tsx > RoutineEditor launch target (new) > R7/R1: a main-checkout role shows no input and sends neither cwd nor branch
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/components/Routines/RoutineEditor.test.tsx:30:3
+     28|
+     29| describe("RoutineEditor launch target (new)", () => {
+     30|   it("R7/R1: a main-checkout role shows no input and sends neither cwd…
+       |   ^
+     31|     const onSave = vi.fn().mockResolvedValue(undefined);
+     32|     render(<RoutineEditor roles={roles} onSave={onSave} />);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[30/48]⎯
+
+ FAIL  src/components/Routines/RoutineEditor.test.tsx > RoutineEditor launch target (new) > R7/R3/R4: a worktree role picks from worktree rows and sends cwd and branch
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/components/Routines/RoutineEditor.test.tsx:43:3
+     41|   });
+     42|
+     43|   it("R7/R3/R4: a worktree role picks from worktree rows and sends cwd…
+       |   ^
+     44|     const onSave = vi.fn().mockResolvedValue(undefined);
+     45|     render(<RoutineEditor roles={roles} onSave={onSave} />);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[31/48]⎯
+
+ FAIL  src/components/Routines/RoutineEditor.test.tsx > RoutineEditor launch target (new) > R7/R6: load failure or an empty list blocks saving for a worktree role only
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/components/Routines/RoutineEditor.test.tsx:57:3
+     55|   });
+     56|
+     57|   it("R7/R6: load failure or an empty list blocks saving for a worktre…
+       |   ^
+     58|     fetchResumeTargets.mockRejectedValue(new Error("x"));
+     59|     const failed = render(<RoutineEditor roles={roles} onSave={vi.fn()…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[32/48]⎯
+
+ FAIL  tests/unit/ac-routine-guard.test.ts > S4 ac-routine-guard process (the real script) > passing is completely silent (nothing is added to the conversation context)
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/ac-routine-guard.test.ts:39:3
+     37|   const exec = (stdin: string) => spawnSync(process.execPath, [GUARD],…
+     38|
+     39|   it("passing is completely silent (nothing is added to the conversati…
+       |   ^
+     40|     for (const stdin of [JSON.stringify(input(CMD)), JSON.stringify(in…
+     41|       const r = exec(stdin);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[33/48]⎯
+
+ FAIL  tests/unit/activity.integration.test.ts > K2 / §3-1: 本物の hook に流して、担当の再開が「動いている担当」に戻る > 呼ぶ→終わる→再開（SubagentStart）→終わる、の順に流すと、動いている担当が 出る→消える→戻る→消える
+TypeError: fetch failed
+ ❯ get tests/unit/activity.integration.test.ts:26:15
+     24| }
+     25| async function get(p: string, auth = true): Promise<{ status: number; …
+     26|   const res = await fetch(`${h.base}${p}`, { headers: auth ? headers :…
+       |               ^
+     27|   return { status: res.status, json: (await res.json()) as Json };
+     28| }
+ ❯ runningOf tests/unit/activity.integration.test.ts:105:64
+ ❯ tests/unit/activity.integration.test.ts:114:12
+
+Caused by: Error: read ECONNRESET
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { errno: -54, code: 'ECONNRESET', syscall: 'read' }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[34/48]⎯
+
+ FAIL  tests/unit/auth.test.ts > persisted sessions (auth-sessions.json) > revoked sessions are gone after reload
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/unit/auth.test.ts:336:46
+    334|     await vi.waitFor(() => expect((JSON.parse(readFileSync(file, "utf8…
+    335|     const again = make(file);
+    336|     expect(again.auth.isSessionValid(token)).toBe(false);
+       |                                              ^
+    337|     expect(again.auth.isSessionValid(other)).toBe(true);
+    338|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[35/48]⎯
+
+ FAIL  tests/unit/daily-use.integration.test.ts > input safety: /rename and quick prompts only when Claude is idle (M1/L1) > K3/K4: sends /rename at once when idle; queues without writing to the terminal when busy, waiting, waitingFor or unknown
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/daily-use.integration.test.ts:152:3
+    150|   });
+    151|
+    152|   it("K3/K4: sends /rename at once when idle; queues without writing t…
+       |   ^
+    153|     const id = await newSession("echo", "rename-me");
+    154|     const pid = pidOf(id);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[36/48]⎯
+
+ FAIL  tests/unit/daily-use.integration.test.ts > input safety: /rename and quick prompts only when Claude is idle (M1/L1) > K5: sends the queued /rename once, only after idle (busy -> waiting -> idle)
+AssertionError: expected { mode: 'app' } to deeply equal { mode: 'queued' }
+
+- Expected
++ Received
+
+  {
+-   "mode": "queued",
++   "mode": "app",
+  }
+
+ ❯ tests/unit/daily-use.integration.test.ts:182:92
+    180|     setAgents([row(pid, "busy")]);
+    181|     await h.hub.pollAgents();
+    182|     expect((await api("POST", `/api/sessions/${id}/rename`, { name: "a…
+       |                                                                                            ^
+    183|     setAgents([row(pid, "waiting", { waitingFor: "permission prompt" }…
+    184|     await h.hub.pollAgents();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[37/48]⎯
+
+ FAIL  tests/unit/daily-use.integration.test.ts > input safety: /rename and quick prompts only when Claude is idle (M1/L1) > K5: does not send when the poll says idle but the fresh check says busy; the reservation stays
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/daily-use.integration.test.ts:202:3
+    200|   });
+    201|
+    202|   it("K5: does not send when the poll says idle but the fresh check sa…
+       |   ^
+    203|     const id = await newSession("echo", "recheck");
+    204|     const pid = pidOf(id);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[38/48]⎯
+
+ FAIL  tests/unit/daily-use.integration.test.ts > input safety: /rename and quick prompts only when Claude is idle (M1/L1) > K6: a second reservation overwrites the first; only the last name is sent
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/daily-use.integration.test.ts:219:3
+    217|   });
+    218|
+    219|   it("K6: a second reservation overwrites the first; only the last nam…
+       |   ^
+    220|     const id = await newSession("echo", "overwrite");
+    221|     const pid = pidOf(id);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[39/48]⎯
+
+ FAIL  tests/unit/daily-use.integration.test.ts > input safety: /rename and quick prompts only when Claude is idle (M1/L1) > K6: drops the reservation when the session stops or is removed from the list
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/daily-use.integration.test.ts:232:3
+    230|   });
+    231|
+    232|   it("K6: drops the reservation when the session stops or is removed f…
+       |   ^
+    233|     const id = await newSession("echo", "drop-removed");
+    234|     setAgents([row(pidOf(id), "busy")]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[40/48]⎯
+
+ FAIL  tests/unit/daily-use.integration.test.ts > input safety: /rename and quick prompts only when Claude is idle (M1/L1) > K5: a reservation made while the state was unknown becomes an app-side rename once Claude is known to be absent
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/daily-use.integration.test.ts:255:3
+    253|   });
+    254|
+    255|   it("K5: a reservation made while the state was unknown becomes an ap…
+       |   ^
+    256|     setAgents([]);
+    257|     const id = await newSession("echo", "unknown-then-none");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[41/48]⎯
+
+ FAIL  tests/unit/daily-use.integration.test.ts > input safety: /rename and quick prompts only when Claude is idle (M1/L1) > uses the status at request time, not the one polled a few seconds ago
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/daily-use.integration.test.ts:268:3
+    266|   });
+    267|
+    268|   it("uses the status at request time, not the one polled a few second…
+       |   ^
+    269|     const id = await newSession("echo", "stale");
+    270|     const pid = pidOf(id);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[42/48]⎯
+
+ FAIL  tests/unit/design-governance.test.ts > check-design-governance > extension/ is checked too (K9) > reports a direct value in extension CSS
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/design-governance.test.ts:267:5
+    265|     });
+    266|
+    267|     it("reports a direct value in extension CSS", () => {
+       |     ^
+    268|       expect(run(ext({ "extension/picker.css": ".a { color: red; }\n" …
+    269|       expect(run(ext({ "extension/picker.css": ".a { padding: 8px; }\n…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[43/48]⎯
+
+ FAIL  tests/unit/pr.integration.test.ts > K6: gh が失敗したとき > 時間切れは timeout
+AssertionError: expected 4920 to be less than 4500
+ ❯ tests/unit/pr.integration.test.ts:464:34
+    462|     const res = await refreshPr(id);
+    463|     expect(res.json.status).toBe("timeout");
+    464|     expect(Date.now() - started).toBeLessThan(4500);
+       |                                  ^
+    465|   });
+    466|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[44/48]⎯
+
+ FAIL  tests/unit/reservations.test.ts > reservation create and dispatch > R3 sends after the restore is ready with lateMinutes, and only past 60 seconds
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/reservations.test.ts:78:3
+     76|   });
+     77|
+     78|   it("R3 sends after the restore is ready with lateMinutes, and only p…
+       |   ^
+     79|     const late = async (lateMs: number) => {
+     80|       const { service, sessions, clock, input } = await setup();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[45/48]⎯
+
+ FAIL  tests/unit/server-process.test.ts > server process: no secrets in logs, argv or child env > never uses the production default dataDir: the child config points under its own temp directory and no restore list is written
+Error: server did not become healthy. output:
+
+ ❯ waitHealthy tests/unit/server-process.test.ts:93:40
+     91|       /* まだ起動していない */
+     92|     }
+     93|     if (Date.now() - start > ms) throw new Error(`server did not becom…
+       |                                        ^
+     94|     await new Promise((r) => setTimeout(r, 100));
+     95|   }
+ ❯ tests/unit/server-process.test.ts:190:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[46/48]⎯
+
+ FAIL  tests/unit/tmux-terminal-fake.test.ts > R7: retry count and the pending-input limit > a client that answers once and then dies every time still stops after 3 attempts (the count is not reset by the first answer)
+Error: Test timed out in 15000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/unit/tmux-terminal-fake.test.ts:163:3
+    161|
+    162| describe("R7: retry count and the pending-input limit", () => {
+    163|   it("a client that answers once and then dies every time still stops …
+       |   ^
+    164|     const { term, statuses } = open("readydie", 20);
+    165|     expect(await waitFor(() => statuses.includes("failed"), 15000)).to…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[47/48]⎯
+
+ FAIL  src/components/Reservations/ReservationEditor.test.tsx > ReservationEditor launch target > R1: a main-checkout role shows no cwd/branch input and sends neither
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/components/Reservations/ReservationEditor.test.tsx:31:3
+     29|
+     30| describe("ReservationEditor launch target", () => {
+     31|   it("R1: a main-checkout role shows no cwd/branch input and sends nei…
+       |   ^
+     32|     const onSave = vi.fn().mockResolvedValue(undefined);
+     33|     render(<ReservationEditor roles={roles} onSave={onSave} />);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[48/48]⎯
+
+
+ Test Files  19 failed | 96 passed (115)
+      Tests  48 failed | 1632 passed (1680)
+   Start at  13:02:56
+   Duration  1077.83s (tests 68%, environment 14%, import 12%, transform 6%, worker 1%)
+
+    Isolate  115 workers spawned · ~9.52s startup each (spawn + environment, per file)
+             at least ~146.86s faster with isolate: false — reuses workers across files instead of one per file
+

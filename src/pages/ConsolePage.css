@@ -48,13 +48,50 @@
 .ac-page__footer {
   grid-area: footer;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  align-items: stretch;
+  justify-content: space-between;
   gap: var(--space-4);
   padding: var(--space-2) var(--space-3);
   border-top: 1px solid var(--border);
   font-size: var(--font-xs);
   color: var(--text-muted);
+}
+
+/* 右隣に Codex・Grok のまとまりを足していく列 */
+.ac-page__providers {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.ac-provider {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 0 0 var(--ac-provider-w);
+  width: var(--ac-provider-w);
+  min-width: 0;
+}
+
+.ac-page__footer-side {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+/* 1項目1行。横幅を最長の1項目分に抑え、左の空きを確保する */
+.ac-page__footer-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0;
+  color: var(--text-muted);
+  opacity: var(--opacity-muted);
 }
 
 .ac-page__notice {

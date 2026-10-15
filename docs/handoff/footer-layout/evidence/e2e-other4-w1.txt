@@ -1,0 +1,14 @@
+[WebServer] agent-console: 警告: AGENT_CONSOLE_TOKEN で固定したトークンを使用中です（テスト用途のみ）
+[WebServer] activity: 記録の仕組みが外れています（noSettings）。README の手順で node scripts/ac-hooks.mjs install を実行してください
+[WebServer] agent-console: 警告: AGENT_CONSOLE_TOKEN で固定したトークンを使用中です（テスト用途のみ）
+
+Running 4 tests using 1 worker
+
+  ✓  1 [app] › tests/e2e/chat.spec.ts:125:1 › K2/K3/K4: 本物の hook に流した記録が、右に自分・左に Claude の吹き出しで出る。包み・担当の報告の戻りは出ず、HTML は描画されない (15.8s)
+  ✓  2 [app] › tests/e2e/console.spec.ts:1382:1 › v0.7.0 K4/K5/K6: 画像の貼り付け・ドロップで保存され、その絶対パスが端末に入る（Enter なし）。文字つきの貼り付け・画像以外のドロップは別の口で保存される (11.9s)
+  ✓  3 [app] › tests/e2e/relay.spec.ts:15:1 › K11: 引き継ぎを押すと一時の置き場にだけフォルダができ、古いセッションに文が送られ、引き継ぎ書ができると名前の数字が 1 増えた新しいセッションが増える (37.1s)
+STEP0-C style: got=["font-family","font-size","font-weight","line-height","color","background-color","border","border-radius","padding","margin","display","gap","width","height"] empty=[] values={"font-family":"Georgia, serif","font-size":"20px","font-weight":"700","line-height":"30px","color":"rgb(10, 20, 30)","background-color":"rgb(250, 240, 200)","border":"3px solid rgb(1, 2, 3)","border-radius":"8px","padding":"10px 14px","margin":"6px","display":"inline-block","gap":"normal","width":"300px","height":"80px"}
+STEP0-C image: png=334x106 rect=334x106 dpr=1
+  ✓  4 [picker] › tests/e2e/picker.spec.ts:121:1 › K1・K2: ほかのサイトの部品を選ぶ。ページの偽のクリックでは選ばれず、本物のクリックで選ばれ、内容と切り抜き画像がアプリに届く。Esc でやめられる (30.2s)
+
+  4 passed (2.7m)
