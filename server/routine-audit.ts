@@ -33,6 +33,8 @@ export interface RoutineAuditEntry {
   approvedBy?: "opus" | "ui";
   /** 書き込みが担当の動いている最中に拒否されたときの、動いていた担当の数 */
   runningCount?: number;
+  /** 上限超過（RoutineLimitError）で拒否されたとき、取り出していた承認を戻せたか（承認を取り出していたときだけ） */
+  approvalRestored?: boolean;
   /** closed / kept: 自動クローズの理由（kept は decision / no-reply / waiting） */
   closeReason?: string;
 }

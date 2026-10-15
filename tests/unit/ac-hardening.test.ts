@@ -265,6 +265,85 @@ describe("S4 S5 screen approval (POST /api/sessions/:id/routine-approval)", () =
   });
 });
 
+describe("A a failed write gives the approval back", () => {
+  it("A1 a 400 from the routine service (bad time) does not burn the approval: the same approval lets a valid update through once, then 403", async () => {
+    const added = await run(["add"], entry({ name: "a1" }));
+    const id = (JSON.parse(added.stdout) as { id: string }).id;
+    const toolUseId = startSubagent(OPUS_SID);
+    expect((await run(["approve", "--reason", "A1 の承認"])).code).toBe(0);
+    const bad = await run(["update", id], entry({ name: "a1", timeHHmm: "25:99" }));
+    expect(bad.code).toBe(1);
+    expect(bad.stderr).toContain("400");
+    expect(h.routineApprovals.peek(OPUS_SID)?.by).toBe("opus");
+    const auditBefore = auditLines().length;
+    expect((await run(["update", id], entry({ name: "a1", promptText: "ok" }))).code).toBe(0);
+    expect(auditLines().slice(auditBefore)).toMatchObject([{ action: "update", outcome: "ok", approvedBy: "opus" }]);
+    const third = await run(["update", id], entry({ name: "a1", promptText: "again" }));
+    expect(third.code).toBe(1);
+    expect(third.stderr).toContain("403");
+    stopSubagent(OPUS_SID, toolUseId, "AG-a1");
+  });
+
+  it("A2 hitting the limit of 10 gives the approval back and records approvalRestored:true; the same approval then disables one", async () => {
+    for (const r of h.routines.list()) if (r.enabled) await h.routines.setEnabled(r.id, false);
+    const ids: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      const r = await run(["add"], entry({ name: `a2-${i}`, enabled: true }));
+      expect(r.code, r.stderr).toBe(0);
+      ids.push((JSON.parse(r.stdout) as { id: string }).id);
+    }
+    const toolUseId = startSubagent(OPUS_SID);
+    expect((await run(["approve", "--reason", "A2 の承認"])).code).toBe(0);
+    const auditBefore = auditLines().length;
+    const over = await run(["add"], entry({ name: "a2-over", enabled: true }));
+    expect(over.code).toBe(1);
+    const denied = auditLines().slice(auditBefore);
+    expect(denied).toMatchObject([{ action: "add", outcome: "denied", approvalRestored: true }]);
+    expect("approvedBy" in denied[0]).toBe(false);
+    expect(h.routineApprovals.peek(OPUS_SID)?.by).toBe("opus");
+    const ok = await run(["disable", ids[0]], JSON.stringify({ reason: "A2 の整理" }));
+    expect(ok.code, ok.stderr).toBe(0);
+    expect(auditLines().at(-1)).toMatchObject({ action: "disable", outcome: "ok", approvedBy: "opus" });
+    stopSubagent(OPUS_SID, toolUseId, "AG-a2");
+    for (const id of ids) await h.routines.setEnabled(id, false);
+  });
+
+  it("A3 an older approval is not restored after a newer one was issued and used", () => {
+    const a = new RoutineApprovals(() => 1_000);
+    const first = a.issue("s", "opus");
+    expect(a.consume("s")).toBe(first);
+    const second = a.issue("s", "ui");
+    expect(a.consume("s")).toBe(second);
+    expect(a.restore("s", first)).toBe(false);
+    expect(a.peek("s")).toBeNull();
+  });
+
+  it("A4 an expired approval is not restored (the expiry is not extended)", () => {
+    let now = 1_000;
+    const a = new RoutineApprovals(() => now);
+    const first = a.issue("s", "opus");
+    expect(a.consume("s")).toBe(first);
+    now += APPROVAL_TTL_MS.opus;
+    expect(a.restore("s", first)).toBe(false);
+    expect(a.peek("s")).toBeNull();
+    // 期限内なら同じ参照が戻り、期限はそのまま
+    const second = a.issue("s", "opus");
+    expect(a.consume("s")).toBe(second);
+    expect(a.restore("s", second)).toBe(true);
+    expect(a.peek("s")).toBe(second);
+  });
+
+  it("A5 does not overwrite an approval that is already in the map", () => {
+    const a = new RoutineApprovals(() => 1_000);
+    const first = a.issue("s", "opus");
+    expect(a.consume("s")).toBe(first);
+    const second = a.issue("s", "ui");
+    expect(a.restore("s", first)).toBe(false);
+    expect(a.restore("s", second)).toBe(false);
+    expect(a.peek("s")).toBe(second);
+  });
+});
+
 describe("RoutineApprovals (time injected)", () => {
   it("issue, peek, consume once; one per session; expiry by the injected clock", () => {
     let now = 1_000;
