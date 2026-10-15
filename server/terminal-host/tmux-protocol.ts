@@ -56,6 +56,8 @@ export type HasSessionResult = "alive" | "gone" | "unreachable";
 export function classifyHasSession(status: number | null, stderr: string): HasSessionResult {
   if (status === 0) return "alive";
   if (/can't find session|no server running|no current target/.test(stderr)) return "gone";
+  // tmux サーバー自体が無い（再起動直後など）: ソケットが無い／接続拒否。Permission denied などは unreachable のまま
+  if (/error connecting to .*\((No such file or directory|Connection refused)\)/.test(stderr)) return "gone";
   return "unreachable";
 }
 

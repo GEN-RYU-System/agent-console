@@ -70,6 +70,8 @@ describe("has-session の振り分け（K12）", () => {
     [1, "no server running on /private/tmp/tmux-501/agent-console\n", "gone"],
     [1, "no current target\n", "gone"],
     [1, "error connecting to /private/tmp/tmux-501/agent-console (Permission denied)\n", "unreachable"],
+    [1, "error connecting to /private/tmp/tmux-501/agent-console (No such file or directory)\n", "gone"],
+    [1, "error connecting to /private/tmp/tmux-501/agent-console (Connection refused)\n", "gone"],
     [1, "protocol version mismatch (client 8, server 7)\n", "unreachable"],
     [null, "", "unreachable"],
     [1, "", "unreachable"],
