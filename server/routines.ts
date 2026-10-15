@@ -17,6 +17,8 @@ const MAX_EVENTS = 100;
 export const AGENT_ENABLED_LIMIT = 10;
 /** 理由（reason）の最大字数。予約の measureNote と同じ規則（reservations.ts は触らないので値だけ同じ定数を持つ） */
 export const MAX_REASON = 200;
+/** 再起動で見張りに戻すのは、送ってから24時間以内のものだけ */
+export const RETRACK_MAX_AGE_MS = 24 * 60 * 60_000;
 
 /** AI 分の有効が上限に達している。入力の不備ではなく上限の判断なので、監査に残す側が見分ける（http.ts は SessionInputError として 400 にする） */
 export class RoutineLimitError extends SessionInputError {}
@@ -71,6 +73,22 @@ export class RoutineService {
   private closer: RoutineCloser | null = null;
   /** 自動クローズ（closeWhenIdle）の見張りをつなぐ。sent になった実行を渡す */
   setCloser(closer: RoutineCloser): void { this.closer = closer; }
+  /** 再起動のあと、送信済みで閉じていないセッションを自動クローズの見張りに戻す。戻したものの名前（無ければ sessionId）を返す */
+  retrack(now: number = this.now().getTime()): string[] {
+    if (this.closer === null) return [];
+    const names: string[] = [];
+    for (const r of this.routines) {
+      if (r.closeWhenIdle !== true) continue;
+      const latest = new Map<string, RoutineEvent>();
+      for (const e of r.events) if (e.sessionId !== undefined) latest.set(e.sessionId, e);
+      for (const [sessionId, e] of latest) {
+        if (e.outcome !== "sent" || now - e.at > RETRACK_MAX_AGE_MS) continue;
+        this.closer.track({ routineId: r.id, ...(r.createdBy === "agent" ? { createdBy: "agent" as const } : {}), slot: e.slot, sessionId, ...(e.sessionName !== undefined ? { sessionName: e.sessionName } : {}), sentAt: e.at });
+        names.push(e.sessionName ?? sessionId);
+      }
+    }
+    return names;
+  }
   /** 自動クローズの結果（closed / kept）を履歴に足す */
   async recordClose(routineId: string, event: { outcome: CloseOutcome; slot: string; sessionName?: string; sessionId: string; summary?: string }): Promise<void> {
     if (!this.routines.some((r) => r.id === routineId)) return;
