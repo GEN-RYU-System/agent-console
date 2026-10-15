@@ -1,9 +1,9 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { extractUsage, formatLine, readUsage, runStatusline, writeUsage } from "../../hooks/ac-statusline.mjs";
+import { extractUsage, formatLine, readUsage, runStatusline, sweepStaleTmp, writeSessionMetrics, writeUsage } from "../../hooks/ac-statusline.mjs";
 import { installStatuslineCommand, statuslineCommandPathIn } from "../../server/activity-setup.ts";
 
 vi.setConfig({ testTimeout: 60000 });
@@ -186,5 +186,69 @@ describe("K10/K5: 本物の命令（dataDir/bin に写したもの）", () => {
     const result = readUsage(dataDir);
     expect(result.status).toBe("ok");
     expect(readdirSync(dataDir).sort()).toEqual(["bin", "usage.json"]);
+  });
+});
+
+describe("tmp-sweep: 書き込み成功時に古い一時ファイルを片付ける", () => {
+  const STALE = "usage.json.123.abc.tmp";
+  /** mtime を secondsAgo 秒前にしたファイルを作る */
+  function make(dataDir: string, name: string, secondsAgo: number): string {
+    const f = path.join(dataDir, name);
+    writeFileSync(f, "{}");
+    const t = (Date.now() - secondsAgo * 1000) / 1000;
+    utimesSync(f, t, t);
+    return f;
+  }
+  const usage = { fiveHour: { usedPercentage: 1, resetsAt: 1791887400 } };
+
+  it("K1: 120 秒前の usage.json.123.abc.tmp は writeUsage の成功後に消える", () => {
+    const dataDir = tmp();
+    const f = make(dataDir, STALE, 120);
+    writeUsage(dataDir, usage);
+    expect(existsSync(f)).toBe(false);
+    expect(readUsage(dataDir).status).toBe("ok");
+  });
+  it("K2: mtime が今の一時ファイルは消えない", () => {
+    const dataDir = tmp();
+    const f = make(dataDir, STALE, 0);
+    writeUsage(dataDir, usage);
+    expect(existsSync(f)).toBe(true);
+  });
+  it("K3: 名前が合わない物は古くても消えない", () => {
+    const dataDir = tmp();
+    const keep = ["usage.json.bak", "usage.json.abc.tmp", "routines.json.1.a.tmp", "session-metrics.json.1.a.tmp"];
+    for (const n of keep) make(dataDir, n, 120);
+    writeUsage(dataDir, usage);
+    for (const n of keep) expect(existsSync(path.join(dataDir, n)), n).toBe(true);
+  });
+  it("K4: 名前が合う古いシンボリックリンク・ディレクトリは消えない", () => {
+    const dataDir = tmp();
+    const target = make(dataDir, "target.txt", 120);
+    const link = path.join(dataDir, "usage.json.1.a.tmp");
+    symlinkSync(target, link);
+    const dir = path.join(dataDir, "usage.json.2.b.tmp");
+    mkdirSync(dir);
+    const t = (Date.now() - 120000) / 1000;
+    utimesSync(dir, t, t);
+    writeUsage(dataDir, usage);
+    expect(existsSync(target)).toBe(true);
+    expect(readdirSync(dataDir)).toEqual(expect.arrayContaining(["usage.json.1.a.tmp", "usage.json.2.b.tmp"]));
+    expect(statSync(dir).isDirectory()).toBe(true);
+  });
+  it("K5: writeSessionMetrics の成功後も session-metrics.json の古い一時ファイルが消える", () => {
+    const dataDir = tmp();
+    const stale = make(dataDir, "session-metrics.json.9.xyz.tmp", 120);
+    const other = make(dataDir, STALE, 120);
+    writeSessionMetrics(dataDir, { s1: { cpuPercent: 1, ramPercent: 2 } });
+    expect(existsSync(stale)).toBe(false);
+    expect(existsSync(other)).toBe(true);
+  });
+  it("K6: dataDir が無くても throw せず 0 を返す。writeUsage は 200ms 以内", () => {
+    expect(sweepStaleTmp(path.join(tmp(), "none"), "usage.json")).toBe(0);
+    const dataDir = tmp();
+    for (let i = 0; i < 20; i++) make(dataDir, `routines-${i}.json`, 0);
+    const t0 = performance.now();
+    writeUsage(dataDir, usage);
+    expect(performance.now() - t0).toBeLessThan(200);
   });
 });

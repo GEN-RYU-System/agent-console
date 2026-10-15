@@ -15,6 +15,7 @@ export interface UsageBody {
 }
 export function extractUsage(input: unknown): UsageBody | null;
 export function formatLine(usage: UsageBody | null | undefined): string;
+export function sweepStaleTmp(dataDir: string, fileName: string, now?: number): number;
 export function writeUsage(dataDir: string, usage: UsageBody, now?: number): string;
 export type UsageReadResult = { status: "none" } | { status: "invalid" } | ({ status: "ok"; observedAt: number } & UsageBody);
 export function readUsage(dataDir: string): UsageReadResult;
