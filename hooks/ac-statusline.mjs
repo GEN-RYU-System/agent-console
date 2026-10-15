@@ -3,8 +3,9 @@
 // 標準出力には Claude の画面の下の行に出す 1 行（「週 N% · 5時間 M%」。数字と記号だけ）を出す。
 // 検査（extractUsage）・書き込み（writeUsage）・読み出し（readUsage）はこの 1 ファイルが持つ。サーバーはこのファイルを import し、
 // 命令は dataDir/bin に写した同じファイルが動く。node の標準の部品だけを使う。外部へは通信しない。
+// 書き込み成功のたびに、同じ名前の 60 秒より古い一時ファイルを片付ける（ディスク満杯などで残った物の掃除。docs/handoff/tmp-sweep/design.md）。
 // 壊れた入力・rate_limits の無い入力・範囲外の値のときは usage.json を書き換えず、空の行を出して終了コード 0（Claude の画面を止めない）。
-import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeSync } from "node:fs";
+import { chmodSync, closeSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, unlinkSync, writeSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,6 +22,10 @@ const MAX_INPUT_BYTES = 1024 * 1024;
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
 const MAX_PERCENT = 100;
+/** 一時ファイルがこれより古ければ、書き込み中ではなく残骸とみなす（書き込みは 200ms 以内） */
+const STALE_TMP_MS = 60 * 1000;
+/** 1 回の掃除で消す最大件数 */
+const MAX_SWEEP = 50;
 
 const isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -65,6 +70,33 @@ export function formatLine(usage) {
   return parts.join(" · ");
 }
 
+/**
+ * dataDir の中の `<fileName>.<pid>.<乱数>.tmp` のうち、通常ファイルで 60 秒より古い物を消す（最大 50 件）。
+ * シンボリックリンク・ディレクトリ・名前が合わない物は触らない。消した件数を返す。何があっても throw しない。
+ */
+export function sweepStaleTmp(dataDir, fileName, now = Date.now()) {
+  let removed = 0;
+  try {
+    const re = new RegExp(`^${fileName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.\\d+\\.[a-z0-9]+\\.tmp$`);
+    for (const name of readdirSync(dataDir)) {
+      if (removed >= MAX_SWEEP) break;
+      if (!re.test(name)) continue;
+      try {
+        const full = path.join(dataDir, name);
+        const st = lstatSync(full);
+        if (!st.isFile() || now - st.mtimeMs <= STALE_TMP_MS) continue;
+        unlinkSync(full);
+        removed += 1;
+      } catch {
+        // 1 件の失敗で止めない
+      }
+    }
+  } catch {
+    // dataDir が読めないときは 0 件
+  }
+  return removed;
+}
+
 /** dataDir/<fileName> に JSON を書く（一時ファイル→600→rename。同時に書かれても、半分だけのファイルを読む人は出ない） */
 function writeJsonAtomic(dataDir, fileName, body) {
   mkdirSync(dataDir, { recursive: true, mode: DIR_MODE });
@@ -78,6 +110,7 @@ function writeJsonAtomic(dataDir, fileName, body) {
     fd = null;
     chmodSync(tmp, FILE_MODE);
     renameSync(tmp, file);
+    sweepStaleTmp(dataDir, fileName);
   } catch (err) {
     if (fd !== null) closeSync(fd);
     rmSync(tmp, { force: true });
