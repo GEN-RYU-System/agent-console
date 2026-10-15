@@ -151,7 +151,7 @@ function withMatcher(group: Json, spec: HookSpec): Json {
 }
 
 /**
- * HOOK_SPECS のすべて（記録用 10 つ＋ guard 2 本）に自分の handler を足した新しい設定を返す。すでにあれば足さない。内容が違えば（node のパス変更など）その場で直す。
+ * HOOK_SPECS のすべて（記録用 10 個＋ guard 6 本＋ board-guard 1 本）に自分の handler を足した新しい設定を返す。すでにあれば足さない。内容が違えば（node のパス変更など）その場で直す。
  * その spec の handler（isHandlerOf）がある group の matcher が spec と違う時（file-viewer 設計 §3-2・§16。判定は spec ごと。他の spec の handler、たとえば guard の group には触れない）:
  * 自分の handler だけの group は matcher を書き換え、他の handler と同居する group からはその spec の分だけ抜いて、spec の matcher の新しい group を末尾に足す。
  */
@@ -269,7 +269,7 @@ export interface CheckInput {
   hookPath: string;
 }
 
-/** 設定ファイルを読むだけ（書かない）。全 handler（記録用 10 つ＋ guard 2 本）・node・hook のファイルがそろっているか */
+/** 設定ファイルを読むだけ（書かない）。全 handler（記録用 10 個＋ guard 6 本＋ board-guard 1 本）・node・hook のファイルがそろっているか */
 export function checkHooks(input: CheckInput): HookCheck {
   let raw: string;
   try {

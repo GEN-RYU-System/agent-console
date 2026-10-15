@@ -334,6 +334,31 @@ describe("retrack (v0.36.0)", () => {
     expect(tracked[0]).toMatchObject({ routineId: "r1", slot: "sl", sessionId: "s1", sessionName: "sess-a", sentAt: NOW - 1000 });
   });
 
+  it("R1b: passes exactly routineId, slot, sessionId, sessionName and sentAt to track (no createdBy for a non-agent routine)", async () => {
+    const track = vi.fn();
+    const { service } = await setup({ routines: [{ closeWhenIdle: true, events: [ev()] }] });
+    service.setCloser({ track } as never);
+    service.retrack(NOW);
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith({ routineId: "r1", slot: "sl", sessionId: "s1", sessionName: "sess-a", sentAt: NOW - 1000 });
+  });
+
+  it("R1c: passes createdBy 'agent' to track when the routine was created by an agent", async () => {
+    const track = vi.fn();
+    const { service } = await setup({ routines: [{ closeWhenIdle: true, createdBy: "agent", events: [ev()] }] });
+    service.setCloser({ track } as never);
+    service.retrack(NOW);
+    expect(track).toHaveBeenCalledWith({ routineId: "r1", createdBy: "agent", slot: "sl", sessionId: "s1", sessionName: "sess-a", sentAt: NOW - 1000 });
+  });
+
+  it("R1d: without a sessionName, track gets no sessionName and retrack returns the sessionId", async () => {
+    const track = vi.fn();
+    const { service } = await setup({ routines: [{ closeWhenIdle: true, events: [ev({ sessionName: undefined })] }] });
+    service.setCloser({ track } as never);
+    expect(service.retrack(NOW)).toEqual(["s1"]);
+    expect(track).toHaveBeenCalledWith({ routineId: "r1", slot: "sl", sessionId: "s1", sentAt: NOW - 1000 });
+  });
+
   it("R2: does not put back a session whose latest event is closed or kept", async () => {
     for (const outcome of ["closed", "kept"] as const) {
       const { service, tracked } = await prep({ closeWhenIdle: true, events: [ev(), ev({ at: NOW - 500, outcome })] });
@@ -346,6 +371,9 @@ describe("retrack (v0.36.0)", () => {
     const { service, tracked } = await prep({ events: [ev()] });
     expect(service.retrack(NOW)).toEqual([]);
     expect(tracked).toHaveLength(0);
+    const off = await prep({ closeWhenIdle: false, events: [ev()] });
+    expect(off.service.retrack(NOW)).toEqual([]);
+    expect(off.tracked).toHaveLength(0);
   });
 
   it("R4: ignores events without a sessionId (e.g. not_ready)", async () => {

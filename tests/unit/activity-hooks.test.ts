@@ -122,7 +122,7 @@ describe("K6: 設定の定義", () => {
 });
 
 describe("K6: install", () => {
-  it("今の設定のキーと、ほかの hook をすべて残して、自分の handler を 10 のイベント＋ guard 2 本に足す（exec の形・空白入りのパス）", () => {
+  it("今の設定のキーと、ほかの hook をすべて残して、自分の handler を 10 のイベント＋ guard 6 本＋ board-guard 1 本に足す（exec の形・空白入りのパス）", () => {
     const e = makeEnv();
     writeFileSync(e.settings, JSON.stringify(PO_SETTINGS, null, 2) + "\n");
     const r = installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath, now: () => Date.UTC(2026, 9, 12, 14, 0, 0, 123) });
