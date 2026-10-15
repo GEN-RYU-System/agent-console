@@ -766,7 +766,9 @@ test("段階2 K3: よく使う指示を登録・編集・削除でき、ボタ�
   const file = path.join(DATA_DIR, "quick-prompts.json");
   // 保存先は 8 つだけ（よく使う指示・v0.3.8 の復元リスト・v0.6.0 の拡張の合言葉と拡張のフォルダ・v0.9.0 の記録用 hook の本体の写し hooks/・v0.12.0 の作戦ボードの命令の写し bin/・v0.21.0 の予約の合言葉 reserve-token・v0.28.0 のログインの記録 auth-sessions.json）。
   // 部品の picks/ は部品の試験（別の project）だけが、記録の activity/ と作戦ボードの boards/ は右の欄の試験（activity.spec.ts）だけが作る
-  expect(readdirSync(DATA_DIR).filter((n) => n !== "activity" && n !== "boards").sort()).toEqual(["auth-sessions.json", "bin", "chrome-extension", "hooks", "open-sessions.json", "picker-token", "quick-prompts.json", "reserve-token"]);
+  expect(readdirSync(DATA_DIR).filter((n) => n !== "activity" && n !== "boards").sort()).toEqual(["auth-sessions.json", "bin", "chrome-extension", "hooks", "open-sessions.json", "picker-token", "quick-prompts.json", "reserve-token", "session-metrics.json"]);
+  // v0.38.0 の定期計測が書く session-metrics.json も所有者だけが読み書きできる
+  expect(statSync(path.join(DATA_DIR, "session-metrics.json")).mode & 0o777).toBe(0o600);
   expect(statSync(file).mode & 0o777).toBe(0o600);
   await page.reload();
   await openTerminalTab(page);

@@ -5,6 +5,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { E2E_PORT, E2E_TOKEN } from "../fixtures/e2e-env";
 import { newPairingCode } from "../fixtures/e2e-pairing";
 
+const MAC_ONLY_REASON = "計測は macOS の memory_pressure・sysctl・statfs に依存。agent-console は Mac 専用";
 const BASE = `http://127.0.0.1:${E2E_PORT}`;
 const BEARER = { Authorization: `Bearer ${E2E_TOKEN}`, Connection: "close" };
 const DATA_DIR = process.env.AC_E2E_DATA_DIR as string;
@@ -41,6 +42,7 @@ function save(name: string, body: unknown): void {
 }
 
 test("MacMeter: K1 Claude 欄と上端がそろう / K6 高さ・はみ出し・空き幅（1400・1024 × ライト・ダーク）", async ({ page }) => {
+  test.skip(process.platform !== "darwin", MAC_ONLY_REASON);
   rmSync(USAGE_FILE, { force: true });
   try {
     fireStatusline();
@@ -95,6 +97,7 @@ test("MacMeter: K1 Claude 欄と上端がそろう / K6 高さ・はみ出し・
 });
 
 test("MacMeter: K2 Disk は statfs と ±0.5 / K3 RAM は memory_pressure と ±1 / K4 CPU は top と ±15（3 回）", async () => {
+  test.skip(process.platform !== "darwin", MAC_ONLY_REASON);
   // CPU は定期計測の窓で出るので、最初の値が付くまで待つ
   await expect.poll(async () => (await fetchMemory()).system.cpuPercent, { timeout: 20000 }).not.toBeNull();
   const out: Record<string, unknown> = {};

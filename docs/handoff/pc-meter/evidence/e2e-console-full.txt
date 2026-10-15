@@ -1,0 +1,238 @@
+[WebServer] agent-console: 警告: AGENT_CONSOLE_TOKEN で固定したトークンを使用中です（テスト用途のみ）
+[WebServer] activity: 記録の仕組みが外れています（noSettings）。README の手順で node scripts/ac-hooks.mjs install を実行してください
+[WebServer] agent-console: 警告: AGENT_CONSOLE_TOKEN で固定したトークンを使用中です（テスト用途のみ）
+
+Running 48 tests using 1 worker
+
+  ✓   1 [app] › tests/e2e/console.spec.ts:72:1 › K2: 新しいセッション -> ワークツリー作成 -> 役割コマンドが端末に出て入力できる (9.0s)
+  ✓   2 [app] › tests/e2e/console.spec.ts:89:1 › K2: 不正なブランチ名は作成されずエラーが画面に出る (4.4s)
+  ✓   3 [app] › tests/e2e/console.spec.ts:100:1 › K3: タブを開き直しても同じセッションの直近出力が戻る (3.4s)
+  ✓   4 [app] › tests/e2e/console.spec.ts:112:1 › K1: 一覧の状態が claude agents --json の status と 5 秒以内に一致する (4.5s)
+  ✓   5 [app] › tests/e2e/console.spec.ts:123:1 › K4: 台帳ボードの件数が ledger-lookup.sh で引いた値と一致する (3.5s)
+  ✓   6 [app] › tests/e2e/console.spec.ts:149:1 › 停止したセッションは「停止」と表示され、一覧から外せる (7.1s)
+  ✓   7 [app] › tests/e2e/console.spec.ts:161:1 › 端末の文字間隔が正常（xterm の letter-spacing が 1px 未満） (14.6s)
+  ✓   8 [app] › tests/e2e/console.spec.ts:171:1 › K8: 不正トークンは 401、不正 Origin の WebSocket は 403、待受は 127.0.0.1 のみ (153ms)
+K7 server_rss_mb=37.6 (limit 150) js_heap_used_mb=9.6 (limit 80)
+  ✓   9 [app] › tests/e2e/console.spec.ts:204:1 › K7: ダミーセッション 3 本で サーバー RSS <= 150MB かつ ブラウザ JS ヒープ <= 80MB (5.1s)
+  ✓  10 [app] › tests/e2e/console.spec.ts:235:1 › フッターに Sales Anchor 展開元 SHA と claude --version が出る (10.7s)
+  ✘  11 [app] › tests/e2e/console.spec.ts:258:1 › 下の帯に利用量（週・5時間）の 2 本のバーが出る: 値が無い→まだ値がありません、命令が書くと棒・N%・リセット・N分前、80/95/100% の Badge (32.2s)
+  -  12 [app] › tests/e2e/console.spec.ts:307:1 › 下の帯の配置: K1〜K4（Claude のまとまりが左上・バーは幅 320px の中・メタは右下・Codex/Grok 用の空き）
+  -  13 [app] › tests/e2e/console.spec.ts:362:1 › 下の帯のスクリーンショット（K6: 1400・1024 幅 × 値あり・値なし・80%以上 × ライト・ダーク。AC_FOOTER_SHOT_DIR 指定時だけ保存）
+  -  14 [app] › tests/e2e/console.spec.ts:394:1 › ペアリング: /pair?code で一覧が開き、URL に秘密もコードも残らず、トークンは sessionStorage のみ（Cookie 無し）
+  -  15 [app] › tests/e2e/console.spec.ts:412:1 › ペアリング: 使用済みコードは案内画面（Callout）になり、トークンは保存されない
+  -  16 [app] › tests/e2e/console.spec.ts:425:1 › 未ログインで開くとログインが必要の案内（Callout）が出る
+  -  17 [app] › tests/e2e/console.spec.ts:430:1 › 下の帯に「ログアウト」「メモリ」のボタンが無い（v0.37.0 で外した。サーバーの /api/logout・/api/memory は残る）
+  -  18 [app] › tests/e2e/console.spec.ts:438:1 › 別のタブ（別の sessionStorage）にはセッションが共有されない
+  -  19 [app] › tests/e2e/console.spec.ts:445:1 › CSP: 画面・端末・モーダルの操作で CSP 違反が 1 件も出ない（応答にも CSP ヘッダがある）
+  -  20 [app] › tests/e2e/console.spec.ts:474:1 › /healthz は認証なしで ok を返す
+  -  21 [app] › tests/e2e/console.spec.ts:483:1 › テーマ: フッターの切替で <html> が変わり、再読込でも保持され、端末の背景が --bg-surface のダーク値になる（Cookie は出さない）
+  -  22 [app] › tests/e2e/console.spec.ts:612:1 › 段階2 K1: busy→idle で未読の印・窓タイトル・macOS 通知が出て、行を選ぶと未読が消える
+  -  23 [app] › tests/e2e/console.spec.ts:655:1 › 段階2 K2: 名前を変えると /rename が端末に送られ、Claude 側の名前が変われば表示も変わる。作業中は予約され、待機になってから送られる
+  -  24 [app] › tests/e2e/console.spec.ts:707:1 › 段階2 K2: /rename を送っても Claude 側の名前が 10 秒変わらなければ案内が出る
+  -  25 [app] › tests/e2e/console.spec.ts:720:1 › 段階2 K3: よく使う指示を登録・編集・削除でき、ボタン 1 回で選択中の端末の入力欄に入り（Enter は送らない）、再読込後も残る（保存は 1 ファイル・権限 600）
+  -  26 [app] › tests/e2e/console.spec.ts:784:1 › v0.3.4 K4: 「↑」「↓」で指示を並べ替えると、編集画面と上部のボタン列が新しい順になり、保存ファイルの順も変わる
+  -  27 [app] › tests/e2e/console.spec.ts:808:1 › 段階2 K3: 複数行の指示は、括弧付き貼付モードの端末へ ESC[200~ ... ESC[201~ で包まれて入り、Enter は届かない
+  -  28 [app] › tests/e2e/console.spec.ts:835:1 › 段階2 K3: 状態確認中に別のセッションへ切り替えると、どちらの端末にも入らず案内が出る
+  -  29 [app] › tests/e2e/console.spec.ts:869:1 › v0.3.3 K1-K4・K6: 過去の会話を再開は、本店の行と worktree の行を出し、押した場所で再開用の端末を開く
+  -  30 [app] › tests/e2e/console.spec.ts:909:1 › 段階2 K5: 台帳は既定で作業中・レビュー・WIP かつ直近 30 日だけを表示し、隠れた件数と日付不明を別に数え、絞り込みは再読込後も残る
+  -  31 [app] › tests/e2e/console.spec.ts:948:1 › v0.3.8 K1: 閉じるボタン -> 確認画面 -> 「やめる」では何も起きず、「閉じる」で行が消えて端末のプロセスも終わる
+  -  32 [app] › tests/e2e/console.spec.ts:996:1 › v0.4.0 K1〜K6: 変更タブ -> 一覧と色つき diff -> 行コメントの追加・編集・削除 -> Claude に送る（貼って2秒待って Enter）-> 送信済み、作業中は押せず理由が見える
+  -  33 [app] › tests/e2e/console.spec.ts:1093:1 › v0.4.0 K12: 変更タブを開いてから端末タブに戻っても、端末の列数と行数は変わらない（隠している間に 2x1 などが pty に送られない）
+  -  34 [app] › tests/e2e/console.spec.ts:1177:1 › v0.5.0 K1〜K6, K8: PR タブ -> PR・マージできるか・検査の集計と失敗の一覧 -> 一覧の CI の印 -> 更新で変わる -> PR なし・認証切れ
+  -  35 [app] › tests/e2e/console.spec.ts:1307:1 › v0.7.0 K1: 全角の句読点・括弧を含む行の描画が、端末の右端を越えない（text-spacing-trim: space-all）
+  -  36 [app] › tests/e2e/console.spec.ts:1319:1 › v0.7.0 K3: 端末の書体の並びに明朝が入っている。日本語は明朝、英数字と罫線は Menlo、※ は Monaco で描かれる
+  -  37 [app] › tests/e2e/console.spec.ts:1384:1 › v0.7.0 K4/K5/K6: 画像の貼り付け・ドロップで保存され、その絶対パスが端末に入る（Enter なし）。文字つきの貼り付け・画像以外のドロップは別の口で保存される
+  -  38 [app] › tests/e2e/console.spec.ts:1444:1 › v0.7.0 K6: 画像の受け口は認証の内側にある（認証なしは 401）
+  -  39 [app] › tests/e2e/console.spec.ts:1462:1 › v0.10.0 K3・K4: よく使う指示のバーは1行で折り返さず、「よく使う指示」の一覧から使える。「常に表示」の切り替えがバーと保存ファイル（version 1 のまま）に反映され、Esc で閉じる
+  -  40 [app] › tests/e2e/console.spec.ts:1554:1 › v0.33.0 K2・K3: 「よく使う指示」の1つの画面で、常に表示の切替・↑↓・追加・編集・削除ができ、閉じなくてもバーに出る/消え、保存ファイルに反映される
+  -  41 [app] › tests/e2e/console.spec.ts:1618:1 › v0.33.0 K6: 指示5件・常に表示3件のバーと、開いた「よく使う指示」の画面を、明・暗で撮る（AC_SHOT_DIR のときだけ保存。行の6つの操作が1行に入る）
+  -  42 [app] › tests/e2e/console.spec.ts:1640:1 › v0.10.0 K5: 行の1段目は丸と名前だけ（状態の文字なし）、2段目は役割・状態の印の順。行の高さは64px以下のまま
+  -  43 [app] › tests/e2e/console.spec.ts:1661:1 › v0.10.0 K6・K7: 行をドラッグして離すと並び順が変わり（再読込後も同じ）、Alt+↑ と Alt+↓ でも1つずつ動く。ダブルクリックでの名前の変更は今までどおり
+  -  44 [app] › tests/e2e/console.spec.ts:1724:3 › アカウント切り替え › K1: 下の帯に「Claude ログイン: <メール>」とプランが出る。メールは auth status の email と一字一句同じ
+  -  45 [app] › tests/e2e/console.spec.ts:1733:3 › アカウント切り替え › K2: 未ログイン（終了コード 1）は「Claude: 未ログイン」と出る
+  -  46 [app] › tests/e2e/console.spec.ts:1739:3 › アカウント切り替え › K3: /api/account の応答のキーは status・loggedIn・email・subscriptionType だけ
+  -  47 [app] › tests/e2e/console.spec.ts:1745:3 › アカウント切り替え › K5: 確認ダイアログの本文が確定文と一致し、「開き直す」「新しいアカウント」を含む。「やめる」では何も起きない
+  -  48 [app] › tests/e2e/console.spec.ts:1762:3 › アカウント切り替え › K6・K7: 確認すると account-login の端末が増え、auth logout → auth login の 2 行だけが動き、終わると 10 秒以内に表示が新しいアカウントに変わる
+  ✘  49 [app] › tests/e2e/console.spec.ts:72:1 › K2: 新しいセッション -> ワークツリー作成 -> 役割コマンドが端末に出て入力できる (retry #1) (17.8s)
+  -  50 [app] › tests/e2e/console.spec.ts:258:1 › 下の帯に利用量（週・5時間）の 2 本のバーが出る: 値が無い→まだ値がありません、命令が書くと棒・N%・リセット・N分前、80/95/100% の Badge (retry #1)
+  -  51 [app] › tests/e2e/console.spec.ts:89:1 › K2: 不正なブランチ名は作成されずエラーが画面に出る (retry #1)
+  -  52 [app] › tests/e2e/console.spec.ts:100:1 › K3: タブを開き直しても同じセッションの直近出力が戻る (retry #1)
+  -  53 [app] › tests/e2e/console.spec.ts:112:1 › K1: 一覧の状態が claude agents --json の status と 5 秒以内に一致する (retry #1)
+  -  54 [app] › tests/e2e/console.spec.ts:123:1 › K4: 台帳ボードの件数が ledger-lookup.sh で引いた値と一致する (retry #1)
+  -  55 [app] › tests/e2e/console.spec.ts:149:1 › 停止したセッションは「停止」と表示され、一覧から外せる (retry #1)
+  -  56 [app] › tests/e2e/console.spec.ts:161:1 › 端末の文字間隔が正常（xterm の letter-spacing が 1px 未満） (retry #1)
+  -  57 [app] › tests/e2e/console.spec.ts:171:1 › K8: 不正トークンは 401、不正 Origin の WebSocket は 403、待受は 127.0.0.1 のみ (retry #1)
+  -  58 [app] › tests/e2e/console.spec.ts:204:1 › K7: ダミーセッション 3 本で サーバー RSS <= 150MB かつ ブラウザ JS ヒープ <= 80MB (retry #1)
+  -  59 [app] › tests/e2e/console.spec.ts:235:1 › フッターに Sales Anchor 展開元 SHA と claude --version が出る (retry #1)
+  -  60 [app] › tests/e2e/console.spec.ts:307:1 › 下の帯の配置: K1〜K4（Claude のまとまりが左上・バーは幅 320px の中・メタは右下・Codex/Grok 用の空き） (retry #1)
+  -  61 [app] › tests/e2e/console.spec.ts:362:1 › 下の帯のスクリーンショット（K6: 1400・1024 幅 × 値あり・値なし・80%以上 × ライト・ダーク。AC_FOOTER_SHOT_DIR 指定時だけ保存） (retry #1)
+  -  62 [app] › tests/e2e/console.spec.ts:394:1 › ペアリング: /pair?code で一覧が開き、URL に秘密もコードも残らず、トークンは sessionStorage のみ（Cookie 無し） (retry #1)
+  -  63 [app] › tests/e2e/console.spec.ts:412:1 › ペアリング: 使用済みコードは案内画面（Callout）になり、トークンは保存されない (retry #1)
+  -  64 [app] › tests/e2e/console.spec.ts:425:1 › 未ログインで開くとログインが必要の案内（Callout）が出る (retry #1)
+  -  65 [app] › tests/e2e/console.spec.ts:430:1 › 下の帯に「ログアウト」「メモリ」のボタンが無い（v0.37.0 で外した。サーバーの /api/logout・/api/memory は残る） (retry #1)
+  -  66 [app] › tests/e2e/console.spec.ts:438:1 › 別のタブ（別の sessionStorage）にはセッションが共有されない (retry #1)
+  -  67 [app] › tests/e2e/console.spec.ts:445:1 › CSP: 画面・端末・モーダルの操作で CSP 違反が 1 件も出ない（応答にも CSP ヘッダがある） (retry #1)
+  -  68 [app] › tests/e2e/console.spec.ts:474:1 › /healthz は認証なしで ok を返す (retry #1)
+  -  69 [app] › tests/e2e/console.spec.ts:483:1 › テーマ: フッターの切替で <html> が変わり、再読込でも保持され、端末の背景が --bg-surface のダーク値になる（Cookie は出さない） (retry #1)
+  -  70 [app] › tests/e2e/console.spec.ts:612:1 › 段階2 K1: busy→idle で未読の印・窓タイトル・macOS 通知が出て、行を選ぶと未読が消える (retry #1)
+  -  71 [app] › tests/e2e/console.spec.ts:655:1 › 段階2 K2: 名前を変えると /rename が端末に送られ、Claude 側の名前が変われば表示も変わる。作業中は予約され、待機になってから送られる (retry #1)
+  -  72 [app] › tests/e2e/console.spec.ts:707:1 › 段階2 K2: /rename を送っても Claude 側の名前が 10 秒変わらなければ案内が出る (retry #1)
+  -  73 [app] › tests/e2e/console.spec.ts:720:1 › 段階2 K3: よく使う指示を登録・編集・削除でき、ボタン 1 回で選択中の端末の入力欄に入り（Enter は送らない）、再読込後も残る（保存は 1 ファイル・権限 600） (retry #1)
+  -  74 [app] › tests/e2e/console.spec.ts:784:1 › v0.3.4 K4: 「↑」「↓」で指示を並べ替えると、編集画面と上部のボタン列が新しい順になり、保存ファイルの順も変わる (retry #1)
+  -  75 [app] › tests/e2e/console.spec.ts:808:1 › 段階2 K3: 複数行の指示は、括弧付き貼付モードの端末へ ESC[200~ ... ESC[201~ で包まれて入り、Enter は届かない (retry #1)
+  -  76 [app] › tests/e2e/console.spec.ts:835:1 › 段階2 K3: 状態確認中に別のセッションへ切り替えると、どちらの端末にも入らず案内が出る (retry #1)
+  -  77 [app] › tests/e2e/console.spec.ts:869:1 › v0.3.3 K1-K4・K6: 過去の会話を再開は、本店の行と worktree の行を出し、押した場所で再開用の端末を開く (retry #1)
+  -  78 [app] › tests/e2e/console.spec.ts:909:1 › 段階2 K5: 台帳は既定で作業中・レビュー・WIP かつ直近 30 日だけを表示し、隠れた件数と日付不明を別に数え、絞り込みは再読込後も残る (retry #1)
+  -  79 [app] › tests/e2e/console.spec.ts:948:1 › v0.3.8 K1: 閉じるボタン -> 確認画面 -> 「やめる」では何も起きず、「閉じる」で行が消えて端末のプロセスも終わる (retry #1)
+  -  80 [app] › tests/e2e/console.spec.ts:996:1 › v0.4.0 K1〜K6: 変更タブ -> 一覧と色つき diff -> 行コメントの追加・編集・削除 -> Claude に送る（貼って2秒待って Enter）-> 送信済み、作業中は押せず理由が見える (retry #1)
+  -  81 [app] › tests/e2e/console.spec.ts:1093:1 › v0.4.0 K12: 変更タブを開いてから端末タブに戻っても、端末の列数と行数は変わらない（隠している間に 2x1 などが pty に送られない） (retry #1)
+  -  82 [app] › tests/e2e/console.spec.ts:1177:1 › v0.5.0 K1〜K6, K8: PR タブ -> PR・マージできるか・検査の集計と失敗の一覧 -> 一覧の CI の印 -> 更新で変わる -> PR なし・認証切れ (retry #1)
+  -  83 [app] › tests/e2e/console.spec.ts:1307:1 › v0.7.0 K1: 全角の句読点・括弧を含む行の描画が、端末の右端を越えない（text-spacing-trim: space-all） (retry #1)
+  -  84 [app] › tests/e2e/console.spec.ts:1319:1 › v0.7.0 K3: 端末の書体の並びに明朝が入っている。日本語は明朝、英数字と罫線は Menlo、※ は Monaco で描かれる (retry #1)
+  -  85 [app] › tests/e2e/console.spec.ts:1384:1 › v0.7.0 K4/K5/K6: 画像の貼り付け・ドロップで保存され、その絶対パスが端末に入る（Enter なし）。文字つきの貼り付け・画像以外のドロップは別の口で保存される (retry #1)
+  -  86 [app] › tests/e2e/console.spec.ts:1444:1 › v0.7.0 K6: 画像の受け口は認証の内側にある（認証なしは 401） (retry #1)
+  -  87 [app] › tests/e2e/console.spec.ts:1462:1 › v0.10.0 K3・K4: よく使う指示のバーは1行で折り返さず、「よく使う指示」の一覧から使える。「常に表示」の切り替えがバーと保存ファイル（version 1 のまま）に反映され、Esc で閉じる (retry #1)
+  -  88 [app] › tests/e2e/console.spec.ts:1554:1 › v0.33.0 K2・K3: 「よく使う指示」の1つの画面で、常に表示の切替・↑↓・追加・編集・削除ができ、閉じなくてもバーに出る/消え、保存ファイルに反映される (retry #1)
+  -  89 [app] › tests/e2e/console.spec.ts:1618:1 › v0.33.0 K6: 指示5件・常に表示3件のバーと、開いた「よく使う指示」の画面を、明・暗で撮る（AC_SHOT_DIR のときだけ保存。行の6つの操作が1行に入る） (retry #1)
+  -  90 [app] › tests/e2e/console.spec.ts:1640:1 › v0.10.0 K5: 行の1段目は丸と名前だけ（状態の文字なし）、2段目は役割・状態の印の順。行の高さは64px以下のまま (retry #1)
+  -  91 [app] › tests/e2e/console.spec.ts:1661:1 › v0.10.0 K6・K7: 行をドラッグして離すと並び順が変わり（再読込後も同じ）、Alt+↑ と Alt+↓ でも1つずつ動く。ダブルクリックでの名前の変更は今までどおり (retry #1)
+  -  92 [app] › tests/e2e/console.spec.ts:1724:3 › アカウント切り替え › K1: 下の帯に「Claude ログイン: <メール>」とプランが出る。メールは auth status の email と一字一句同じ (retry #1)
+  -  93 [app] › tests/e2e/console.spec.ts:1733:3 › アカウント切り替え › K2: 未ログイン（終了コード 1）は「Claude: 未ログイン」と出る (retry #1)
+  -  94 [app] › tests/e2e/console.spec.ts:1739:3 › アカウント切り替え › K3: /api/account の応答のキーは status・loggedIn・email・subscriptionType だけ (retry #1)
+  -  95 [app] › tests/e2e/console.spec.ts:1745:3 › アカウント切り替え › K5: 確認ダイアログの本文が確定文と一致し、「開き直す」「新しいアカウント」を含む。「やめる」では何も起きない (retry #1)
+  -  96 [app] › tests/e2e/console.spec.ts:1762:3 › アカウント切り替え › K6・K7: 確認すると account-login の端末が増え、auth logout → auth login の 2 行だけが動き、終わると 10 秒以内に表示が新しいアカウントに変わる (retry #1)
+  ✘  97 [app] › tests/e2e/console.spec.ts:72:1 › K2: 新しいセッション -> ワークツリー作成 -> 役割コマンドが端末に出て入力できる (retry #2) (13.5s)
+  -  98 [app] › tests/e2e/console.spec.ts:89:1 › K2: 不正なブランチ名は作成されずエラーが画面に出る (retry #2)
+  -  99 [app] › tests/e2e/console.spec.ts:100:1 › K3: タブを開き直しても同じセッションの直近出力が戻る (retry #2)
+  -  100 [app] › tests/e2e/console.spec.ts:112:1 › K1: 一覧の状態が claude agents --json の status と 5 秒以内に一致する (retry #2)
+  -  101 [app] › tests/e2e/console.spec.ts:123:1 › K4: 台帳ボードの件数が ledger-lookup.sh で引いた値と一致する (retry #2)
+  -  102 [app] › tests/e2e/console.spec.ts:149:1 › 停止したセッションは「停止」と表示され、一覧から外せる (retry #2)
+  -  103 [app] › tests/e2e/console.spec.ts:161:1 › 端末の文字間隔が正常（xterm の letter-spacing が 1px 未満） (retry #2)
+  -  104 [app] › tests/e2e/console.spec.ts:171:1 › K8: 不正トークンは 401、不正 Origin の WebSocket は 403、待受は 127.0.0.1 のみ (retry #2)
+  -  105 [app] › tests/e2e/console.spec.ts:204:1 › K7: ダミーセッション 3 本で サーバー RSS <= 150MB かつ ブラウザ JS ヒープ <= 80MB (retry #2)
+  -  106 [app] › tests/e2e/console.spec.ts:235:1 › フッターに Sales Anchor 展開元 SHA と claude --version が出る (retry #2)
+  -  107 [app] › tests/e2e/console.spec.ts:258:1 › 下の帯に利用量（週・5時間）の 2 本のバーが出る: 値が無い→まだ値がありません、命令が書くと棒・N%・リセット・N分前、80/95/100% の Badge (retry #2)
+  -  108 [app] › tests/e2e/console.spec.ts:307:1 › 下の帯の配置: K1〜K4（Claude のまとまりが左上・バーは幅 320px の中・メタは右下・Codex/Grok 用の空き） (retry #2)
+  -  109 [app] › tests/e2e/console.spec.ts:362:1 › 下の帯のスクリーンショット（K6: 1400・1024 幅 × 値あり・値なし・80%以上 × ライト・ダーク。AC_FOOTER_SHOT_DIR 指定時だけ保存） (retry #2)
+  -  110 [app] › tests/e2e/console.spec.ts:394:1 › ペアリング: /pair?code で一覧が開き、URL に秘密もコードも残らず、トークンは sessionStorage のみ（Cookie 無し） (retry #2)
+  -  111 [app] › tests/e2e/console.spec.ts:412:1 › ペアリング: 使用済みコードは案内画面（Callout）になり、トークンは保存されない (retry #2)
+  -  112 [app] › tests/e2e/console.spec.ts:425:1 › 未ログインで開くとログインが必要の案内（Callout）が出る (retry #2)
+  -  113 [app] › tests/e2e/console.spec.ts:430:1 › 下の帯に「ログアウト」「メモリ」のボタンが無い（v0.37.0 で外した。サーバーの /api/logout・/api/memory は残る） (retry #2)
+  -  114 [app] › tests/e2e/console.spec.ts:438:1 › 別のタブ（別の sessionStorage）にはセッションが共有されない (retry #2)
+  -  115 [app] › tests/e2e/console.spec.ts:445:1 › CSP: 画面・端末・モーダルの操作で CSP 違反が 1 件も出ない（応答にも CSP ヘッダがある） (retry #2)
+  -  116 [app] › tests/e2e/console.spec.ts:474:1 › /healthz は認証なしで ok を返す (retry #2)
+  -  117 [app] › tests/e2e/console.spec.ts:483:1 › テーマ: フッターの切替で <html> が変わり、再読込でも保持され、端末の背景が --bg-surface のダーク値になる（Cookie は出さない） (retry #2)
+  -  118 [app] › tests/e2e/console.spec.ts:612:1 › 段階2 K1: busy→idle で未読の印・窓タイトル・macOS 通知が出て、行を選ぶと未読が消える (retry #2)
+  -  119 [app] › tests/e2e/console.spec.ts:655:1 › 段階2 K2: 名前を変えると /rename が端末に送られ、Claude 側の名前が変われば表示も変わる。作業中は予約され、待機になってから送られる (retry #2)
+  -  120 [app] › tests/e2e/console.spec.ts:707:1 › 段階2 K2: /rename を送っても Claude 側の名前が 10 秒変わらなければ案内が出る (retry #2)
+  -  121 [app] › tests/e2e/console.spec.ts:720:1 › 段階2 K3: よく使う指示を登録・編集・削除でき、ボタン 1 回で選択中の端末の入力欄に入り（Enter は送らない）、再読込後も残る（保存は 1 ファイル・権限 600） (retry #2)
+  -  122 [app] › tests/e2e/console.spec.ts:784:1 › v0.3.4 K4: 「↑」「↓」で指示を並べ替えると、編集画面と上部のボタン列が新しい順になり、保存ファイルの順も変わる (retry #2)
+  -  123 [app] › tests/e2e/console.spec.ts:808:1 › 段階2 K3: 複数行の指示は、括弧付き貼付モードの端末へ ESC[200~ ... ESC[201~ で包まれて入り、Enter は届かない (retry #2)
+  -  124 [app] › tests/e2e/console.spec.ts:835:1 › 段階2 K3: 状態確認中に別のセッションへ切り替えると、どちらの端末にも入らず案内が出る (retry #2)
+  -  125 [app] › tests/e2e/console.spec.ts:869:1 › v0.3.3 K1-K4・K6: 過去の会話を再開は、本店の行と worktree の行を出し、押した場所で再開用の端末を開く (retry #2)
+  -  126 [app] › tests/e2e/console.spec.ts:909:1 › 段階2 K5: 台帳は既定で作業中・レビュー・WIP かつ直近 30 日だけを表示し、隠れた件数と日付不明を別に数え、絞り込みは再読込後も残る (retry #2)
+  -  127 [app] › tests/e2e/console.spec.ts:948:1 › v0.3.8 K1: 閉じるボタン -> 確認画面 -> 「やめる」では何も起きず、「閉じる」で行が消えて端末のプロセスも終わる (retry #2)
+  -  128 [app] › tests/e2e/console.spec.ts:996:1 › v0.4.0 K1〜K6: 変更タブ -> 一覧と色つき diff -> 行コメントの追加・編集・削除 -> Claude に送る（貼って2秒待って Enter）-> 送信済み、作業中は押せず理由が見える (retry #2)
+  -  129 [app] › tests/e2e/console.spec.ts:1093:1 › v0.4.0 K12: 変更タブを開いてから端末タブに戻っても、端末の列数と行数は変わらない（隠している間に 2x1 などが pty に送られない） (retry #2)
+  -  130 [app] › tests/e2e/console.spec.ts:1177:1 › v0.5.0 K1〜K6, K8: PR タブ -> PR・マージできるか・検査の集計と失敗の一覧 -> 一覧の CI の印 -> 更新で変わる -> PR なし・認証切れ (retry #2)
+  -  131 [app] › tests/e2e/console.spec.ts:1307:1 › v0.7.0 K1: 全角の句読点・括弧を含む行の描画が、端末の右端を越えない（text-spacing-trim: space-all） (retry #2)
+  -  132 [app] › tests/e2e/console.spec.ts:1319:1 › v0.7.0 K3: 端末の書体の並びに明朝が入っている。日本語は明朝、英数字と罫線は Menlo、※ は Monaco で描かれる (retry #2)
+  -  133 [app] › tests/e2e/console.spec.ts:1384:1 › v0.7.0 K4/K5/K6: 画像の貼り付け・ドロップで保存され、その絶対パスが端末に入る（Enter なし）。文字つきの貼り付け・画像以外のドロップは別の口で保存される (retry #2)
+  -  134 [app] › tests/e2e/console.spec.ts:1444:1 › v0.7.0 K6: 画像の受け口は認証の内側にある（認証なしは 401） (retry #2)
+  -  135 [app] › tests/e2e/console.spec.ts:1462:1 › v0.10.0 K3・K4: よく使う指示のバーは1行で折り返さず、「よく使う指示」の一覧から使える。「常に表示」の切り替えがバーと保存ファイル（version 1 のまま）に反映され、Esc で閉じる (retry #2)
+  -  136 [app] › tests/e2e/console.spec.ts:1554:1 › v0.33.0 K2・K3: 「よく使う指示」の1つの画面で、常に表示の切替・↑↓・追加・編集・削除ができ、閉じなくてもバーに出る/消え、保存ファイルに反映される (retry #2)
+  -  137 [app] › tests/e2e/console.spec.ts:1618:1 › v0.33.0 K6: 指示5件・常に表示3件のバーと、開いた「よく使う指示」の画面を、明・暗で撮る（AC_SHOT_DIR のときだけ保存。行の6つの操作が1行に入る） (retry #2)
+  -  138 [app] › tests/e2e/console.spec.ts:1640:1 › v0.10.0 K5: 行の1段目は丸と名前だけ（状態の文字なし）、2段目は役割・状態の印の順。行の高さは64px以下のまま (retry #2)
+  -  139 [app] › tests/e2e/console.spec.ts:1661:1 › v0.10.0 K6・K7: 行をドラッグして離すと並び順が変わり（再読込後も同じ）、Alt+↑ と Alt+↓ でも1つずつ動く。ダブルクリックでの名前の変更は今までどおり (retry #2)
+  -  140 [app] › tests/e2e/console.spec.ts:1724:3 › アカウント切り替え › K1: 下の帯に「Claude ログイン: <メール>」とプランが出る。メールは auth status の email と一字一句同じ (retry #2)
+  -  141 [app] › tests/e2e/console.spec.ts:1733:3 › アカウント切り替え › K2: 未ログイン（終了コード 1）は「Claude: 未ログイン」と出る (retry #2)
+  -  142 [app] › tests/e2e/console.spec.ts:1739:3 › アカウント切り替え › K3: /api/account の応答のキーは status・loggedIn・email・subscriptionType だけ (retry #2)
+  -  143 [app] › tests/e2e/console.spec.ts:1745:3 › アカウント切り替え › K5: 確認ダイアログの本文が確定文と一致し、「開き直す」「新しいアカウント」を含む。「やめる」では何も起きない (retry #2)
+  -  144 [app] › tests/e2e/console.spec.ts:1762:3 › アカウント切り替え › K6・K7: 確認すると account-login の端末が増え、auth logout → auth login の 2 行だけが動き、終わると 10 秒以内に表示が新しいアカウントに変わる (retry #2)
+
+
+  1) [app] › tests/e2e/console.spec.ts:258:1 › 下の帯に利用量（週・5時間）の 2 本のバーが出る: 値が無い→まだ値がありません、命令が書くと棒・N%・リセット・N分前、80/95/100% の Badge 
+
+    Test timeout of 30000ms exceeded.
+
+    Error: expect(locator).toHaveText(expected) failed
+
+    Locator: getByTestId('footer').getByTestId('usage-meter-pct-week')
+    Expected: "97%"
+    Error: Test timeout of 30000ms exceeded.
+
+    Call log:
+      - Expect "toHaveText" getByTestId('footer').getByTestId('usage-meter-pct-week') with timeout 5000ms
+      - waiting for getByTestId('footer').getByTestId('usage-meter-pct-week')
+      - Test timeout of 30000ms exceeded.
+
+
+      280 |       fireStatusline(week, five, 3 * 3600);
+      281 |       await page.reload();
+    > 282 |       await expect(footer.getByTestId("usage-meter-pct-week")).toHaveText(`${week}%`);
+          |                                                                ^
+      283 |       if (name === "warning") {
+      284 |         await expect(footer.getByTestId("usage-meter-badge-week")).toHaveText("ほぼ上限");
+      285 |         await expect(footer.getByTestId("usage-meter-badge-fiveHour")).toHaveText("上限に近い");
+        at /Users/tanizawashingo/agent-console-wt/pc-meter/tests/e2e/console.spec.ts:282:64
+
+    Error Context: test-results/console-下の帯に利用量（週・5時間）の-2--a660b-・リセット・N分前、80-95-100-の-Badge-app/error-context.md
+
+  2) [app] › tests/e2e/console.spec.ts:72:1 › K2: 新しいセッション -> ワークツリー作成 -> 役割コマンドが端末に出て入力できる ────────
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: getByTestId('terminal')
+    Expected substring: "READY"
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toContainText" getByTestId('terminal') with timeout 5000ms
+      - waiting for getByTestId('terminal')
+
+
+      76 |   await createViaUi(page, "wt-session", "e2e-wt", "release/e2e-one");
+      77 |   const terminal = page.getByTestId("terminal");
+    > 78 |   await expect(terminal).toContainText("READY");
+         |                          ^
+      79 |   await expect(terminal).toContainText("repo-wt/release-e2e-one");
+      80 |   await terminal.click();
+      81 |   await page.keyboard.type("hello-from-e2e");
+        at /Users/tanizawashingo/agent-console-wt/pc-meter/tests/e2e/console.spec.ts:78:26
+
+    Error Context: test-results/console-K2-新しいセッション---ワークツリー作成---役割コマンドが端末に出て入力できる-app-retry1/error-context.md
+
+    Retry #2 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: getByTestId('terminal')
+    Expected substring: "READY"
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toContainText" getByTestId('terminal') with timeout 5000ms
+      - waiting for getByTestId('terminal')
+
+
+      76 |   await createViaUi(page, "wt-session", "e2e-wt", "release/e2e-one");
+      77 |   const terminal = page.getByTestId("terminal");
+    > 78 |   await expect(terminal).toContainText("READY");
+         |                          ^
+      79 |   await expect(terminal).toContainText("repo-wt/release-e2e-one");
+      80 |   await terminal.click();
+      81 |   await page.keyboard.type("hello-from-e2e");
+        at /Users/tanizawashingo/agent-console-wt/pc-meter/tests/e2e/console.spec.ts:78:26
+
+    Error Context: test-results/console-K2-新しいセッション---ワークツリー作成---役割コマンドが端末に出て入力できる-app-retry2/error-context.md
+
+  1 failed
+    [app] › tests/e2e/console.spec.ts:258:1 › 下の帯に利用量（週・5時間）の 2 本のバーが出る: 値が無い→まだ値がありません、命令が書くと棒・N%・リセット・N分前、80/95/100% の Badge 
+  1 flaky
+    [app] › tests/e2e/console.spec.ts:72:1 › K2: 新しいセッション -> ワークツリー作成 -> 役割コマンドが端末に出て入力できる ─────────
+  37 did not run
+  9 passed (2.9m)

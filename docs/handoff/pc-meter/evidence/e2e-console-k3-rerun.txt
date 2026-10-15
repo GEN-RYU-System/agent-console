@@ -1,0 +1,44 @@
+[WebServer] agent-console: 警告: AGENT_CONSOLE_TOKEN で固定したトークンを使用中です（テスト用途のみ）
+[WebServer] activity: 記録の仕組みが外れています（noSettings）。README の手順で node scripts/ac-hooks.mjs install を実行してください
+[WebServer] agent-console: 警告: AGENT_CONSOLE_TOKEN で固定したトークンを使用中です（テスト用途のみ）
+
+Running 3 tests using 1 worker
+
+  ✘  1 [app] › tests/e2e/console.spec.ts:720:1 › 段階2 K3: よく使う指示を登録・編集・削除でき、ボタン 1 回で選択中の端末の入力欄に入り（Enter は送らない）、再読込後も残る（保存は 1 ファイル・権限 600） (8.1s)
+  -  2 [app] › tests/e2e/console.spec.ts:808:1 › 段階2 K3: 複数行の指示は、括弧付き貼付モードの端末へ ESC[200~ ... ESC[201~ で包まれて入り、Enter は届かない
+  -  3 [app] › tests/e2e/console.spec.ts:835:1 › 段階2 K3: 状態確認中に別のセッションへ切り替えると、どちらの端末にも入らず案内が出る
+
+
+  1) [app] › tests/e2e/console.spec.ts:720:1 › 段階2 K3: よく使う指示を登録・編集・削除でき、ボタン 1 回で選択中の端末の入力欄に入り（Enter は送らない）、再読込後も残る（保存は 1 ファイル・権限 600） 
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 0
+
+      Array [
+        "auth-sessions.json",
+        "bin",
+        "chrome-extension",
+        "hooks",
+    -   "open-sessions.json",
+        "picker-token",
+        "quick-prompts.json",
+        "reserve-token",
+        "session-metrics.json",
+      ]
+
+      767 |   // 保存先は 8 つだけ（よく使う指示・v0.3.8 の復元リスト・v0.6.0 の拡張の合言葉と拡張のフォルダ・v0.9.0 の記録用 hook の本体の写し hooks/・v0.12.0 の作戦ボードの命令の写し bin/・v0.21.0 の予約の合言葉 reserve-token・v0.28.0 のログインの記録 auth-sessions.json）。
+      768 |   // 部品の picks/ は部品の試験（別の project）だけが、記録の activity/ と作戦ボードの boards/ は右の欄の試験（activity.spec.ts）だけが作る
+    > 769 |   expect(readdirSync(DATA_DIR).filter((n) => n !== "activity" && n !== "boards").sort()).toEqual(["auth-sessions.json", "bin", "chrome-extension", "hooks", "open-sessions.json", "picker-token", "quick-prompts.json", "reserve-token", "session-metrics.json"]);
+          |                                                                                          ^
+      770 |   // v0.38.0 の定期計測が書く session-metrics.json も所有者だけが読み書きできる
+      771 |   expect(statSync(path.join(DATA_DIR, "session-metrics.json")).mode & 0o777).toBe(0o600);
+      772 |   expect(statSync(file).mode & 0o777).toBe(0o600);
+        at /Users/tanizawashingo/agent-console-wt/pc-meter/tests/e2e/console.spec.ts:769:90
+
+    Error Context: test-results/console-段階2-K3-よく使う指示を登録・編-0c58d-、再読込後も残る（保存は-1-ファイル・権限-600）-app/error-context.md
+
+  1 failed
+    [app] › tests/e2e/console.spec.ts:720:1 › 段階2 K3: よく使う指示を登録・編集・削除でき、ボタン 1 回で選択中の端末の入力欄に入り（Enter は送らない）、再読込後も残る（保存は 1 ファイル・権限 600） 
+  2 did not run
