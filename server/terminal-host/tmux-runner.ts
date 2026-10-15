@@ -58,13 +58,14 @@ export type Probe = { state: "alive"; pid: number } | { state: "gone" } | { stat
 
 /** 既に動いている tmux セッションの pane の pid を、同期で取る（つなぎ直しの前段） */
 export function probeSession(ctx: TmuxContext, name: string, env: Record<string, string>): Probe {
+  // display は「セッションが無い」を rc=0・空出力で返すことがあるため、先に has-session で存在を判定する
+  const has = runTmuxSync(ctx, ["has-session", "-t", sessionTarget(name)], env);
+  const kind: HasSessionResult = classifyHasSession(has.status, has.stderr);
+  if (kind !== "alive") return { state: kind };
   const r = runTmuxSync(ctx, ["display", "-p", "-t", paneTarget(name), "#{pane_pid}"], env);
-  const kind: HasSessionResult = classifyHasSession(r.status, r.stderr);
-  if (kind === "alive") {
-    const pid = Number(r.stdout.trim());
-    return Number.isInteger(pid) && pid > 0 ? { state: "alive", pid } : { state: "unreachable" };
-  }
-  return { state: kind };
+  if (classifyHasSession(r.status, r.stderr) !== "alive") return { state: "unreachable" };
+  const pid = Number(r.stdout.trim());
+  return Number.isInteger(pid) && pid > 0 ? { state: "alive", pid } : { state: "unreachable" };
 }
 
 export interface NewSessionInput {
