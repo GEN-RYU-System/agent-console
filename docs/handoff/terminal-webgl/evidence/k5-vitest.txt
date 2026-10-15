@@ -1,0 +1,32 @@
+
+ RUN  v5.0.3 /Users/tanizawashingo/agent-console-wt/terminal-webgl
+
+ ❯ src/pages/ConsolePage.test.tsx (45 tests | 1 failed) 14574ms
+   ❯ ConsolePage removing a stopped session (2)
+     × shows an error callout when removal fails (409 / 404 / network) 5592ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/pages/ConsolePage.test.tsx > ConsolePage removing a stopped session > shows an error callout when removal fails (409 / 404 / network)
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/pages/ConsolePage.test.tsx:177:3
+    175|
+    176| describe("ConsolePage removing a stopped session", () => {
+    177|   it("shows an error callout when removal fails (409 / 404 / network)"…
+       |   ^
+    178|     removeSession.mockRejectedValue(new Error("session is still runnin…
+    179|     render(<ConsolePage />);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 9 passed (10)
+      Tests  1 failed | 178 passed (179)
+   Start at  22:25:32
+   Duration  48.88s (environment 32%, transform 26%, tests 25%, import 16%, worker 1%)
+
+  Transform  transforming modules took 37.66s · 26% of tracked time, re-done on every run
+             persist transforms across runs with fsModuleCache: true
+             learn more: https://vitest.dev/guide/improving-performance#caching-between-reruns
+

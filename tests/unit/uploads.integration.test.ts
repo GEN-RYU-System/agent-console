@@ -113,6 +113,8 @@ describe("/api/state hands the screen the two values it needs (4. SSOT)", () => 
     expect(r.status).toBe(200);
     expect(r.json.terminalSmoothScrollMs).toBe(125);
     expect(r.json.uploadMaxBytes).toBe(MAX);
+    // harness の config は "dom"（既定の "webgl" と区別できる）
+    expect(r.json.terminalRenderer).toBe("dom");
   });
 });
 

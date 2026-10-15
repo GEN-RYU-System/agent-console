@@ -156,6 +156,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
       appVersion: meta.version,
       commit: meta.commit,
       terminalSmoothScrollMs: config.terminalSmoothScrollMs,
+      terminalRenderer: config.terminalRenderer,
       uploadMaxBytes: config.uploadMaxBytes,
       accountSwitchEnabled: config.accountLoginCommand !== undefined,
     });

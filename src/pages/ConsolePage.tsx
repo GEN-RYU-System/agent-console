@@ -559,7 +559,7 @@ export function ConsolePage() {
         />
         {/* 端末は隠すだけで外さない（xterm の接続を保つ）。隠し方は hidden 属性（display:none）だけ。高さ 0 などで隠すと 2 列×1 行が pty に送られる */}
         <div className="ac-page__terminal" hidden={centerTab !== "terminal"}>
-          {activeId ? <TerminalPane ref={terminalRef} sessionId={activeId} smoothScrollMs={state.terminalSmoothScrollMs} uploadMaxBytes={state.uploadMaxBytes} onUploadNotice={setUploadNotice} /> : <EmptyState title={t("ac.selectSession")} />}
+          {activeId ? <TerminalPane ref={terminalRef} sessionId={activeId} smoothScrollMs={state.terminalSmoothScrollMs} renderer={state.terminalRenderer} uploadMaxBytes={state.uploadMaxBytes} onUploadNotice={setUploadNotice} /> : <EmptyState title={t("ac.selectSession")} />}
         </div>
         {activeId ? (
           <DiffPane

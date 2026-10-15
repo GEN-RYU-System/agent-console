@@ -1,6 +1,6 @@
 {
   "name": "agent-console",
-  "version": "0.38.1",
+  "version": "0.39.0",
   "private": true,
   "type": "module",
   "engines": { "node": ">=24" },
@@ -19,6 +19,7 @@
   "dependencies": {
     "@heroicons/react": "2.2.0",
     "@xterm/addon-fit": "0.11.0",
+    "@xterm/addon-webgl": "0.19.0",
     "@xterm/xterm": "6.0.0",
     "i18next": "26.4.3",
     "lucide-react": "1.55.0",

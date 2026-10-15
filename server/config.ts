@@ -113,6 +113,8 @@ export interface Config {
   claudeSettingsPath: string;
   /** マウスのホイールでスクロールするときのなめらかさ（ms）。0 で無し */
   terminalSmoothScrollMs: number;
+  /** 端末の文字の描き方。"webgl" は GPU（WebGL2）、"dom" は今までの画面の部品での描画。WebGL を使えない環境では自動で DOM になる */
+  terminalRenderer: "webgl" | "dom";
   /** 端末に貼る画像・ファイル 1 つの上限（byte） */
   uploadMaxBytes: number;
   /** 貼った画像・ファイルを残す数（画像とファイルは別に数える）。超えたら古い順に消す */
@@ -309,6 +311,7 @@ export function parseConfig(raw: unknown): Config {
     activityKeepDays: parsePositive(o.activityKeepDays, "activityKeepDays", DEFAULT_ACTIVITY_KEEP_DAYS),
     claudeSettingsPath: parseClaudeSettingsPath(o.claudeSettingsPath),
     terminalSmoothScrollMs: parseSmoothScroll(o.terminalSmoothScrollMs),
+    terminalRenderer: parseTerminalRenderer(o.terminalRenderer),
     uploadMaxBytes: parsePositive(o.uploadMaxBytes, "uploadMaxBytes", DEFAULT_UPLOAD_MAX_BYTES),
     uploadMaxKeep: parsePositive(o.uploadMaxKeep, "uploadMaxKeep", DEFAULT_UPLOAD_MAX_KEEP),
     ...(o.relayDir !== undefined ? { relayDir: parseRelayDir(o.relayDir) } : {}),
@@ -333,6 +336,12 @@ function parseTerminalHost(raw: unknown): "tmux" | "direct" {
   if (raw === undefined) return "tmux";
   if (raw === "tmux" || raw === "direct") return raw;
   throw new Error('config: terminalHost must be "tmux" or "direct"');
+}
+
+function parseTerminalRenderer(raw: unknown): "webgl" | "dom" {
+  if (raw === undefined) return "webgl";
+  if (raw === "webgl" || raw === "dom") return raw;
+  throw new Error('config: terminalRenderer must be "webgl" or "dom"');
 }
 
 function parseTmuxPath(raw: unknown): string {

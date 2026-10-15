@@ -24,6 +24,7 @@
   "pickHtmlInPromptChars": 1500,
   "activityKeepDays": 7,
   "terminalSmoothScrollMs": 125,
+  "terminalRenderer": "webgl",
   "uploadMaxBytes": 5242880,
   "uploadMaxKeep": 100,
   "accountLoginCommand": ["/bin/zsh", "-ic", "claude auth logout; claude auth login"],

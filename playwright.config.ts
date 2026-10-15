@@ -32,7 +32,7 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${E2E_PORT}`,
     browserName: "chromium",
-    // 実 PTY の出力は xterm の DOM レンダラで読む
+    // 実 PTY の出力は xterm の DOM レンダラで読む（端末は config の terminalRenderer: "dom" で DOM 描画にして読む）
     viewport: { width: 1400, height: 800 },
   },
   webServer: [

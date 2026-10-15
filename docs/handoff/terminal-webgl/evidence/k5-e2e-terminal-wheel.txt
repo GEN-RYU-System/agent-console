@@ -1,0 +1,9 @@
+[WebServer] agent-console: 警告: AGENT_CONSOLE_TOKEN で固定したトークンを使用中です（テスト用途のみ）
+[WebServer] activity: 記録の仕組みが外れています（noSettings）。README の手順で node scripts/ac-hooks.mjs install を実行してください
+[WebServer] agent-console: 警告: AGENT_CONSOLE_TOKEN で固定したトークンを使用中です（テスト用途のみ）
+
+Running 1 test using 1 worker
+
+  ✓  1 [app] › tests/e2e/terminal-wheel.spec.ts:37:1 › terminal-wheel K4: 追跡中の端末で、wheel は行の数ぶんの信号になり、向きが変わると端数を捨てる (15.8s)
+
+  1 passed (47.1s)

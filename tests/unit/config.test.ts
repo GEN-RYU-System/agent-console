@@ -227,6 +227,21 @@ describe("parseConfig: activity settings (v0.8.0)", () => {
   });
 });
 
+describe("parseConfig: terminalRenderer (v0.39.0)", () => {
+  it("defaults to webgl when omitted", () => {
+    expect(parseConfig(valid).terminalRenderer).toBe("webgl");
+  });
+
+  it("accepts dom and webgl", () => {
+    expect(parseConfig({ ...valid, terminalRenderer: "dom" }).terminalRenderer).toBe("dom");
+    expect(parseConfig({ ...valid, terminalRenderer: "webgl" }).terminalRenderer).toBe("webgl");
+  });
+
+  it("refuses any other value naming the key", () => {
+    for (const bad of ["canvas", "", null, 1]) expect(() => parseConfig({ ...valid, terminalRenderer: bad }), String(bad)).toThrow(/terminalRenderer/);
+  });
+});
+
 describe("parseConfig: terminal and upload settings (v0.7.0)", () => {
   it("K2/K5: fills the defaults when the three keys are omitted: 125ms, 5MiB, 100 kept", () => {
     const c = parseConfig(valid);
@@ -248,5 +263,9 @@ describe("parseConfig: terminal and upload settings (v0.7.0)", () => {
   it("the shipped config carries the same three values", () => {
     const shipped = parseConfig(JSON.parse(readFileSync("agent-console.config.json", "utf8")));
     expect([shipped.terminalSmoothScrollMs, shipped.uploadMaxBytes, shipped.uploadMaxKeep]).toEqual([125, 5242880, 100]);
+  });
+
+  it("the shipped config says terminalRenderer webgl explicitly", () => {
+    expect(JSON.parse(readFileSync("agent-console.config.json", "utf8")).terminalRenderer).toBe("webgl");
   });
 });

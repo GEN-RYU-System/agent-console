@@ -1,0 +1,6 @@
+audited 218 packages in 9s
+
+218 packages have verified registry signatures
+
+38 packages have verified attestations
+

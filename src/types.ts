@@ -75,6 +75,8 @@ export interface ConsoleState {
   commit: string;
   /** マウスのホイールでスクロールするときのなめらかさ（ms。config の値） */
   terminalSmoothScrollMs: number;
+  /** 端末の文字の描き方（config の値）。"webgl" は GPU、"dom" は画面の部品 */
+  terminalRenderer: "webgl" | "dom";
   /** 端末に貼る画像 1 枚の上限（byte。config の値） */
   uploadMaxBytes: number;
   /** 「アカウントを切り替える」を出すか（config の accountLoginCommand があるとき true） */
