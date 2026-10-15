@@ -40,6 +40,16 @@ function runHook(hook: string, stdin: string): { status: number | null; stdout: 
 const lines = (file: string): string[] => readFileSync(file, "utf8").split("\n").filter((l) => l !== "");
 
 describe("K5 / §3-2: buildRecord は決めた項目と長さだけを残す", () => {
+  it("P1: PermissionDenied(Agent) は common と tool・tool_use_id だけを残す。reason・tool_input は残さない", () => {
+    const rec = buildRecord({ session_id: SID, hook_event_name: "PermissionDenied", tool_name: "Agent", tool_use_id: "toolu_9", reason: "秘密の理由", tool_input: { prompt: "長い指示文", description: "d" }, transcript_path: "/secret/t.jsonl" }, NOW);
+    expect(rec).toEqual({ ts: NOW, event: "PermissionDenied", session_id: SID, tool: "Agent", tool_use_id: "toolu_9" });
+  });
+
+  it("P2: PermissionDenied は Agent 以外、または tool_use_id が無い Agent なら null", () => {
+    expect(buildRecord({ session_id: SID, hook_event_name: "PermissionDenied", tool_name: "Bash", tool_use_id: "toolu_9" }, NOW)).toBeNull();
+    expect(buildRecord({ session_id: SID, hook_event_name: "PermissionDenied", tool_name: "Agent" }, NOW)).toBeNull();
+  });
+
   it("PreToolUse(Agent): tool_use_id・description(200字)・subagent_type・model だけ。prompt の本文は残さない", () => {
     const rec = buildRecord(
       {
