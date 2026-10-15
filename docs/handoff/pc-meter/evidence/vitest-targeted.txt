@@ -1,0 +1,12 @@
+
+ RUN  v5.0.3 /Users/tanizawashingo/agent-console-wt/pc-meter
+
+
+ Test Files  8 passed (8)
+      Tests  97 passed (97)
+   Start at  17:47:14
+   Duration  60.54s (environment 31%, import 26%, tests 25%, transform 17%, worker 1%)
+
+    Isolate  8 workers spawned · ~6.09s startup each (spawn + environment, per file)
+             at least ~18.26s faster with isolate: false — reuses workers across files instead of one per file
+

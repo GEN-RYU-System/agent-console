@@ -40,6 +40,7 @@ import { QuickPromptBar } from "../components/QuickPrompts/QuickPromptBar";
 import { RenameForm } from "../components/RenameForm/RenameForm";
 import { SessionList } from "../components/SessionList/SessionList";
 import { ThemeToggle } from "../components/ThemeToggle/ThemeToggle";
+import { MacMeter } from "../components/MacMeter/MacMeter";
 import { UsageMeter } from "../components/UsageMeter/UsageMeter";
 import { RoutinesPane } from "../components/Routines/RoutinesPane";
 import { ReservationsPane } from "../components/Reservations/ReservationsPane";
@@ -602,6 +603,7 @@ export function ConsolePage() {
           </section>
         </div>
         <div className="ac-page__footer-side">
+          <MacMeter />
           <div className="ac-page__footer-meta" data-testid="footer-meta">
             <ThemeToggle />
             <span data-testid="sa-source">

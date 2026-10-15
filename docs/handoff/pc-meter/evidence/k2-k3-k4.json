@@ -1,0 +1,24 @@
+{
+  "K2": {
+    "api": 93.7,
+    "statfs": 93.74052650253113
+  },
+  "K3": {
+    "api_usedPercent": 73,
+    "memory_pressure_100_minus_free": 72
+  },
+  "K4": [
+    {
+      "api": 91,
+      "top_100_minus_idle": 92.23
+    },
+    {
+      "api": 92.5,
+      "top_100_minus_idle": 94.25
+    },
+    {
+      "api": 91.6,
+      "top_100_minus_idle": 92.53
+    }
+  ]
+}
