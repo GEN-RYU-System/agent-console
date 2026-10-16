@@ -116,7 +116,7 @@ test("MacMeter: K2 Disk は statfs と ±0.5 / K3 RAM は memory_pressure と ±
 
   const k4: Array<Record<string, number>> = [];
   for (let i = 0; i < 3; i++) {
-    const top = execFileSync("top", ["-l", "2", "-n", "0", "-s", "5"], { encoding: "utf8" });
+    const top = execFileSync("top", ["-l", "2", "-n", "0", "-s", "2"], { encoding: "utf8" });
     const idle = [...top.matchAll(/CPU usage:.*?([\d.]+)% idle/g)].map((m) => Number(m[1])).pop() as number;
     const api = (await fetchMemory()).system.cpuPercent as number;
     k4.push({ api, top_100_minus_idle: 100 - idle });
