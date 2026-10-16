@@ -102,3 +102,4 @@
   - 整合: D2（見せてよい範囲）を変えない・server/hooks 差分0・workflow 不変。既存の金型（TextField・Button・EmptyState）と ja.json の方式に沿う。v0.40.0 の High 指摘（早い return 後のフック）を 4-2 で明示。
   - 検証可能性: K1〜K10 は試験・コマンド・healthz で○×が一義。K11 のみ PO 目視。
   - 残る未確認（実装時に事実で確かめる）: TextField の variant="search" の実在（無ければ付けない）／CI の WebGL2 可否（不可なら停止）／e2e で webgl 用の待受が要るか。いずれも分岐を本書に記載済みで、推測で進めない。
+- コード審査（Opus、2026-10-16）: APPROVE。設計外の tests/fixtures/e2e-env.ts（役割 e2e-link 1 行）と tests/fixtures/link-role.mjs（e2e 専用の端末代役）を承認。webgl 試験は page.route で /api/state の terminalRenderer だけ書き換える方式を採用（data-renderer を必ず確認）。
