@@ -106,6 +106,7 @@ export function prepareE2eEnv(): void {
   const sizeScript = path.join(here, "size-role.mjs");
   const punctScript = path.join(here, "punct-role.mjs");
   const mouseScript = path.join(here, "mouse-role.mjs");
+  const linkScript = path.join(here, "link-role.mjs");
   const marker = "agent-console-e2e-role";
   // 引き継ぎ書の置き場（一時の場所。実際の ~/CC報告ファイル-keep には触れない）
   const relayDir = path.join(base, "relay");
@@ -160,6 +161,7 @@ export function prepareE2eEnv(): void {
       { id: "e2e-size", labelKey: "role.shell", command: [process.execPath, sizeScript, marker], needsWorktree: false },
       { id: "e2e-punct", labelKey: "role.shell", command: [process.execPath, punctScript, marker], needsWorktree: false },
       { id: "e2e-mouse", labelKey: "role.shell", command: [process.execPath, mouseScript, marker], needsWorktree: false },
+      { id: "e2e-link", labelKey: "role.shell", command: [process.execPath, linkScript, marker], needsWorktree: false },
       { id: "e2e-short", labelKey: "role.shell", command: [process.execPath, "-e", "console.log('bye')", marker], needsWorktree: false },
     ],
   };

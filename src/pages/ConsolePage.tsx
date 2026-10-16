@@ -397,6 +397,11 @@ export function ConsolePage() {
     setCenterTab("files");
     setFileOpenRequest((prev) => ({ sessionId: activeId, path, seq: (prev?.seq ?? 0) + 1 }));
   };
+  // 「端末に戻る」。端末の hidden が外れた後の描画で焦点を戻す。早い return の後なのでフックにしない
+  const backToTerminal = (): void => {
+    setCenterTab("terminal");
+    requestAnimationFrame(() => terminalRef.current?.focus());
+  };
   const renameTarget = state.sessions.find((s) => s.id === renameTargetId);
   const closeTarget = state.sessions.find((s) => s.id === closeTargetId);
   const relayTarget = state.sessions.find((s) => s.id === relayTargetId);
@@ -582,7 +587,7 @@ export function ConsolePage() {
         ) : (
           centerTab === "changes" && <EmptyState title={t("ac.selectSession")} />
         )}
-        {activeId ? <FilesPane sessionId={activeId} active={centerTab === "files"} rev={state.activityRev} openRequest={fileOpenRequest} /> : centerTab === "files" && <EmptyState title={t("ac.selectSession")} />}
+        {activeId ? <FilesPane sessionId={activeId} active={centerTab === "files"} rev={state.activityRev} openRequest={fileOpenRequest} onBackToTerminal={backToTerminal} /> : centerTab === "files" && <EmptyState title={t("ac.selectSession")} />}
         {activeId ? <PrPane sessionId={activeId} active={centerTab === "pr"} /> : centerTab === "pr" && <EmptyState title={t("ac.selectSession")} />}
         {/* 部品は、セッションを選んでいなくても見られる（送るときだけ送り先が要る） */}
         <PicksPane

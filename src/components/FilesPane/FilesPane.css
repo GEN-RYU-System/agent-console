@@ -20,6 +20,15 @@
   background: var(--bg-subtle);
 }
 
+.ac-files:focus { outline: none; }
+
+.ac-files__toolbar .ac-files__search { margin-bottom: 0; }
+
+.ac-files__count {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+}
+
 .ac-files__hint {
   font-size: var(--font-xs);
   color: var(--text-muted);
