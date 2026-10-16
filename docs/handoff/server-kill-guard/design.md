@@ -21,7 +21,7 @@
 | # | 基準 | 検証方法 |
 |---|---|---|
 | K1 | 次の形はすべて終了コード 2・標準エラー 1 行で拒否される: `pkill -f "dist-server/server/index.js"`、`pkill -f dist-server`、`pkill -f "server/index.js"`、`pkill node`、`pkill -f node`、`killall node`、`killall -9 node`、`pkill -f agent-console`、`kill $(pgrep -f dist-server/server/index.js)`、`pgrep -f "server/index.js" \| xargs kill`、`kill $(lsof -ti tcp:4319)`、`lsof -ti :4319 \| xargs kill -9`、`launchctl kill SIGTERM gui/501/local.agent-console.server`、`launchctl stop local.agent-console.server`、`launchctl bootout gui/501/local.agent-console.server`、`cd x && pkill -f "dist-server/server/index.js" 2>/dev/null; sleep 1` | 単体試験（判定関数、1 形 1 本） |
-| K2 | 次の形はすべて終了コード 0・無出力で通る: `lsof -ti tcp:4329 \| xargs kill`、`kill $(lsof -ti tcp:4330)`、`pkill -f playwright`、`tmux -L agent-console kill-session -t =ac-x`、`launchctl kickstart -k gui/501/local.agent-console.server`、`launchctl print gui/501/local.agent-console.server`、`grep -n "pkill" docs/handoff/server-kill-guard/design.md`、`git log --oneline`、`bash scripts/ac-update.sh v0.41.0` | 単体試験 |
+| K2 | 次の形はすべて終了コード 0・無出力で通る: `lsof -ti tcp:4329 \| xargs kill`、`kill $(lsof -ti tcp:4330)`、`pkill -f playwright`、`tmux -L agent-console kill-session -t =ac-x`、`launchctl kickstart -k gui/501/local.agent-console.server`、`launchctl print gui/501/local.agent-console.server`、`grep -n "pkill" docs/handoff/server-kill-guard/design.md`、`git log --oneline`、`bash scripts/ac-update.sh v0.42.0` | 単体試験 |
 | K3 | 判定は `agent_id` の有無に関係なく働く（担当も Opus 本体も拒否される） | 単体試験（agent_id あり・なし各 1 本） |
 | K4 | 入力が読めない（JSON でない・command が無い）ときは通す（fail-open） | 単体試験 |
 | K5 | `node scripts/ac-hooks.mjs install` 後、`~/.claude/settings.json` に本 hook の handler が 2 本（`if` が `Bash(*kill*)` と `Bash(*launchctl*)`）足され、2 回実行しても増えない。総数は 17 → 19 本 | 既存の activity-hooks 単体試験の本数を更新・実機で install 後に数える |
@@ -49,11 +49,11 @@ ac-routine-guard と同じ作り（判定関数 `judge(input)` を export、`isM
 `server/activity-hooks.ts` に `SERVER_KILL_GUARD_HOOK_FILE` と `SERVER_KILL_GUARD_IFS = ["Bash(*kill*)", "Bash(*launchctl*)"]` を足し、`HOOK_SPECS` に `{ event: "PreToolUse", matcher: "Bash", file, async: false, timeout: 5, if }` を 2 本足す。`OWN_HOOK_SUFFIXES` に足す。`server/activity-setup.ts` の写し先に足す（ac-routine-guard と同じ手順）。
 
 ### 3-3. 文書
-README の guard 節に「本番サーバーの停止の見張り（v0.41.0）」と「導入後に `node scripts/ac-hooks.mjs install` をもう一度」を足す。限界（§6 R1・R2）も書く。CHANGELOG に v0.41.0。
+README の guard 節に「本番サーバーの停止の見張り（v0.42.0）」と「導入後に `node scripts/ac-hooks.mjs install` をもう一度」を足す。限界（§6 R1・R2）も書く。CHANGELOG に v0.42.0。
 
 ## 4. 影響範囲（実装カードで file:line まで詰める）
 - 新規: `hooks/server-kill-guard.mjs`、`tests/unit/server-kill-guard.test.ts`
-- 変更: `server/activity-hooks.ts`（:10-19 付近・:46 のコメント・:63 の後）、`server/activity-setup.ts`（:17-25 付近）、`scripts/ac-hooks.mjs`（install で本体を dataDir/hooks/ へ写す段・:76 の報告文）、activity-hooks の本数を数える既存の単体試験、`README.md`、`docs/CHANGELOG.md`、`package.json`（version 0.41.0）
+- 変更: `server/activity-hooks.ts`（:10-19 付近・:46 のコメント・:63 の後）、`server/activity-setup.ts`（:17-25 付近）、`scripts/ac-hooks.mjs`（install で本体を dataDir/hooks/ へ写す段・:76 の報告文）、activity-hooks の本数を数える既存の単体試験、`README.md`、`docs/CHANGELOG.md`、`package.json`（version 0.42.0）
 - 触らない: `hooks/ac-routine-guard.mjs`、`server/index.ts`、`scripts/ac-*.sh`、plist、`playwright.config.ts`
 
 ## 5. 代替案と選ばなかった理由

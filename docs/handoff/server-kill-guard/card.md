@@ -1,4 +1,4 @@
-# 実装カード: server-kill-guard（v0.41.0）
+# 実装カード: server-kill-guard（v0.42.0）
 
 設計: [design.md](design.md)（K1〜K7・§3）。根拠: [recon.md](recon.md)。PO 実装承認: 2026-10-16 チャット「y」（設計 PR #61 の後）。
 作業場所: `/Users/tanizawashingo/agent-console-wt/server-kill-guard`（ブランチ `release/server-kill-guard`、origin/main c67e90a 起点。設計文書のコミット 2dce8b3 の上に積む）。
@@ -50,9 +50,9 @@
 - `tests/unit/activity-hooks.test.ts`: :21 のコメントと総数を 19 に、:86・:296 の試験名と期待値を新しい 2 本込みに直す（期待の配列に `SERVER_KILL_GUARD_IFS` 由来の 2 行を足す）
 
 ### 6. 文書・版
-- `package.json` version を `0.41.0`
-- `docs/CHANGELOG.md` 先頭に 0.41.0 の 1 行（何を止め何を通すか・hook が 19 本・**更新後に `node scripts/ac-hooks.mjs install` の再実行が要る**・戻し方 `bash scripts/ac-update.sh v0.40.0`・設計 docs/handoff/server-kill-guard/design.md）
-- `README.md` の guard の節（:53 付近）の後に「本番サーバーの停止の見張り（v0.41.0）」を 3〜5 行。限界（design §6 R1）を「限界」節（:56 付近）に 1 行
+- `package.json` version を `0.42.0`
+- `docs/CHANGELOG.md` 先頭に 0.42.0 の 1 行（何を止め何を通すか・hook が 19 本・**更新後に `node scripts/ac-hooks.mjs install` の再実行が要る**・戻し方 `bash scripts/ac-update.sh v0.41.0`・設計 docs/handoff/server-kill-guard/design.md）
+- `README.md` の guard の節（:53 付近）の後に「本番サーバーの停止の見張り（v0.42.0）」を 3〜5 行。限界（design §6 R1）を「限界」節（:56 付近）に 1 行
 
 ## 完了の確認（担当が実行し、生出力を /tmp/CC報告ファイル/server-kill-guard/ に保存）
 1. `npm run typecheck`
@@ -60,8 +60,16 @@
 3. `npx vitest run tests/unit/server-kill-guard.test.ts tests/unit/activity-hooks.test.ts tests/unit/ac-routine-guard.test.ts`
 4. `npm test`（全体。main でも落ちている `tests/unit/auth.test.ts` の "revoked sessions are gone after reload" が落ちたら、その 1 件だけなら報告に記して続行。ほかが落ちたら BLOCKED:）
 5. `git diff --stat origin/main...HEAD` が §変更 のファイルだけ
-6. コミット（`feat: 本番サーバーを名前で止める命令を拒否する guard（v0.41.0）`）して push。PR は作らない（Opus が #61 に積む）
+6. コミット（`feat: 本番サーバーを名前で止める命令を拒否する guard（v0.42.0）`）して push。PR は作らない（Opus が #61 に積む）
 
 ## 想定分岐
 - `if` の `Bash(*kill*)` が `pkill`・`killall` にも当たることは文字列の包含で成り立つ。試験は判定関数で行うので `if` の実効は導入後に Opus が実機で確かめる（K6）
 - 既存試験が handler の順番に依存して落ちたら、新しい 2 本を `HOOK_SPECS` の ac-routine-guard の直後に置いた形に試験を合わせる（順番を変えて回避しない）
+
+## 追補（2026-10-16 Opus）: main が先に v0.41.0 を使ったための版上げ
+PR #61 が main（a0b6db7、#62 ファイル検索が v0.41.0）と衝突。次で直す。
+- `git merge origin/main`（rebase・force push はしない）。衝突は README.md・docs/CHANGELOG.md・package.json・package-lock.json・extension/manifest.json の想定。main 側の 0.41.0 の記載は残し、本件を **0.42.0** として上に足す
+- 本件の版表記を 0.41.0 → 0.42.0 に（package.json・package-lock.json・manifest.json・CHANGELOG・README の「本番サーバーの停止の見張り（v0.41.0）」・hooks/server-kill-guard.mjs や試験のコメントにあれば同様）。CHANGELOG の戻し方は `bash scripts/ac-update.sh v0.41.0`
+- `scripts/ac-hooks.mjs` 冒頭コメントの本数（「3 本」「17 本」）を本件込みの数に直す（server-kill-guard を含めた種類数と 19 本）
+- design.md・card.md・recon.md の v0.41.0 表記は Opus が直す（担当は触らない）
+- 完了の確認 1〜5 をやり直し、生出力を /tmp/CC報告ファイル/server-kill-guard/merge-*.txt に保存。コミット `chore: main を取り込み v0.42.0 に版上げ` で push
