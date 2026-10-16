@@ -5,8 +5,9 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { ApiError, openSocket, uploadFile, uploadImage } from "../../api";
+import { ApiError, fetchFiles, openSocket, uploadFile, uploadImage } from "../../api";
 import { splitByCodePoints } from "./chunkInput";
+import { computeFileLinks } from "./fileLinks";
 import { classifyTransfer, type TransferFile } from "./imageTransfer";
 import { WheelClassifier, wheelDeltas } from "./wheelClassifier";
 import { LineEmitter, WheelLineAccumulator } from "./wheelLines";
@@ -56,10 +57,14 @@ export interface TerminalPaneProps {
   /** 画像 1 枚の上限（byte。config の値）。超えるものは送らずに案内する。サーバーも同じ上限で検査する */
   uploadMaxBytes?: number;
   onUploadNotice?: (notice: UploadNotice) => void;
+  /** 端末に出たパスのうち、このセッションのファイル一覧に載っている物をクリックしたとき、一覧の path で呼ぶ */
+  onOpenFile?: (path: string) => void;
+  /** 記録の版。進んだら、リンクに使うファイル一覧を取り直す */
+  filesRev?: number;
 }
 
 /** 表示中の 1 本だけ xterm を生成する。sessionId が変わる/外れるたびに破棄して再接続する。 */
-export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(function TerminalPane({ sessionId, smoothScrollMs = 0, renderer = "dom", uploadMaxBytes, onUploadNotice }, ref) {
+export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(function TerminalPane({ sessionId, smoothScrollMs = 0, renderer = "dom", uploadMaxBytes, onUploadNotice, onOpenFile, filesRev = 0 }, ref) {
   const { t } = useTranslation();
   const hostRef = useRef<HTMLDivElement>(null);
   /** 端末の WebSocket が切れて、つなぎ直している間は true（案内を出す） */
@@ -67,8 +72,8 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
   /** 今の端末と、それがどのセッションのものか（effect で差し替わるので、同じ組で持つ） */
   const termRef = useRef<{ sessionId: string; term: Terminal } | null>(null);
   /** 画面から渡された値は、端末を作り直さずに読み直せるよう ref で持つ */
-  const latest = useRef({ smoothScrollMs, renderer, uploadMaxBytes, onUploadNotice });
-  latest.current = { smoothScrollMs, renderer, uploadMaxBytes, onUploadNotice };
+  const latest = useRef({ smoothScrollMs, renderer, uploadMaxBytes, onUploadNotice, onOpenFile, filesRev });
+  latest.current = { smoothScrollMs, renderer, uploadMaxBytes, onUploadNotice, onOpenFile, filesRev };
   /** 今の入力機器が物理ホイールか（変わったときだけ smoothScrollDuration を更新する） */
   const physicalWheelRef = useRef(false);
 
@@ -115,6 +120,42 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
+    // 端末に出たパスのうち、このセッションのファイル一覧に載っている物をリンクにする（設計: docs/handoff/terminal-file-link/design.md）。
+    // 一覧の写しはこの端末だけで持つ。マウスが乗ったときに、無いか filesRev が進んでいれば取る（同時に来た分は 1 回にまとめる）
+    let filesCache: { paths: string[]; rev: number } | null = null;
+    let filesInflight: { rev: number; promise: Promise<string[] | undefined> } | null = null;
+    const loadFilePaths = (rev: number): Promise<string[] | undefined> => {
+      if (filesCache !== null && filesCache.rev === rev) return Promise.resolve(filesCache.paths);
+      if (filesInflight !== null && filesInflight.rev === rev) return filesInflight.promise;
+      const promise = fetchFiles(sessionId).then(
+        (res) => {
+          if (res.status !== "ok") return undefined;
+          const paths = res.files.map((f) => f.path);
+          filesCache = { paths, rev };
+          return paths;
+        },
+        () => undefined,
+      );
+      const entry = { rev, promise };
+      filesInflight = entry;
+      void promise.then(() => {
+        if (filesInflight === entry) filesInflight = null;
+      });
+      return promise;
+    };
+    const linkProvider = term.registerLinkProvider({
+      provideLinks: (y, callback) => {
+        void loadFilePaths(latest.current.filesRev).then((paths) => {
+          if (disposed || paths === undefined) return callback(undefined);
+          const links = computeFileLinks(y, term.buffer.active, paths).map((l) => ({
+            range: l.range,
+            text: l.text,
+            activate: () => latest.current.onOpenFile?.(l.path),
+          }));
+          callback(links.length > 0 ? links : undefined);
+        });
+      },
+    });
     let webgl: WebglAddon | null = null;
     // 今どちらで描いているかを外から見えるようにする（試験・点検用）
     const markRenderer = (r: "webgl" | "dom"): void => {
@@ -319,6 +360,7 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
       themeObserver.disconnect();
       resizeObserver.disconnect();
       dataSub.dispose();
+      linkProvider.dispose();
       lineEmitter.dispose();
       disposed = true;
       clearTimeout(retryTimer);

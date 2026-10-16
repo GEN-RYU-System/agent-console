@@ -30,6 +30,7 @@ vi.mock("@xterm/xterm", () => ({
       this.wheelHandler = h;
     });
     onData = vi.fn(() => ({ dispose: vi.fn() }));
+    registerLinkProvider = vi.fn(() => ({ dispose: vi.fn() }));
     dispose = vi.fn();
     constructor(opts: Record<string, unknown>) {
       this.options = { ...opts };

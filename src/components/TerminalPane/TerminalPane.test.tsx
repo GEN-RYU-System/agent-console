@@ -11,6 +11,13 @@ const webglMock = vi.hoisted(() => ({
   throwOnLoad: false,
   throwOnConstruct: false,
 }));
+/** registerLinkProvider の代役（登録された物と、外した回数） */
+const linkMock = vi.hoisted(() => ({
+  providers: [] as { provideLinks: (y: number, cb: (links: { range: unknown; text: string; activate: (e: unknown, t: string) => void }[] | undefined) => void) => void }[],
+  dispose: vi.fn(),
+  fetchFiles: vi.fn(),
+  lineText: "",
+}));
 const disposeTerm = vi.fn();
 let lastTerm: { options: Record<string, unknown>; paste: ReturnType<typeof vi.fn>; input: ReturnType<typeof vi.fn> } | null = null;
 const calls: string[] = [];
@@ -38,6 +45,26 @@ vi.mock("@xterm/xterm", () => ({
     element = document.createElement("div");
     attachCustomWheelEventHandler = vi.fn();
     onData = vi.fn(() => ({ dispose: vi.fn() }));
+    registerLinkProvider = vi.fn((p: (typeof linkMock.providers)[number]) => {
+      linkMock.providers.push(p);
+      return { dispose: linkMock.dispose };
+    });
+    // 半角だけの 1 行（linkMock.lineText）を返す偽のバッファ
+    buffer = {
+      active: {
+        getLine: (y: number) => {
+          if (y !== 0) return undefined;
+          const cells = [...linkMock.lineText].map((ch) => ({ getChars: () => ch, getWidth: () => 1 }));
+          return {
+            length: 80,
+            isWrapped: false,
+            getCell: (x: number) => cells[x] ?? { getChars: () => "", getWidth: () => 1 },
+            translateToString: () => linkMock.lineText,
+          };
+        },
+        getNullCell: () => ({ getChars: () => "", getWidth: () => 1 }),
+      },
+    };
     dispose = disposeTerm;
     constructor() {
       lastTerm = this;
@@ -60,6 +87,10 @@ vi.mock("@xterm/addon-webgl", () => ({
   },
 }));
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+vi.mock("../../api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../api")>()),
+  fetchFiles: (id: string) => linkMock.fetchFiles(id),
+}));
 
 class FakeWebSocket {
   static OPEN = 1;
@@ -86,6 +117,11 @@ beforeEach(() => {
   webglMock.throwOnLoad = false;
   webglMock.throwOnConstruct = false;
   disposeTerm.mockClear();
+  linkMock.providers.length = 0;
+  linkMock.dispose.mockClear();
+  linkMock.fetchFiles.mockReset();
+  linkMock.fetchFiles.mockResolvedValue({ status: "ok", files: [{ path: "/w/a.md" }] });
+  linkMock.lineText = "";
   calls.length = 0;
   termEvents.length = 0;
   sockets.length = 0;
@@ -403,5 +439,47 @@ describe("TerminalPane renderer (WebGL)", () => {
     act(() => webglMock.instances[0]!.lossCb?.());
     expect(webglMock.instances[0]!.dispose).toHaveBeenCalled();
     expect(rendererOf()).toBe("dom");
+  });
+  it("K3: registers the link provider once per terminal and disposes it on unmount / session change", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    const { rerender, unmount } = render(<TerminalPane sessionId="a" />);
+    expect(linkMock.providers).toHaveLength(1);
+    rerender(<TerminalPane sessionId="a" filesRev={3} />);
+    expect(linkMock.providers).toHaveLength(1);
+    expect(linkMock.dispose).not.toHaveBeenCalled();
+    rerender(<TerminalPane sessionId="b" />);
+    expect(linkMock.providers).toHaveLength(2);
+    expect(linkMock.dispose).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(linkMock.dispose).toHaveBeenCalledTimes(2);
+  });
+
+  it("K4: clicking a link calls onOpenFile with the path from the list; the list is fetched once per filesRev", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    const onOpenFile = vi.fn();
+    linkMock.lineText = "wrote /w/a.md done";
+    const { rerender } = render(<TerminalPane sessionId="a" onOpenFile={onOpenFile} filesRev={1} />);
+    const provide = (): Promise<{ range: unknown; text: string; activate: (e: unknown, t: string) => void }[] | undefined> =>
+      new Promise((resolve) => linkMock.providers[0]!.provideLinks(1, resolve));
+    const [first] = (await provide())!;
+    expect(first?.text).toBe("/w/a.md");
+    await provide();
+    expect(linkMock.fetchFiles).toHaveBeenCalledTimes(1);
+    first!.activate({}, first!.text);
+    expect(onOpenFile).toHaveBeenCalledWith("/w/a.md");
+    rerender(<TerminalPane sessionId="a" onOpenFile={onOpenFile} filesRev={2} />);
+    await provide();
+    expect(linkMock.fetchFiles).toHaveBeenCalledTimes(2);
+  });
+
+  it("K4: no links when the list is unavailable or the line has no listed path", async () => {
+    const { TerminalPane } = await import("./TerminalPane");
+    render(<TerminalPane sessionId="a" />);
+    linkMock.lineText = "wrote /other/x.md";
+    expect(await new Promise((r) => linkMock.providers[0]!.provideLinks(1, r))).toBeUndefined();
+    linkMock.fetchFiles.mockRejectedValue(new Error("x"));
+    render(<TerminalPane sessionId="b" filesRev={9} />);
+    linkMock.lineText = "wrote /w/a.md";
+    expect(await new Promise((r) => linkMock.providers[1]!.provideLinks(1, r))).toBeUndefined();
   });
 });

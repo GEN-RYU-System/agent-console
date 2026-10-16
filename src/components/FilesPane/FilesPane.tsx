@@ -31,13 +31,15 @@ interface Props {
   active: boolean;
   /** 記録の版。進んだら（開いている間は）一覧を取り直す */
   rev: number;
+  /** 端末のリンクから「このパスを開いて」と頼む口。seq が進むたびに 1 回開く（sessionId が違う依頼は無視） */
+  openRequest?: { sessionId: string; path: string; seq: number } | null;
 }
 
 /**
  * 「ファイル」タブ。選んだセッションが Write・Edit などで書いたファイル（hook の記録から作る）を一覧にし、選んだものの中身を出す。
  * .md は整えた表示（MarkdownView、http・https 以外のリンクは文字だけ）、それ以外は等幅の文字。読むだけ。
  */
-export function FilesPane({ sessionId, active, rev }: Props) {
+export function FilesPane({ sessionId, active, rev, openRequest }: Props) {
   const { t } = useTranslation();
   const [list, setList] = useState<ListState>({ kind: "loading" });
   const [selected, setSelected] = useState<string | null>(null);
@@ -81,6 +83,13 @@ export function FilesPane({ sessionId, active, rev }: Props) {
   useEffect(() => {
     if (active) void loadList();
   }, [active, rev, loadList]);
+
+  // openRequest の seq が進んだら、そのパスを開く（sessionId が違う依頼は無視）。選択を外す上の effect より後に置く
+  useEffect(() => {
+    if (openRequest && openRequest.sessionId === sessionId) void openFile(openRequest.path);
+    // 依存は seq だけを見る（sessionId・openFile の変化で同じ依頼を開き直さない）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRequest?.seq]);
 
   const renderContent = () => {
     if (selected === null || content === null) return <EmptyState size="compact" title={t("ac.files.selectFile")} />;

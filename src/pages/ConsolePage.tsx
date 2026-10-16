@@ -179,6 +179,8 @@ export function ConsolePage() {
   const prevStatesRef = useRef<Map<string, SessionState>>(new Map());
   // 最初に開くタブはチャット（端末は隠れた状態で開き、端末タブを押すと見える。大きさは見えたときに合う）
   const [centerTab, setCenterTab] = useState<CenterTab>("chat");
+  /** 端末のリンクから「ファイル」タブへ開く依頼（seq が進むたびに FilesPane が 1 回開く） */
+  const [fileOpenRequest, setFileOpenRequest] = useState<{ sessionId: string; path: string; seq: number } | null>(null);
   const [diffCount, setDiffCount] = useState<number | null>(null);
   const [closeTargetId, setCloseTargetId] = useState<string | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
@@ -388,6 +390,15 @@ export function ConsolePage() {
   // 一覧から外れた（または存在しない）セッションは選択扱いにしない
   const activeId = state.sessions.some((s) => s.id === selectedId) ? selectedId : null;
   const activeSession = state.sessions.find((s) => s.id === activeId);
+  // 端末のリンクがクリックされたら「ファイル」タブに切り替え、FilesPane にそのパスを開かせる
+  const openFileFromTerminal = useCallback(
+    (path: string) => {
+      if (!activeId) return;
+      setCenterTab("files");
+      setFileOpenRequest((prev) => ({ sessionId: activeId, path, seq: (prev?.seq ?? 0) + 1 }));
+    },
+    [activeId],
+  );
   const renameTarget = state.sessions.find((s) => s.id === renameTargetId);
   const closeTarget = state.sessions.find((s) => s.id === closeTargetId);
   const relayTarget = state.sessions.find((s) => s.id === relayTargetId);
@@ -559,7 +570,7 @@ export function ConsolePage() {
         />
         {/* 端末は隠すだけで外さない（xterm の接続を保つ）。隠し方は hidden 属性（display:none）だけ。高さ 0 などで隠すと 2 列×1 行が pty に送られる */}
         <div className="ac-page__terminal" hidden={centerTab !== "terminal"}>
-          {activeId ? <TerminalPane ref={terminalRef} sessionId={activeId} smoothScrollMs={state.terminalSmoothScrollMs} renderer={state.terminalRenderer} uploadMaxBytes={state.uploadMaxBytes} onUploadNotice={setUploadNotice} /> : <EmptyState title={t("ac.selectSession")} />}
+          {activeId ? <TerminalPane ref={terminalRef} sessionId={activeId} smoothScrollMs={state.terminalSmoothScrollMs} renderer={state.terminalRenderer} uploadMaxBytes={state.uploadMaxBytes} onUploadNotice={setUploadNotice} onOpenFile={openFileFromTerminal} filesRev={state.activityRev} /> : <EmptyState title={t("ac.selectSession")} />}
         </div>
         {activeId ? (
           <DiffPane
@@ -573,7 +584,7 @@ export function ConsolePage() {
         ) : (
           centerTab === "changes" && <EmptyState title={t("ac.selectSession")} />
         )}
-        {activeId ? <FilesPane sessionId={activeId} active={centerTab === "files"} rev={state.activityRev} /> : centerTab === "files" && <EmptyState title={t("ac.selectSession")} />}
+        {activeId ? <FilesPane sessionId={activeId} active={centerTab === "files"} rev={state.activityRev} openRequest={fileOpenRequest} /> : centerTab === "files" && <EmptyState title={t("ac.selectSession")} />}
         {activeId ? <PrPane sessionId={activeId} active={centerTab === "pr"} /> : centerTab === "pr" && <EmptyState title={t("ac.selectSession")} />}
         {/* 部品は、セッションを選んでいなくても見られる（送るときだけ送り先が要る） */}
         <PicksPane
