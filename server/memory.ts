@@ -141,7 +141,7 @@ async function readSystemMemory(): Promise<RawSystem | null> {
   }
 }
 
-const CACHE_TTL_MS = 5000;
+const CACHE_TTL_MS = 2000;
 
 interface RawMemory {
   table: PsRow[];

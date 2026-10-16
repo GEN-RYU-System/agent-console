@@ -7,7 +7,7 @@ import { fetchMemory } from "../../api";
 import type { MemorySnapshot } from "../../types";
 import "./MemoryPanel.css";
 
-export const MEMORY_REFRESH_MS = 10000;
+export const MEMORY_REFRESH_MS = 2000;
 const PERCENT = 100;
 
 /** 物理メモリに対する割合（%・整数）。棒グラフ（ProgressBar は整数に丸めて表示する）と文字で同じ値にそろえる。合計が不明なら null。 */
@@ -16,7 +16,7 @@ export function percentOf(mb: number, totalMb: number | null): number | null {
 }
 
 interface Props {
-  /** 開いている間だけ 10 秒ごとに読み直す（閉じたら止める） */
+  /** 開いている間だけ 2 秒ごとに読み直す（閉じたら止める） */
   open: boolean;
 }
 
