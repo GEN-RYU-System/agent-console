@@ -129,6 +129,7 @@ describe("K9: installStatusLine / uninstallStatusLine / checkStatusLine（ファ
     writeFileSync(hookPath, "// x\n");
     writeFileSync(path.join(path.dirname(hookPath), "ac-routine-guard.mjs"), "// g\n");
     writeFileSync(path.join(path.dirname(hookPath), "board-guard.mjs"), "// bg\n");
+    writeFileSync(path.join(path.dirname(hookPath), "server-kill-guard.mjs"), "// skg\n");
     writeFileSync(e.settings, JSON.stringify(PO_SETTINGS));
     installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath });
     expect(checkHooks({ settingsPath: e.settings, hookPath })).toMatchObject({ ok: true });
