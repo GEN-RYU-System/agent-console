@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { DENY_MESSAGE, judge } from "../../hooks/server-kill-guard.mjs";
+import { DENY_MESSAGE, judge, splitParts, stripQuotedHeredocs } from "../../hooks/server-kill-guard.mjs";
 
 const SCRIPT = path.join(process.cwd(), "hooks", "server-kill-guard.mjs");
 const input = (command: string, agentId?: string): Record<string, unknown> => ({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command }, ...(agentId !== undefined ? { agent_id: agentId, agent_type: "general-purpose" } : {}) });
@@ -97,5 +97,64 @@ describe("server-kill-guard process (the real script)", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toBe("");
     expect(r.stderr).toBe("");
+  });
+});
+
+/** Q-K3: 引用の中の例文は通す 6 形 */
+const QUOTED_ALLOWED = [
+  "cat > /tmp/x.md <<'EOF'\n例: `pkill -f \"dist-server/server/index.js\"` で止まる\nEOF\nnode b.mjs write <<'EOF'\n{\"a\":1}\nEOF",
+  'cat <<"EOF"\n`pkill node`\nEOF',
+  "cat <<-'EOF'\n\t`pkill node`\n\tEOF",
+  'git commit -m "例; pkill node は危ない"',
+  "echo 'kill $(lsof -ti tcp:4319)'",
+  "printf '%s' 'x `pkill node` y'",
+];
+
+/** Q-K4: 引用の外・展開される場所は拒否のまま 5 形 */
+const QUOTED_DENIED = [
+  "cat <<EOF\n`pkill node`\nEOF",
+  'echo "$(pkill -f dist-server)"',
+  'echo "`killall node`"',
+  "cat <<'EOF'\nbody\nEOF\npkill -f dist-server",
+  "pkill node; cat <<'EOF'\nbody",
+];
+
+describe("Q-K3 quoted text is not a command", () => {
+  it.each(QUOTED_ALLOWED)("passes: %s", (command) => {
+    expect(judge(input(command))).toEqual({ code: 0, stderr: "" });
+  });
+});
+
+describe("Q-K4 real stops are still denied", () => {
+  it.each(QUOTED_DENIED)("denies: %s", (command) => {
+    expect(judge(input(command))).toEqual({ code: 2, stderr: `${DENY_MESSAGE}\n` });
+  });
+});
+
+describe("stripQuotedHeredocs", () => {
+  it("removes the body and terminator, keeps the rest of the opening line", () => {
+    expect(stripQuotedHeredocs("cat <<'EOF' > f\nbody\nEOF\nls")).toBe("cat <<'EOF' > f\nls");
+  });
+  it("removes to the end when there is no terminator", () => {
+    expect(stripQuotedHeredocs("a; cat <<'EOF'\nbody\nmore")).toBe("a; cat <<'EOF'\n");
+  });
+  it("<<- compares the terminator after stripping leading tabs", () => {
+    expect(stripQuotedHeredocs("cat <<-'EOF'\n\tbody\n\tEOF\nls")).toBe("cat <<-'EOF'\nls");
+  });
+  it("keeps unquoted heredocs and heredocs inside quotes", () => {
+    expect(stripQuotedHeredocs("cat <<EOF\nbody\nEOF")).toBe("cat <<EOF\nbody\nEOF");
+    expect(stripQuotedHeredocs("echo \"<<'EOF'\nx\"")).toBe("echo \"<<'EOF'\nx\"");
+  });
+});
+
+describe("splitParts", () => {
+  it("splits outside quotes and keeps the quotes in the parts", () => {
+    expect(splitParts("a 'b;c' && d")).toEqual(["a 'b;c' ", " d"]);
+  });
+  it("inside double quotes only $( and backtick split", () => {
+    expect(splitParts('echo "a; b $(c) d"')).toEqual(['echo "a; b ', 'c) d"']);
+  });
+  it("a backslash protects the next character", () => {
+    expect(splitParts("a\\;b;c")).toEqual(["a\\;b", "c"]);
   });
 });

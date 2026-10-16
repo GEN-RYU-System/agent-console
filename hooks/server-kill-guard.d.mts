@@ -4,3 +4,5 @@ export const DENY_MESSAGE: string;
 export function hasProtected(text: string): boolean;
 export function commandDenied(command: string): boolean;
 export function judge(input: unknown): { code: 0 | 2; stderr: string };
+export function stripQuotedHeredocs(command: string): string;
+export function splitParts(command: string): string[];

@@ -3,6 +3,7 @@
 // 拒否するもの（どれか1つ）: R1 pkill・killall の部分が保護語を含む／R2 kill 系があり pgrep の部分が保護語を含む／
 //   R3 kill 系があり lsof の部分が :4319 を含む／R4 launchctl の kill・stop・bootout・remove・disable が local.agent-console.server を含む。
 // 通すときは終了コード 0 で、標準出力・標準エラーとも完全に無出力。会話の文脈には何も足されない。
+// v0.42.1: 引用ヒアドキュメントの本文・単一引用符の中・二重引用符の中の ; | && 改行は区切りにしない（設計 docs/handoff/server-kill-guard-quotes/design.md）
 // 誤用防止であり、悪意への対策ではない。引用符の分割・変数経由・pid の直書きで迂回できる（README の「限界」）。入力が読めないときも通す（fail-open）。
 import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -37,9 +38,112 @@ function headOf(part) {
   return { head: words[i] ?? "", next: words[i + 1] ?? "" };
 }
 
+/**
+ * 引用符の外にある引用ヒアドキュメント（<<'EOF' / <<"EOF" / <<-'EOF'）の本文を消す。開始行の残りは残し、次の行から終端の行（含む）までを消す。
+ * <<- は行頭タブを外して終端と比べる。終端が無ければ最後まで消す。引用しない <<EOF は展開されるので消さない。
+ */
+export function stripQuotedHeredocs(command) {
+  const re = /<<(-?)\s*(['"])([A-Za-z0-9_]+)\2/y;
+  let out = "";
+  let state = "out";
+  let i = 0;
+  while (i < command.length) {
+    const c = command[i];
+    if (state === "out") {
+      if (c === "\\") {
+        out += command.slice(i, i + 2);
+        i += 2;
+        continue;
+      }
+      if (c === "'" || c === '"') {
+        state = c;
+      } else if (c === "<" && command[i - 1] !== "<") {
+        re.lastIndex = i;
+        const m = re.exec(command);
+        if (m) {
+          out += m[0];
+          i += m[0].length;
+          const nl = command.indexOf("\n", i);
+          if (nl === -1) {
+            out += command.slice(i);
+            break;
+          }
+          out += command.slice(i, nl + 1);
+          let pos = nl + 1;
+          for (;;) {
+            if (pos >= command.length) break;
+            let end = command.indexOf("\n", pos);
+            const stop = end === -1;
+            if (stop) end = command.length;
+            let line = command.slice(pos, end);
+            if (m[1] === "-") line = line.replace(/^\t+/, "");
+            pos = stop ? end : end + 1;
+            if (line === m[3]) break;
+          }
+          i = pos;
+          continue;
+        }
+      }
+    } else if (c === "\\" && state === '"') {
+      out += command.slice(i, i + 2);
+      i += 2;
+      continue;
+    } else if (c === state) {
+      state = "out";
+    }
+    out += c;
+    i += 1;
+  }
+  return out;
+}
+
+/** 命令を部分に分ける。外: ; && || | 改行 $( ` ( ) で区切る／単一引用符の中: 区切らない／二重引用符の中: $( と ` だけで区切る。\ の次の 1 文字は区切らない。引用符は部分に残す */
+export function splitParts(command) {
+  const parts = [];
+  let cur = "";
+  let state = "out";
+  let i = 0;
+  const cut = (len) => {
+    parts.push(cur);
+    cur = "";
+    i += len;
+  };
+  while (i < command.length) {
+    const c = command[i];
+    const two = command.slice(i, i + 2);
+    if (c === "\\" && state !== "'") {
+      cur += command.slice(i, i + 2);
+      i += 2;
+    } else if (state === "'") {
+      if (c === "'") state = "out";
+      cur += c;
+      i += 1;
+    } else if (two === "$(" || c === "`") {
+      cut(c === "`" ? 1 : 2);
+    } else if (state === '"') {
+      if (c === '"') state = "out";
+      cur += c;
+      i += 1;
+    } else if (c === "'" || c === '"') {
+      state = c;
+      cur += c;
+      i += 1;
+    } else if (two === "&&" || two === "||") {
+      cut(2);
+    } else if (c === ";" || c === "|" || c === "\n" || c === "(" || c === ")") {
+      cut(1);
+    } else {
+      cur += c;
+      i += 1;
+    }
+  }
+  parts.push(cur);
+  return parts;
+}
+
 /** command を拒否するか */
 export function commandDenied(command) {
-  const parts = command.split(/;|&&|\|\||\||\n|\$\(|`|\(|\)/).map((text) => ({ text, ...headOf(text) }));
+  const parts = splitParts(stripQuotedHeredocs(command)).map((text) => ({ text, ...headOf(text) }));
   if (parts.some((p) => (p.head === "pkill" || p.head === "killall") && hasProtected(p.text))) return true;
   const hasKill = parts.some((p) => KILLERS.has(p.head));
   if (hasKill && parts.some((p) => p.head === "pgrep" && hasProtected(p.text))) return true;
