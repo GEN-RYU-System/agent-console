@@ -92,4 +92,18 @@ describe("FilesPane", () => {
     fireEvent.click(screen.getByRole("button", { name: "再読込" }));
     await waitFor(() => expect(fetchFiles).toHaveBeenCalledTimes(2));
   });
+  it("K5 openRequest の seq が進むとそのパスを開く。同じ seq の再描画では開き直さず、別セッション宛は無視する", async () => {
+    fetchFiles.mockResolvedValue({ status: "ok", files: [file("/w/a.md"), file("/w/b.txt")] });
+    fetchFileContent.mockResolvedValue({ status: "ok", text: "中身", size: 2, mtimeMs: 1, kind: "text" });
+    const { rerender, container } = render(<FilesPane sessionId="s1" active rev={0} openRequest={null} />);
+    await screen.findByText("a.md");
+    expect(fetchFileContent).not.toHaveBeenCalled();
+    rerender(<FilesPane sessionId="s1" active rev={0} openRequest={{ sessionId: "s1", path: "/w/b.txt", seq: 1 }} />);
+    await waitFor(() => expect(fetchFileContent).toHaveBeenCalledWith("s1", "/w/b.txt"));
+    await waitFor(() => expect(container.querySelector("pre.ac-files__text")?.textContent).toBe("中身"));
+    expect(container.querySelector('[aria-current="true"]')?.getAttribute("title")).toBe("/w/b.txt");
+    rerender(<FilesPane sessionId="s1" active rev={1} openRequest={{ sessionId: "s1", path: "/w/b.txt", seq: 1 }} />);
+    rerender(<FilesPane sessionId="s1" active rev={1} openRequest={{ sessionId: "other", path: "/w/a.md", seq: 2 }} />);
+    expect(fetchFileContent).toHaveBeenCalledTimes(1);
+  });
 });
