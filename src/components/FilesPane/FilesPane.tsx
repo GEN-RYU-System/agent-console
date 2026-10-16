@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@sa/components/Badge";
 import { Button } from "@sa/components/Button";
 import { Callout } from "@sa/components/Callout";
 import { EmptyState } from "@sa/components/EmptyState";
+import { TextField } from "@sa/components/TextField";
 import { fetchFileContent, fetchFiles } from "../../api";
 import type { FileContentResponse, FilesResponse } from "../../types";
 import { MarkdownView } from "../Markdown/MarkdownView";
@@ -23,6 +24,9 @@ const REASON_KEYS: Record<Reason, string> = {
   binary: "ac.files.reason.binary",
 };
 
+/** 絞り込み用の正規化（全角/半角・大小文字を区別しない） */
+const norm = (s: string): string => s.normalize("NFKC").toLowerCase();
+
 const timeOf = (ms: number): string => new Date(ms).toLocaleString("ja-JP", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 interface Props {
@@ -33,17 +37,21 @@ interface Props {
   rev: number;
   /** 端末のリンクから「このパスを開いて」と頼む口。seq が進むたびに 1 回開く（sessionId が違う依頼は無視） */
   openRequest?: { sessionId: string; path: string; seq: number } | null;
+  /** 「端末に戻る」ボタンと、ファイルタブ表示中の Esc で呼ぶ */
+  onBackToTerminal?: () => void;
 }
 
 /**
  * 「ファイル」タブ。選んだセッションが Write・Edit などで書いたファイル（hook の記録から作る）を一覧にし、選んだものの中身を出す。
  * .md は整えた表示（MarkdownView、http・https 以外のリンクは文字だけ）、それ以外は等幅の文字。読むだけ。
  */
-export function FilesPane({ sessionId, active, rev, openRequest }: Props) {
+export function FilesPane({ sessionId, active, rev, openRequest, onBackToTerminal }: Props) {
   const { t } = useTranslation();
   const [list, setList] = useState<ListState>({ kind: "loading" });
   const [selected, setSelected] = useState<string | null>(null);
   const [content, setContent] = useState<ContentState | null>(null);
+  const [query, setQuery] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef(sessionId);
   sessionRef.current = sessionId;
 
@@ -52,7 +60,14 @@ export function FilesPane({ sessionId, active, rev, openRequest }: Props) {
     setList({ kind: "loading" });
     setSelected(null);
     setContent(null);
+    setQuery("");
   }, [sessionId]);
+
+  // ファイルタブが表示になった時（切替・端末のリンクから）、焦点がタブの中に無ければ外枠へ移す（端末は hidden で焦点を失うため。Esc を外枠で受ける）
+  useEffect(() => {
+    const root = rootRef.current;
+    if (active && root && !root.contains(document.activeElement)) root.focus({ preventScroll: true });
+  }, [active, openRequest?.seq]);
 
   const loadList = useCallback(async (): Promise<void> => {
     const id = sessionId;
@@ -110,6 +125,22 @@ export function FilesPane({ sessionId, active, rev, openRequest }: Props) {
     );
   };
 
+  const terms = norm(query).split(/\s+/).filter(Boolean);
+  const allFiles = list.kind === "data" && list.value.status === "ok" ? list.value.files : [];
+  const shownFiles = terms.length === 0 ? allFiles : allFiles.filter((f) => { const p = norm(f.path); return terms.every((w) => p.includes(w)); });
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
+    if (e.key !== "Escape" || e.nativeEvent.isComposing) return;
+    // 検索欄に文字がある時の欄での Esc は、まず欄を空にするだけ（戻らない）
+    if (e.target instanceof HTMLInputElement && query !== "") {
+      setQuery("");
+      e.preventDefault();
+      return;
+    }
+    e.preventDefault();
+    onBackToTerminal?.();
+  };
+
   const renderBody = () => {
     if (list.kind === "loading") return <EmptyState size="compact" title={t("ac.files.loading")} />;
     if (list.kind === "error") return <Callout variant="warning" title={t("ac.files.loadError")}>{t("ac.files.loadErrorBody")}</Callout>;
@@ -117,8 +148,13 @@ export function FilesPane({ sessionId, active, rev, openRequest }: Props) {
     if (list.value.files.length === 0) return <EmptyState size="compact" title={t("ac.files.emptyTitle")} description={t("ac.files.emptyBody")} />;
     return (
       <div className="ac-files__body">
+        {shownFiles.length === 0 ? (
+          <div className="ac-files__list">
+            <EmptyState size="compact" title={t("ac.files.searchNone")} />
+          </div>
+        ) : (
         <ul className="ac-files__list" aria-label={t("ac.files.fileList")}>
-          {list.value.files.map((f) => (
+          {shownFiles.map((f) => (
             <li key={f.path} className="ac-files__item">
               <Button variant="ghost" size="sm" layoutClassName="ac-files__file" aria-current={selected === f.path ? "true" : undefined} title={f.path} onClick={() => void openFile(f.path)}>
                 <span className="ac-files__name">{f.name}</span>
@@ -135,15 +171,28 @@ export function FilesPane({ sessionId, active, rev, openRequest }: Props) {
             </li>
           ))}
         </ul>
+        )}
         <div className="ac-files__view">{renderContent()}</div>
       </div>
     );
   };
 
   return (
-    <div className="ac-files" hidden={!active}>
+    <div className="ac-files" hidden={!active} ref={rootRef} tabIndex={-1} onKeyDown={onKeyDown}>
       <div className="ac-files__toolbar">
+        <Button size="sm" variant="outline" onClick={() => onBackToTerminal?.()}>
+          {t("ac.files.backToTerminal")}
+        </Button>
         <span className="ac-files__hint">{t("ac.files.hint")}</span>
+        <TextField
+          size="sm"
+          className="ac-files__search"
+          aria-label={t("ac.files.searchLabel")}
+          placeholder={t("ac.files.searchLabel")}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {terms.length > 0 && <span className="ac-files__count" data-testid="files-search-count">{t("ac.files.searchCount", { shown: shownFiles.length, total: allFiles.length })}</span>}
         <Button
           size="sm"
           variant="outline"

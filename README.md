@@ -53,7 +53,7 @@ node "<dataDir>/bin/ac-routine.mjs" disable <id> < reason.json
 - **guard の強化（第2層）**: 担当（`agent_id` あり）の Bash が ac-routine の実行・reserve-token・`Application Support/agent-console` に触れる、または 127.0.0.1 / localhost の routines 系の API を叩く場合と、Read が `Application Support/agent-console` を読む場合を拒否する。hook は 6 規則に分けた `if` 付きで 15 本になる。Grep と Glob は `if` が効かないため対象外。
 - **自動クローズ（`closeWhenIdle`、既定 false）**: 定期実行の入力欄「終わったら自動で閉じる」（`ac-routine` の routine.json にも `closeWhenIdle: true` を書ける）。指示を送ったあとから数え、idle が連続して累計 10 分で閉じる。busy / waiting / 不明 / 取得失敗 / 担当が動いている間は 0 からやり直す。waiting のまま 60 分で「閉じずに残した」を 1 回だけ記録する。最後の返答に `NEEDS_DECISION:` か `BLOCKED:` があるとき、返答が 1 件も無いときは閉じずに残す（kept）。閉じたときは返答の先頭 500 字を履歴に残す。closed / kept は監査にも 1 行ずつ残る（token と指示文は書かない）。再起動しても、送ってから24時間以内で閉じていないセッションは見張りに戻る（v0.36.0）。
 
-#### 本番サーバーの停止の見張り（v0.41.0）
+#### 本番サーバーの停止の見張り（v0.42.0）
 
 `pkill -f "dist-server/server/index.js"`・`pkill node`・`killall node` のように名前で止める命令や、`kill $(lsof -ti tcp:4319)`・`launchctl stop local.agent-console.server` のように本番（127.0.0.1:4319）を狙う命令を、担当にも Opus 本体にも拒否します（hook は `hooks/server-kill-guard.mjs`、同期、`if` は `Bash(*kill*)` と `Bash(*launchctl*)` の 2 本で、hook は計 19 本）。試験サーバーは `lsof -ti tcp:4329 | xargs kill` のように番号で止めます（これは通ります）。`launchctl kickstart`・`print` や `tmux ... kill-session` も通ります。設計は [design](docs/handoff/server-kill-guard/design.md)。
 
@@ -64,7 +64,7 @@ node "<dataDir>/bin/ac-routine.mjs" disable <id> < reason.json
 - 防げるのは「担当が running の間に会話が書き込む」ことと、担当が guard の対象の道具で ac-routine・reserve-token に触れることまで。設計 §1 の表の (d2)（guard の対象外の道具・間接的な呼び出し）、(e)（担当が起動していない経路）、(h)（Opus 自身が承認して通す正規の経路）は残る。R3（hook の取りこぼし）も残る。
 - 第0段の実測（U2）: 担当が動いている最中に中断（SIGINT）や親の終了（SIGTERM）が起きると、SubagentStop も Stop も来ず、running は 24 時間の上限まで残る。その間の書き込みは 403 のままだが、Opus の承認（approve）で越えられる。auto mode に拒否された担当の呼び出しは、すぐ動作中から外れる（v0.36.0。更新後に ac-hooks install を1回）。
 - 導入後に `node scripts/ac-hooks.mjs install` をもう一度実行する（guard の `if` を 6 規則に分けて足す。実行するまで第2層は効かない）。
-- 本番サーバーの停止の見張り（v0.41.0）は、引用符の分割・変数経由・`kill <pid>` の番号直書き・スクリプトファイルに書いての実行で迂回できる（うっかり防止の水準）。
+- 本番サーバーの停止の見張り（v0.42.0）は、引用符の分割・変数経由・`kill <pid>` の番号直書き・スクリプトファイルに書いての実行で迂回できる（うっかり防止の水準）。
 - 自動クローズの idle 判定は `claude agents --json` の定期取得（`agentsPollMs`）の標本で数える。取得が続けて失敗すると閉じない。
 - 標本の間が gapLimitMs（既定 60 秒）を超えたとき（Mac のスリープなど）も、取得失敗と同じく 0 から数え直す（v0.35.0）。
 
@@ -262,7 +262,8 @@ node scripts/ac-hooks.mjs check
 - 拡張の見た目の値（選ぶ枠・案内）は、`npm run build` のたびに Sales Anchor のトークンから `extension/picker-tokens.css` に生成します（生成物。コミットしません）。`extension/` の JS と CSS には色・px の直書きをしません（`npm run lint` が検査します）。
 - **端末の見やすさ（v0.8.0）**: 全角の句読点・括弧（（ ）、 。）が端末の右端ではみ出さないよう、端末の CSS で `text-spacing-trim: space-all` を指定しています（Chrome 123 以上）。書体は、英数字・罫線が Menlo、「※」などが Monaco、日本語がヒラギノ明朝です（`src/tokens.app.css` の `--ac-font-mono` が正本）。スクロールは、マウスのホイールのときだけなめらかです（設定 `terminalSmoothScrollMs`、既定 125 ms、0 で無し。トラックパッドでは常にブラウザのそのままの動きです）。 Claude など、マウスの動きを受け取る画面（マウス追跡中）では、ホイールの量を行の数に直し、1 行につき 1 つの信号を 1 フレームに最大 2 行ずつ送るので、動きが段にならず連続します（v0.31.0。追跡のない画面と Shift+ホイールは今までどおり。設計: [design](docs/handoff/terminal-wheel/design.md)）。
 - **端末の文字を GPU で描く（v0.39.0）**: 端末の文字は、設定 `terminalRenderer`（`"webgl"` か `"dom"`、既定 `"webgl"`、出荷時の `agent-console.config.json` にも明記）で描き方を選びます。`"webgl"` は GPU（WebGL2）で描き、Claude などのスクロールで画面の部品を作り直す負荷を減らします。`"dom"` は今までどおり行ごとの部品で描きます。WebGL2 が使えない環境や、GPU の文脈を失って 3 秒で戻らないときは、自動で `"dom"` に戻ります。今どちらで描いているかは、端末の枠の `data-renderer`（`webgl` か `dom`）で分かります。値は端末を開くときに 1 回だけ読むので、変えたらサーバーを再起動して、ブラウザを再読み込みしてください。`"webgl"` では 1 マスの幅が `"dom"` よりわずかに狭くなり、同じ窓で 1 行の字数が増えます（句読点の `text-spacing-trim` は `"dom"` のときだけ効きます）。戻し方は `"terminalRenderer": "dom"` にして再起動するだけです。（設計: [design](docs/handoff/terminal-webgl/design.md)）
-- **端末のファイル名をクリックして開く（v0.40.0）**: 端末に出たパスのうち、そのセッションが Write・Edit などで書いたファイルの一覧に載っている物は、マウスを乗せると下線が出ます。クリックすると「ファイル」タブに切り替わり、そのファイルの中身が出ます。相対パスや `~/` で始まるパスは、一覧の中で末尾が合う物がちょうど1つの時だけリンクになります（読めるファイルの範囲は今までと同じで、一覧に無い物は開けません）。戻し方は `bash scripts/ac-update.sh v0.39.0`。（設計: [design](docs/handoff/terminal-file-link/design.md)）
+- **端末のファイル名をクリックして開く（v0.40.0）**: 端末に出たパスのうち、そのセッションが Write・Edit などで書いたファイルの一覧に載っている物は、マウスを乗せると下線が出ます。クリックすると「ファイル」タブに切り替わり、そのファイルの中身が出ます。相対パスや `~/` で始まるパスは、一覧の中で末尾が合う物がちょうど1つの時だけリンクになります（読めるファイルの範囲は今までと同じで、一覧に無い物は開けません）。リンクになるのは Write・Edit・MultiEdit・NotebookEdit で記録されたファイルだけで、Bash（シェルのコマンド）で作ったファイルはリンクにならず、ファイルタブの一覧にも出ません。戻し方は `bash scripts/ac-update.sh v0.39.0`。（設計: [design](docs/handoff/terminal-file-link/design.md)）
+- **ファイルタブの検索欄と「端末に戻る」（v0.41.0）**: 「ファイル」タブの上部に、ファイル名で絞り込む検索欄を付けました。空白（全角も可）で区切った語が、全部パスに含まれるファイルだけが残り（全角/半角・大文字小文字は区別しません）、文字を入れている間は「N / M 件」が出ます。検索は画面の中だけで、サーバーへの問い合わせは増えません。開いているファイルの表示は、絞り込みで一覧から外れても消えません。左端の「端末に戻る」ボタン、またはファイルタブを見ている間の `Esc` で端末タブに戻り、そのまま打てます（検索欄に文字がある時の欄での最初の `Esc` は、欄を空にするだけです）。戻し方は `bash scripts/ac-update.sh v0.40.0`。（設計: [design](docs/handoff/file-search/design.md)）
 - **画像を端末に貼る（v0.8.0）**: スクリーンショットなどの PNG・JPEG を、端末にコピーして貼り付けるか、端末の上にドロップすると、アプリが `~/Library/Application Support/agent-console/uploads/<UUID>.png`（`.jpg`。設定 `dataDir` で変更、ディレクトリ 700・ファイル 600）に保存し、その絶対パスを入力欄に貼ります（Enter は押しません。送るかどうかは人が決めます）。Claude Code の入力欄では `[Image #n]` になります。1 枚 `uploadMaxBytes`（既定 5 MiB）まで、`uploadMaxKeep`（既定 100）枚まで残し、古いものから消えます（このアプリが作った UUID の名前のファイルだけ）。文字もいっしょにコピーされているときは、画像ではなく文字として貼ります。PNG と JPEG 以外のファイル（CSV・PDF・テキストなど種類を問わない）を落とした（コピーして貼った）ときは、`uploads/files/<UUID>/<名前>`（名前は安全な文字だけに直します。フォルダ 700・ファイル 600）に保存して、同じようにその絶対パスを貼ります（上限と残す数は画像と同じ値で、数は画像とは別に数えます。画面が別のページに変わることはありません）。shell の役割の端末には使えません（空白がパスの区切りになるため）。
 - **端末の文字コード（LANG）**: 端末の中のプログラム（Claude のコピー機能が使う `pbcopy` など）は、環境変数 `LANG` で文字コードを決めます。自動起動（LaunchAgent）のサーバーには `LANG` が無く、そのままだとコピーした日本語が化けるため、設定 `terminalEnv`（既定 `{"LANG": "ja_JP.UTF-8"}`）を端末の環境に重ねます。`TERM` と秘密系の変数（`AGENT_CONSOLE_TOKEN` など）は指定できず、キーは英大文字・数字・`_`、値は空でなく制御文字なし。秘密の値は入れないでください。環境は端末を開くときに決まるため、**すでに開いている端末は開き直すまで直りません**。
 - **過去の会話を再開**: 「過去の会話を再開」で、本店の行（Opus 設計役）と、本店の worktree ごとの行（Sonnet 実装役、名前で絞り込めます）が出ます。「再開」を押すと、その場所で Claude 公式の選択リスト（`ccopusgo --resume` / `claude --model sonnet --resume`、id なし）が端末に開くので、会話はそこで選びます。アプリは会話の一覧を持ちません。選択リストでは `Ctrl+W` で同じリポジトリの全 worktree、`Ctrl+A` でこの Mac の全プロジェクトの会話に広げられます（別の役割の会話を選ぶと、開いた行の役割のモデルで再開されます）。ターミナルなどで今動いている会話は選ばないでください（二重に書き込むおそれがあります）。再開先は本店と `git worktree list` にある場所だけで、サーバーが照合します。ターミナルからは `ccopusgo --resume`（id なしで選択リスト）、`ccopusgo --resume <UUID>`（id 指定）でも再開できます（どちらも依頼文とは併用不可）。
@@ -294,6 +295,7 @@ node scripts/ac-hooks.mjs check
 - Dock の絵が古いままなら、Dock から `Agent Console.app` を外して付け直す（Dock が古い絵を覚えているため。スクリプトは Dock を再起動しない）。
 - 使用中の版とコミットは、画面下部の「版」「コミット」で確認できる。
 - 置き場所: `~/Library/Application Support/agent-console/`（`versions/<tag>/`、`current`、`logs/`）、`~/Library/LaunchAgents/local.agent-console.server.plist`、キーチェーンのサービス `agent-console` / アカウント `server`。
+- 新しい版が入ったら、目視の前に画面上部の「新しい版が入りました」の「再読み込み」（出ていなければブラウザの再読み込み）を押す。押すまで画面は前の版のままです。
 - 新しい版を出す手順: package.json の version を上げる PR → マージ → `vX.Y.Z` タグを付けて push → CHANGELOG に 1 行追記。
 
 ## 利用量バー（週・5時間）の設定

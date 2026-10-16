@@ -41,6 +41,8 @@ export interface TerminalHandle {
    * 戻した）ときは Enter を送らず "pastedNotSent"。送れたら "sent"。
    */
   pasteSubmitAfter(sessionId: string, text: string, delayMs: number): Promise<PasteResult>;
+  /** 端末に入力の焦点を戻す（xterm の term.focus() を呼ぶだけ。端末が無ければ何もしない） */
+  focus(): void;
 }
 
 export type PasteResult = "sent" | "notPasted" | "pastedNotSent";
@@ -86,6 +88,9 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
   useImperativeHandle(
     ref,
     () => ({
+      focus(): void {
+        termRef.current?.term.focus();
+      },
       pasteOnly(expectedSessionId: string, text: string): boolean {
         const current = termRef.current;
         if (!current || current.sessionId !== expectedSessionId) return false;

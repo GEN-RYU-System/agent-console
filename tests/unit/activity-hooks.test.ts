@@ -18,7 +18,7 @@ const V0_11_EVENTS = EVENTS.slice(0, 8);
 const ACTIVITY_HANDLER_COUNT = EVENTS.length;
 /** guard の規則（handler）の数。v0.34.0 で 1 から 6 に増えた */
 const GUARD_COUNT = GUARD_IFS.length;
-/** server-kill-guard の規則（handler）の数（v0.41.0 で 2） */
+/** server-kill-guard の規則（handler）の数（v0.42.0 で 2） */
 const SK_COUNT = SERVER_KILL_GUARD_IFS.length;
 /** 自分の handler の総数（記録用 10 ＋ ac-routine-guard 6 ＋ server-kill-guard 2 ＋ board-guard 1 ＝ 19） */
 const OWN_HANDLER_COUNT = EVENTS.length + GUARD_COUNT + SK_COUNT + 1;

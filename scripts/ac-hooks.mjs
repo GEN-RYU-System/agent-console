@@ -1,6 +1,6 @@
 // agent-console の記録用 hook を、Claude の設定（~/.claude/settings.json）に足す・外す・点検する道具。
 // 使い方: node scripts/ac-hooks.mjs install|uninstall|check [--settings <settings.json>] [--data-dir <dataDir>]
-// - install: hook の本体（記録用 activity-hook・ac-routine のサブエージェント拒否 ac-routine-guard・作戦ボードの書き忘れ防止 board-guard の 3 本）を dataDir/hooks/ に、作戦ボードの命令 ac-board・ac-routine 命令を dataDir/bin/ に置いてから、設定に自分の handler（17 本。guard は 6 規則に分けて 6 本）だけを足す（足す前に控えを取る。2 回実行しても増えない）。
+// - install: hook の本体（記録用 activity-hook・ac-routine のサブエージェント拒否 ac-routine-guard・作戦ボードの書き忘れ防止 board-guard・本番サーバー停止の見張り server-kill-guard の 4 本）を dataDir/hooks/ に、作戦ボードの命令 ac-board・ac-routine 命令を dataDir/bin/ に置いてから、設定に自分の handler（19 本。guard は 6 規則に分けて 6 本）だけを足す（足す前に控えを取る。2 回実行しても増えない）。
 //   そのあとに別の段として、利用量の命令を dataDir/bin/ に置き、statusLine を足す（別の statusLine があれば上書きせず、見送りの行を出す）
 // - uninstall: 自分の handler と自分の statusLine だけを外す（ほかの設定には触れない）
 // - check: 設定に handler があり、node と hook のファイルがあるかを JSON で返す（ok でなければ終了コード 1）。statusLine の結果は別の行で標準エラーに出す
