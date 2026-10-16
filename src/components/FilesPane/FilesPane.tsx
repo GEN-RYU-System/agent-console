@@ -88,7 +88,6 @@ export function FilesPane({ sessionId, active, rev, openRequest }: Props) {
   useEffect(() => {
     if (openRequest && openRequest.sessionId === sessionId) void openFile(openRequest.path);
     // 依存は seq だけを見る（sessionId・openFile の変化で同じ依頼を開き直さない）
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openRequest?.seq]);
 
   const renderContent = () => {

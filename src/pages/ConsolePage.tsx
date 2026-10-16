@@ -391,14 +391,12 @@ export function ConsolePage() {
   const activeId = state.sessions.some((s) => s.id === selectedId) ? selectedId : null;
   const activeSession = state.sessions.find((s) => s.id === activeId);
   // 端末のリンクがクリックされたら「ファイル」タブに切り替え、FilesPane にそのパスを開かせる
-  const openFileFromTerminal = useCallback(
-    (path: string) => {
-      if (!activeId) return;
-      setCenterTab("files");
-      setFileOpenRequest((prev) => ({ sessionId: activeId, path, seq: (prev?.seq ?? 0) + 1 }));
-    },
-    [activeId],
-  );
+  // 早い return の後なのでフックにしない（フックの数が変わると React が落ちる）
+  const openFileFromTerminal = (path: string): void => {
+    if (!activeId) return;
+    setCenterTab("files");
+    setFileOpenRequest((prev) => ({ sessionId: activeId, path, seq: (prev?.seq ?? 0) + 1 }));
+  };
   const renameTarget = state.sessions.find((s) => s.id === renameTargetId);
   const closeTarget = state.sessions.find((s) => s.id === closeTargetId);
   const relayTarget = state.sessions.find((s) => s.id === relayTargetId);
