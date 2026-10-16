@@ -106,4 +106,74 @@ describe("FilesPane", () => {
     rerender(<FilesPane sessionId="s1" active rev={1} openRequest={{ sessionId: "other", path: "/w/a.md", seq: 2 }} />);
     expect(fetchFileContent).toHaveBeenCalledTimes(1);
   });
+  describe("検索欄・端末に戻る", () => {
+    const three = (): FilesResponse => ({ status: "ok", files: [file("/w/Report/報告.md"), file("/w/Report/a.txt"), file("/w/other/ABC.md")] });
+    const box = (): HTMLInputElement => screen.getByLabelText("ファイル名で絞り込み") as HTMLInputElement;
+    const names = (container: HTMLElement): string[] => [...container.querySelectorAll(".ac-files__name")].map((n) => n.textContent ?? "");
+
+    it("K1 語の一部で絞られ件数が出る。複数語は全て含む物だけ。全角/半角・大小文字を区別しない。0件は該当なし。空欄で全件", async () => {
+      fetchFiles.mockResolvedValue(three());
+      const { container } = render(<FilesPane sessionId="s1" active rev={0} />);
+      await screen.findByText("a.txt");
+      expect(screen.queryByTestId("files-search-count")).toBeNull();
+      fireEvent.change(box(), { target: { value: "report" } });
+      expect(names(container)).toEqual(["報告.md", "a.txt"]);
+      expect(screen.getByTestId("files-search-count").textContent).toBe("2 / 3 件");
+      fireEvent.change(box(), { target: { value: "ｒｅｐｏｒｔ　ＭＤ" } });
+      expect(names(container)).toEqual(["報告.md"]);
+      fireEvent.change(box(), { target: { value: "abc" } });
+      expect(names(container)).toEqual(["ABC.md"]);
+      fireEvent.change(box(), { target: { value: "zzz" } });
+      expect(screen.getByText("当てはまるファイルはありません")).toBeTruthy();
+      expect(screen.getByTestId("files-search-count").textContent).toBe("0 / 3 件");
+      fireEvent.change(box(), { target: { value: "" } });
+      expect(names(container)).toEqual(["報告.md", "a.txt", "ABC.md"]);
+      expect(screen.queryByTestId("files-search-count")).toBeNull();
+      expect(fetchFiles).toHaveBeenCalledTimes(1);
+    });
+
+    it("K2 絞り込みで外れても開いているファイルの表示は消えない。セッションが替わると欄が空になる", async () => {
+      fetchFiles.mockResolvedValue(three());
+      fetchFileContent.mockResolvedValue({ status: "ok", text: "中身", size: 2, mtimeMs: 1, kind: "text" });
+      const { container, rerender } = render(<FilesPane sessionId="s1" active rev={0} />);
+      fireEvent.click(await screen.findByText("a.txt"));
+      await waitFor(() => expect(container.querySelector("pre.ac-files__text")?.textContent).toBe("中身"));
+      fireEvent.change(box(), { target: { value: "ABC" } });
+      expect(names(container)).toEqual(["ABC.md"]);
+      expect(container.querySelector(".ac-files__content-path")?.textContent).toBe("/w/Report/a.txt");
+      rerender(<FilesPane sessionId="s2" active rev={0} />);
+      await waitFor(() => expect(box().value).toBe(""));
+    });
+
+    it("K4 Esc: 検索欄に文字がある時の欄での1回目は欄を空にするだけ。空の欄・欄以外では戻る。IME 変換中は何もしない", async () => {
+      fetchFiles.mockResolvedValue(three());
+      const back = vi.fn();
+      const { container } = render(<FilesPane sessionId="s1" active rev={0} onBackToTerminal={back} />);
+      await screen.findByText("a.txt");
+      fireEvent.change(box(), { target: { value: "rep" } });
+      fireEvent.keyDown(box(), { key: "Escape", isComposing: true });
+      expect(back).not.toHaveBeenCalled();
+      expect(box().value).toBe("rep");
+      fireEvent.keyDown(box(), { key: "Escape" });
+      expect(box().value).toBe("");
+      expect(back).not.toHaveBeenCalled();
+      fireEvent.keyDown(box(), { key: "Escape" });
+      expect(back).toHaveBeenCalledTimes(1);
+      fireEvent.change(box(), { target: { value: "rep" } });
+      fireEvent.keyDown(container.querySelector(".ac-files__file") as HTMLElement, { key: "Escape" });
+      expect(back).toHaveBeenCalledTimes(2);
+      expect(box().value).toBe("rep");
+    });
+
+    it("「端末に戻る」ボタンで onBackToTerminal を呼ぶ。表示になった時、焦点が外にあれば外枠へ移す", async () => {
+      fetchFiles.mockResolvedValue(three());
+      const back = vi.fn();
+      const { container, rerender } = render(<FilesPane sessionId="s1" active={false} rev={0} onBackToTerminal={back} />);
+      rerender(<FilesPane sessionId="s1" active rev={0} onBackToTerminal={back} />);
+      await screen.findByText("a.txt");
+      expect(document.activeElement).toBe(container.querySelector(".ac-files"));
+      fireEvent.click(screen.getByRole("button", { name: "端末に戻る" }));
+      expect(back).toHaveBeenCalledTimes(1);
+    });
+  });
 });
