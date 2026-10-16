@@ -53,11 +53,18 @@ node "<dataDir>/bin/ac-routine.mjs" disable <id> < reason.json
 - **guard の強化（第2層）**: 担当（`agent_id` あり）の Bash が ac-routine の実行・reserve-token・`Application Support/agent-console` に触れる、または 127.0.0.1 / localhost の routines 系の API を叩く場合と、Read が `Application Support/agent-console` を読む場合を拒否する。hook は 6 規則に分けた `if` 付きで 15 本になる。Grep と Glob は `if` が効かないため対象外。
 - **自動クローズ（`closeWhenIdle`、既定 false）**: 定期実行の入力欄「終わったら自動で閉じる」（`ac-routine` の routine.json にも `closeWhenIdle: true` を書ける）。指示を送ったあとから数え、idle が連続して累計 10 分で閉じる。busy / waiting / 不明 / 取得失敗 / 担当が動いている間は 0 からやり直す。waiting のまま 60 分で「閉じずに残した」を 1 回だけ記録する。最後の返答に `NEEDS_DECISION:` か `BLOCKED:` があるとき、返答が 1 件も無いときは閉じずに残す（kept）。閉じたときは返答の先頭 500 字を履歴に残す。closed / kept は監査にも 1 行ずつ残る（token と指示文は書かない）。再起動しても、送ってから24時間以内で閉じていないセッションは見張りに戻る（v0.36.0）。
 
+#### 本番サーバーの停止の見張り（v0.41.0）
+
+`pkill -f "dist-server/server/index.js"`・`pkill node`・`killall node` のように名前で止める命令や、`kill $(lsof -ti tcp:4319)`・`launchctl stop local.agent-console.server` のように本番（127.0.0.1:4319）を狙う命令を、担当にも Opus 本体にも拒否します（hook は `hooks/server-kill-guard.mjs`、同期、`if` は `Bash(*kill*)` と `Bash(*launchctl*)` の 2 本で、hook は計 19 本）。試験サーバーは `lsof -ti tcp:4329 | xargs kill` のように番号で止めます（これは通ります）。`launchctl kickstart`・`print` や `tmux ... kill-session` も通ります。設計は [design](docs/handoff/server-kill-guard/design.md)。
+
+- 導入後に `node scripts/ac-hooks.mjs install` をもう一度実行する（実行するまで拒否は効かない）。
+
 #### 限界（この強化で防げないこと）
 
 - 防げるのは「担当が running の間に会話が書き込む」ことと、担当が guard の対象の道具で ac-routine・reserve-token に触れることまで。設計 §1 の表の (d2)（guard の対象外の道具・間接的な呼び出し）、(e)（担当が起動していない経路）、(h)（Opus 自身が承認して通す正規の経路）は残る。R3（hook の取りこぼし）も残る。
 - 第0段の実測（U2）: 担当が動いている最中に中断（SIGINT）や親の終了（SIGTERM）が起きると、SubagentStop も Stop も来ず、running は 24 時間の上限まで残る。その間の書き込みは 403 のままだが、Opus の承認（approve）で越えられる。auto mode に拒否された担当の呼び出しは、すぐ動作中から外れる（v0.36.0。更新後に ac-hooks install を1回）。
 - 導入後に `node scripts/ac-hooks.mjs install` をもう一度実行する（guard の `if` を 6 規則に分けて足す。実行するまで第2層は効かない）。
+- 本番サーバーの停止の見張り（v0.41.0）は、引用符の分割・変数経由・`kill <pid>` の番号直書き・スクリプトファイルに書いての実行で迂回できる（うっかり防止の水準）。
 - 自動クローズの idle 判定は `claude agents --json` の定期取得（`agentsPollMs`）の標本で数える。取得が続けて失敗すると閉じない。
 - 標本の間が gapLimitMs（既定 60 秒）を超えたとき（Mac のスリープなど）も、取得失敗と同じく 0 から数え直す（v0.35.0）。
 

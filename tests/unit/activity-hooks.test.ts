@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GUARD_IFS, HOOK_SPECS, checkHooks, installHooks, isOwnHandler, uninstallHooks } from "../../server/activity-hooks.ts";
+import { GUARD_IFS, HOOK_SPECS, SERVER_KILL_GUARD_IFS, checkHooks, installHooks, isOwnHandler, uninstallHooks } from "../../server/activity-hooks.ts";
 
 vi.setConfig({ testTimeout: 60000 });
 
@@ -18,15 +18,21 @@ const V0_11_EVENTS = EVENTS.slice(0, 8);
 const ACTIVITY_HANDLER_COUNT = EVENTS.length;
 /** guard の規則（handler）の数。v0.34.0 で 1 から 6 に増えた */
 const GUARD_COUNT = GUARD_IFS.length;
-/** 自分の handler の総数（記録用 10 ＋ ac-routine-guard 6 ＋ board-guard 1 ＝ 17） */
-const OWN_HANDLER_COUNT = EVENTS.length + GUARD_COUNT + 1;
+/** server-kill-guard の規則（handler）の数（v0.41.0 で 2） */
+const SK_COUNT = SERVER_KILL_GUARD_IFS.length;
+/** 自分の handler の総数（記録用 10 ＋ ac-routine-guard 6 ＋ server-kill-guard 2 ＋ board-guard 1 ＝ 19） */
+const OWN_HANDLER_COUNT = EVENTS.length + GUARD_COUNT + SK_COUNT + 1;
 /** check が欠けとして返す guard の名前（規則ごと） */
-const GUARD_MISSING = GUARD_IFS.map((rule) => `PreToolUse(ac-routine-guard.mjs ${rule})`);
+const GUARD_MISSING = [...GUARD_IFS.map((rule) => `PreToolUse(ac-routine-guard.mjs ${rule})`), ...SERVER_KILL_GUARD_IFS.map((rule) => `PreToolUse(server-kill-guard.mjs ${rule})`)];
 const BOARD_GUARD_MISSING = "Stop(board-guard.mjs)";
 /** guard 1 規則分の handler（install が書く形） */
 const guardHandler = (e: Env, rule: string): object => ({ type: "command", command: e.nodePath, args: [path.join(path.dirname(e.hookPath), "ac-routine-guard.mjs")], timeout: 5, if: rule });
 /** install 後の PreToolUse: 記録用の group 1 つ＋ guard の group が規則ごとに 1 つ */
-const guardGroups = (e: Env): object[] => GUARD_IFS.map((rule) => ({ matcher: rule.startsWith("Read(") ? "Read" : "Bash", hooks: [guardHandler(e, rule)] }));
+const skGuardHandler = (e: Env, rule: string): object => ({ type: "command", command: e.nodePath, args: [path.join(path.dirname(e.hookPath), "server-kill-guard.mjs")], timeout: 5, if: rule });
+const guardGroups = (e: Env): object[] => [
+  ...GUARD_IFS.map((rule) => ({ matcher: rule.startsWith("Read(") ? "Read" : "Bash", hooks: [guardHandler(e, rule)] })),
+  ...SERVER_KILL_GUARD_IFS.map((rule) => ({ matcher: "Bash", hooks: [skGuardHandler(e, rule)] })),
+];
 
 const NEW_MATCHER = "Agent|Write|Edit|MultiEdit|NotebookEdit";
 
@@ -57,6 +63,7 @@ function makeEnv(place = true): Env {
     mkdirSync(path.dirname(hookPath), { recursive: true });
     writeFileSync(hookPath, "// hook\n");
     writeFileSync(path.join(path.dirname(hookPath), "ac-routine-guard.mjs"), "// guard\n");
+    writeFileSync(path.join(path.dirname(hookPath), "server-kill-guard.mjs"), "// server-kill-guard\n");
     writeFileSync(path.join(path.dirname(hookPath), "board-guard.mjs"), "// board-guard\n");
   }
   return { home, settings: path.join(home, ".claude", "settings.json"), dataDir, hookPath, nodePath: process.execPath };
@@ -83,7 +90,7 @@ const PO_SETTINGS = {
 };
 
 describe("K6: 設定の定義", () => {
-  it("17 本の handler（10 のイベント＋ ac-routine-guard 6 規則＋ board-guard）と matcher は設計のとおり（v0.11.0 で Stop と StopFailure、v0.12.0 で SubagentStart、v0.25.0 で guard、v0.32.0 で board-guard を足し、v0.34.0 で guard を 6 規則に分け、v0.36.0 で PermissionDenied を足した）", () => {
+  it("19 本の handler（10 のイベント＋ ac-routine-guard 6 規則＋ server-kill-guard 2 規則＋ board-guard）と matcher は設計のとおり（v0.11.0 で Stop と StopFailure、v0.12.0 で SubagentStart、v0.25.0 で guard、v0.32.0 で board-guard を足し、v0.34.0 で guard を 6 規則に分け、v0.36.0 で PermissionDenied を足し、v0.41.0 で server-kill-guard を 2 規則足した）", () => {
     expect(HOOK_SPECS).toEqual([
       { event: "PreToolUse", matcher: "Agent|SubagentHandback" },
       { event: "PostToolUse", matcher: "Agent|Write|Edit|MultiEdit|NotebookEdit" },
@@ -96,8 +103,10 @@ describe("K6: 設定の定義", () => {
       { event: "SubagentStart" },
       { event: "PermissionDenied", matcher: "Agent" },
       ...GUARD_IFS.map((rule) => ({ event: "PreToolUse", matcher: rule.startsWith("Read(") ? "Read" : "Bash", file: "ac-routine-guard.mjs", async: false, timeout: 5, if: rule })),
+      ...SERVER_KILL_GUARD_IFS.map((rule) => ({ event: "PreToolUse", matcher: "Bash", file: "server-kill-guard.mjs", async: false, timeout: 5, if: rule })),
       { event: "Stop", file: "board-guard.mjs", async: false, timeout: 15 },
     ]);
+    expect(SERVER_KILL_GUARD_IFS).toEqual(["Bash(*kill*)", "Bash(*launchctl*)"]);
     // 規則の中身は設計 §3-2 のとおり（Bash 5 本＋ Read 1 本。Grep・Glob は第0段 U5 で `if` が効かないため対象外）
     expect(GUARD_IFS).toEqual([
       "Bash(*/bin/ac-routine.mjs*)",
@@ -293,7 +302,7 @@ describe("K6: uninstall", () => {
 });
 
 describe("K6 / K8: check", () => {
-  it("handler が 17 本そろい、node と hook のファイルがあれば ok", () => {
+  it("handler が 19 本そろい、node と hook のファイルがあれば ok", () => {
     const e = makeEnv();
     installHooks({ settingsPath: e.settings, nodePath: e.nodePath, hookPath: e.hookPath });
     expect(checkHooks({ settingsPath: e.settings, hookPath: e.hookPath })).toEqual({ ok: true });

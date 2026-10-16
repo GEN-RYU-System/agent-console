@@ -24,6 +24,16 @@ export function installGuardFile(sourceDir: string, dataDir: string): string {
   return copyAtomically(sourceDir, GUARD_FILE_NAME, guardPathIn(dataDir));
 }
 
+export const SERVER_KILL_GUARD_FILE_NAME = "server-kill-guard.mjs";
+
+/** dataDir/hooks/server-kill-guard.mjs（本番サーバーを名前で止める命令を拒否する同期 hook。設定に書くパス） */
+export const serverKillGuardPathIn = (dataDir: string): string => path.join(dataDir, "hooks", SERVER_KILL_GUARD_FILE_NAME);
+
+/** リポジトリの hooks/server-kill-guard.mjs（正本）を dataDir/hooks/ へ写す */
+export function installServerKillGuardFile(sourceDir: string, dataDir: string): string {
+  return copyAtomically(sourceDir, SERVER_KILL_GUARD_FILE_NAME, serverKillGuardPathIn(dataDir));
+}
+
 export const BOARD_GUARD_FILE_NAME = "board-guard.mjs";
 
 /** dataDir/hooks/board-guard.mjs（作戦ボードの書き忘れを応答終了で 1 回だけ止める同期 hook。設定に書くパス） */

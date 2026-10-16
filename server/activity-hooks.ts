@@ -17,12 +17,16 @@ export const GUARD_IFS: readonly string[] = [
   "Bash(*localhost*)",
   "Read(*Application Support/agent-console*)",
 ];
+/** 本番サーバーを名前で止める命令の拒否 hook（同期）の本体のファイル名（設計 server-kill-guard §3-2） */
+export const SERVER_KILL_GUARD_HOOK_FILE = "server-kill-guard.mjs";
+/** server-kill-guard の handler の `if`（規則ごとに 1 本。kill 系・launchctl を含む Bash だけ起動する） */
+export const SERVER_KILL_GUARD_IFS: readonly string[] = ["Bash(*kill*)", "Bash(*launchctl*)"];
 /** 作戦ボードの書き忘れ防止 hook（Stop・同期）の本体のファイル名 */
 export const BOARD_GUARD_HOOK_FILE = "board-guard.mjs";
 /** 自分の handler の目印: args[0] がこの文字列で終わる（記録用 hook） */
 export const OWN_HOOK_SUFFIX = `/hooks/${ACTIVITY_HOOK_FILE}`;
-/** 自分の handler の目印（記録用 hook・ac-routine の guard・board-guard の 3 種） */
-export const OWN_HOOK_SUFFIXES: readonly string[] = [OWN_HOOK_SUFFIX, `/hooks/${GUARD_HOOK_FILE}`, `/hooks/${BOARD_GUARD_HOOK_FILE}`];
+/** 自分の handler の目印（記録用 hook・ac-routine の guard・board-guard・server-kill-guard の 4 種） */
+export const OWN_HOOK_SUFFIXES: readonly string[] = [OWN_HOOK_SUFFIX, `/hooks/${GUARD_HOOK_FILE}`, `/hooks/${BOARD_GUARD_HOOK_FILE}`, `/hooks/${SERVER_KILL_GUARD_HOOK_FILE}`];
 export const BACKUP_PREFIX = "settings.json.ac-backup-";
 const BACKUP_NAME = /^settings\.json\.ac-backup-\d{8}T\d{9}Z$/;
 export const BACKUPS_KEPT = 6;
@@ -42,7 +46,7 @@ export interface HookSpec {
 }
 
 /**
- * 記録する 10 のイベント（＋ ac-routine の guard 6 本・board-guard 1 本、計 17 本の handler）。Notification は使わない（状態は claude agents --json が正本）。
+ * 記録する 10 のイベント（＋ ac-routine の guard 6 本・board-guard 1 本・server-kill-guard 2 本、計 19 本の handler）。Notification は使わない（状態は claude agents --json が正本）。
  * Stop（返事）と StopFailure（API エラー）はチャット画面の会話の記録のため（v0.11.0）。状態の判定には使わない。
  * SubagentStart は担当の呼び出しと再開の印（v0.12.0 作戦ボード）。再開した担当を「動いている担当」に戻すために使う。
  */
@@ -61,6 +65,8 @@ export const HOOK_SPECS: readonly HookSpec[] = [
   // ac-routine と、その合言葉・宛先を、サブエージェントから触らせない同期の guard（v0.25.0。v0.30.0 で 6 本に増やした。設計 ac-hardening §3-2）。async を付けると拒否できない。
   // `if` は 1 つの規則しか書けない（recon B7）ので、規則ごとに handler を分ける。第0段 U5: `if` は Bash と Read で効き、Grep と Glob では効かない（Grep・Glob は対象外）。
   ...GUARD_IFS.map((rule): HookSpec => ({ event: "PreToolUse", matcher: rule.startsWith("Read(") ? "Read" : "Bash", file: GUARD_HOOK_FILE, async: false, timeout: 5, if: rule })),
+  // 本番サーバーを名前で止める命令を、担当・本体とも拒否する同期の guard。async を付けると拒否できない。
+  ...SERVER_KILL_GUARD_IFS.map((rule): HookSpec => ({ event: "PreToolUse", matcher: "Bash", file: SERVER_KILL_GUARD_HOOK_FILE, async: false, timeout: 5, if: rule })),
   // 作戦ボードが無いまま作業を進めているセッションを、応答終了で 1 回だけ止める同期の guard（board-guard 設計 §13 決め1）。async を付けると止められない。timeout 15 は transcript を全部読む場合の最大実測 3.7 秒の 3 倍以上。
   { event: "Stop", file: BOARD_GUARD_HOOK_FILE, async: false, timeout: 15 },
 ];
