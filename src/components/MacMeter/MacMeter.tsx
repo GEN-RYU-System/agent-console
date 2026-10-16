@@ -50,7 +50,7 @@ function MeterRow({ id, value }: { id: MeterKey; value: number | null }) {
   );
 }
 
-/** 下の帯の右端に出す、この Mac の CPU・RAM・Disk の 3 本のバー。/api/memory（サーバーが 5 秒ごとに測った値）を 10 秒ごとに取り直す */
+/** 下の帯の右端に出す、この Mac の CPU・RAM・Disk の 3 本のバー。/api/memory（サーバーが 2 秒ごとに測った値）を 2 秒ごとに取り直す */
 export function MacMeter() {
   const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState<MemorySnapshot | null>(null);

@@ -108,12 +108,12 @@ describe("pc-meter: MemoryCollector の定期計測", () => {
 });
 
 describe("pc-meter: metricsPollMs", () => {
-  it("defaults to 5000, can be set, and refuses non-positive values; the shipped config carries 5000", () => {
+  it("defaults to 2000, can be set, and refuses non-positive values; the shipped config carries 2000", () => {
     const shipped = JSON.parse(readFileSync("agent-console.config.json", "utf8"));
-    expect(DEFAULT_METRICS_POLL_MS).toBe(5000);
-    expect(parseConfig(shipped).metricsPollMs).toBe(5000);
-    expect(parseConfig({ ...shipped, metricsPollMs: 2000 }).metricsPollMs).toBe(2000);
-    expect(parseConfig({ ...shipped, metricsPollMs: undefined }).metricsPollMs).toBe(5000);
+    expect(DEFAULT_METRICS_POLL_MS).toBe(2000);
+    expect(parseConfig(shipped).metricsPollMs).toBe(2000);
+    expect(parseConfig({ ...shipped, metricsPollMs: 3000 }).metricsPollMs).toBe(3000);
+    expect(parseConfig({ ...shipped, metricsPollMs: undefined }).metricsPollMs).toBe(2000);
     for (const bad of [0, -1, "1", null]) expect(() => parseConfig({ ...shipped, metricsPollMs: bad })).toThrow(/metricsPollMs/);
   });
 });

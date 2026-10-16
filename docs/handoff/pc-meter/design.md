@@ -14,7 +14,7 @@
 | メモリの詳細画面（MemoryPanel） | 変更なし（ボタンは v0.37.0 で非表示、部品と API は残置） | 変更なし |
 
 ## 3. 事実（根拠）
-- 既存計測: server/memory.ts MemoryCollector（ps 表＋sysctl＋memory_pressure、5秒キャッシュ、:81-127）。セッション RAM は pty pid の子孫 RSS 合計（:58-64、process-tree.ts:31-55）。/api/memory 応答型 src/types.ts:137。（/tmp/CC報告ファイル/pc-meter/report.md §5）
+- 既存計測: server/memory.ts MemoryCollector（ps 表＋sysctl＋memory_pressure、2秒キャッシュ、:81-127）。セッション RAM は pty pid の子孫 RSS 合計（:58-64、process-tree.ts:31-55）。/api/memory 応答型 src/types.ts:137。（/tmp/CC報告ファイル/pc-meter/report.md §5）
 - readProcessTable は sessions.ts:525（終了時の子孫確認）でも使う。（report.md §5）
 - Claude の session_id: Session.claudeSessionId（server/sessions.ts:71）。hub.ts:570-573 が claude agents --json の pid を pty 子孫と照合して入れる。statusline 入力の session_id と一致するかは未確認 → K5 で実測。（r2/report2.md §2）
 - 定期処理の型: hub.ts:145 `startPolling(fn, config.agentsPollMs, onError)`（server/poll.ts）。
@@ -36,7 +36,7 @@
   - Disk: `statfs("/System/Volumes/Data")` → `(blocks−bavail)/blocks×100`。失敗時 null。
   - SessionMemory に `cpuPercent`（子孫 %cpu 合計 ÷ os.availableParallelism()、Mac 全体を100とした割合）と `ramPercent`（rssMb ÷ totalMb ×100、totalMb 不明なら null）を追加。
   - 小数1桁に丸め。既存フィールドは変えない（MemoryPanel・既存試験はそのまま通る）。
-- 定期計測: hub か index で `startPolling(() => collector.collect(liveSessions) → writeSessionMetrics, config.metricsPollMs)`。既定 5000ms（config に追加、既存 agentsPollMs と同じ型）。CPU の差分の窓はこの5秒。
+- 定期計測: hub か index で `startPolling(() => collector.collect(liveSessions) → writeSessionMetrics, config.metricsPollMs)`。既定 2000ms（config に追加、既存 agentsPollMs と同じ型）。CPU の差分の窓はこの2秒。
 - /api/memory はキャッシュ済みの結果を返す（新 API は作らない）。
 
 ### 4.2 セッション行への受け渡し
@@ -48,7 +48,7 @@
 
 ### 4.3 下の帯の表示
 - 新部品 src/components/MacMeter/（MacMeter.tsx・.css・.test.tsx）。行は CPU / RAM / Disk。各行: ラベル・ProgressBar・`N%`。100%以上は UsageMeter と同じく Badge（usageLevel を流用）。null のときは「計測中」。
-- データは /api/memory（既存 fetchMemory、src/api.ts:160）を MEMORY_REFRESH_MS（10000ms、MemoryPanel.tsx:10）で取得。新しい取得関数は作らない。
+- データは /api/memory（既存 fetchMemory、src/api.ts:160）を MEMORY_REFRESH_MS（2000ms、MemoryPanel.tsx:10）で取得。新しい取得関数は作らない。
 - 配置: footer の右端の列に、上から MacMeter → meta（🌙・展開元・版・コミット）。幅は v0.37.0 の `--ac-provider-w`（320px）を流用。新しい px 直値は書かない（check-design-governance）。
 - i18n: ac.macMeter.title / cpu / ram / disk / percent / measuring / error を ja・en 同時に追加。
 - 「Codex・Grok 用の空き」は中央に残す（v0.37.0 と同じ）。
@@ -65,10 +65,10 @@
 ## 7. リスクと対処
 | リスク | 対処 |
 |---|---|
-| 5秒ごとの ps・memory_pressure の負荷 | 実測の所要（report.md §4: 0.00〜0.18秒）。K9 で計測の所要を記録、中央値 0.3秒超なら止める |
+| 2秒ごとの ps・memory_pressure の負荷 | 実測の所要（report.md §4: 0.00〜0.18秒）。K9 で計測の所要を記録、中央値 0.3秒超なら止める |
 | statusline の session_id と claudeSessionId が一致しない | K5 で実値を突き合わせ。不一致なら CPU/RAM を出さず止めて PO へ |
 | 下の帯の高さが 200px を超える | K6 で実測。超えたら止める |
-| セッション CPU（なめらかな値）と Mac CPU（5秒差分）の時間幅の違い | 説明文に明記（ツールチップは作らない）。数値の比較は K4 の許容幅で判定 |
+| セッション CPU（なめらかな値）と Mac CPU（2秒差分）の時間幅の違い | 説明文に明記（ツールチップは作らない）。数値の比較は K4 の許容幅で判定 |
 | refreshInterval でセッション数×6回/分の statusline 実行 | 1回の所要を K9 で記録 |
 
 ## 8. 受入条件
