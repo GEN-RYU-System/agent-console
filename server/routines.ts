@@ -13,7 +13,7 @@ const READ_VERSIONS: readonly number[] = [1, 2];
 const TIME_ZONE = "Asia/Tokyo";
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MAX_EVENTS = 100;
-/** AI（ac-routine）が作った定期実行のうち、同時に有効にできる件数（予約の AI 分10件に揃える） */
+/** AI（ac-routine）が作った定期実行のうち、同時に有効にできる件数（AI が作った定期実行の分。予約の AI 分は v0.43.0 で20件にしたが、定期実行は10件のまま） */
 export const AGENT_ENABLED_LIMIT = 10;
 /** 理由（reason）の最大字数。予約の measureNote と同じ規則（reservations.ts は触らないので値だけ同じ定数を持つ） */
 export const MAX_REASON = 200;

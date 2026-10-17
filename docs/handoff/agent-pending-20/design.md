@@ -10,6 +10,7 @@
 ## 変更
 - server/reservations.ts:23 MAX_AGENT_PENDING 10→20。試験 R11c を20基準に。README・reservations/design.md:96・CHANGELOG・版 0.43.0。
 - 変えない: 全体の pending 50件、終了済み200件、定期実行の AI 有効10件、purpose measure 必須、maxSessions。
+- server/routines.ts:16 のコメントだけ実態に合わせて直す（値10は変えない。審査 L1）。
 
 ## 代替案
 - 10件のまま枠が空くのを待つ: 測定が週単位で重なるたびに止まるため不採用。
