@@ -2,6 +2,7 @@
 
 版を出すたびに 1 行追記する（版の正本は git タグ `vX.Y.Z`）。
 
+- 0.42.3 claude agents の一覧取得を 3秒→10秒ごとにした（`agentsPollMs` 3000→10000）: 1回 CPU 約0.39秒・最大メモリ約150MB の起動を減らし、8GB Mac のメモリ不足を和らげる。状態表示の反映は最大約10秒遅れる。自動クローズの `gapLimitMs` は 60秒のまま。戻し方は `agentsPollMs` を 3000 に戻す。
 - 0.42.2 下の帯「この Mac」メーター（CPU・RAM・Disk）の更新を 2 秒ごとにした: サーバーの計測（`metricsPollMs`、設定・既定とも 5000→2000）、画面の取り直し（`MEMORY_REFRESH_MS` 10000→2000。MemoryPanel にも効く）、`/api/memory` のキャッシュ（`CACHE_TTL_MS` 5000→2000）。計測方法・他の間隔・見た目は変えていない。
 - 0.42.1 server-kill-guard の誤拒否の修正: 引用ヒアドキュメントの本文・単一引用符の中・二重引用符の中の `;` `|` `&&` 改行は命令の区切りにしない（文書に例文を書く命令を通す）。本物の止める命令は 0.42.0 と同じく拒否する。hook の登録は変わらないので install の再実行は不要。戻し方は `bash scripts/ac-update.sh v0.42.0`。（設計 docs/handoff/server-kill-guard-quotes/design.md）
 - 0.42.0 本番の agent-console サーバーを名前やポートで止める命令を拒否する guard hook（`hooks/server-kill-guard.mjs`、同期）を足した: `pkill`・`killall` が `dist-server`・`server/index.js`・`agent-console`・単独の `node` を含む形、kill 系と一緒の `pgrep` の保護語・`lsof` の `:4319`、`launchctl kill|stop|bootout|remove|disable` の `local.agent-console.server` を拒否する（担当も Opus 本体も対象）。試験サーバーを番号で止める `lsof -ti tcp:4329 | xargs kill`、`launchctl kickstart`・`print`、`tmux ... kill-session` は通る。hook は 19 本になる。**更新後に `node scripts/ac-hooks.mjs install` の再実行が要る**（実行するまで拒否は効かない）。戻し方は `bash scripts/ac-update.sh v0.40.0`（その後 install を再実行）。（設計 docs/handoff/server-kill-guard/design.md）

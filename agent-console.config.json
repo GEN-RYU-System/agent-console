@@ -5,7 +5,7 @@
   "ledgerLookupScript": "scripts/ledger-lookup.sh",
   "ledgerDir": ".claude-pipeline/active-work.d",
   "claudeBin": "claude",
-  "agentsPollMs": 3000,
+  "agentsPollMs": 10000,
   "ledgerPollMs": 60000,
   "ringBufferBytes": 1048576,
   "notify": { "macos": true },
