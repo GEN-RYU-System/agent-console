@@ -26,7 +26,7 @@ node "<dataDir>/bin/ac-reserve.mjs" cancel <id>
 ```
 
 - reservation.json の形: `name`（1〜40字）、`roleId`、`cwd`（本店で動く役割なら省ける。省くと本店になる）、`branch`（worktree 役のとき）、`date`（YYYY-MM-DD）、`time`（HH:mm、日本時間）、`promptText`（8192字以下）、`purpose`（必ず `"measure"`）、`measureNote`（何を測るか、1〜200字）。
-- 予定は1分後から366日後まで。待機中の予約は全体で50件、AI の分は10件まで。
+- 予定は1分後から366日後まで。待機中の予約は全体で50件、AI の分は20件まで。
 - 宛先は `dataDir/reserve-token`（`{port, token}`、サーバーが本番のポートで起動したときだけ作る）。失敗は終了コード1と理由を標準エラーに出す。
 
 ### ac-routine の使い方（AI が Bash で打つ。Opus 限定）

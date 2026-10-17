@@ -308,7 +308,7 @@ describe("agent reservation HTTP route", () => {
     expect((await agent("GET", "/api/reservations")).status).toBe(401);
   });
 
-  it("R11c the agent route needs purpose and measureNote, caps pending at 10, and the UI route needs neither", async () => {
+  it("R11c the agent route needs purpose and measureNote, caps pending at 20, and the UI route needs neither", async () => {
     expect((await agent("POST", "/api/agent/reservations", body({ purpose: undefined }))).status).toBe(400);
     expect((await agent("POST", "/api/agent/reservations", body({ purpose: "other" }))).status).toBe(400);
     expect((await agent("POST", "/api/agent/reservations", body({ measureNote: undefined }))).status).toBe(400);
@@ -316,7 +316,7 @@ describe("agent reservation HTTP route", () => {
     expect((await agent("POST", "/api/agent/reservations", body({ measureNote: "x".repeat(201) }))).status).toBe(400);
     expect((await agent("POST", "/api/agent/reservations", body({ measureNote: "x".repeat(200) }))).status).toBe(201);
     const pendingAgent = () => h.reservations.list().filter((r) => r.createdBy === "agent" && r.status === "pending").length;
-    while (pendingAgent() < 10) expect((await agent("POST", "/api/agent/reservations", body())).status).toBe(201);
+    while (pendingAgent() < 20) expect((await agent("POST", "/api/agent/reservations", body())).status).toBe(201);
     expect((await agent("POST", "/api/agent/reservations", body())).status).toBe(400);
     const plain = await ui("POST", "/api/reservations", body({ purpose: undefined, measureNote: undefined }));
     expect(plain.status).toBe(201);
@@ -325,7 +325,7 @@ describe("agent reservation HTTP route", () => {
     expect(ignored.status).toBe(201);
     expect(ignored.json.purpose).toBeUndefined();
     expect(ignored.json.measureNote).toBeUndefined();
-  });
+  }, 30_000);
 });
 
 describe("reserve-token file", () => {

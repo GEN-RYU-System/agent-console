@@ -93,7 +93,7 @@ interface Reservation {
 - PO 原文:「予約するのは今回のように実地で回してPDCAの成果を測る目的のみとする」。
 - AI 用経路の登録入力には `purpose: "measure"` と `measureNote`（何を測るか、1〜200字、制御文字不可）が必須。purpose が "measure" 以外・欠落は 400。画面からの登録は purpose を持たない（人の予約は目的を制限しない。画面経路に purpose・measureNote が送られても無視して保存しない）。
 - 保存形に `purpose?: "measure"; measureNote?: string` を足す（AI の予約だけが持つ）。
-- AI の予約で pending のものは同時に 10 件まで（全体の 50 件の内数）。11 件目は 400。
+- AI の予約で pending のものは同時に 20 件まで（全体の 50 件の内数）。21 件目は 400（v0.43.0 で 10→20。PO 2026-10-18 y、docs/handoff/agent-pending-20/design.md）。
 - 承認待ちは設けない（AI の予約も時刻どおり送る）。予約タブでは「AI・測定」と measureNote を表示し、いつでも取り消せる。
 - README の ac-reserve の節に「使ってよいのは、変更の効果を実地で測る予約だけ（PO 決定 2026-10-14）」と書く。
 
