@@ -219,4 +219,5 @@ S の ADR 番号の最大は ADR-1036（次は 1037）。
 - 【未確認】Keychain の中の項目を囲いの中から読めるか（0-17 で探すことはできた。読めるなら §4-4 の弱さが広がる）。`~/.claude/projects/` を `filesystem.denyRead` に入れたときの本体への差し障り。gh の書き込み（PR の作成）。（localhost・3つの設定を足した状態での許可外への通信の拒否・git の worktree と commit は 0-18 で確かめた。下の事実）。
 - 【事実】0-17 の `gh auth status` で、囲いの中から3つの名義（shingo-cc・highlifejpn-debug・shingo-ops）がログイン済みと出た（t018/tools.txt）。
 - 【事実】0-18（2026-10-21 17:48:03、t019/tools.txt）: 許可外の7つの道はすべて拒否、localhost・127.0.0.1 は 200、使い捨てのリポジトリの `.git` と worktree を許可に入れると worktree の作成と commit が通った。許可外の worktree への書き込みは拒否。
+- 【事実】0-19（2026-10-21 18:07:02・18:08:10、t020/raw1.tools.txt・raw2.tools.txt・summary.txt）: allowWrite に入れた `.git` の中の `hooks`・`config` は denyWrite で書けなかった（`operation not permitted`・`could not write config file`）。commit は通った。`.git` を許可しないと commit は `index.lock` で拒否。UDP 送信は2つの設定とも `Operation not permitted`。dig は答えなしの時間切れ。
 - 【事実】逆参照の grep の結果: /tmp/CC報告ファイル/pr67-review/revgrep.txt（design §4-10）。
