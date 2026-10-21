@@ -603,4 +603,7 @@ PO 指示（2026-10-21）で外部サイトの調査は禁止のため、外部�
   - **通らなかった（作れない前提が出た）**: 127.0.0.1 の agent-console への接続（curl・node とも。許可の行き先に入れても不可）→ このままでは `ac-case`・既存の hooks が囲いの中から届かず、K7・K8 の測定の部分・K14・K15 が作れない。gh の認証（Keychain）と TLS の検証が囲いの中で失敗 → PR を作れない。
   - 通った: 作業場所・`filesystem.allowWrite` に入れた置き場（`~/worktrees/` 配下を含む）への書き込み。入れていない置き場は拒否。api.salesanchor.jp へ届いた。
   - 次: 本体の文字列にある `allowLocalBinding`・`allowMachLookup`・`allowUnixSockets`・`excludedCommands` で通せるかを試す【未確認】。通せない場合は、囲いの外の仕組み（サーバーが PR を作る、など）に設計を変えるかを PO に戻す。
-- 残る問い: §14-8（0-16 の結果のあと）、§14-6（段階6 のとき）。
+- 0-17 通す設定（2026-10-21 17:13:22、PO「1」。R§13）: `sandbox.network.allowLocalBinding: true`・`sandbox.network.allowMachLookup: ["com.apple.SecurityServer","com.apple.securityd*"]`・`sandbox.enableWeakerNetworkIsolation: true` を足すと、127.0.0.1 の受け口（curl・node とも 200）・gh のログインと `gh api`・`git ls-remote`・api.salesanchor.jp がすべて通った。書き込みの範囲と拒否は 0-16 と同じ。→ §4-5 の設定にこの3つを足し、`filesystem.allowWrite` に件の作業場所（`~/worktrees/` 配下）と生の出力の置き場を入れる。
+  - 代わりに広がること: 囲いの中から Keychain を探せる（`security` が「項目が無い」と答えた）。項目の中身を読めるかは【未確認】。§14-8 (a) に足して聞く。どの設定が何を通したかは分けて確かめていない【未確認】。
+  - PR を実際に作ること（gh の書き込み）は試していない。便2 の K17 の試験で確かめる【未確認】。
+- 残る問い: §14-8（0-17 の結果を足して聞く）、§14-6（段階6 のとき）。

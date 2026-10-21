@@ -210,4 +210,10 @@ S の ADR 番号の最大は ADR-1036（次は 1037）。
   - gh: `gh auth status` は3つのアカウントすべて「Failed to log in … (keyring)」。`gh api user` は `tls: failed to verify certificate: x509: OSStatus -26276`。
   - `git ls-remote https://github.com/shingo-ops/agent-console.git` は「Repository not found」。台本の置き場の名前の書き誤り（正しくは `GEN-RYU-System/agent-console`、PUBLIC。`gh repo view` で確認）。github.com から答えが返ったので通信は届いたが、git での読み書きが通るかは確かめられていない【未確認】。`https://api.salesanchor.jp/` は 404 が返った（届いた）。
   - 本体の文字列に `sandbox.network.allowLocalBinding`（「macOS only: If true, sandboxed commands can bind to localhost ports」）・`allowMachLookup`・`allowUnixSockets`・`excludedCommands` の名前がある（t017_names.txt）。これらで上の3つが通るかは【未確認】。
-- 【未確認】Keychain（`security`）がサンドボックスで塞がれるか。`~/.claude/projects/` を `filesystem.denyRead` に入れたときの本体への差し障り。gh の書き込み・保守の API に要る行き先。
+- 【事実】0-17 通す設定の試験（2026-10-21 17:13:22、台本 t018.sh、生の記録 t018/raw.jsonl、抜き出し t018/tools.txt・summary.txt、設定の名前と置き場所 t018_names.txt・t018_ctx.txt。`dontAsk`、`apiKeySource: none`、費用の見積もり 0.10 ドル）: 0-16 の設定に、`sandbox.network.allowLocalBinding: true`・`sandbox.network.allowMachLookup: ["com.apple.SecurityServer","com.apple.securityd*"]`・`sandbox.enableWeakerNetworkIsolation: true`（本体の説明は「Allow access to com.apple.trustd.agent … Needed for Go-based CLI tools (gh, gcloud, terraform, etc.) to verify TLS」）を足した。
+  - 127.0.0.1 の試験用の受け口へ curl・node とも 200。受け口の記録に要求2件。
+  - `gh auth status` は3つのアカウントとも「Logged in … (keyring)」。`gh api user` はログイン名を返した。`git ls-remote`（GEN-RYU-System/agent-console）は HEAD を返した。api.salesanchor.jp は 404（届いた）。
+  - `security find-generic-password`（無い項目の名前）は「could not be found in the keychain」＝囲いの中から Keychain を探せる。
+  - 書き込みの結果は 0-16 と同じ（許可した置き場は可、ホーム直下は拒否）。
+  - 3つの設定を同時に足したので、どの設定がどれを通したかは分けて確かめていない【未確認】。
+- 【未確認】Keychain の中の項目を囲いの中から読めるか（0-17 で探すことはできた。読めるなら §4-4 の弱さが広がる）。`~/.claude/projects/` を `filesystem.denyRead` に入れたときの本体への差し障り。gh の書き込み・保守の API に要る行き先。
