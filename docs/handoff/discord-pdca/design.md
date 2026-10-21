@@ -206,7 +206,7 @@
   - `note` で書けるのは `root_cause`（2000字まで）・`fix_pr`（整数）・`needs_action`（真偽）の3つだけ。ほかの名前が来たら 422（M-F）。保守 API の側は KGI 5 を守る欄（`ai_started_at`・`detection_path`・`first_aid_*`）を拒む（§4-9）。
 - **名乗りと合言葉の弱さ**（H-3・H-B）:
   - 照合は `checkRoutineCaller`（A:server/http.ts:402-408）と同じく、フックが送るセッションの id を信じる形で、本人の確かめではない。会話の id は `~/.claude/projects/` のファイル名から読める（第4版の審査の実測）。
-  - agent-console と Discord 発のセッションは、同じ Mac の同じ利用者として動く。そのため、`node -e` や `python -c` のような子プロセスを使えば、case-token・reserve-token・`~/.claude-access.env`・`~/.claude/channels/` 配下の `.env` を読むことを、起動の引数の道具の拒否では塞げない（`--settings` の permissions の拒否は道具の型にしか効かない。サンドボックスの読み取りの拒否が子プロセスにも効くかは 0-15 で確かめる【未確認】）。K11・K13 は「道具の型で読めない」までを保証し、この道は ADR-1037 に弱い点として書く。
+  - agent-console と Discord 発のセッションは、同じ Mac の同じ利用者として動く。そのため、`node -e` や `python -c` のような子プロセスを使えば、case-token・reserve-token・`~/.claude-access.env`・`~/.claude/channels/` 配下の `.env` を読むことを、起動の引数の道具の拒否では塞げない（`--settings` の permissions の拒否は道具の型にしか効かない）。ただし、サンドボックスの `filesystem.denyRead` に入れた置き場は子プロセスでも読めないと 0-15 で確かめた（§4-5）。一覧に入れていない置き場と、`ac-case` のために一覧から外す case-token は読める。K11・K13 は「道具の型で読めない」までを保証し、この道は ADR-1037 に弱い点として書く。
   - 被害を小さくする作り:
     - 不具合の枠は1つで、kept でも空けない（§4-2）。測定が開いているとき、不具合の種類のほかのセッションは生きていない（K14）。
     - case-token でできることは、今の件・今の回の操作だけ（上の照合）。
@@ -246,7 +246,7 @@
   - `--disallowedTools` で WebFetch・WebSearch を外せるか。
   - `Bash(curl *)`・`Bash(wget *)`・`Bash(security *)`・`Bash(gh pr merge *)` の形で拒めるか。auto の許可モードでも効くか。
   - 本体のセッションが呼ぶ Sonnet の担当（サブエージェント）にも同じ制限が効くか（U8）。
-  - 次の置き場への Read と Bash の `cat` を `--settings` の拒否で塞げるか（道具の型の拒否まで。子プロセスでの読み取りは塞げない前提。§4-4）: agent-console の dataDir（reserve-token を含む。case-token は `ac-case` が読むので拒否の対象から外す）、`~/.claude-access.env`（保守 API の鍵の平文。R§11）、`~/.claude/channels/` 配下の `.env`（ADR-1009 のトークンの平文。R§6）（H-4）。
+  - 次の置き場への Read と Bash の `cat` を `--settings` の拒否で塞げるか（道具の型の拒否まで。子プロセスでの読み取りは塞げない前提。§4-4）: agent-console の dataDir（reserve-token を含む。case-token は `ac-case` が読むので拒否の対象から外す）、`~/.claude-access.env`（保守 API の鍵の平文。R§11）、`~/.claude/channels/` 配下の `.env`（ADR-1009 のトークンの平文。R§6）（H-4）。→ 0-15 で、Read は `Read(//<絶対パス>/**)` の書き方で、Bash の子プロセスはサンドボックスの `filesystem.denyRead` で塞げると確かめた（下の「読み取りの拒否の書き方」）。
   - ac-reserve・ac-routine を拒めるか（役割の照合でも塞ぐ。下記）。
 - サーバー側で塞ぐもの:
   - ac-reserve（AI の予約）は、**許可する役割の一覧**に入っている呼び出し元だけを通す。呼び出し元の名乗りが無いときは拒む（H-3）。今は役割を見ていない（A:server/http.ts:364-371）。一覧は、今 ac-reserve を使っている役割を第0段 0-11 で数えてから決める（今動いている予約を壊さないため）。
@@ -262,7 +262,7 @@
   - 許可の行き先は、セッションの仕事に要るものだけ: Claude の本体の通信・`gh`（GitHub）・保守 API（`api.salesanchor.jp`）。Discord の Webhook はサーバーが送るので、セッションには許可しない。正確な一覧は第0段 0-15 で決める【未確認】。
   - 試験の実測（2026-10-21 15:21:59、使い捨てのフォルダ・Sonnet 1回・PO「1」。設定は上と違い `autoAllowBashIfSandboxed: true` と `--allowedTools Bash` を足したもの。記録は Sonnet がコマンドの出力を書き写した最終の応答で、道具の生の返り値ではない）: 許可を `api.github.com` だけにして、`curl https://example.com` は「CONNECT tunnel failed, response 403」、`python3` の urllib も同じく拒否（`deny network-outbound example.com:443 (host is not on the allow list)`）。`curl https://api.github.com` は 200。生出力はリポジトリ外の試験記録。
   - 試していないこと【未確認】: 代理（プロキシ）を通らない生のソケット、名前の問い合わせ（DNS）に載せて送る道、`node -e` の fetch、サブエージェント（U8）、上の設計どおりの設定（試験と違う2点を除いたもの）。0-15 で試す（R§13）。それまでは「外へは許可した行き先にしか出せない」と言い切らない。
-  - サンドボックスの読み取りの拒否（`filesystem.denyRead`。手元の claude の本体の文字列に名前がある）が子プロセスの読み取りにも効くか【未確認】。効けば §4-4 の「子プロセスで秘密を読める」弱さを狭められるので、0-15 で試験用の置き場で試す。
+  - **読み取りの拒否の書き方**（0-15 の続きの実測。§14 の結果）: 秘密の置き場（agent-console の dataDir のうち reserve-token、`~/.claude-access.env`、`~/.claude/channels/` 配下の `.env`、会話の記録の置き場 `~/.claude/projects/`）は、2つの設定の両方に入れる。(1) Read の道具には `permissions.deny` の `Read(//<絶対パス>/**)`（先頭の斜線を2つ。斜線1つの書き方は効かなかった）。(2) Bash の子プロセス（`cat`・`python3` など）にはサンドボックスの `filesystem.denyRead` に絶対パス。case-token は `ac-case` が Bash の中で読むので、どちらにも入れない（§4-4 の case-token の弱さは残る）。会話の記録の置き場を塞いで本体の動きに差し障りが無いかと、Keychain（`security`）がサンドボックスで塞がれるかは【未確認】（便2 の K11・K13 の試験で確かめる）。
   - それでも残る弱さ（ADR-1009 より弱い点。ADR-1037 に書く。ADR-1009 は1つの常駐セッションで、PO が起動のたびに確認した。R§0）: 許可した行き先そのもの（GitHub・保守 API）へは書ける。§4-4 の子プロセスで読んだ秘密を、GitHub（たとえば `gh gist create`。手元のヘルプは「Create a new GitHub gist」。この通信が api.github.com を通るかは【未確認】）や、読んだ保守 API の鍵で保守 API へ出す道は、許可の一覧では塞げない。GitHub への書き込みは今の作業の道でもあるので塞がない。弱さの埋め方は「投稿者を PO だけに絞る」（§14-1）・K10 の試験・0-15 の読み取りの拒否の試験。
 - 起動コマンド: 新しい zsh 関数 `ccdiscordcase` / `ccdiscordmeasure` を `ccopusgo`（R§3）と同じ作りで足す。違いは3つ。
   - 足す指示書は `salesanchor-designer.md` と `salesanchor-ops-incident-agent.md` の2つ。`salesanchor-claude-go.md`（GO の委任）は**足さない**。
@@ -573,7 +573,7 @@ PO 指示（2026-10-21）で外部サイトの調査は禁止のため、外部�
 5. 件のセッションに PR のマージを任せるか。推奨は「最初は任せない」。ADR-1012 は、マージの権限を広げるかを月次成績表の実績を見て PO が決めるとしている（S:docs/adr/ADR-1012-ai-ops-247.md:46）ので、実績が出るまでは任せないのが ADR-1012 と合う。
 6. （段階6 の設計のときに聞く）月次成績表で、Discord 発の行（`labels.source='discord'`）を ADR-1012 の KGI 1〜6 でどう数えるか。
 7. 全停止を誤り報告の側にも効かせるか。効かせると、再開は super admin だけになる（ADR-1012 の resume）。推奨は「効かせる」。
-8. 同じ Mac の利用者のままでは、次の弱さが残る（§4-4・§4-5）。(a) 件のセッションが道具を回り道してファイルを読める（0-15 の読み取りの拒否で狭められるかを確かめる）。(b) 読んだ秘密を、許可した行き先（GitHub・保守 API）へは出せる（ほかの行き先への通信は 0-15 で塞げると確かめた分だけ塞ぐ）。(c) 誤り報告の種類のセッションや普通のセッションが名乗れる。(d) 本体が切り離して残したプロセスが測定を名乗って合格を付けられる（0-14 により見張りは作れない）。この残りを、知らせ（K16）と監査で見張る前提で受け入れるか。受け入れない場合は、別の macOS 利用者で動かす案H にする（作業が大きく増える）。推奨は「受け入れて、最初は PO だけが投稿する」。
+8. 同じ Mac の利用者のままでは、次の弱さが残る（§4-4・§4-5）。(a) 件のセッションが、拒否の一覧に入れていないファイルと case-token を読める（一覧に入れた秘密の置き場は、Read の道具でも子プロセスでも読めないと 0-15 で確かめた。一覧から漏れた置き場と Keychain は未確認）。(b) 読んだ秘密を、許可した行き先（GitHub・保守 API）へは出せる（ほかの行き先への通信は 0-15 で塞げると確かめた分だけ塞ぐ）。(c) 誤り報告の種類のセッションや普通のセッションが名乗れる。(d) 本体が切り離して残したプロセスが測定を名乗って合格を付けられる（0-14 により見張りは作れない）。この残りを、知らせ（K16）と監査で見張る前提で受け入れるか。受け入れない場合は、別の macOS 利用者で動かす案H にする（作業が大きく増える）。推奨は「受け入れて、最初は PO だけが投稿する」。
 9. 段階6 より前に、Discord 発の行を障害記録の表に入れ始めてよいか（KGI 6 の数え方にも関わる）。推奨は「入れる。`labels.source='discord'` で分ける」。
 
 - 聞く順番: 1 → 2 → 7 → 9 → 3 → 4 → 5 → 8（8 は 0-14 と 0-15 のあと）。4 は ボットのトークンの作り直しより前に聞く（便2 の前提）。6 は段階6 のとき。
@@ -596,4 +596,7 @@ PO 指示（2026-10-21）で外部サイトの調査は禁止のため、外部�
   - 外への通信: 許可外の example.com への curl（終了コード 56・`deny network-outbound`）・python urllib（同じ拒否の行）・node fetch（`ENOTFOUND`）・生のソケットで 1.1.1.1:443（`Operation not permitted`）・dig で 1.1.1.1 へ直接の DNS（`bind: Operation not permitted`）・getaddrinfo（`nodename nor servname provided`）・サブエージェントの curl（同じ拒否の行）は、すべて拒否。許可した api.github.com は 200。→ K17 の7つの道は作れる。
   - 読み取りの拒否: `permissions.deny` の `Read(<置き場の絶対パス>/**)` を付けても、**Read の道具で試験用の置き場を読めた**（中身が返った）。原因は確かめていない【未確認】。Bash の `cat`・`python3` は、サンドボックスより先に手元の自動の許可の判定（auto mode）で拒まれたため、`filesystem.denyRead` が効くかは確かめられなかった【未確認】。→ K11・K13 の読み取りの拒否は、書き方を確かめ直すまで作れる前提にしない。
   - 確かめていないこと: サンドボックスを動かせない状態で起動しないこと（failIfUnavailable）、保守 API と `gh` の書き込みに要る行き先。
-- 残る問い: §14-8（読み取りの拒否を確かめ直したあと）、§14-6（段階6 のとき）。
+- 0-15 の続き（2026-10-21 15:58:35、使い捨てのフォルダ・Sonnet 1回・サブスク（`apiKeySource: none`）・PO「1」。許可の形は `dontAsk` にして、自動の許可の判定を通さずに設定そのものの効き目を見た。R§13）:
+  - Read の道具: `Read(/tmp/…/**)`（斜線1つ）と `Read(/tmp/…/dummy.txt)`（斜線1つ・ファイル指定）は**読めた**。`Read(//tmp/…/**)`・`Read(//private/tmp/…/**)`・`Read(./…/**)`・日本語を含む `Read(//tmp/CC報告ファイル/…/**)` は拒否。→ 先頭の斜線を2つにする（§4-5）。
+  - Bash の子プロセス: サンドボックスの `filesystem.denyRead` に入れた置き場は、`/tmp/…` と `/private/tmp/…` のどちらの書き方でも、`cat`・`python3` が `Operation not permitted` で拒否。入れていない置き場は `cat` で読めた（比べるための置き場）。→ §4-4 の「子プロセスで秘密を読める」弱さは、一覧に入れた置き場については閉じられる。
+- 残る問い: §14-8（このあと聞く）、§14-6（段階6 のとき）。
