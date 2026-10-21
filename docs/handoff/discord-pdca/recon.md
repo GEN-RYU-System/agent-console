@@ -196,3 +196,9 @@ S の ADR 番号の最大は ADR-1036（次は 1037）。
 - A:server/routine-closer.ts:78 — 最後の返答が読めないときは `no-reply` で kept にする。
 - A:server/sessions.ts:506-507 — close が終わらせるのは端末とその子孫。
 - A:server/routine-audit.ts:11 — 監査記録の操作の種類 `RoutineAuditAction`。
+
+## 13. 外への通信を塞ぐ仕組みの実物（2026-10-21。生の出力: /tmp/CC報告ファイル/discord-pdca-egress/）
+
+- 【事実】手元の claude 2.1.306 の本体の文字列（bin_strings.txt・sbx_hits.txt・sbx_docs.txt）に、サンドボックスの設定の名前がある: `sandbox.enabled`・`failIfUnavailable`・`allowUnsandboxedCommands`・`autoAllowBashIfSandboxed`・`network.allowedDomains`・`network.strictAllowlist`・`filesystem.denyRead`。sbx_docs.txt:12 は「--settings file set allowUnsandboxedCommands: false, filesystem.denyRead, …」の扱いを述べる。ヘルプ（help.txt）にはサンドボックスの語が無い。
+- 【事実】試験（sbx-test/out.txt、2026-10-21 15:21:59、台本 sandbox-test.sh。設定は許可の行き先を `api.github.com` だけにし、`autoAllowBashIfSandboxed: true`・`--allowedTools Bash` を足したもの）: `curl https://example.com` は「CONNECT tunnel failed, response 403」、`python3` の urllib は `deny network-outbound example.com:443 (host is not on the allow list)`、`curl https://api.github.com` は 200。記録は Sonnet がコマンドの出力を書き写した最終の応答で、道具の生の返り値ではない。
+- 【未確認】生のソケット・DNS・`node -e`・サブエージェント・WebFetch と MCP への効き目・`filesystem.denyRead` が子プロセスに効くか・要る行き先の一覧（設計 0-15）。
