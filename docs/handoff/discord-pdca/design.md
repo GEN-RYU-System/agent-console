@@ -627,6 +627,7 @@ mode: handoff
    - 0-20 の結果（2026-10-21 20:48〜20:50。§14 の結果）: **使えなくできなかった**。囲いの中から `security find-generic-password -s gh:github.com -a shingo-ops -w` が3つの設定すべてで終了コード 0（PO の名義のトークンを Keychain から取り出せる。値は捨てた）。Keychain の問い合わせの許可（`allowMachLookup`）を外しても変わらなかった。gh の設定の置き場を分ける案は、試験の作りの誤り（専用の置き場の hosts.yml の形が足りず gh が起動しなかった）で判定できなかったが、Keychain から直接取り出せる以上、gh の設定では塞げない。→ PO に戻す（次の決めごと）。
    - **決まったこと（PO 2026-10-21「変えるなら2,まず3だけで動作確認と試験をしつつ穴を塞ぐ」。選択肢は 1: PO の名義の鍵を Mac から外す、2: 別の macOS 利用者（案H）、3: このまま受け入れ、最初は PO だけが投稿し知らせと監査で見張る）**: まずは 3 で進め、動作確認と試験を続けながら穴を塞ぐ。作りを変えるときは 2（案H）にする。PO の名義の鍵は Mac から外さない。
    - 塞ぐ手の候補（どれも効くかは確かめていない【未確認】。便2 の K17 か、その前の試験で1つずつ確かめる）: ①件のセッションの `permissions.deny` に `Bash(security *)`・`Bash(gh auth *)` を入れる（書き方の拒否なので、python などから Keychain を呼ぶ道は塞がない）。②`filesystem.denyRead` に `~/Library/Keychains` を入れる（Keychain の中身は囲いの外の仕組み（securityd）が読むので効かない見込みがあるが、試すまで決めない）。③件のセッションの中で `security`・`gh auth` が動いたら K16 の知らせを出す（見張り）。①〜③で塞げない分は案H に移るときに閉じる。
+   - 0-21 の結果（2026-10-21 20:56〜20:58。§14 の結果）: ①だけ（A）では **塞げない**（`security`・`gh auth token` の直接の命令は拒否されたが、python から `security` を呼ぶと終了コード 0 で取り出せた）。①＋②（B）では **python の道も塞がった**（終了コード 44＝項目が見つからない。`~/Library/Keychains` の一覧も拒否）。→ 件のセッションの設定は ①＋② を使う。まだ確かめていないこと【未確認】: ②を入れたまま shingo-cc の仕事（GH_TOKEN と正しい形の専用の gh の置き場で `gh api user`・push・PR 作成）が通るか（B では本物の gh の置き場を読めないため gh が起動せず、ここを判定していない）。これは便2 の K17 の前の試験 0-22 で確かめる。
 9. 段階6 より前に、Discord 発の行を障害記録の表に入れ始めてよいか（KGI 6 の数え方にも関わる）。推奨は「入れる。`labels.source='discord'` で分ける」。
 
 - 聞く順番: 1 → 2 → 7 → 9 → 3 → 4 → 5 → 8（8 は 0-14 と 0-15 のあと）。4 は ボットのトークンの作り直しより前に聞く（便2 の前提）。6 は段階6 のとき。
@@ -678,6 +679,11 @@ mode: handoff
   - 拒否: 本物の `~/.config/gh/config.yml` の読み取り（`operation not permitted`）。`gh auth token -u shingo-ops` は終了コード 1（下の gh の起動の失敗による。拒否による失敗かは分けられない）。
   - 判定できなかった（試験の作りの誤り）: 専用の置き場の hosts.yml の形が足りず、gh が `failed to migrate config … exit status 161` で起動しなかった。そのため GH_TOKEN の道と専用の置き場の道は判定できていない。
   - 漏れの確かめ: 3つの生出力に shingo-cc のトークンの文字列は0件。本物の hosts.yml は試験の前後で同じ。終わったあとの有効な名義は shingo-cc のまま。
+- 0-21 穴を塞げるか（2026-10-21 20:56:31・20:58:15、Sonnet 2回・サブスク・PO「1」（2回とも動かす）・費用 $0.089・$0.050。A は 0-20 の A の設定＋`permissions.deny` に `Bash(security *)`・`Bash(security)`・`Bash(gh auth *)`・`Bash(gh auth)`。B は A＋`filesystem.denyRead` に `~/Library/Keychains`。生出力はリポジトリ外の試験記録 t022-20261021205631）:
+  - A: 直接の `security find-generic-password` と `gh auth token -u shingo-ops` は権限で拒否。python の `subprocess` から `security` を呼ぶと終了コード 0（取り出せた。値は捨てた）。`ls ~/Library/Keychains` は終了コード 0。
+  - B: 直接の2つは権限で拒否。python から `security` を呼ぶと終了コード 44（項目に届かない）。`ls ~/Library/Keychains` は終了コード 1。
+  - A・B とも `gh api user` は本物の `~/.config/gh/config.yml` を読めず起動しなかった（shingo-cc の仕事が通るかは判定していない）。
+  - 漏れの確かめ: 2つの生出力に shingo-ops のトークンの文字列は0件。本物の hosts.yml は前後で同じ。有効な名義は shingo-cc のまま。
   - → (a2) は gh の設定では閉じられない。Keychain の中身が同じ利用者から読める限り残る。§14-8 の決まったことの続きとして PO に戻す。
 - 残る問い: §14-8（0-17〜0-19 の結果を足して聞く）、§14-6（段階6 のとき）。
 
