@@ -288,7 +288,7 @@ mode: handoff
   - **使えない状態の扱い**（`failIfUnavailable` に頼り切らない）: 起動関数は claude を開く前に、本体が固定で呼ぶ `/usr/bin/sandbox-exec`（本体の文字列で確かめた）が実行できるかを確かめ、できなければ起動せず `launch_failed` を記録して知らせる。場所は設定で持たない（本体とずれないように）。この分岐はテストで場所を差し替えて確かめる。加えて、セッションの最初の仕事として許可外の行き先（example.com）への接続を1回試させ、通ってしまったら `suspicious` を報告して止まるよう指示書に書く（囲いが実際に掛かったかを起動のたびに見る。ただしセッション自身の報告に頼る）。`failIfUnavailable: true` は残すが、その動きは試していない【未確認】。
   - 試験の実測（2026-10-21 15:21:59、使い捨てのフォルダ・Sonnet 1回・PO「1」。設定は上と違い `autoAllowBashIfSandboxed: true` と `--allowedTools Bash` を足したもの。記録は Sonnet がコマンドの出力を書き写した最終の応答で、道具の生の返り値ではない）: 許可を `api.github.com` だけにして、`curl https://example.com` は「CONNECT tunnel failed, response 403」、`python3` の urllib も同じく拒否（`deny network-outbound example.com:443 (host is not on the allow list)`）。`curl https://api.github.com` は 200。生出力はリポジトリ外の試験記録。
   - 試していないこと【未確認】: 代理（プロキシ）を通らない生のソケット、名前の問い合わせ（DNS）に載せて送る道、`node -e` の fetch、サブエージェント（U8）、上の設計どおりの設定（試験と違う2点を除いたもの）。0-15 で試す（R§13）。それまでは「外へは許可した行き先にしか出せない」と言い切らない。→ 0-15 で、生のソケット・直接の DNS・名前の問い合わせ・`node` の fetch・サブエージェントの curl はすべて拒否と確かめた（§14 の結果）。0-15 の `--settings` は §4-5 どおり（1回目の試験で足した `autoAllowBashIfSandboxed` は外した）に試験用の読み取りの拒否を足したもので、起動の引数（`-p`・`--allowedTools Bash Read Agent`・`--max-budget-usd 1`）と許可の行き先（api.github.com だけ）は便2 の本番の起動と同じではない。本番の起動の形での確認は便2 で行う【未確認】。
-  - **読み取りの拒否の書き方**（0-15 の続きの実測。§14 の結果）: 秘密の置き場（agent-console の dataDir のうち reserve-token、`~/.claude-access.env`、`~/.claude/channels/` 配下の `.env`、会話の記録の置き場 `~/.claude/projects/`）は、2つの設定の両方に入れる。(1) Read の道具には `permissions.deny` の `Read(//<絶対パス>/**)`（先頭の斜線を2つ。斜線1つの書き方は効かなかった）。(2) Bash の子プロセス（0-15 で試したのは `cat`・`python3`）にはサンドボックスの `filesystem.denyRead` に絶対パス。case-token は `ac-case` が Bash の中で読むので、どちらにも入れない（§4-4 の case-token の弱さは残る）。会話の記録の置き場を塞いで本体の動きに差し障りが無いかと、Keychain（`security`）がサンドボックスで塞がれるかは【未確認】（便2 の K11・K13 の試験で確かめる）。
+  - **読み取りの拒否の書き方**（0-15 の続きの実測。§14 の結果）: 秘密の置き場（agent-console の dataDir のうち reserve-token、`~/.claude-access.env`、`~/.claude/channels/` 配下の `.env`、会話の記録の置き場 `~/.claude/projects/`）は、2つの設定の両方に入れる。(1) Read の道具には `permissions.deny` の `Read(//<絶対パス>/**)`（先頭の斜線を2つ。斜線1つの書き方は効かなかった）。(2) Bash の子プロセス（0-15 で試したのは `cat`・`python3`）にはサンドボックスの `filesystem.denyRead` に絶対パス。case-token は `ac-case` が Bash の中で読むので、どちらにも入れない（§4-4 の case-token の弱さは残る）。会話の記録の置き場を塞いで本体の動きに差し障りが無いかは【未確認】（便2 の K11・K13 の試験で確かめる）。Keychain は 0-21・0-22 で決めた次の設定で塞ぐ（§14 の結果）: `filesystem.denyRead` に `~/Library/Keychains` と本物の `~/.config/gh`、`permissions.deny` に `Bash(security *)`・`Bash(security)`・`Bash(gh auth *)`・`Bash(gh auth)`。gh は件のセッションの起動のときに外から `GH_TOKEN`（shingo-cc）と専用の置き場 `GH_CONFIG_DIR`（`config.yml` に `version: "1"`、`hosts.yml` は shingo-cc だけ）を渡し、git の資格は `credential.helper=!gh auth git-credential` で GH_TOKEN を使う。
   - それでも残る弱さ（ADR-1009 より弱い点。ADR-1037 に書く。ADR-1009 は1つの常駐セッションで、PO が起動のたびに確認した。R§0）: 許可した行き先そのもの（GitHub・保守 API）へは書ける。§4-4 の子プロセスで読んだ秘密を、GitHub（たとえば `gh gist create`。手元のヘルプは「Create a new GitHub gist」。この通信が api.github.com を通るかは【未確認】）や、読んだ保守 API の鍵で保守 API へ出す道は、許可の一覧では塞げない。GitHub への書き込みは今の作業の道でもあるので塞がない。弱さの埋め方は「投稿者を PO だけに絞る」（§14-1）・K10 の試験・読み取りの拒否（0-15 で書き方を確かめた。本物の置き場は便2）。
 - 起動コマンド: 新しい zsh 関数 `ccdiscordcase` / `ccdiscordmeasure` を `ccopusgo`（R§3）と同じ作りで足す。違いは3つ。
   - 足す指示書は `salesanchor-designer.md` と `salesanchor-ops-incident-agent.md` の2つ。`salesanchor-claude-go.md`（GO の委任）は**足さない**。
@@ -628,6 +628,7 @@ mode: handoff
    - **決まったこと（PO 2026-10-21「変えるなら2,まず3だけで動作確認と試験をしつつ穴を塞ぐ」。選択肢は 1: PO の名義の鍵を Mac から外す、2: 別の macOS 利用者（案H）、3: このまま受け入れ、最初は PO だけが投稿し知らせと監査で見張る）**: まずは 3 で進め、動作確認と試験を続けながら穴を塞ぐ。作りを変えるときは 2（案H）にする。PO の名義の鍵は Mac から外さない。
    - 塞ぐ手の候補（どれも効くかは確かめていない【未確認】。便2 の K17 か、その前の試験で1つずつ確かめる）: ①件のセッションの `permissions.deny` に `Bash(security *)`・`Bash(gh auth *)` を入れる（書き方の拒否なので、python などから Keychain を呼ぶ道は塞がない）。②`filesystem.denyRead` に `~/Library/Keychains` を入れる（Keychain の中身は囲いの外の仕組み（securityd）が読むので効かない見込みがあるが、試すまで決めない）。③件のセッションの中で `security`・`gh auth` が動いたら K16 の知らせを出す（見張り）。①〜③で塞げない分は案H に移るときに閉じる。
    - 0-21 の結果（2026-10-21 20:56〜20:58。§14 の結果）: ①だけ（A）では **塞げない**（`security`・`gh auth token` の直接の命令は拒否されたが、python から `security` を呼ぶと終了コード 0 で取り出せた）。①＋②（B）では **python の道も塞がった**（終了コード 44＝項目が見つからない。`~/Library/Keychains` の一覧も拒否）。→ 件のセッションの設定は ①＋② を使う。まだ確かめていないこと【未確認】: ②を入れたまま shingo-cc の仕事（GH_TOKEN と正しい形の専用の gh の置き場で `gh api user`・push・PR 作成）が通るか（B では本物の gh の置き場を読めないため gh が起動せず、ここを判定していない）。これは便2 の K17 の前の試験 0-22 で確かめる。
+   - 0-22 の結果（2026-10-21 21:06。§14 の結果）: ①＋② のまま、GH_TOKEN と正しい形の専用の gh の置き場で、shingo-cc の読み取りの仕事は **すべて通った**（`gh api user` が shingo-cc、リポジトリの情報、`git ls-remote`、`gh pr list`）。同じ回で python から PO の名義の鍵は取り出せなかった（終了コード 44）。→ (a2) は案3 のまま①＋② で閉じる。まだ確かめていないこと【未確認】: 書く仕事（push・PR 作成）は 0-22 では試していない（GitHub へ書かないため）。便2 の K17 の名義の判定で、試験用のブランチへの push と PR の下書き作成を確かめる。
 9. 段階6 より前に、Discord 発の行を障害記録の表に入れ始めてよいか（KGI 6 の数え方にも関わる）。推奨は「入れる。`labels.source='discord'` で分ける」。
 
 - 聞く順番: 1 → 2 → 7 → 9 → 3 → 4 → 5 → 8（8 は 0-14 と 0-15 のあと）。4 は ボットのトークンの作り直しより前に聞く（便2 の前提）。6 は段階6 のとき。
@@ -684,7 +685,12 @@ mode: handoff
   - B: 直接の2つは権限で拒否。python から `security` を呼ぶと終了コード 44（項目に届かない）。`ls ~/Library/Keychains` は終了コード 1。
   - A・B とも `gh api user` は本物の `~/.config/gh/config.yml` を読めず起動しなかった（shingo-cc の仕事が通るかは判定していない）。
   - 漏れの確かめ: 2つの生出力に shingo-ops のトークンの文字列は0件。本物の hosts.yml は前後で同じ。有効な名義は shingo-cc のまま。
-  - → (a2) は gh の設定では閉じられない。Keychain の中身が同じ利用者から読める限り残る。§14-8 の決まったことの続きとして PO に戻す。
+- 0-22 塞いだまま仕事が通るか（2026-10-21 21:06:18、Sonnet 1回・サブスク・PO「1」・費用 $0.087。設定は 0-21 の B。起動のときに外から GH_TOKEN（shingo-cc）と専用の置き場（`config.yml` に `version: "1"`、`hosts.yml` は shingo-cc だけ）を渡した。GitHub へは読むだけ。生出力はリポジトリ外の試験記録 t023-20261021210615）:
+  - 通った: `gh api user -q .login` が shingo-cc。`gh api repos/GEN-RYU-System/agent-console` が名前を返した。`git ls-remote`（資格は `!gh auth git-credential`）が1行。`gh pr list` が1件。
+  - 取り出せなかった: python から `security find-generic-password … -a shingo-ops` が終了コード 44。
+  - 漏れの確かめ: 生出力に shingo-cc・shingo-ops のトークンの文字列はどちらも0件。本物の hosts.yml は前後で同じ。有効な名義は shingo-cc のまま。
+  - 試していない: push・PR 作成（書く仕事）。
+  - （0-20 時点の見立て。0-21・0-22 で更新済み）→ (a2) は gh の設定では閉じられない。Keychain の中身が同じ利用者から読める限り残る。§14-8 の決まったことの続きとして PO に戻す。
 - 残る問い: §14-8（0-17〜0-19 の結果を足して聞く）、§14-6（段階6 のとき）。
 
 ## 15. 維持の仕組み
