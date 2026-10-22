@@ -18,7 +18,7 @@ PO 承認: 2026-10-21「1」（この設計で進める）、2026-10-21「1」�
 - `export class ScheduleGate`:
   - `private readonly serial = createSerial()`（`./json-store.ts`）。`run<T>(fn: () => Promise<T>): Promise<T>` はこの順番待ちで fn を1つずつ動かす
   - `attach(sources: { reservations: () => readonly Reservation[]; reservationsReady: () => boolean; routines: () => readonly Routine[] })` で比べる相手を受け取る（配線で両方を作ったあとに1回呼ぶ）。attach 前に check が呼ばれたら Error を投げる
-  - `reservationsReady()` が false（予約の読み込みが終わっていない・読めなかった）のときは、比べずに `ScheduleConflictError("schedule conflict: 予約の一覧をまだ読めていないため確かめられません（起動直後は数秒待って再試行）")` を投げる（重なりを見ずに通さない。全員拒否に倒す。PR #70 の審査 L-c）
+  - `reservationsReady()` が false（予約の読み込みが終わっていない・読めなかった）のときは、比べずに `ScheduleConflictError("schedule conflict: 予約の一覧をまだ読めていないため確かめられません（起動直後なら数秒待って再試行。続くなら PO に報告）")` を投げる（重なりを見ずに通さない。全員拒否に倒す。PR #70 の審査 L-c）
   - `checkReservation(runAt: number, nowMs: number, name: string): void` と `checkRoutine(candidate: { id?: string; name: string; weekdays: number[]; timeHHmm: string }, nowMs: number): void`。ぶつかれば `ScheduleConflictError` を投げる
 - 比べ方（design §4-3）:
   - 相手は、`status === "pending"` の予約全部（画面・AI どちらが作ったものも）と、`enabled === true` の定期実行全部。定期実行の変更・切り替えでは自分の id を外す
@@ -50,6 +50,7 @@ PO 承認: 2026-10-21「1」（この設計で進める）、2026-10-21「1」�
 - `cancel(id, caller?)`: `await this.loaded` は外。`gate.run` の中で、:199-201 の検査のあと、すぐに（待たずに）:202-203 の取消の書き換えを入れる → 監査に `reserveCancel` `ok`（`reservationId`・`targetCreatedBy` は予約の createdBy）→ 書けなければ `current` に戻して投げる → 保存。保存の失敗は今の戻し（:204）に加え、監査に `outcome: "denied", error: "save failed"` を書き足す（失敗は console.error だけ）
 - `tick`: :216-218 の送信中の書き換えと `lastStartedAt` は今のまま同期で入れる → 監査に `{ action: "reserveDispatch", outcome: "ok", reservationId, targetCreatedBy, callerSessionId: null, targetRoleId: picked.roleId }` を書く（`roleId` 欄は呼び出し元の役割の意味なので使わない。§2）→ 失敗したら :220-221 と同じく `picked` に戻して `notBefore` を付け、console.error、return → 送信中の保存（:219）。保存に失敗したら、今の戻しに加え監査に `outcome: "denied", error: "save failed"` を書き足す（失敗は console.error だけ）
 - 試験に足す（§11）: 開始の監査を待っている間に取消が来たら取消は 409 になり、予約は1回だけ開く／取消の監査を待っている間に tick が来ても、その予約は開かない
+- `isLoaded(): boolean` を足す。`markLoaded()` を呼んだときに true にする（`preloaded = true` の :135 も、送信中の保存に失敗した :148 の道も、:150 も true）。`store.list()`（:143）が例外を投げて `markLoaded()` が呼ばれないときだけ false のまま
 - :125 のコメントや README の「メモリだけ」は notBefore のことなので変えない
 
 ### 4. `server/routines.ts`
@@ -66,7 +67,7 @@ PO 承認: 2026-10-21「1」（この設計で進める）、2026-10-21「1」�
 
 ### 6. `server/index.ts`
 - :76-77 の前に `const gate = new ScheduleGate()` を作り、`RoutineService(…, undefined, undefined, gate)` と `ReservationService(…, undefined, undefined, false, { gate, audit })` に渡す。`audit` は :88 の `routineAudit` を使う（`(entry) => routineAudit.append({ at: new Date().toISOString(), ...entry })`）。そのため :88 の作成を :76 より前に移す
-- 両方を作ったあとで `gate.attach({ reservations: () => reservations.list(), reservationsReady: () => reservations.isLoaded(), routines: () => routines.list() })`。`ReservationService` に `isLoaded(): boolean`（読み込みが成功したあとだけ true）を足す（§3）
+- 両方を作ったあとで `gate.attach({ reservations: () => reservations.list(), reservationsReady: () => reservations.isLoaded(), routines: () => routines.list() })`。`isLoaded()` は §3
 
 ### 7. `server/http.ts`
 - :153 の役割の受け渡しに `reservable: r.reservable !== false` を足す
@@ -89,7 +90,8 @@ PO 承認: 2026-10-21「1」（この設計で進める）、2026-10-21「1」�
 - `README.md`: AI の命令の節（:23-34 付近の ac-reserve）に「呼び出し元の役割が `reserveRoles` に無ければ 403」「AI の予約は、ほかの予約・定期実行と開始が60分未満なら拒まれ、空いている近い時刻が示される」。予約の節（:11 付近）に監査記録の1行。定期実行（AI）の節に関門の1行。設定の説明に `reserveRoles` と `reservable`
 
 ### 11. テスト（`tests/unit/`）
-- `tests/unit/helpers/harness.ts:226`: 本番と同じく gate と audit を渡す（routineAudit は harness の dataDir のもの）
+- `tests/unit/helpers/harness.ts:225-226`: 本番と同じく、定期実行（:225）と予約（:226）の両方に同じ gate を渡し、予約には audit も渡し（routineAudit は harness の dataDir のもの）、両方を作ったあとで本番と同じ形で `gate.attach` を呼ぶ
+- `reservations.test.ts` に `isLoaded` を2本: `preloaded = true` なら作った直後から true／`store.list()` が投げる偽の置き場で `start()` したら false のまま
 - 新規 `schedule-gate.test.ts`（K5）: 予約どうし 59分は拒否・60分は通る／予約と定期実行で日付またぎ（23:30 と翌 00:10 で拒否、23:30 と 00:30 で通る）／定期実行の変更で自分自身とは比べない／無効の定期実行・pending でない予約とは比べない／拒否の文に相手の名前・時刻・前後の近い時刻が入る／近い時刻が無いとき「なし」
 - `reservations.test.ts`: AI の作成が2つ同時に来て、どちらも同じ時刻なら1つだけ通る（`Promise.allSettled` で片方が ScheduleConflictError）／画面の作成は重なっても通る／`reservable: false` の役割は画面・AI とも 400／K6: 作成・取消・開始で `reserveCreate`・`reserveCancel`・`reserveDispatch` が1件ずつ／監査が reject する sink で作成・取消は失敗し、予約が増えない・取消されない／開始は監査の失敗で送信中にならず、60秒後の tick で送られる／競合（H-1）: 監査の書き手を「外から終わらせられる約束」を返す形にして止めておき、開始の監査を待っている間に取消を呼ぶと取消は 409 で、予約は1回だけ開く／取消の監査を待っている間に tick を進めても、その予約は開かない
 - `schedule-gate.test.ts` にもう1本: `reservationsReady` が false の間は、予約・定期実行の検査がどちらも拒まれる
@@ -110,5 +112,5 @@ PO 承認: 2026-10-21「1」（この設計で進める）、2026-10-21「1」�
 - 366日の展開が試験で遅い（1件の検査が 50ms を超える）なら、展開をやめて「曜日と時刻の差」で同じ結果を出す計算に替えてよい（同じ試験がすべて通ること）
 - 監査の sink を予約に渡すと、http.ts の `auditOf`（:390-394）と別の書き手が同じファイルに書くことになる。今の定期実行の自動クローズ（index.ts:88）も同じ形なので、そのままでよい。行が混ざる試験の失敗が出たら BLOCKED:
 - `npm test` で今回のファイル以外が落ちたら、その試験名と出力を添えて BLOCKED:（たまに落ちる macOS の pc-meter.spec.ts:125 は e2e なので対象外）
-- 監査に書けずに元の状態へ戻すまでの間に、別の予約の保存（:219・:241）がメモリの全件をファイルへ書くと、ファイルにだけ途中の状態（取消済み・送信中）が一時的に残る。今の「保存に失敗したら戻す」（:203-204・:217-220）と同じ形の隙間で、次の保存で直る。直さなくてよい（試験も足さない。PR #70 の審査 L-b）
+- 監査に書けずに元の状態へ戻すまでの間に、別の予約の保存（作成 :192・取消 :204・開始 :219・送り終わり :241）がメモリの全件をファイルへ書くと、ファイルにだけ途中の状態（取消済み・送信中）が一時的に残る。今の「保存に失敗したら戻す」（:203-204・:217-220）と同じ形の隙間で、次の保存で直る。直さなくてよい（試験も足さない。PR #70 の審査 L-b）
 - 定期実行の窓の中に既に重なっている相手（導入前からの重なり）があって AI の変更が拒まれる試験が書けない場合は、試験の中の相手の時刻をずらす（本番の重なりは導入のときに Opus が一覧にして直す。design §4-3）
