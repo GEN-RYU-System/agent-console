@@ -55,7 +55,7 @@ PO 承認: 2026-10-21「1」（§14-2: 60分未満・画面には関門をかけ
 - http の依存（handleApi が受け取る `deps` の型。実物の名前に合わせる）に `schedule: ScheduleGate` を足し、`server/index.ts` で :79 の `gate` を渡す。`tests/unit/helpers/harness.ts` も、作っている gate を同じ名前で渡す
 - 画面用の入口を1つ足す（:196 の予約の一覧の GET の近く。共通の認証 :618-630 の内側＝session の Bearer が要る）:
   - `GET /api/schedule/preview?kind=reservation&date=YYYY-MM-DD&time=HH:mm`
-    - `resolveRunAt(date, time)` で runAt を作り（形の誤りはそこで `SessionInputError` → 400）、`deps.schedule.previewReservation(runAt, Date.now())` を 200 で返す
+    - `resolveRunAt(date, time).runAt` で runAt を作り（戻り値は `{ runAt, runAtJst }` なので `.runAt` を取る。形の誤りはそこで `SessionInputError` → 400）、`deps.schedule.previewReservation(runAt, Date.now())` を 200 で返す
   - `GET /api/schedule/preview?kind=routine&weekdays=1,2,3&time=HH:mm&excludeId=<id>`
     - `weekdays` はカンマ区切りの 0〜6 の整数（重複なし、空なら空の配列）。`time` は `/^([01]\d|2[0-3]):[0-5]\d$/`。どちらかが違えば `SessionInputError("schedule preview input invalid")` → 400。`excludeId` は省けて、あれば長さ1〜200の文字列（違えば同じ 400）
     - `deps.schedule.previewRoutine({ id: excludeId, name: "", weekdays, timeHHmm: time }, Date.now())` を 200 で返す
@@ -76,7 +76,7 @@ PO 承認: 2026-10-21「1」（§14-2: 60分未満・画面には関門をかけ
 - 出すもの（どれも `Callout variant="warning"`。`@sa/components/Callout` を使う）:
   - `failed` が true: title `ac.schedule.checkFailedTitle`、本文 `ac.schedule.checkFailed`
   - `preview` が `{ ready: false }`: title `ac.schedule.notReadyTitle`、本文 `ac.schedule.notReady`
-  - `preview.overlap` がある: title `ac.schedule.overlapTitle`、本文は1段落目 `ac.schedule.overlapBody`（`name`・`kind`＝`t("ac.schedule.kind.<kind>")`・`at`＝下の整形）、2段落目 `ac.schedule.freeTimes`（`before`・`after`。null は `t("ac.schedule.none")`。`HH:mm` の形はそのまま、日時の形は下の整形）、3段落目 `ac.schedule.saveAllowed`
+  - `preview.overlap` がある: title `ac.schedule.overlapTitle`、本文は1段落目 `ac.schedule.overlapBody`（`name`・`kind`＝`t("ac.schedule.kind.<kind>")`・`at`＝下の整形）、2段落目 `ac.schedule.freeTimes`（`before`・`after`。null は `t("ac.schedule.none")`。`HH:mm` の形はそのまま、日時の形は下の整形。どちらの形かは相手の種類 `overlap.kind` ではなく値の形で見分ける）、3段落目 `ac.schedule.saveAllowed`
   - それ以外（`preview` が null、または overlap が null）は何も出さない（`null` を返す）
 - 段落は、Callout の子に `Stack`（`@sa/components/Stack`、`gap` は今のエディタと同じ書き方）を置き、その中に段落ごとに class も style も付けない素の `<span>` を並べる（文字をそのまま並べると1行につながるため。PR #72 の審査 Low-1）。決まりの検査（`scripts/check-design-governance.mjs`）は pages の外の素の `span`・`div` を止めない（今の `RoutineEditor.tsx:28` も素の `div`）
 - 日時の整形: `ReservationsPane.tsx:16` の `formatJst` を `src/components/Reservations/formatJst.ts`（新規）に移して export し、`ReservationsPane.tsx` とこの部品の両方から使う（同じ整形を2つ作らない）。`formatJst` の中の " JST" の文字は今のまま（今もある表示。tsx の日本語ではない）
@@ -110,7 +110,7 @@ PO 承認: 2026-10-21「1」（§14-2: 60分未満・画面には関門をかけ
   "notReadyTitle": "重なりをまだ確かめられません",
   "notReady": "予約の一覧をまだ読めていません。数秒待ってから時刻を選び直してください。",
   "checkFailedTitle": "重なりを確かめられませんでした",
-  "checkFailed": "保存はできます。続くときは PO に知らせてください。"
+  "checkFailed": "保存はできます。続くときは AI に知らせてください。"
 }
 ```
 - `ac` の下の、`routines`・`reservations` と同じ階層に置く
@@ -142,7 +142,7 @@ PO 承認: 2026-10-21「1」（§14-2: 60分未満・画面には関門をかけ
   - 先に投げた問い合わせの答えが後から返っても、最後の入力の答えだけが出る（古い答えを捨てる）
   - 答えが 400 のとき何も出ず、ほかの失敗のとき「確かめられませんでした」が出る
   - 定期実行: 無効の定期実行を変えるときは問い合わせない。変えるときは `routine.id` が `excludeId` に渡る
-- `ScheduleOverlapNotice` の単体（`ready: false` の文・`before` null で「なし」）
+- `ScheduleOverlapNotice` の単体（`ready: false` の文・`before` null で「なし」・相手が定期実行（`kind: "routine"`）でも `before`/`after` が日時の形なら「2026/10/23 10:00 JST」の形に整えて出る）
 
 ## 完了の確認（生出力を /tmp/CC報告ファイル/discord-pdca-bin1b/ に保存）
 1. `npm run typecheck`  2. `npm run lint`  3. `npx vitest run tests/unit/schedule-gate.test.ts tests/unit/schedule-preview.test.ts src/components/Reservations src/components/Routines src/components/ScheduleOverlap`  4. `npm test`
@@ -151,7 +151,7 @@ PO 承認: 2026-10-21「1」（§14-2: 60分未満・画面には関門をかけ
 7. コミット `feat: 画面の予約・定期実行の作成で、ほかと開始が1時間以内なら確認の欄に知らせる（v0.45.0）`（末尾 `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`）して push。PR は作らない
 
 ## 想定分岐
-- http の依存の型の名前が違う・gate を渡す道が無い: 実物の名前に合わせて足す。依存の型を3つ以上のファイルで直す必要があれば NEEDS_DECISION:
+- http の依存の型の名前が違う・gate を渡す道が無い: 実物の名前に合わせて足す。予定どおりの3ファイル（`server/http.ts` の型・`server/index.ts`・`tests/unit/helpers/harness.ts`）は対象。それ以外のファイルでも依存の型を直す必要があれば NEEDS_DECISION:
 - §5 の素の `div`・`span` が lint か型の検査に止まる: NEEDS_DECISION:（class・style・ほかの生の要素で逃げない）
 - `ApiError` が status を持たない・名前が違う: `src/api.ts:36-45` の実物に合わせる。400 を見分けられないなら NEEDS_DECISION:
 - 定期実行の画面で `routine.enabled` が無い型: 型の実物に合わせる。無効を見分けられないなら、いつも問い合わせる形にして報告に書く
