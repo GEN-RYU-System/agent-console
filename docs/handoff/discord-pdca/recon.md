@@ -83,7 +83,7 @@ S の ADR 番号の最大は ADR-1036（次は 1037）。
   - **今は動いていない**: heartbeat の最終が 2026-10-15T11:53:19Z、launchctl と ps に該当が無い、~/.claude/settings.json:514 が `"discord@claude-plugins-official": false`。
 - ボットの区別:
   - S:docs/handoff/gas-viewer-fresh-fast/design.md:436 は、本番アプリのボットを「Sales Anchor#8667」、保守運用のボットを「SA Bug Intake」と書き分けている。
-  - 本番 backend は `DISCORD_BOT_TOKEN` を使う（S:backend/app/discord_gateway/config.py:17）。OAuth の `DISCORD_CLIENT_ID` の既定値は `1499458730171961535`（S:backend/app/routers/discord_oauth.py:46）。
+  - 本番 backend は `DISCORD_BOT_TOKEN` を使う（S:backend/app/discord_gateway/config.py:17）。OAuth の `DISCORD_CLIENT_ID` の既定値は本番アプリの id（値はこの公開の文書に書かない。S:backend/app/routers/discord_oauth.py:46）。
   - **SA Bug Intake の application id と本番の id が同じかは未確認**（トークンから id を取り出す操作は権限判定で拒否された）。
 
 ## 7. Sales Anchor の Webhook と不具合対応の手順
@@ -122,7 +122,7 @@ S の ADR 番号の最大は ADR-1036（次は 1037）。
 
 | # | 内容 | 扱い |
 |---|---|---|
-| U1 | SA Bug Intake は本番アプリのボットとは別のアプリか（id の照合） | 便0 で、接続したときにボット自身の id を読み、`1499458730171961535` と比べる。同じなら止めて PO へ |
+| U1 | SA Bug Intake は本番アプリのボットとは別のアプリか（id の照合） | 便0 で、接続したときにボット自身の id を読み、本番アプリの id（:86 の既定値）と比べる。同じなら止めて PO へ |
 | U2 | 人の投稿の本文を、このボットが Discord から読めるか（MessageContent が有効か） | D は MessageContent を要求して動いていた（:95-100、heartbeat 10/15 まで）。便0 の試作で実際に読めるか確かめる |
 | U3 | REST の `GET /channels/{id}/messages` で `after` と `limit=100` が設計どおりに返るか | 第4版で読み方を ADR-1025 と同じ REST に揃えた（§12）。ADR-1025 の設計が公式資料を引いている（S:docs/handoff/analysis-error-report/design.md:67）が、本件では外部サイトを見ない決まりのため確かめ直していない。第0段 0-3 の実物で確かめる |
 | U4 | 蓋を閉じたときと停電のときの Mac の挙動 | 遅延通知と取りこぼしの補完で対処する。実測は便2 の受入で行う |
