@@ -57,6 +57,22 @@ describe("ReservationEditor launch target", () => {
     expect(onSave.mock.calls[0][0]).toMatchObject({ roleId: "sonnet-impl", cwd: "/wt/release-alpha", branch: "release/alpha" });
   });
 
+  it("v0.44.0: a role with reservable:false is not offered", () => {
+    render(<ReservationEditor roles={[...roles, { id: "hidden", labelKey: "role.shell", needsWorktree: false, reservable: false }]} onSave={vi.fn()} />);
+    const values = (screen.getByLabelText("役割") as HTMLSelectElement).options;
+    expect(Array.from(values).map((o) => o.value)).toEqual(["opus-designer", "sonnet-impl"]);
+  });
+
+  it("v0.44.0: a role with reservable:false placed first is not the default; the first reservable role is", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<ReservationEditor roles={[{ id: "hidden", labelKey: "role.shell", needsWorktree: false, reservable: false }, ...roles]} onSave={onSave} />);
+    expect((screen.getByLabelText("役割") as HTMLSelectElement).value).toBe("opus-designer");
+    fillRest();
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toMatchObject({ roleId: "opus-designer" });
+  });
+
   it("changing the role clears the picked worktree", async () => {
     render(<ReservationEditor roles={roles} onSave={vi.fn()} />);
     pickRole("sonnet-impl");

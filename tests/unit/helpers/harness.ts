@@ -23,6 +23,8 @@ import { OpenSessionRecorder } from "../../../server/restore.ts";
 import { RoutineApprovals } from "../../../server/routine-approvals.ts";
 import { RoutineService, RoutineStore } from "../../../server/routines.ts";
 import { ReservationService, ReservationStore } from "../../../server/reservations.ts";
+import { RoutineAudit } from "../../../server/routine-audit.ts";
+import { ScheduleGate } from "../../../server/schedule-gate.ts";
 import type { ReserveAccess } from "../../../server/reserve-token.ts";
 import type { RoleConfig } from "../../../server/config.ts";
 import { SessionManager } from "../../../server/sessions.ts";
@@ -137,6 +139,8 @@ export interface HarnessOptions {
   reserve?: ReserveAccess;
   /** ac-routine を使ってよい役割 id（既定は "echo" だけ。試験の「管理職」役） */
   routineManagerRoles?: string[];
+  /** ac-reserve を使ってよい役割 id（既定は "echo" だけ。routineManagerRoles と同じ形） */
+  reserveRoles?: string[];
   /** ログインの記録を dataDir の auth-sessions.json に残す（既定は残さない＝AGENT_CONSOLE_PORT 指定時の本番と同じ。再起動の試験だけ true） */
   persistSessions?: boolean;
   /** サーバーの秘密（既定は TOKEN）。Bearer の試験は TOKEN のままで、変わった秘密の試験だけ指定する */
@@ -202,6 +206,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     uploadMaxBytes: options.uploadMaxBytes ?? DEFAULT_UPLOAD_MAX_BYTES,
     uploadMaxKeep: options.uploadMaxKeep ?? DEFAULT_UPLOAD_MAX_KEEP,
     routineManagerRoles: options.routineManagerRoles ?? ["echo"],
+    reserveRoles: options.reserveRoles ?? ["echo"],
     ...(options.accountLoginCommand !== undefined ? { accountLoginCommand: options.accountLoginCommand } : {}),
     roles: [
       { id: "echo", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo READY; cat"], needsWorktree: false },
@@ -222,8 +227,11 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const hub = new Hub(config, sessions, options.sendNotification ?? null, { ghTimeoutMs: options.ghTimeoutMs });
   const store = new OpenSessionStore(config.dataDir);
   const recorder = new OpenSessionRecorder(sessions, hub, store);
-  const routines = new RoutineService(config, sessions, hub, new RoutineStore(config.dataDir));
-  const reservations = new ReservationService(config, sessions, hub, new ReservationStore(config.dataDir), undefined, undefined, true);
+  const routineAudit = new RoutineAudit(config.dataDir);
+  const gate = new ScheduleGate();
+  const routines = new RoutineService(config, sessions, hub, new RoutineStore(config.dataDir), undefined, undefined, gate);
+  const reservations = new ReservationService(config, sessions, hub, new ReservationStore(config.dataDir), undefined, undefined, true, { gate, audit: (entry) => routineAudit.append({ at: new Date().toISOString(), ...entry }) });
+  gate.attach({ reservations: () => reservations.list(), reservationsReady: () => reservations.isLoaded(), routines: () => routines.list() });
   const relay = new RelayManager({ config, sessions, hub, relayDir: options.relayDir ?? null }, undefined, { ...defaultRelayTiming(config), ...options.relayTiming });
   if (options.recorder === true) recorder.start();
   const clock: Clock = { t: Date.now(), advance(ms) { this.t += ms; } };

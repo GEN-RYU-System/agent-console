@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { Hub } from "../../server/hub.ts";
+import type { Reservation } from "../../server/reservations.ts";
+import { ScheduleGate } from "../../server/schedule-gate.ts";
 import { RETRACK_MAX_AGE_MS, ROUTINES_FILE, RoutineService, RoutineStore, jstSlot, type Routine } from "../../server/routines.ts";
 
 const routine = (overrides: Partial<Routine> = {}): Routine => ({ id: "r1", name: "daily", enabled: true, roleId: "echo", cwd: "/tmp", timeZone: "Asia/Tokyo", weekdays: [1], timeHHmm: "09:00", promptText: "hello", createdAt: 1, updatedAt: 1, events: [], ...overrides });
@@ -80,6 +82,61 @@ describe("routine launch target cwd default (v0.24.0)", () => {
     const service = new RoutineService({ roles: [{ id: "echo", needsWorktree: false }], salesanchorRoot: root } as never, {} as never, {} as never, new RoutineStore(dir));
     const created = await service.create({ name: "n", enabled: true, roleId: "echo", weekdays: [1], timeHHmm: "09:00", promptText: "hi" });
     expect(created.cwd).toBe(root);
+  });
+});
+
+describe("routine 1-hour gate (v0.44.0)", () => {
+  const ALL = [0, 1, 2, 3, 4, 5, 6];
+  const build = async (reservations: Reservation[] = []) => {
+    const root = realpathSync(await mkdtemp(path.join(os.tmpdir(), "ac-routine-gate-")));
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    const dir = await mkdtemp(path.join(os.tmpdir(), "ac-routine-gate-d-"));
+    const gate = new ScheduleGate();
+    const service = new RoutineService({ roles: [{ id: "echo", needsWorktree: false }], salesanchorRoot: root } as never, {} as never, {} as never, new RoutineStore(dir), undefined, undefined, gate);
+    let ready = true;
+    gate.attach({ reservations: () => reservations, reservationsReady: () => ready, routines: () => service.list() });
+    const input = (over: Record<string, unknown> = {}) => ({ name: "n", enabled: true, roleId: "echo", weekdays: ALL, timeHHmm: "09:00", promptText: "hi", ...over }) as never;
+    return { service, input, setReady: (v: boolean) => { ready = v; } };
+  };
+
+  it("T1 an AI routine within 60 minutes of another enabled routine is refused on create; the screen and exactly 60 minutes are not", async () => {
+    const { service, input } = await build();
+    await service.create(input({ name: "first" }), "agent");
+    await expect(service.create(input({ name: "near", timeHHmm: "09:30" }), "agent")).rejects.toThrow("schedule conflict");
+    expect(service.list()).toHaveLength(1);
+    await service.create(input({ name: "screen", timeHHmm: "09:30" })); // 画面は見ない
+    await service.create(input({ name: "ten", timeHHmm: "10:30" }), "agent"); // 画面の 09:30 から60分
+    expect(service.list()).toHaveLength(3);
+  });
+
+  it("T2 update and enabling by the AI are checked; a disabled routine and the routine itself are not", async () => {
+    const { service, input } = await build();
+    const a = await service.create(input({ name: "a" }), "agent");
+    const b = await service.create(input({ name: "b", timeHHmm: "12:00", enabled: false }), "agent"); // 無効は比べない
+    await expect(service.update(b.id, input({ name: "b", timeHHmm: "09:20", enabled: true, cwd: b.cwd }), true)).rejects.toThrow("schedule conflict");
+    await service.update(a.id, input({ name: "a", timeHHmm: "09:10", cwd: a.cwd }), true); // 自分自身とは比べない
+    await service.setEnabled(b.id, false, true);
+    await service.update(b.id, input({ name: "b", timeHHmm: "09:20", enabled: false, cwd: b.cwd }), true); // 無効のままの変更は見ない
+    await expect(service.setEnabled(b.id, true, true)).rejects.toThrow("schedule conflict");
+  });
+
+  it("T4 an AI routine within 60 minutes of a pending reservation is refused (the gate holds one reservation)", async () => {
+    const day = new Date(Date.now() + 3 * 24 * 60 * 60_000).toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+    const weekday = new Date(`${day}T12:00:00+09:00`).getUTCDay();
+    const runAt = Date.parse(`${day}T10:00:00+09:00`);
+    const reservation = { id: "rv", name: "booked", roleId: "echo", cwd: "/x", runAt, runAtJst: `${day}T10:00+09:00`, timeZone: "Asia/Tokyo", promptText: "p", createdBy: "ui", createdAt: 1, updatedAt: 1, status: "pending" } as Reservation;
+    const { service, input } = await build([reservation]);
+    await expect(service.create(input({ name: "near", weekdays: [weekday], timeHHmm: "10:30" }), "agent")).rejects.toThrow("「booked」（予約");
+    expect(service.list()).toHaveLength(0);
+    await service.create(input({ name: "ok", weekdays: [weekday], timeHHmm: "11:00" }), "agent"); // ちょうど60分は通る
+    expect(service.list()).toHaveLength(1);
+  });
+
+  it("T3 the refusal asks to retry while the reservation list is not read yet", async () => {
+    const { service, input, setReady } = await build();
+    setReady(false);
+    await expect(service.create(input(), "agent")).rejects.toThrow("予約の一覧をまだ読めていない");
+    await service.create(input()); // 画面は止まらない
   });
 });
 

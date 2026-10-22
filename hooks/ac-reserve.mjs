@@ -49,25 +49,29 @@ async function call(access, method, pathname, bodyText) {
  * 命令の本体。終了コードと、標準出力・標準エラーに出す文を返す。ここでは何も出力しない。
  * dataDir は命令の置き場所の 1 つ上（ac-board と同じ判定）。
  */
-export async function runCommand({ argv, stdinText = "", dataDir }) {
+export async function runCommand({ argv, stdinText = "", dataDir, callerSessionId }) {
   const [sub, ...rest] = argv;
   const wellFormed = (sub === "add" && rest.length === 0) || (sub === "list" && rest.length === 0) || (sub === "cancel" && rest.length === 1 && RESERVATION_ID.test(rest[0]));
   if (!wellFormed) return reject(USAGE);
+  let payload;
   if (sub === "add") {
     if (Buffer.byteLength(stdinText, "utf8") > MAX_INPUT_BYTES) return reject(`入力が大きすぎます（${MAX_INPUT_BYTES} byte まで）`);
     try {
-      JSON.parse(stdinText);
+      payload = JSON.parse(stdinText);
     } catch (err) {
       return reject(`標準入力を JSON として読めません: ${err instanceof Error ? err.message : String(err)}`);
     }
+    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return reject("標準入力は JSON のオブジェクトにしてください");
+    delete payload.callerSessionId; // 呼び出し元は環境変数だけから取る（標準入力の自己申告は使わない）
   }
   const access = readAccess(dataDir);
   if (!access.ok) return reject(access.reason);
+  const caller = typeof callerSessionId === "string" && callerSessionId !== "" ? { callerSessionId } : {};
   let result;
   try {
-    if (sub === "add") result = await call(access, "POST", "/api/agent/reservations", stdinText);
-    else if (sub === "list") result = await call(access, "GET", "/api/agent/reservations");
-    else result = await call(access, "POST", `/api/agent/reservations/${encodeURIComponent(rest[0])}/cancel`, "{}");
+    if (sub === "add") result = await call(access, "POST", "/api/agent/reservations", JSON.stringify({ ...payload, ...caller }));
+    else if (sub === "list") result = await call(access, "GET", `/api/agent/reservations${caller.callerSessionId !== undefined ? `?callerSessionId=${encodeURIComponent(caller.callerSessionId)}` : ""}`);
+    else result = await call(access, "POST", `/api/agent/reservations/${encodeURIComponent(rest[0])}/cancel`, JSON.stringify({ ...caller }));
   } catch {
     return reject("agent-console に接続できませんでした（起動しているか確認してください）");
   }
@@ -98,7 +102,7 @@ if (isMain()) {
         stdinText = "";
       }
     }
-    result = await runCommand({ argv: process.argv.slice(2), stdinText, dataDir: path.resolve(here, "..") });
+    result = await runCommand({ argv: process.argv.slice(2), stdinText, dataDir: path.resolve(here, ".."), callerSessionId: process.env.CLAUDE_CODE_SESSION_ID });
   }
   if (result.stdout !== "") process.stdout.write(result.stdout);
   if (result.stderr !== "") process.stderr.write(result.stderr);

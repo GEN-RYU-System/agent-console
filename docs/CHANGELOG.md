@@ -2,6 +2,7 @@
 
 版を出すたびに 1 行追記する（版の正本は git タグ `vX.Y.Z`）。
 
+- 0.44.0 AI の予約・定期実行に1時間の関門を足した（AI の作成・変更は、ほかの予約・定期実行と開始が60分未満なら拒み、空いている近い時刻を示す。画面からの操作にはかけない）／予約の作成・取消・開始を監査記録（routine-audit.jsonl の reserveCreate・reserveCancel・reserveDispatch）へ／ac-reserve は呼び出し元の役割で絞る（設定 `reserveRoles`、既定 opus-designer・shell。外は 403）／役割の `reservable: false` で予約の選択肢から外す。戻し方は `bash scripts/ac-update.sh v0.43.0`。設計は docs/handoff/discord-pdca/design.md。
 - 0.43.0 AI の予約（purpose measure）の待機中の上限を10件→20件にした（`server/reservations.ts` の MAX_AGENT_PENDING。全体の50件と定期実行の AI 分10件は変えない）。理由: 測定の予約が1週間分で10件に達し、新しい測定を入れられなかった（PO 2026-10-18 y）。設計は docs/handoff/agent-pending-20/design.md。
 - 0.42.3 claude agents の一覧取得を 3秒→10秒ごとにした（`agentsPollMs` 3000→10000）: 1回 CPU 約0.39秒・最大メモリ約150MB の起動を減らし、8GB Mac のメモリ不足を和らげる。状態表示の反映は最大約10秒遅れる。自動クローズの `gapLimitMs` は 60秒のまま。戻し方は `agentsPollMs` を 3000 に戻す。
 - 0.42.2 下の帯「この Mac」メーター（CPU・RAM・Disk）の更新を 2 秒ごとにした: サーバーの計測（`metricsPollMs`、設定・既定とも 5000→2000）、画面の取り直し（`MEMORY_REFRESH_MS` 10000→2000。MemoryPanel にも効く）、`/api/memory` のキャッシュ（`CACHE_TTL_MS` 5000→2000）。計測方法・他の間隔・見た目は変えていない。

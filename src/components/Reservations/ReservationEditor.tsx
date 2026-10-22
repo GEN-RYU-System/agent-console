@@ -12,8 +12,9 @@ import type { ReservationInput, RoleView } from "../../types";
 
 interface Props { roles: RoleView[]; onSave: (input: ReservationInput) => Promise<void>; }
 
-export function ReservationEditor({ roles, onSave }: Props) {
+export function ReservationEditor({ roles: allRoles, onSave }: Props) {
   const { t } = useTranslation();
+  const roles = allRoles.filter((r) => r.reservable !== false);
   const [name, setName] = useState("");
   const [roleId, setRoleId] = useState(roles[0]?.id ?? "");
   const [picked, setPicked] = useState("");

@@ -145,9 +145,11 @@ describe("ac-routine command and server", () => {
   it("S2 the limit is 10 enabled agent routines: update and enabling a routine made on the screen still work, the 11th add is a 400", async () => {
     for (const id of routineIds()) await run(["disable", id], JSON.stringify({ reason: "掃除" }));
     expect(h.routines.list().filter((r) => r.enabled)).toHaveLength(0);
+    // 入力だけ直す（v0.44.0 の1時間の関門）: 10 件が互いに60分以上離れるよう時刻をずらす。ids[0] は 09:00 のまま
+    const slots = ["09:00", "11:00", "13:00", "15:00", "17:00", "19:00", "21:00", "23:00", "01:00", "03:00"];
     const ids: string[] = [];
     for (let i = 0; i < 10; i++) {
-      const r = await run(["add"], entry({ name: `lim-${i}` }));
+      const r = await run(["add"], entry({ name: `lim-${i}`, timeHHmm: slots[i] }));
       expect(r.code, r.stderr).toBe(0);
       ids.push((JSON.parse(r.stdout) as { id: string }).id);
     }
@@ -160,7 +162,7 @@ describe("ac-routine command and server", () => {
     expect((await run(["enable", (poDisabled as { id: string }).id], JSON.stringify({ reason: "PO の分を再開" }))).code).toBe(0);
     // (c) 11 件目の add は 400
     const auditBefore = auditLines().length;
-    const over = await run(["add"], entry({ name: "lim-over" }));
+    const over = await run(["add"], entry({ name: "lim-over", timeHHmm: "05:00" }));
     expect(over.code).toBe(1);
     expect(over.stderr).toContain("400");
     expect(over.stderr).toContain("too many enabled agent routines");
@@ -169,14 +171,32 @@ describe("ac-routine command and server", () => {
     expect("routineId" in overRow).toBe(false);
     // AI 分の enable は上限を見る: 1 件止めて新しく足し（10 件に戻す）、止めた分を戻そうとすると 400
     expect((await run(["disable", ids[1]], JSON.stringify({ reason: "一時停止" }))).code).toBe(0);
-    expect((await run(["add"], entry({ name: "lim-new" }))).code).toBe(0);
+    expect((await run(["add"], entry({ name: "lim-new", timeHHmm: "05:00" }))).code).toBe(0);
     const re = await run(["enable", ids[1]], JSON.stringify({ reason: "戻す" }));
     expect(re.code).toBe(1);
     expect(re.stderr).toContain("too many enabled agent routines");
     expect(auditLines().at(-1)).toMatchObject({ action: "enable", outcome: "denied", routineId: ids[1], targetCreatedBy: "agent" });
     // update で enabled:true にする場合も同じ
-    expect((await run(["update", ids[1]], entry({ name: "lim-1", enabled: true }))).stderr).toContain("too many enabled agent routines");
-    expect((await run(["update", ids[1]], entry({ name: "lim-1", enabled: false }))).code).toBe(0);
+    expect((await run(["update", ids[1]], entry({ name: "lim-1", enabled: true, timeHHmm: "11:00" }))).stderr).toContain("too many enabled agent routines");
+    expect((await run(["update", ids[1]], entry({ name: "lim-1", enabled: false, timeHHmm: "11:00" }))).code).toBe(0);
+  });
+
+  it("S8 (v0.44.0) an AI routine within 60 minutes of another enabled routine is a 400 with the other's name and free times, and leaves a denied audit row without routineId", async () => {
+    for (const id of routineIds()) await run(["disable", id], JSON.stringify({ reason: "掃除" }));
+    const first = await run(["add"], entry({ name: "gate-first", weekdays: [3], timeHHmm: "15:00" }));
+    expect(first.code, first.stderr).toBe(0);
+    const auditBefore = auditLines().length;
+    const near = await run(["add"], entry({ name: "gate-near", weekdays: [3], timeHHmm: "15:40" }));
+    expect(near.code).toBe(1);
+    expect(near.stderr).toContain("400");
+    expect(near.stderr).toContain("schedule conflict: 「gate-first」（定期実行");
+    expect(near.stderr).toContain("空いている近い時刻");
+    const row = auditLines().slice(auditBefore).at(-1) as Record<string, unknown>;
+    expect(row).toMatchObject({ action: "add", outcome: "denied" });
+    expect(String(row.error)).toContain("schedule conflict");
+    expect("routineId" in row).toBe(false);
+    const ok = await run(["add"], entry({ name: "gate-ok", weekdays: [3], timeHHmm: "16:00" }));
+    expect(ok.code, ok.stderr).toBe(0);
   });
 
   it("the entry point refuses requests with an Origin header (403) or a wrong token (401), and unknown paths and bad shapes", async () => {
