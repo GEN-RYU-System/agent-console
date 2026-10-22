@@ -9,6 +9,7 @@ PO 承認: 2026-10-21「1」（§14-2: 60分未満・画面には関門をかけ
 - 画面からの保存は止めない（PO 2026-10-21「1」）。重なりが出ていても保存ボタンはそのまま押せる。
 - 重なりの判定は、便1 の関門と同じ計算を使う（2つ目の計算を作らない。SSOT）。画面に答えるための入口を1つ足し、関門の部品から「相手・前後の空き」を構造のまま返す。
 - 定期実行は、関門と同じく「有効になるもの」だけを見る。無効の定期実行を変える画面では出さない。
+- 一覧で定期実行を有効に切り替えるボタン（`setRoutineEnabled`）には出さない。設計 §8 の便1b は作成・変更の画面の確認の欄が対象のため（PR #72 の審査 Low-3。完了の報告にもこの差を書く）。
 
 ## 点検した事実（origin/main d25da9a。生出力は /tmp/CC報告ファイル/discord-pdca-bin1b/）
 - a. `server/schedule-gate.ts:57-73` `checkReservation` と `:76-88` `checkRoutine` は、保存・監査・順番待ちをしない。相手は `best`（型 `Hit` :27）、前後の空きは文字列 `prev`/`next`（予約は `stamp` :35 の `YYYY-MM-DDTHH:mm+09:00`、定期実行は `hhmm` :36 の `HH:mm`、無ければ "なし"）。文は `conflict`（:90-92）。読めていない間は `ready`（:50-54）が投げる。`PassThroughGate`（:169-172）は check の2つを空にしている
@@ -59,7 +60,7 @@ PO 承認: 2026-10-21「1」（§14-2: 60分未満・画面には関門をかけ
     - `weekdays` はカンマ区切りの 0〜6 の整数（重複なし、空なら空の配列）。`time` は `/^([01]\d|2[0-3]):[0-5]\d$/`。どちらかが違えば `SessionInputError("schedule preview input invalid")` → 400。`excludeId` は省けて、あれば長さ1〜200の文字列（違えば同じ 400）
     - `deps.schedule.previewRoutine({ id: excludeId, name: "", weekdays, timeHHmm: time }, Date.now())` を 200 で返す
   - `kind` がそれ以外なら同じ 400。監査には書かない（読むだけ）
-  - 定期実行の時刻の形の検査が `server/routines.ts` に既にあれば、それを使う（2つ目の正規表現を作らない）。使えない形なら上の正規表現を http.ts に置き、報告に書く
+  - 時刻の形の正規表現は http.ts に置く。同じ形の `TIME` は `server/routines.ts:15`・`server/reservations.ts:18` にあるが export されておらず、`server/routines.ts` はこの便では触らないため（PR #72 の審査 Low-2。1つにまとめるのは別の便）
 
 ### 4. `src/types.ts` と `src/api.ts`
 - `src/types.ts` に、サーバーと同じ形の `ScheduleOverlap`・`SchedulePreview` を足す（:130 の近く）
@@ -77,9 +78,9 @@ PO 承認: 2026-10-21「1」（§14-2: 60分未満・画面には関門をかけ
   - `preview` が `{ ready: false }`: title `ac.schedule.notReadyTitle`、本文 `ac.schedule.notReady`
   - `preview.overlap` がある: title `ac.schedule.overlapTitle`、本文は1段落目 `ac.schedule.overlapBody`（`name`・`kind`＝`t("ac.schedule.kind.<kind>")`・`at`＝下の整形）、2段落目 `ac.schedule.freeTimes`（`before`・`after`。null は `t("ac.schedule.none")`。`HH:mm` の形はそのまま、日時の形は下の整形）、3段落目 `ac.schedule.saveAllowed`
   - それ以外（`preview` が null、または overlap が null）は何も出さない（`null` を返す）
-- 段落は `Stack`（`@sa/components/Stack`）か、Callout の子に並べる。生の `p`・`div` に class や style を付けない（lint の決まりに合わせる。生の要素が lint で止まるなら `Stack` を使う）
+- 段落は、Callout の子に `Stack`（`@sa/components/Stack`、`gap` は今のエディタと同じ書き方）を置き、その中に段落ごとに class も style も付けない素の `<span>` を並べる（文字をそのまま並べると1行につながるため。PR #72 の審査 Low-1）。決まりの検査（`scripts/check-design-governance.mjs`）は pages の外の素の `span`・`div` を止めない（今の `RoutineEditor.tsx:28` も素の `div`）
 - 日時の整形: `ReservationsPane.tsx:16` の `formatJst` を `src/components/Reservations/formatJst.ts`（新規）に移して export し、`ReservationsPane.tsx` とこの部品の両方から使う（同じ整形を2つ作らない）。`formatJst` の中の " JST" の文字は今のまま（今もある表示。tsx の日本語ではない）
-- `data-testid="schedule-overlap"` を、出したときの Callout を包む要素か Callout 自身に付ける（Callout が props を通さなければ報告に書いて、包む要素を `Stack` にする）
+- 出したときは、Callout を class も style も付けない `<div data-testid="schedule-overlap">` で包む（Callout は `variant`・`title`・`children`・`className` だけ、Stack は `direction`・`gap`・`children`・`className` だけを受け、`data-testid` を通さないため。PR #72 の審査 Medium-2）
 
 ### 6. 予約の作成の画面 `src/components/Reservations/ReservationEditor.tsx`
 - 状態を2つ足す: `preview: SchedulePreview | null`、`previewFailed: boolean`
@@ -133,7 +134,8 @@ PO 承認: 2026-10-21「1」（§14-2: 60分未満・画面には関門をかけ
   - 予約: 重なる相手がいる時刻で 200 と overlap。重ならない時刻で 200 と `overlap: null`。日付の形の誤りで 400
   - 定期実行: 重なり・重ならない・`excludeId` で自分を外す・`weekdays=7` で 400・`time=24:00` で 400・`kind=x` で 400
   - 呼んだあとで、予約の件数・定期実行の件数・監査の行数が変わらない
-- 画面（`ReservationEditor.test.tsx`・`RoutineEditor.test.tsx` に足す。`vi.mock("../../api")` で preview の関数を偽にする。今の試験は変えない）:
+- 画面（`ReservationEditor.test.tsx`・`RoutineEditor.test.tsx` に足す。`vi.mock("../../api")` で preview の関数を偽にする。今の試験の期待値は変えない）:
+  - 今の `vi.mock("../../api", …)`（どちらも :9。今は `fetchResumeTargets` だけ）に、`previewReservationSchedule`・`previewRoutineSchedule`（既定は `{ ready: true, overlap: null }` を返す偽物）と、本物の `ApiError`（`importOriginal` で取る）を足すことは許可する。今の試験も描画後に問い合わせが走るため（新規の定期実行は曜日と 09:00 が最初から入る・予約は `fillRest` :22-25 が日付を入れる）。PR #72 の審査 Medium-1
   - 重なる答えのとき、`schedule-overlap` に相手の名前と「2026/10/23 10:00 JST」の形の時刻が出る
   - 重ならない答えのとき、`schedule-overlap` が無い
   - 重なりが出ていても保存ボタンを押すと `onSave` が呼ばれる
@@ -150,7 +152,7 @@ PO 承認: 2026-10-21「1」（§14-2: 60分未満・画面には関門をかけ
 
 ## 想定分岐
 - http の依存の型の名前が違う・gate を渡す道が無い: 実物の名前に合わせて足す。依存の型を3つ以上のファイルで直す必要があれば NEEDS_DECISION:
-- `Callout` が子に複数の段落を受けない・`data-testid` を通さない: `Stack` で包む。それでも lint に止まるなら NEEDS_DECISION:（生の要素や style で逃げない）
+- §5 の素の `div`・`span` が lint か型の検査に止まる: NEEDS_DECISION:（class・style・ほかの生の要素で逃げない）
 - `ApiError` が status を持たない・名前が違う: `src/api.ts:36-45` の実物に合わせる。400 を見分けられないなら NEEDS_DECISION:
 - 定期実行の画面で `routine.enabled` が無い型: 型の実物に合わせる。無効を見分けられないなら、いつも問い合わせる形にして報告に書く
 - `findReservation`/`findRoutine` に移したら G1〜G16 のどれかが落ちた: 移し方を直す（期待値は変えない）。直せなければ BLOCKED:
