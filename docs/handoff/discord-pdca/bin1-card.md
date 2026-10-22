@@ -81,8 +81,8 @@ PO 承認: 2026-10-21「1」（この設計で進める）、2026-10-21「1」�
 - `.d.mts` の型に `callerSessionId?: string` を足す
 
 ### 9. `src/types.ts` と `src/components/Reservations/ReservationEditor.tsx`
-- `RoleView`（:27-31）に `reservable: boolean`
-- ReservationEditor: 選択肢と既定（:18・:41）を `roles.filter((r) => r.reservable)` から作る。RoutineEditor は触らない（便2 で決める）
+- `RoleView`（:27-31）に `reservable?: boolean`（コメント「false なら予約で選べない。省くと選べる」。省ける形にして、型付きの見本を持つ今の試験5つを直さずに通す。PR #70 の審査 M-c）
+- ReservationEditor: 選択肢と既定（:18・:41）を `roles.filter((r) => r.reservable !== false)` から作る。RoutineEditor は触らない（便2 で決める）
 
 ### 10. 版・文書
 - `package.json`・`package-lock.json`（2 か所）・`extension/manifest.json` を 0.44.0
@@ -98,11 +98,11 @@ PO 承認: 2026-10-21「1」（この設計で進める）、2026-10-21「1」�
 - `routines.test.ts`: AI の追加・変更・有効化が予約と60分未満なら拒否、無効化は通る、画面の追加は通る
 - `ac-reserve.test.ts`: 名乗りを送る（add の標準入力の `callerSessionId` は上書きされる・list の検索語・cancel の本文）／harness で、`reserveRoles` に無い役割・名乗り無しは 403 で監査に `denied`、ある役割は通る
 - `config.test.ts`: `reservable` の型の誤り・`reserveRoles` の未知の id・既定の絞り込み
-- `src/components/Reservations/ReservationEditor.test.tsx`: `reservable: false` の役割が選択肢に出ず、既定にもならないことを1本（今の試験の役割の見本には `reservable: true` を足す）
+- `src/components/Reservations/ReservationEditor.test.tsx`: `reservable: false` の役割が選択肢に出ず、既定にもならないことを1本（今の試験の役割の見本は直さない）
 
 ## 完了の確認（生出力を /tmp/CC報告ファイル/discord-pdca-bin1/ に保存）
 1. `npm run typecheck`  2. `npm run lint`  3. `npx vitest run tests/unit/schedule-gate.test.ts tests/unit/reservations.test.ts tests/unit/routines.test.ts tests/unit/ac-reserve.test.ts tests/unit/ac-routine.test.ts tests/unit/config.test.ts`  4. `npm test`
-5. `git diff --stat origin/main...HEAD` が §変更 のファイルだけ
+5. `git diff --stat origin/main...HEAD` が §変更 のファイルと、想定分岐の「入力だけを直す」で直した試験ファイル（報告に列挙したもの）だけ
 6. 実物の拒否（K5 の「実物で各1回」）: harness か試験用のポートで立てたサーバーに、実物の `hooks/ac-reserve.mjs` と `hooks/ac-routine.mjs` を試験用の dataDir（/tmp 配下）から呼び、60分未満で拒否の文が出ることを各1回。本番のサーバー・本番の dataDir は使わない。試験の形で書けたら vitest に入れてよい
 7. コミット `feat: AI の予約・定期実行に1時間の関門と予約の監査記録を足す（v0.44.0）`（末尾 `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`）して push。PR は作らない
 
@@ -115,7 +115,7 @@ PO 承認: 2026-10-21「1」（この設計で進める）、2026-10-21「1」�
 - 監査に書けずに元の状態へ戻すまでの間に、別の予約の保存（開始の監査を待つ間は 作成 :192・取消 :204・開始 :219・送り終わり :241、取消の監査を待つ間は 開始 :219・送り終わり :241）がメモリの全件をファイルへ書くと、ファイルにだけ途中の状態（取消済み・送信中）が一時的に残る。今の「保存に失敗したら戻す」（:203-204・:217-220）と同じ形の隙間で、次の保存で直る。直さなくてよい（試験も足さない。PR #70 の審査 L-b）
 - 今ある試験のうち、新しい決まり（関門・名乗りの照合）にぶつかる入力のものは、**入力だけ**を直す。期待値（成功・件数・上限の 400）は変えない（PR #70 の審査 M-b）:
   - 同じ時刻で何件も作る試験（ac-routine.test.ts:149-153・:172、ac-hardening.test.ts:290-294、reservations.test.ts:317-319）は、入力の時刻を1件ごとに60分以上ずらす
-  - 名乗りなしで AI の予約を作る試験（reservations.test.ts:294-301・:317-319、ac-reserve.test.ts:27-36）は、`reserveRoles` に入っている役割のセッションの名乗りを送る形にする
+  - 名乗りなしで AI の予約を作る試験（reservations.test.ts:294-301・:312-316・:317-319・:372、ac-reserve.test.ts:27-36・:41-43）は、`reserveRoles` に入っている役割のセッションの名乗りを送る形にする
   - harness に `reserveRoles?: string[]` の option を足し、既定は `["echo"]`（:139・:204 の `routineManagerRoles` と同じ形）。`parseReserveRoles` も `parseRoutineManagerRoles`（config.ts:324-331）と同じく、明示が無ければ既定のうち roles に実在するものだけを使う（無ければ空＝全員 403。起動は止めない）
   - 上のほかにも同じ理由で落ちる試験があれば、同じく入力だけを直し、直した試験名と理由を報告に列挙する。期待値を変えないと直せないものは NEEDS_DECISION:
 - 定期実行の窓の中に既に重なっている相手（導入前からの重なり）があって AI の変更が拒まれる試験が書けない場合は、試験の中の相手の時刻をずらす（本番の重なりは導入のときに Opus が一覧にして直す。design §4-3）
