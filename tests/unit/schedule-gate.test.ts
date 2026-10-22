@@ -56,6 +56,26 @@ describe("ScheduleGate reservation candidates", () => {
   });
 });
 
+describe("ScheduleGate refusal text and midnight edge (review additions)", () => {
+  it("G2b when no free time exists before, the message says なし for 前; when none exists on either side, both say なし", () => {
+    const g = gateOf([resv("other", NOW + 60 * MIN)], []);
+    let message = "";
+    try { g.checkReservation(NOW + 90 * MIN, NOW, "c"); } catch (e) { message = (e as Error).message; }
+    expect(message).toContain("空いている近い時刻: 前 なし ／ 後 2026-10-12T11:00+09:00");
+    const dense: Reservation[] = [];
+    for (let k = 1; k <= 60; k++) dense.push(resv(`d${k}`, NOW + k * 100 * MIN));
+    const g2 = gateOf(dense, []);
+    let both = "";
+    try { g2.checkReservation(NOW + 50 * 60 * MIN, NOW, "c"); } catch (e) { both = (e as Error).message; }
+    expect(both).toMatch(/空いている近い時刻: 前 なし ／ 後 なし$/);
+  });
+
+  it("G6b a routine at 23:30 on Monday and a reservation at 00:30 on Tuesday are exactly 60 minutes apart and pass", () => {
+    const g = gateOf([], [rout("x", "late", [1], "23:30")]);
+    expect(() => g.checkReservation(at("2026-10-13T00:30"), NOW, "c")).not.toThrow();
+  });
+});
+
 describe("ScheduleGate routine candidates", () => {
   it("G7 a routine within 60 minutes of another enabled routine is refused, 60 passes", () => {
     const g = gateOf([], [rout("a", "morning", [1, 3], "09:00")]);

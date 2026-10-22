@@ -115,4 +115,14 @@ describe("ac-reserve command", () => {
     expect((await runCommand({ argv: ["cancel", id], dataDir, callerSessionId: CALLER })).code).toBe(0);
     expect(auditRows().at(-1)).toMatchObject({ action: "reserveCancel", outcome: "ok", reservationId: id, callerSessionId: CALLER });
   });
+
+  it("R22 a callerSessionId in the standard input is overwritten by the caller from the environment (hooks/ac-reserve.mjs)", async () => {
+    const FORGED = "99999999-9999-4999-8999-999999999999"; // 標準入力で偽る名乗り。環境変数の CALLER で上書きされる
+    const r = await runCommand({ argv: ["add"], stdinText: entry({ name: "forged", time: "17:00", callerSessionId: FORGED }), dataDir, callerSessionId: CALLER });
+    expect(r.code, r.stderr).toBe(0);
+    const id = (JSON.parse(r.stdout) as { id: string }).id;
+    expect(auditRows().at(-1)).toMatchObject({ action: "reserveCreate", outcome: "ok", reservationId: id, callerSessionId: CALLER });
+    expect(JSON.stringify(auditRows().at(-1))).not.toContain(FORGED);
+    expect((await runCommand({ argv: ["cancel", id], dataDir, callerSessionId: CALLER })).code).toBe(0);
+  });
 });

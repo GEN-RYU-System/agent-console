@@ -515,4 +515,61 @@ describe("reservation gate, audit and reservable role (v0.44.0)", () => {
     expect(sessions.restore).not.toHaveBeenCalled();
     expect(rows).toEqual(["reserveCancel:ok"]);
   });
+
+  it("R19d a cancel that arrives while the dispatch audit row is being written is a 409, and the reservation opens exactly once", async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const rows: string[] = [];
+    const audit: ReservationAuditSink = async (e) => { rows.push(`${e.action}:${e.outcome}`); if (e.action === "reserveDispatch") await held; };
+    const { service, sessions, clock, root } = await setupGated(audit);
+    const seed: Reservation = { id: "seed", name: "seed", roleId: "echo", cwd: root, runAt: BASE_MS + 10 * MIN, runAtJst: "2026-10-12T09:10+09:00", timeZone: "Asia/Tokyo", promptText: "p", createdBy: "ui", createdAt: BASE_MS, updatedAt: BASE_MS, status: "pending" };
+    (service as unknown as { items: Reservation[] }).items = [seed];
+    clock.t = BASE_MS + 10 * MIN;
+    const ticking = service.tick(); // 開始の監査を待たせる（状態は先に dispatching になっている）
+    await new Promise((r) => setTimeout(r, 10));
+    await expect(service.cancel("seed", { callerSessionId: null })).rejects.toThrow(SessionConflictError);
+    release();
+    await ticking;
+    await service.settled();
+    expect(sessions.restore).toHaveBeenCalledTimes(1);
+    expect(service.list()[0].status).toBe("done");
+    expect(rows).toEqual(["reserveDispatch:ok"]);
+  });
+
+  it("R14b isLoaded stays false when store.list() throws, and the gate refuses AI reservations and routines meanwhile", async () => {
+    const base = await setup();
+    const failingStore = { list: async () => { throw new Error("read failed"); }, save: async () => undefined } as unknown as ReservationStore;
+    const gate = new ScheduleGate();
+    const service = new ReservationService(base.hub.config as never, base.sessions as never, base.hub as never, failingStore, () => new Date(base.clock.t), TIMING, false, { gate });
+    gate.attach({ reservations: () => service.list(), reservationsReady: () => service.isLoaded(), routines: () => [] });
+    await expect(service.start()).rejects.toThrow("read failed");
+    expect(service.isLoaded()).toBe(false);
+    expect(() => gate.checkReservation(BASE_MS + 24 * 60 * MIN, BASE_MS, "ai")).toThrow("予約の一覧をまだ読めていない");
+    expect(() => gate.checkRoutine({ name: "ai", weekdays: [1], timeHHmm: "10:00" }, BASE_MS)).toThrow("予約の一覧をまだ読めていない");
+    service.stop();
+  });
+
+  it("R19e (K6) when the dispatch audit row fails, nothing is sent, no row remains, and the next tick 60 seconds later sends it and leaves one row", async () => {
+    const rows: string[] = [];
+    let calls = 0;
+    const audit: ReservationAuditSink = async (e) => { calls += 1; if (calls === 1) throw new Error("audit disk"); rows.push(`${e.action}:${e.outcome}`); };
+    const { service, sessions, clock, root } = await setupGated(audit);
+    const err = quiet();
+    const seed: Reservation = { id: "seed", name: "seed", roleId: "echo", cwd: root, runAt: BASE_MS + 10 * MIN, runAtJst: "2026-10-12T09:10+09:00", timeZone: "Asia/Tokyo", promptText: "p", createdBy: "ui", createdAt: BASE_MS, updatedAt: BASE_MS, status: "pending" };
+    (service as unknown as { items: Reservation[] }).items = [seed];
+    clock.t = BASE_MS + 10 * MIN;
+    await run(service);
+    expect(service.list()[0].status).toBe("pending");
+    expect(sessions.restore).not.toHaveBeenCalled();
+    expect(rows).toEqual([]);
+    clock.t += 30_000;
+    await run(service);
+    expect(sessions.restore).not.toHaveBeenCalled(); // 60秒たつまで選ばれない
+    clock.t = BASE_MS + 10 * MIN + 60_000;
+    await run(service);
+    expect(sessions.restore).toHaveBeenCalledTimes(1);
+    expect(service.list()[0]).toMatchObject({ status: "done", outcome: "sent" });
+    expect(rows).toEqual(["reserveDispatch:ok"]);
+    err.mockRestore();
+  });
 });
