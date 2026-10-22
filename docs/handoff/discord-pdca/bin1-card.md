@@ -33,20 +33,22 @@ PO 承認: 2026-10-21「1」（この設計で進める）、2026-10-21「1」�
 
 ### 2. `server/routine-audit.ts`
 - `RoutineAuditAction` に `"reserveCreate" | "reserveCancel" | "reserveDispatch"` を足す（:11 のコメントにも1語ずつ足す）
-- `RoutineAuditEntry` に `reservationId?: string` を足す（コメント「予約の行だけ」）。`targetCreatedBy` のコメントに「予約の行では予約の createdBy」を足す
+- `RoutineAuditEntry` に `reservationId?: string`（コメント「予約の行だけ」）と `targetRoleId?: string`（コメント「reserveDispatch: 予約が開く役割。roleId は呼び出し元の役割」）を足す。`targetCreatedBy` のコメントに「予約の行では予約の createdBy」を足す
 - `append` は変えない
 
 ### 3. `server/reservations.ts`
 - 型 `ReservationAuditSink = (entry: Omit<RoutineAuditEntry, "at">) => Promise<void>`（書けなければ reject）を export
 - コンストラクタの最後に省ける引数 `deps: { gate?: ScheduleGate; audit?: ReservationAuditSink } = {}` を足す（今の試験の呼び方 tests/unit/reservations.test.ts:43 等をそのまま通すため）。無ければ、gate は「並べるだけで比べない」もの、audit は何もしないもの。本番の配線（§6）と試験の harness（§11）は必ず両方渡す
 - `create(input, createdBy, caller?: { callerSessionId: string | null; roleId?: string })`:
-  - 全体を `gate.run(...)` の中で行う（`await this.loaded` も中でよい）
-  - 今の検査（:168-184）のあと、役割の検査を足す: `this.config.roles` に `roleId` が無い、または `reservable === false` なら `SessionInputError("reservation role is not reservable")`（未知の役割の扱いが validateLaunchTarget で先に 400 になるなら、その順のままでよい）
+  - `await this.loaded`・形の検査（:168-174・:176-181）・`validateLaunchTarget`（:174）は `gate.run` の**外**で先に済ませる（予約の読み込みが壊れて `loaded` が解決しないとき、定期実行の操作まで止めないため）。`gate.run(...)` の中では、役割の検査・上限の検査（:182-184）・関門・監査・保存だけを行う
+  - 役割の検査を足す: `this.config.roles` に `roleId` が無い、または `reservable === false` なら `SessionInputError("reservation role is not reservable")`（未知の役割の扱いが validateLaunchTarget で先に 400 になるなら、その順のままでよい）
   - `createdBy === "agent"` のときだけ `gate.checkReservation(runAt, nowMs, text.name)`
   - 役割の拒否・関門の拒否・上限の拒否（:183-184）は、監査に `{ action: "reserveCreate", outcome: "denied", error: err.message, targetCreatedBy: createdBy, callerSessionId, roleId }` を書いてから投げる（書けなければそのまま投げる）。日付・時刻・本文の形の誤り（:168-174・:177-179）は書かない
   - 通ったら、監査に `{ action: "reserveCreate", outcome: "ok", reservationId, targetCreatedBy: createdBy, callerSessionId, roleId }` を書く → 失敗したらそのまま投げる（items を変えない）→ 今の保存（:190-192）。保存に失敗したら、監査に `outcome: "denied", error: "save failed"` を書き足し（失敗は console.error だけ）、今の戻しをして投げる
-- `cancel(id, caller?)`: `gate.run` の中で、:199-201 の検査のあと、監査に `reserveCancel` `ok`（`reservationId`・`targetCreatedBy` は予約の createdBy）→ 書けなければ投げる → 保存。保存の失敗は create と同じ
-- `tick`: :215 の `late` を出したあと、:216 の状態の書き換えより前に、監査に `{ action: "reserveDispatch", outcome: "ok", reservationId, targetCreatedBy, callerSessionId: null, roleId: picked.roleId }` を書く。失敗したら `this.notBefore.set(picked.id, at + RETRY_AFTER_SAVE_FAIL_MS)`、console.error、return（状態も `lastStartedAt` も変えない）。送信中の保存（:219）に失敗したら、監査に `outcome: "denied", error: "save failed"` を書き足す（失敗は console.error だけ）
+- 取消と開始は「メモリの状態を先に同期で確保する → 監査 → 保存」の順にする（判定と書き換えの間に待ちを入れない。取消と開始が同時に来ても、先に状態を書き換えた方だけが進む。今の :201-203・:216-218 が同期なのと同じ）
+- `cancel(id, caller?)`: `await this.loaded` は外。`gate.run` の中で、:199-201 の検査のあと、すぐに（待たずに）:202-203 の取消の書き換えを入れる → 監査に `reserveCancel` `ok`（`reservationId`・`targetCreatedBy` は予約の createdBy）→ 書けなければ `current` に戻して投げる → 保存。保存の失敗は今の戻し（:204）に加え、監査に `outcome: "denied", error: "save failed"` を書き足す（失敗は console.error だけ）
+- `tick`: :216-218 の送信中の書き換えと `lastStartedAt` は今のまま同期で入れる → 監査に `{ action: "reserveDispatch", outcome: "ok", reservationId, targetCreatedBy, callerSessionId: null, targetRoleId: picked.roleId }` を書く（`roleId` 欄は呼び出し元の役割の意味なので使わない。§2）→ 失敗したら :220-221 と同じく `picked` に戻して `notBefore` を付け、console.error、return → 送信中の保存（:219）。保存に失敗したら、今の戻しに加え監査に `outcome: "denied", error: "save failed"` を書き足す（失敗は console.error だけ）
+- 試験に足す（§11）: 開始の監査を待っている間に取消が来たら取消は 409 になり、予約は1回だけ開く／取消の監査を待っている間に tick が来ても、その予約は開かない
 - :125 のコメントや README の「メモリだけ」は notBefore のことなので変えない
 
 ### 4. `server/routines.ts`
@@ -72,7 +74,7 @@ PO 承認: 2026-10-21「1」（この設計で進める）、2026-10-21「1」�
 - `handleAgentRoutines` の :492 の `RoutineLimitError` の条件に `|| err instanceof ScheduleConflictError` を足す（関門の拒否も `denied` で残す）
 
 ### 8. `hooks/ac-reserve.mjs` と `hooks/ac-reserve.d.mts`
-- `runCommand` に `callerSessionId` を受け取らせる（ac-routine.mjs の形）。add は標準入力の JSON から `callerSessionId` を消してから、環境変数の名乗りを足して送る。list は `?callerSessionId=`、cancel は本文 `{ callerSessionId }`。名乗りが無ければ付けない（サーバーが 403）
+- `runCommand` に `callerSessionId` を受け取らせる（ac-routine.mjs の形）。add は標準入力の JSON がオブジェクトでなければ拒み（ac-routine.mjs:68 と同じ文）、 `callerSessionId` を消してから、環境変数の名乗りを足して送る。list は `?callerSessionId=`、cancel は本文 `{ callerSessionId }`。名乗りが無ければ付けない（サーバーが 403）
 - isMain で `callerSessionId: process.env.CLAUDE_CODE_SESSION_ID` を渡す（ac-routine.mjs:111 と同じ）
 - `.d.mts` の型に `callerSessionId?: string` を足す
 
