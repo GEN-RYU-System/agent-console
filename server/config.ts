@@ -16,6 +16,8 @@ export interface RoleConfig {
    * 無い役割は、通常の command で開き直す。
    */
   restoreCommand?: string[];
+  /** false なら予約で選べない。画面の選択肢から外し、予約の入口で 400。省くと true */
+  reservable?: boolean;
 }
 
 /** アカウント切り替えの端末に付ける予約済みの役割 id（config の roles では使えない） */
@@ -70,6 +72,8 @@ export interface Config {
   roles: RoleConfig[];
   /** ac-routine（AI による定期実行の登録・変更）を使ってよい役割の id（SSOT）。既定 ["opus-designer"]。roles に無い id は起動時エラー */
   routineManagerRoles: string[];
+  /** ac-reserve（AI による予約）を使ってよい役割の id（SSOT）。既定 ["opus-designer","shell"]。roles に無い id は起動時エラー */
+  reserveRoles: string[];
   /** 「アカウントを切り替える」で動かす命令（config 固定）。無ければ切り替えボタンを出さない。roles には入れない */
   accountLoginCommand?: string[];
   /** よく使う指示などアプリが保存するデータの置き場 */
@@ -143,7 +147,8 @@ function parseRole(raw: unknown, index: number): RoleConfig {
     throw new Error(`config: roles[${index}].command must be a non-empty string array`);
   }
   if (typeof r.needsWorktree !== "boolean") throw new Error(`config: roles[${index}].needsWorktree must be boolean`);
-  const base: RoleConfig = { id: r.id, labelKey: r.labelKey, command: r.command as string[], needsWorktree: r.needsWorktree };
+  if (r.reservable !== undefined && typeof r.reservable !== "boolean") throw new Error(`config: roles[${index}].reservable must be boolean`);
+  const base: RoleConfig = { id: r.id, labelKey: r.labelKey, command: r.command as string[], needsWorktree: r.needsWorktree, ...(r.reservable === false ? { reservable: false } : {}) };
   const role = r.restoreCommand === undefined ? base : { ...base, restoreCommand: parseCommand(r.restoreCommand, `roles[${index}].restoreCommand`) };
   if (r.resumeCommand === undefined) {
     if (r.resumeScope !== undefined) throw new Error(`config: roles[${index}].resumeScope requires resumeCommand`);
@@ -277,6 +282,7 @@ export function parseConfig(raw: unknown): Config {
     scopes.add(role.resumeScope);
   }
   const routineManagerRoles = parseRoutineManagerRoles(o.routineManagerRoles, ids);
+  const reserveRoles = parseReserveRoles(o.reserveRoles, ids);
   return {
     port: o.port as number,
     salesanchorRoot: expandHome(o.salesanchorRoot as string),
@@ -289,6 +295,7 @@ export function parseConfig(raw: unknown): Config {
     ringBufferBytes: o.ringBufferBytes as number,
     roles,
     routineManagerRoles,
+    reserveRoles,
     ...(o.accountLoginCommand !== undefined ? { accountLoginCommand: parseCommand(o.accountLoginCommand, "accountLoginCommand") } : {}),
     dataDir: parseDataDir(o.dataDir),
     notify: parseNotify(o.notify),
@@ -327,6 +334,17 @@ function parseRoutineManagerRoles(raw: unknown, roleIds: ReadonlySet<string>): s
   const list = raw;
   if (!Array.isArray(list) || list.some((x) => typeof x !== "string" || x === "")) throw new Error("config: routineManagerRoles must be an array of role ids");
   for (const id of list as string[]) if (!roleIds.has(id)) throw new Error(`config: routineManagerRoles has unknown role id ${id}`);
+  return [...new Set(list as string[])];
+}
+
+export const DEFAULT_RESERVE_ROLES: readonly string[] = ["opus-designer", "shell"];
+
+function parseReserveRoles(raw: unknown, roleIds: ReadonlySet<string>): string[] {
+  // 明示が無いときは、既定のうち roles に実在するものだけを使う（無ければ空＝全員 403。起動は止めない）
+  if (raw === undefined) return DEFAULT_RESERVE_ROLES.filter((id) => roleIds.has(id));
+  const list = raw;
+  if (!Array.isArray(list) || list.some((x) => typeof x !== "string" || x === "")) throw new Error("config: reserveRoles must be an array of role ids");
+  for (const id of list as string[]) if (!roleIds.has(id)) throw new Error(`config: reserveRoles has unknown role id ${id}`);
   return [...new Set(list as string[])];
 }
 

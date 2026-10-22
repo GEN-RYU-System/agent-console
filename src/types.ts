@@ -28,6 +28,8 @@ export interface RoleView {
   id: string;
   labelKey: string;
   needsWorktree: boolean;
+  /** false なら予約で選べない。省くと選べる */
+  reservable?: boolean;
 }
 
 /** 起動時に前回のセッションを開き直せなかった理由（文言は画面の i18n）。name は保存してあった名前 */

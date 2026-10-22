@@ -57,6 +57,12 @@ describe("ReservationEditor launch target", () => {
     expect(onSave.mock.calls[0][0]).toMatchObject({ roleId: "sonnet-impl", cwd: "/wt/release-alpha", branch: "release/alpha" });
   });
 
+  it("v0.44.0: a role with reservable:false is not offered", () => {
+    render(<ReservationEditor roles={[...roles, { id: "hidden", labelKey: "role.shell", needsWorktree: false, reservable: false }]} onSave={vi.fn()} />);
+    const values = (screen.getByLabelText("役割") as HTMLSelectElement).options;
+    expect(Array.from(values).map((o) => o.value)).toEqual(["opus-designer", "sonnet-impl"]);
+  });
+
   it("changing the role clears the picked worktree", async () => {
     render(<ReservationEditor roles={roles} onSave={vi.fn()} />);
     pickRole("sonnet-impl");

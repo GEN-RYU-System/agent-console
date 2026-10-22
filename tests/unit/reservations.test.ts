@@ -6,7 +6,8 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Hub } from "../../server/hub.ts";
 import { SessionConflictError, SessionInputError } from "../../server/sessions.ts";
-import { RESERVATIONS_FILE, ReservationService, ReservationStore, type Reservation } from "../../server/reservations.ts";
+import { RESERVATIONS_FILE, ReservationService, ReservationStore, type Reservation, type ReservationAuditSink } from "../../server/reservations.ts";
+import { ScheduleGate } from "../../server/schedule-gate.ts";
 import { RESERVE_TOKEN_FILE, setupReserveToken } from "../../server/reserve-token.ts";
 import { RESERVE_TOKEN, startHarness, TOKEN, type Harness } from "./helpers/harness.ts";
 
@@ -286,8 +287,16 @@ describe("agent reservation HTTP route", () => {
   const agent = (method: string, url: string, body?: unknown, headers: Record<string, string> = { Authorization: `Bearer ${RESERVE_TOKEN}` }) => send(h.port, method, url, headers, body);
   const ui = (method: string, url: string, body?: unknown) => send(h.port, method, url, { Authorization: `Bearer ${TOKEN}` }, body);
   const date = new Date(Date.now() + 3 * 24 * 60 * MIN).toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
-  const body = (over: Record<string, unknown> = {}) => ({ name: "m", roleId: "echo", cwd: h.config.salesanchorRoot, date, time: "10:00", promptText: "hi", ...AGENT, ...over });
-  beforeAll(async () => { h = await startHarness(); nullH = await startHarness({ reserve: { token: null } }); });
+  // v0.44.0: AI の受け口は呼び出し元（予約を作れる役割の会話）が要る。入力に callerSessionId を足すだけ
+  const CALLER = "66666666-6666-4666-8666-666666666666";
+  const body = (over: Record<string, unknown> = {}) => ({ name: "m", roleId: "echo", cwd: h.config.salesanchorRoot, date, time: "10:00", promptText: "hi", callerSessionId: CALLER, ...AGENT, ...over });
+  // 1時間の関門: n 番目の予約は 10:00 から n 時間ずつ後ろへ（24 時を越えたら日付も進める）
+  const slot = (n: number): { date: string; time: string } => { const iso = new Date(Date.parse(`${date}T10:00:00+09:00`) + n * 60 * MIN + 9 * 60 * MIN).toISOString(); return { date: iso.slice(0, 10), time: iso.slice(11, 16) }; };
+  beforeAll(async () => {
+    h = await startHarness(); nullH = await startHarness({ reserve: { token: null } });
+    const caller = await h.sessions.create({ name: "reserver", roleId: "echo" });
+    h.sessions.setClaudeSessionId(caller.id, CALLER);
+  });
   afterAll(async () => { await h.close(); await nullH.close(); });
 
   it("R11 accepts add/list/cancel with the right token and rejects others", async () => {
@@ -295,10 +304,10 @@ describe("agent reservation HTTP route", () => {
     expect(added.status).toBe(201);
     const id = added.json.id as string;
     expect(added.json).toMatchObject({ createdBy: "agent", purpose: "measure", measureNote: "効果を測る" });
-    const listed = await agent("GET", "/api/agent/reservations");
+    const listed = await agent("GET", `/api/agent/reservations?callerSessionId=${CALLER}`);
     expect(listed.status).toBe(200);
     expect((listed.json.items as { id: string }[]).some((r) => r.id === id)).toBe(true);
-    expect((await agent("POST", `/api/agent/reservations/${id}/cancel`, {})).status).toBe(200);
+    expect((await agent("POST", `/api/agent/reservations/${id}/cancel`, { callerSessionId: CALLER })).status).toBe(200);
     expect((await agent("GET", "/api/agent/reservations", undefined, {})).status).toBe(401);
     expect((await agent("GET", "/api/agent/reservations", undefined, { Authorization: `Bearer ${"0".repeat(64)}` })).status).toBe(401);
     expect((await send(nullH.port, "GET", "/api/agent/reservations", { Authorization: `Bearer ${RESERVE_TOKEN}` })).status).toBe(401);
@@ -314,10 +323,12 @@ describe("agent reservation HTTP route", () => {
     expect((await agent("POST", "/api/agent/reservations", body({ measureNote: undefined }))).status).toBe(400);
     expect((await agent("POST", "/api/agent/reservations", body({ measureNote: "" }))).status).toBe(400);
     expect((await agent("POST", "/api/agent/reservations", body({ measureNote: "x".repeat(201) }))).status).toBe(400);
-    expect((await agent("POST", "/api/agent/reservations", body({ measureNote: "x".repeat(200) }))).status).toBe(201);
+    // 入力だけ直す（v0.44.0 の1時間の関門）: 20 件が互いに60分以上離れるよう開始を1時間ずつずらす
+    let n = 0;
+    expect((await agent("POST", "/api/agent/reservations", body({ measureNote: "x".repeat(200), ...slot(n++) }))).status).toBe(201);
     const pendingAgent = () => h.reservations.list().filter((r) => r.createdBy === "agent" && r.status === "pending").length;
-    while (pendingAgent() < 20) expect((await agent("POST", "/api/agent/reservations", body())).status).toBe(201);
-    expect((await agent("POST", "/api/agent/reservations", body())).status).toBe(400);
+    while (pendingAgent() < 20) expect((await agent("POST", "/api/agent/reservations", body(slot(n++)))).status).toBe(201);
+    expect((await agent("POST", "/api/agent/reservations", body(slot(n++)))).status).toBe(400);
     const plain = await ui("POST", "/api/reservations", body({ purpose: undefined, measureNote: undefined }));
     expect(plain.status).toBe(201);
     expect(plain.json.purpose).toBeUndefined();
@@ -369,9 +380,139 @@ describe("launch target cwd default (v0.24.0)", () => {
     const h2 = await startHarness();
     try {
       const date2 = new Date(Date.now() + 3 * 24 * 60 * MIN).toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
-      const r = await send(h2.port, "POST", "/api/agent/reservations", { Authorization: `Bearer ${RESERVE_TOKEN}` }, { name: "m", roleId: "echo", date: date2, time: "10:00", promptText: "hi", ...AGENT });
+      // 入力だけ直す（v0.44.0）: 呼び出し元の会話を登録して callerSessionId を足す
+      const caller = await h2.sessions.create({ name: "reserver", roleId: "echo" });
+      h2.sessions.setClaudeSessionId(caller.id, "77777777-7777-4777-8777-777777777777");
+      const r = await send(h2.port, "POST", "/api/agent/reservations", { Authorization: `Bearer ${RESERVE_TOKEN}` }, { name: "m", roleId: "echo", date: date2, time: "10:00", promptText: "hi", callerSessionId: "77777777-7777-4777-8777-777777777777", ...AGENT });
       expect(r.status).toBe(201);
       expect(r.json.cwd).toBe(realpathSync(h2.config.salesanchorRoot));
     } finally { await h2.close(); }
+  });
+});
+
+// v0.44.0: 1時間の関門・予約の監査記録・予約できない役割（設計 discord-pdca §4-3 / §4-4）
+type AuditEntry = Parameters<ReservationAuditSink>[0];
+const setupGated = async (audit?: ReservationAuditSink) => {
+  const base = await setup();
+  const entries: AuditEntry[] = [];
+  const sink: ReservationAuditSink = audit ?? (async (e) => { entries.push(e); });
+  const gate = new ScheduleGate();
+  const cfg = { ...(base.hub.config as object), roles: [{ id: "echo", needsWorktree: false, command: ["echo"] }, { id: "noresv", needsWorktree: false, command: ["echo"], reservable: false }] };
+  const hub = { ...base.hub, config: cfg } as typeof base.hub;
+  const service = new ReservationService(cfg as never, base.sessions as never, hub as never, base.store, () => new Date(base.clock.t), TIMING, true, { gate, audit: sink });
+  gate.attach({ reservations: () => service.list(), reservationsReady: () => service.isLoaded(), routines: () => [] });
+  return { ...base, service, entries, gate };
+};
+
+describe("reservation gate, audit and reservable role (v0.44.0)", () => {
+  it("R14 isLoaded is false until start finishes, then true", async () => {
+    const base = await setup();
+    const service = new ReservationService(base.hub.config as never, base.sessions as never, base.hub as never, base.store, () => new Date(base.clock.t), TIMING, false);
+    expect(service.isLoaded()).toBe(false);
+    await service.start();
+    expect(service.isLoaded()).toBe(true);
+    service.stop();
+    const preloaded = new ReservationService(base.hub.config as never, base.sessions as never, base.hub as never, base.store, () => new Date(base.clock.t), TIMING, true);
+    expect(preloaded.isLoaded()).toBe(true);
+  });
+
+  it("R15 an AI reservation within 60 minutes of another is refused with a denied audit row; the screen is not gated; 60 minutes passes", async () => {
+    const { service, entries, input } = await setupGated();
+    await service.create(input({ date: "2026-10-13", time: "10:00" }), "ui", { callerSessionId: null });
+    await expect(service.create(input({ date: "2026-10-13", time: "10:30", ...AGENT }), "agent", { callerSessionId: "cid", roleId: "echo" })).rejects.toThrow("schedule conflict");
+    expect(entries.at(-1)).toMatchObject({ action: "reserveCreate", outcome: "denied", targetCreatedBy: "agent", callerSessionId: "cid", roleId: "echo" });
+    expect(String(entries.at(-1)?.error)).toContain("schedule conflict");
+    expect(service.list()).toHaveLength(1);
+    await service.create(input({ date: "2026-10-13", time: "10:30" }), "ui", { callerSessionId: null }); // 画面は見ない
+    // 11:00 は画面で作った 10:30 から30分差なので、AI は断られる
+    await expect(service.create(input({ date: "2026-10-13", time: "11:00", ...AGENT }), "agent", { callerSessionId: "cid", roleId: "echo" })).rejects.toThrow("schedule conflict");
+    // 11:30 は 10:30 からちょうど60分、10:00 からは90分なので通る
+    const ok = await service.create(input({ date: "2026-10-13", time: "11:30", ...AGENT }), "agent", { callerSessionId: "cid", roleId: "echo" });
+    expect(ok.status).toBe("pending");
+  });
+
+  it("R16 two AI reservations created at once at the same time: only one passes", async () => {
+    const { service, input } = await setupGated();
+    const a = service.create(input({ name: "a", date: "2026-10-13", time: "10:00", ...AGENT }), "agent", { callerSessionId: null });
+    const b = service.create(input({ name: "b", date: "2026-10-13", time: "10:10", ...AGENT }), "agent", { callerSessionId: null });
+    const results = await Promise.allSettled([a, b]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(service.list()).toHaveLength(1);
+  });
+
+  it("R17 a role with reservable:false is refused for both the screen and the AI (400), judged by the role the reservation opens", async () => {
+    const { service, entries, input } = await setupGated();
+    await expect(service.create(input({ roleId: "noresv" }), "ui", { callerSessionId: null })).rejects.toThrow("reservation role is not reservable");
+    await expect(service.create(input({ roleId: "noresv", date: "2026-10-13", ...AGENT }), "agent", { callerSessionId: "cid", roleId: "echo" })).rejects.toThrow(SessionInputError);
+    expect(entries.map((e) => e.outcome)).toEqual(["denied", "denied"]);
+    expect(service.list()).toHaveLength(0);
+    // 呼び出し元の役割が noresv でも、開く役割が echo なら通る
+    const ok = await service.create(input({ date: "2026-10-13", ...AGENT }), "agent", { callerSessionId: "cid", roleId: "noresv" });
+    expect(ok.roleId).toBe("echo");
+  });
+
+  it("R18 create, cancel and dispatch each leave one audit row (reserveCreate, reserveCancel, reserveDispatch)", async () => {
+    const { service, entries, clock, input } = await setupGated();
+    const a = await service.create(input({ name: "a", date: "2026-10-13", time: "10:00" }), "ui", { callerSessionId: null });
+    const b = await service.create(input({ name: "b", date: "2026-10-12", time: "09:10" }), "ui", { callerSessionId: null });
+    await service.cancel(a.id, { callerSessionId: "cid", roleId: "echo" });
+    clock.t = BASE_MS + 10 * MIN;
+    await run(service);
+    expect(entries).toMatchObject([
+      { action: "reserveCreate", outcome: "ok", reservationId: a.id, targetCreatedBy: "ui", callerSessionId: null },
+      { action: "reserveCreate", outcome: "ok", reservationId: b.id, targetCreatedBy: "ui", callerSessionId: null },
+      { action: "reserveCancel", outcome: "ok", reservationId: a.id, targetCreatedBy: "ui", callerSessionId: "cid", roleId: "echo" },
+      { action: "reserveDispatch", outcome: "ok", reservationId: b.id, targetCreatedBy: "ui", callerSessionId: null, targetRoleId: "echo" },
+    ]);
+    for (const e of entries) expect(JSON.stringify(e)).not.toContain("hello"); // 本文は残さない
+  });
+
+  it("R19 when the audit row cannot be written, create does not save, cancel keeps pending, dispatch does not send", async () => {
+    const failing = async (): Promise<void> => { throw new Error("audit disk"); };
+    const { service, sessions, clock, input } = await setupGated(failing);
+    const err = quiet();
+    await expect(service.create(input(), "ui", { callerSessionId: null })).rejects.toThrow("audit disk");
+    expect(service.list()).toHaveLength(0);
+    // 予約を直接置いて、取消と送信を見る
+    const seed: Reservation = { id: "seed", name: "seed", roleId: "echo", cwd: "/x", runAt: BASE_MS + 10 * MIN, runAtJst: "2026-10-12T09:10+09:00", timeZone: "Asia/Tokyo", promptText: "p", createdBy: "ui", createdAt: BASE_MS, updatedAt: BASE_MS, status: "pending" };
+    (service as unknown as { items: Reservation[] }).items = [seed];
+    await expect(service.cancel("seed", { callerSessionId: null })).rejects.toThrow("audit disk");
+    expect(service.list()[0].status).toBe("pending");
+    clock.t = BASE_MS + 10 * MIN;
+    await run(service);
+    expect(service.list()[0].status).toBe("pending");
+    expect(sessions.restore).not.toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it("R19b a save failure after the ok audit row leaves a denied row 'save failed' and gives the state back", async () => {
+    const { service, store, entries, input } = await setupGated();
+    const err = quiet();
+    vi.spyOn(store, "save").mockRejectedValueOnce(new Error("disk"));
+    await expect(service.create(input(), "ui", { callerSessionId: null })).rejects.toThrow("disk");
+    expect(service.list()).toHaveLength(0);
+    expect(entries.map((e) => `${e.action}:${e.outcome}`)).toEqual(["reserveCreate:ok", "reserveCreate:denied"]);
+    expect(entries.at(-1)?.error).toBe("save failed");
+    err.mockRestore();
+  });
+
+  it("R19c a cancel that arrives while the cancel audit row is being written wins over the dispatch: it is sent at most once and never both cancelled and sent", async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const rows: string[] = [];
+    const audit: ReservationAuditSink = async (e) => { rows.push(`${e.action}:${e.outcome}`); if (e.action === "reserveCancel") await held; };
+    const { service, sessions, clock } = await setupGated(audit);
+    const seed: Reservation = { id: "seed", name: "seed", roleId: "echo", cwd: "/x", runAt: BASE_MS + 10 * MIN, runAtJst: "2026-10-12T09:10+09:00", timeZone: "Asia/Tokyo", promptText: "p", createdBy: "ui", createdAt: BASE_MS, updatedAt: BASE_MS, status: "pending" };
+    (service as unknown as { items: Reservation[] }).items = [seed];
+    const cancelling = service.cancel("seed", { callerSessionId: null });
+    await new Promise((r) => setTimeout(r, 10));
+    clock.t = BASE_MS + 10 * MIN;
+    await service.tick(); // 取消の監査を待っている間に時刻が来ても、状態は先に cancelled になっているので送らない
+    release();
+    await cancelling;
+    await service.settled();
+    expect(service.list()[0].status).toBe("cancelled");
+    expect(sessions.restore).not.toHaveBeenCalled();
+    expect(rows).toEqual(["reserveCancel:ok"]);
   });
 });

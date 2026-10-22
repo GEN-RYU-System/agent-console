@@ -30,6 +30,26 @@ describe("parseConfig: routineManagerRoles (ac-routine)", () => {
   });
 });
 
+describe("parseConfig: reserveRoles and role.reservable (v0.44.0)", () => {
+  const { routineManagerRoles: _r, ...rest } = valid;
+  it("when not written: uses the defaults that exist in roles (shell here); an empty result is allowed (everyone is refused)", () => {
+    expect(parseConfig(rest).reserveRoles).toEqual(["shell"]);
+    expect(parseConfig({ ...rest, roles: [{ id: "other", labelKey: "role.shell", command: ["/bin/zsh"], needsWorktree: false }] }).reserveRoles).toEqual([]);
+  });
+  it("when written, an id that is not in roles and a wrong shape are startup errors", () => {
+    expect(parseConfig({ ...valid, reserveRoles: ["shell"] }).reserveRoles).toEqual(["shell"]);
+    expect(() => parseConfig({ ...valid, reserveRoles: ["nope"] })).toThrow(/reserveRoles has unknown role id nope/);
+    expect(() => parseConfig({ ...valid, reserveRoles: "shell" })).toThrow(/reserveRoles/);
+  });
+  it("reservable accepts a boolean only; false is kept, true or missing is not written", () => {
+    const withRole = (extra: Record<string, unknown>) => ({ ...valid, roles: [{ ...valid.roles[0], ...extra }] });
+    expect(parseConfig(withRole({ reservable: false })).roles[0].reservable).toBe(false);
+    expect(parseConfig(withRole({ reservable: true })).roles[0].reservable).toBeUndefined();
+    expect(parseConfig(withRole({})).roles[0].reservable).toBeUndefined();
+    expect(() => parseConfig(withRole({ reservable: "no" }))).toThrow(/reservable must be boolean/);
+  });
+});
+
 describe("parseConfig", () => {
   it("expands ~ in salesanchorRoot", () => {
     expect(parseConfig(valid).salesanchorRoot).toBe(`${os.homedir()}/salesanchor`);

@@ -5,6 +5,8 @@ import type { Hub } from "./hub.ts";
 import { createSerial, readJsonFile, writeJsonAtomic } from "./json-store.ts";
 import { CONTROL, launchAndSend, NAME_POLL_MS, NAME_TIMEOUT_MS, READY_POLL_MS, READY_TIMEOUT_MS, validateLaunchTarget, validateLaunchText, type LaunchOutcome, type LaunchTiming } from "./launch.ts";
 import { jstSlot } from "./routines.ts";
+import type { RoutineAuditEntry } from "./routine-audit.ts";
+import { PassThroughGate, type ScheduleGate } from "./schedule-gate.ts";
 import { SessionConflictError, SessionInputError, type SessionManager } from "./sessions.ts";
 
 export const RESERVATIONS_FILE = "reservations.json";
@@ -119,6 +121,11 @@ function prune(items: Reservation[]): Reservation[] {
   return items.filter((r) => !drop.has(r.id));
 }
 
+/** 監査記録の書き手。書けなければ reject する */
+export type ReservationAuditSink = (entry: Omit<RoutineAuditEntry, "at">) => Promise<void>;
+/** 呼び出し元（画面は callerSessionId null・roleId なし。AI は名乗りと、その役割） */
+export interface ReservationCaller { callerSessionId: string | null; roleId?: string }
+
 export class ReservationService {
   private items: Reservation[] = [];
   private readonly inflight = new Set<Promise<void>>();
@@ -129,11 +136,19 @@ export class ReservationService {
   private stopped = false;
   /** 最初の読み込み（list と interrupted 化）が終わったら成功する。create・cancel・listReady はこれを待つ */
   private readonly loaded: Promise<void>;
-  private markLoaded: () => void = () => undefined;
-  constructor(private readonly config: Config, private readonly sessions: SessionManager, private readonly hub: Hub, private readonly store: ReservationStore, private readonly now: () => Date = () => new Date(), private readonly timing: LaunchTiming = { pollMs: READY_POLL_MS, timeoutMs: READY_TIMEOUT_MS, namePollMs: NAME_POLL_MS, nameTimeoutMs: NAME_TIMEOUT_MS }, preloaded = false) {
-    this.loaded = new Promise<void>((resolve) => { this.markLoaded = resolve; });
+  private loadedFlag = false;
+  private markLoadedPromise: () => void = () => undefined;
+  private readonly gate: ScheduleGate;
+  private readonly audit: ReservationAuditSink;
+  private markLoaded(): void { this.loadedFlag = true; this.markLoadedPromise(); }
+  constructor(private readonly config: Config, private readonly sessions: SessionManager, private readonly hub: Hub, private readonly store: ReservationStore, private readonly now: () => Date = () => new Date(), private readonly timing: LaunchTiming = { pollMs: READY_POLL_MS, timeoutMs: READY_TIMEOUT_MS, namePollMs: NAME_POLL_MS, nameTimeoutMs: NAME_TIMEOUT_MS }, preloaded = false, deps: { gate?: ScheduleGate; audit?: ReservationAuditSink } = {}) {
+    this.gate = deps.gate ?? new PassThroughGate();
+    this.audit = deps.audit ?? (async () => undefined);
+    this.loaded = new Promise<void>((resolve) => { this.markLoadedPromise = resolve; });
     if (preloaded) this.markLoaded(); // start を呼ばない試験用。既定は start で読み込む
   }
+  /** 最初の読み込みが終わっているか（読み込みが例外で終わったときは false のまま）。関門が予約の一覧を信じてよいかの判断に使う */
+  isLoaded(): boolean { return this.loadedFlag; }
 
   /**
    * 読み込み → 送信中のまま残ったものを interrupted にする（再送しない）→ ready を待つ → 1 秒ごとの tick。
@@ -163,7 +178,14 @@ export class ReservationService {
   /** 最初の読み込みが終わってから、runAt の昇順で返す（API 用） */
   async listReady(): Promise<Reservation[]> { await this.loaded; return this.list(); }
 
-  async create(input: unknown, createdBy: ReservationCreator): Promise<Reservation> {
+  /** 監査へ 1 行（書けなければ reject） */
+  private writeAudit(entry: Omit<RoutineAuditEntry, "at">): Promise<void> { return this.audit(entry); }
+  /** 拒否・保存失敗の行は、書けなくても元の処理を止めない */
+  private async writeAuditQuiet(entry: Omit<RoutineAuditEntry, "at">): Promise<void> {
+    try { await this.writeAudit(entry); } catch (e) { console.error("reservations: audit write failed:", e instanceof Error ? e.message : e); }
+  }
+
+  async create(input: unknown, createdBy: ReservationCreator, caller?: ReservationCaller): Promise<Reservation> {
     await this.loaded;
     if (typeof input !== "object" || input === null || Array.isArray(input)) throw new SessionInputError("JSON object required");
     const body = input as Record<string, unknown>;
@@ -179,30 +201,58 @@ export class ReservationService {
       if (typeof note !== "string" || note.trim().length < 1 || note.length > MAX_MEASURE_NOTE || CONTROL.test(note)) throw new SessionInputError("reservation measureNote invalid");
       measure = { purpose: "measure", measureNote: note };
     }
-    const pending = this.items.filter((r) => r.status === "pending");
-    if (pending.length >= MAX_PENDING) throw new SessionInputError("too many pending reservations");
-    if (createdBy === "agent" && pending.filter((r) => r.createdBy === "agent").length >= MAX_AGENT_PENDING) throw new SessionInputError("too many pending agent reservations");
-    const reservation: Reservation = {
-      id: randomUUID(), name: text.name, roleId: body.roleId as string, cwd: target.cwd,
-      ...(typeof body.branch === "string" && body.branch !== "" ? { branch: body.branch } : {}),
-      runAt, runAtJst, timeZone: TIME_ZONE, promptText: body.promptText as string, createdBy, createdAt: nowMs, updatedAt: nowMs, status: "pending", ...measure,
-    };
-    const before = this.items;
-    this.items = prune([...this.items, reservation]);
-    try { await this.persist(); } catch (e) { const dropped = before.filter((b) => !this.items.some((r) => r.id === b.id)); this.items = [...this.items.filter((r) => r.id !== reservation.id), ...dropped]; throw e; }
-    return reservation;
+    const who = { callerSessionId: caller?.callerSessionId ?? null, ...(caller?.roleId !== undefined ? { roleId: caller.roleId } : {}) };
+    return this.gate.run(async () => {
+      const deny = async (err: Error): Promise<never> => {
+        await this.writeAuditQuiet({ action: "reserveCreate", outcome: "denied", error: err.message, targetCreatedBy: createdBy, ...who });
+        throw err;
+      };
+      // ここで予約が開く役割（入力の roleId）が予約で選べるかを見る（呼び出し元の役割 caller.roleId ではない）
+      const role = this.config.roles.find((r) => r.id === body.roleId);
+      if (role === undefined || role.reservable === false) return deny(new SessionInputError("reservation role is not reservable"));
+      const pending = this.items.filter((r) => r.status === "pending");
+      if (pending.length >= MAX_PENDING) return deny(new SessionInputError("too many pending reservations"));
+      if (createdBy === "agent" && pending.filter((r) => r.createdBy === "agent").length >= MAX_AGENT_PENDING) return deny(new SessionInputError("too many pending agent reservations"));
+      if (createdBy === "agent") {
+        try { this.gate.checkReservation(runAt, nowMs, text.name); } catch (e) { if (e instanceof Error) return deny(e); throw e; }
+      }
+      const reservation: Reservation = {
+        id: randomUUID(), name: text.name, roleId: body.roleId as string, cwd: target.cwd,
+        ...(typeof body.branch === "string" && body.branch !== "" ? { branch: body.branch } : {}),
+        runAt, runAtJst, timeZone: TIME_ZONE, promptText: body.promptText as string, createdBy, createdAt: nowMs, updatedAt: nowMs, status: "pending", ...measure,
+      };
+      await this.writeAudit({ action: "reserveCreate", outcome: "ok", reservationId: reservation.id, targetCreatedBy: createdBy, ...who });
+      const before = this.items;
+      this.items = prune([...this.items, reservation]);
+      try { await this.persist(); } catch (e) {
+        const dropped = before.filter((b) => !this.items.some((r) => r.id === b.id));
+        this.items = [...this.items.filter((r) => r.id !== reservation.id), ...dropped];
+        await this.writeAuditQuiet({ action: "reserveCreate", outcome: "denied", error: "save failed", reservationId: reservation.id, targetCreatedBy: createdBy, ...who });
+        throw e;
+      }
+      return reservation;
+    });
   }
 
   /** pending だけ取り消せる。未知の id は 400、pending 以外は 409 */
-  async cancel(id: string): Promise<Reservation> {
+  async cancel(id: string, caller?: ReservationCaller): Promise<Reservation> {
     await this.loaded;
-    const current = this.items.find((r) => r.id === id);
-    if (!current) throw new SessionInputError("reservation not found");
-    if (current.status !== "pending") throw new SessionConflictError("reservation is not pending");
-    const next: Reservation = { ...current, status: "cancelled", updatedAt: this.now().getTime() };
-    this.items = this.items.map((r) => r.id === id ? next : r);
-    try { await this.persist(); } catch (e) { this.items = this.items.map((r) => r.id === id ? current : r); throw e; }
-    return next;
+    const who = { callerSessionId: caller?.callerSessionId ?? null, ...(caller?.roleId !== undefined ? { roleId: caller.roleId } : {}) };
+    return this.gate.run(async () => {
+      const current = this.items.find((r) => r.id === id);
+      if (!current) throw new SessionInputError("reservation not found");
+      if (current.status !== "pending") throw new SessionConflictError("reservation is not pending");
+      const next: Reservation = { ...current, status: "cancelled", updatedAt: this.now().getTime() };
+      // 状態は待たずに先に書き換える（取消と開始が同時に来ても、先に書き換えた方だけが進む）
+      this.items = this.items.map((r) => r.id === id ? next : r);
+      try { await this.writeAudit({ action: "reserveCancel", outcome: "ok", reservationId: id, targetCreatedBy: current.createdBy, ...who }); } catch (e) { this.items = this.items.map((r) => r.id === id ? current : r); throw e; }
+      try { await this.persist(); } catch (e) {
+        this.items = this.items.map((r) => r.id === id ? current : r);
+        await this.writeAuditQuiet({ action: "reserveCancel", outcome: "denied", error: "save failed", reservationId: id, targetCreatedBy: current.createdBy, ...who });
+        throw e;
+      }
+      return next;
+    });
   }
 
   /** 時刻が来た予約を、runAt の古い順に 1 件だけ選んで送る。送る前に dispatching を保存する。送信は待たない。 */
@@ -216,10 +266,17 @@ export class ReservationService {
     const started: Reservation = { ...picked, status: "dispatching", startedAt: at, ...(late !== undefined ? { lateMinutes: late } : {}), updatedAt: at };
     this.items = this.items.map((r) => r.id === picked.id ? started : r);
     this.lastStartedAt = at;
+    try { await this.writeAudit({ action: "reserveDispatch", outcome: "ok", reservationId: picked.id, targetCreatedBy: picked.createdBy, callerSessionId: null, targetRoleId: picked.roleId }); } catch (e) {
+      this.items = this.items.map((r) => r.id === picked.id ? picked : r);
+      this.notBefore.set(picked.id, at + RETRY_AFTER_SAVE_FAIL_MS);
+      console.error("reservations: dispatch audit failed, will retry later:", e instanceof Error ? e.message : e);
+      return;
+    }
     try { await this.persist(); } catch (e) {
       this.items = this.items.map((r) => r.id === picked.id ? picked : r);
       this.notBefore.set(picked.id, at + RETRY_AFTER_SAVE_FAIL_MS);
       console.error("reservations: dispatching save failed, will retry later:", e instanceof Error ? e.message : e);
+      await this.writeAuditQuiet({ action: "reserveDispatch", outcome: "denied", error: "save failed", reservationId: picked.id, targetCreatedBy: picked.createdBy, callerSessionId: null, targetRoleId: picked.roleId });
       return;
     }
     const run = this.dispatch(started).finally(() => this.inflight.delete(run));

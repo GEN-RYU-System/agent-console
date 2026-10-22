@@ -4,5 +4,6 @@ export interface ReserveCommandInput {
   argv: string[];
   stdinText?: string;
   dataDir: string;
+  callerSessionId?: string;
 }
 export function runCommand(input: ReserveCommandInput): Promise<{ code: 0 | 1; stdout: string; stderr: string }>;

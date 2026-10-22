@@ -29,6 +29,7 @@ import { SessionConflictError, SessionInputError, SessionNotFoundError, isClaude
 import { WorktreeError } from "./worktree.ts";
 import { RoutineApprovals } from "./routine-approvals.ts";
 import { RoutineLimitError, validateReason, type RoutineService } from "./routines.ts";
+import { ScheduleConflictError } from "./schedule-gate.ts";
 import { RoutineAudit, type RoutineAuditAction, type RoutineAuditEntry } from "./routine-audit.ts";
 import type { ReservationService } from "./reservations.ts";
 import type { RelayManager } from "./relay.ts";
@@ -150,7 +151,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
     const snap = await hub.snapshot();
     sendJson(res, 200, {
       ...snap,
-      roles: config.roles.map((r) => ({ id: r.id, labelKey: r.labelKey, needsWorktree: r.needsWorktree })),
+      roles: config.roles.map((r) => ({ id: r.id, labelKey: r.labelKey, needsWorktree: r.needsWorktree, reservable: r.reservable !== false })),
       saSource: meta.saSource,
       claudeVersion: meta.claudeVersion,
       appVersion: meta.version,
@@ -193,9 +194,9 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   if (routineMatch && req.method === "PUT") { sendJson(res, 200, await deps.routines.update(routineMatch[1], jsonBody(await readJsonBody(req)) as never)); return; }
   if (routineEnabledMatch && req.method === "POST") { sendJson(res, 200, await deps.routines.setEnabled(routineEnabledMatch[1], jsonBody(await readJsonBody(req)).enabled)); return; }
   if (req.method === "GET" && url.pathname === "/api/reservations") { sendJson(res, 200, { items: await deps.reservations.listReady() }); return; }
-  if (req.method === "POST" && url.pathname === "/api/reservations") { sendJson(res, 201, await deps.reservations.create(uiReservationInput(jsonBody(await readJsonBody(req))), "ui")); return; }
+  if (req.method === "POST" && url.pathname === "/api/reservations") { sendJson(res, 201, await deps.reservations.create(uiReservationInput(jsonBody(await readJsonBody(req))), "ui", { callerSessionId: null })); return; }
   const reservationCancel = /^\/api\/reservations\/([^/]+)\/cancel$/.exec(url.pathname);
-  if (req.method === "POST" && reservationCancel) { sendJson(res, 200, await deps.reservations.cancel(reservationCancel[1])); return; }
+  if (req.method === "POST" && reservationCancel) { sendJson(res, 200, await deps.reservations.cancel(reservationCancel[1], { callerSessionId: null })); return; }
   if (await handleDiff(deps, req, res, url)) return;
   if (await handlePr(deps, req, res, url)) return;
   if (await handlePicks(deps, req, res, url)) return;
@@ -355,6 +356,7 @@ async function handleRoutineApproval(deps: AppDeps, req: IncomingMessage, res: S
   return true;
 }
 
+const FORBIDDEN_RESERVE_MESSAGE = "ac-reserve is limited to reserve role sessions (起動直後は数秒〜数十秒待って再試行)";
 const AGENT_RESERVATION_PATH = /^\/api\/agent\/reservations(?:\/([^/]+)\/cancel)?$/;
 
 /**
@@ -366,10 +368,25 @@ async function handleAgentReservations(deps: AppDeps, req: IncomingMessage, res:
   const presented = (req.headers.authorization ?? "").replace(/^Bearer /, "");
   if (deps.reserve.token === null || !sameSecret(presented, deps.reserve.token)) { sendJson(res, 401, { error: "unauthorized" }); return; }
   const id = match[1];
-  if (req.method === "GET" && id === undefined) { sendJson(res, 200, { items: await deps.reservations.listReady() }); return; }
-  if (req.method === "POST" && id === undefined) { sendJson(res, 201, await deps.reservations.create(jsonBody(await readJsonBody(req)), "agent")); return; }
-  if (req.method === "POST" && id !== undefined) { sendJson(res, 200, await deps.reservations.cancel(safeDecode(id))); return; }
-  sendJson(res, 404, { error: "not found" });
+  const method = req.method ?? "";
+  const isList = method === "GET" && id === undefined;
+  const isAdd = method === "POST" && id === undefined;
+  const isCancel = method === "POST" && id !== undefined;
+  if (!isList && !isAdd && !isCancel) { sendJson(res, 404, { error: "not found" }); return; }
+  const body = isAdd || isCancel ? jsonBody(await readJsonBody(req)) : {};
+  const rawCaller = isList ? new URL(req.url ?? "/", "http://127.0.0.1").searchParams.get("callerSessionId") : body.callerSessionId;
+  const callerSessionId = isClaudeSessionId(rawCaller) ? rawCaller : null;
+  const caller = checkReserveCaller(deps, callerSessionId);
+  if (!caller.ok) {
+    const action: RoutineAuditAction | null = isAdd ? "reserveCreate" : isCancel ? "reserveCancel" : null;
+    if (action !== null) await writeAudit(deps, { action, outcome: "denied", callerSessionId, ...(caller.roleId !== undefined ? { roleId: caller.roleId } : {}), error: "forbidden: caller is not a reserve role session" });
+    sendJson(res, 403, { error: FORBIDDEN_RESERVE_MESSAGE });
+    return;
+  }
+  const who = { callerSessionId, ...(caller.roleId !== undefined ? { roleId: caller.roleId } : {}) };
+  if (isList) { sendJson(res, 200, { items: await deps.reservations.listReady() }); return; }
+  if (isAdd) { const { callerSessionId: _caller, ...input } = body; sendJson(res, 201, await deps.reservations.create(input, "agent", who)); return; }
+  sendJson(res, 200, await deps.reservations.cancel(safeDecode(id as string), who));
 }
 
 const AGENT_ROUTINE_PATH = /^\/api\/agent\/routines(?:\/([^/]+)(\/enabled)?)?$/;
@@ -399,13 +416,15 @@ async function writeAudit(deps: AppDeps, entry: Omit<RoutineAuditEntry, "at">): 
 }
 
 /** 呼び出し元の照合。正本は SessionManager のメモリ。生きていて claudeSessionId が一致する全セッションの役割が、すべて許可リストにあるときだけ通す */
-function checkRoutineCaller(deps: AppDeps, callerSessionId: string | null): { ok: boolean; roleId?: string } {
+function checkCaller(deps: AppDeps, callerSessionId: string | null, allowedRoles: readonly string[]): { ok: boolean; roleId?: string } {
   if (callerSessionId === null) return { ok: false };
   const matches = deps.sessions.list().filter((s) => !s.exited && s.claudeSessionId === callerSessionId);
   if (matches.length === 0) return { ok: false };
-  const allowed = new Set(deps.config.routineManagerRoles);
+  const allowed = new Set(allowedRoles);
   return { ok: matches.every((s) => allowed.has(s.roleId)), roleId: matches[0].roleId };
 }
+const checkRoutineCaller = (deps: AppDeps, callerSessionId: string | null): { ok: boolean; roleId?: string } => checkCaller(deps, callerSessionId, deps.config.routineManagerRoles);
+const checkReserveCaller = (deps: AppDeps, callerSessionId: string | null): { ok: boolean; roleId?: string } => checkCaller(deps, callerSessionId, deps.config.reserveRoles);
 
 /**
  * AI 用の定期実行の受け口（/api/agent/routines の GET・POST、/:id の PUT、/:id/enabled の POST だけ）。認証の前に分ける。
@@ -489,7 +508,7 @@ async function handleAgentRoutines(deps: AppDeps, req: IncomingMessage, res: Ser
   } catch (err) {
     // 書き込みが失敗したら、取り出していた承認を戻す（期限は延長しない。戻せたかは上限超過の監査行に残す）
     const restored = !written && used !== null ? approvalsOf(deps).restore(callerSessionId as string, used) : undefined;
-    if (err instanceof RoutineLimitError) await record({ action: act, outcome: "denied", reason, error: err.message, ...(used !== null && restored !== undefined ? { approvalRestored: restored } : {}), ...withTarget(id, targetCreatedBy) });
+    if (err instanceof RoutineLimitError || err instanceof ScheduleConflictError) await record({ action: act, outcome: "denied", reason, error: err.message, ...(used !== null && restored !== undefined ? { approvalRestored: restored } : {}), ...withTarget(id, targetCreatedBy) });
     throw err;
   }
 }

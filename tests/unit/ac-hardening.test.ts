@@ -286,16 +286,18 @@ describe("A a failed write gives the approval back", () => {
 
   it("A2 hitting the limit of 10 gives the approval back and records approvalRestored:true; the same approval then disables one", async () => {
     for (const r of h.routines.list()) if (r.enabled) await h.routines.setEnabled(r.id, false);
+    // 入力だけ直す（v0.44.0 の1時間の関門）: 10 件が互いに60分以上離れるよう時刻をずらす
+    const slots = ["09:00", "11:00", "13:00", "15:00", "17:00", "19:00", "21:00", "23:00", "01:00", "03:00"];
     const ids: string[] = [];
     for (let i = 0; i < 10; i++) {
-      const r = await run(["add"], entry({ name: `a2-${i}`, enabled: true }));
+      const r = await run(["add"], entry({ name: `a2-${i}`, enabled: true, timeHHmm: slots[i] }));
       expect(r.code, r.stderr).toBe(0);
       ids.push((JSON.parse(r.stdout) as { id: string }).id);
     }
     const toolUseId = startSubagent(OPUS_SID);
     expect((await run(["approve", "--reason", "A2 の承認"])).code).toBe(0);
     const auditBefore = auditLines().length;
-    const over = await run(["add"], entry({ name: "a2-over", enabled: true }));
+    const over = await run(["add"], entry({ name: "a2-over", enabled: true, timeHHmm: "05:00" }));
     expect(over.code).toBe(1);
     const denied = auditLines().slice(auditBefore);
     expect(denied).toMatchObject([{ action: "add", outcome: "denied", approvalRestored: true }]);

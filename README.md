@@ -14,6 +14,7 @@ Local console for running parallel Claude Code sessions (Orca-inspired, lightwei
 - 時刻が来ると、Claude が入力待ちになるのを待って指示を貼って Enter を送る。120 秒待っても準備できなければ送らず「送れなかった（準備できず）」と残す。開いたセッションは自動では閉じない。
 - 開いた会話は Claude 側の名前も同じにする（Claude の自動の名前で上書きされないよう、指示を送る前に名前を付ける。v0.29.0）。
 - アプリが止まっていて時刻を過ぎた予約は、起動後に復元が終わってから1回だけ遅れて送る。送信中に止まったものは再送せず「中断」にする。
+- 予約の作成・取消・開始（時刻が来て開くこと）は、`dataDir/routine-audit.jsonl` に1行ずつ残る（`reserveCreate`・`reserveCancel`・`reserveDispatch`。書けなければ作成・取消は失敗し、開始は60秒後にやり直す）。役割の設定 `reservable: false` の役割は、予約の選択肢に出ず、予約の入口でも400になる。
 
 ### ac-reserve の使い方（AI が Bash で打つ）
 
@@ -27,6 +28,8 @@ node "<dataDir>/bin/ac-reserve.mjs" cancel <id>
 
 - reservation.json の形: `name`（1〜40字）、`roleId`、`cwd`（本店で動く役割なら省ける。省くと本店になる）、`branch`（worktree 役のとき）、`date`（YYYY-MM-DD）、`time`（HH:mm、日本時間）、`promptText`（8192字以下）、`purpose`（必ず `"measure"`）、`measureNote`（何を測るか、1〜200字）。
 - 予定は1分後から366日後まで。待機中の予約は全体で50件、AI の分は20件まで。
+- 呼び出し元のセッションの役割が `reserveRoles`（既定 `["opus-designer","shell"]`）に無いと403（名乗りは環境変数 `CLAUDE_CODE_SESSION_ID` から自動で付く）。起動直後は数秒〜数十秒待って再試行する。
+- AI の予約は、ほかの待機中の予約・有効な定期実行と開始が60分未満なら400で拒まれ、空いている近い時刻（前・後）が示される（ちょうど60分は通る）。画面からの予約には関門をかけない。
 - 宛先は `dataDir/reserve-token`（`{port, token}`、サーバーが本番のポートで起動したときだけ作る）。失敗は終了コード1と理由を標準エラーに出す。
 
 ### ac-routine の使い方（AI が Bash で打つ。Opus 限定）
@@ -42,6 +45,7 @@ node "<dataDir>/bin/ac-routine.mjs" disable <id> < reason.json
 ```
 
 - routine.json: `name`、`roleId`、`cwd`（本店で動く役割は省略可）、`branch`（worktree 役のとき）、`weekdays`、`timeHHmm`、`promptText`、`enabled`、`reason`（1〜200字）。reason.json は `{"reason": "..."}`。削除はできない（止めるのは disable）。役割・cwd・branch は変えられない。
+- 関門: AI が作る・変更する・有効にする定期実行は、待機中の予約や、ほかの有効な定期実行と開始が60分未満なら400で拒まれ、空いている近い時刻が示される（画面からの操作と、無効にする操作にはかけない）。
 - 上限: AI が作った定期実行の有効は10件まで（11件目の add は400）。画面で作った分も update/enable/disable できるが、そのたびに `dataDir/routine-audit.jsonl` に「いつ・どの会話・どの役割・理由・結果・対象の作成者」が1行残る。
 - 失敗: 終了コード1と理由を標準エラーに出す。起動直後で会話が見つからないときは403になるので、数秒〜数十秒待って再試行する。役割が違う・アプリ外のターミナル・サブエージェントからは拒否される。
 - 導入後に `node scripts/ac-hooks.mjs install` をもう一度実行する（guard hook を設定に足す。実行するまでサブエージェントの拒否は効かない）。guard は ac-routine の実行時だけ起動し、通すときは何も出力しない。
@@ -91,6 +95,8 @@ settings.json に hook が無い、または node や hook のファイルが無
 
 ### 設定キー
 
+- `reserveRoles`: ac-reserve（AI による予約）を使ってよい役割の id（既定 `["opus-designer","shell"]`。roles に無い id は起動時エラー）。
+- roles の各要素の `reservable`: `false` ならその役割は予約で選べない（画面の選択肢から外れ、予約の入口で400）。省くと選べる。
 - `claudeSettingsPath`: 「記録の仕組みが外れていないか」の点検で読む Claude の設定ファイル（既定 `~/.claude/settings.json`。読むだけで、アプリは書き換えません）。
 - `activityKeepDays`: 記録を残す日数（既定 7）。
 

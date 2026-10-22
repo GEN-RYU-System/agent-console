@@ -24,6 +24,7 @@ import { RoutineApprovals } from "./routine-approvals.ts";
 import { RoutineAudit } from "./routine-audit.ts";
 import { CLOSE_IDLE_MS, KEEP_WAITING_MS, RoutineCloser, gapLimitMsFor } from "./routine-closer.ts";
 import { RoutineService, RoutineStore } from "./routines.ts";
+import { ScheduleGate } from "./schedule-gate.ts";
 import { ReservationService, ReservationStore } from "./reservations.ts";
 import { RelayManager, resolveRelayDir } from "./relay.ts";
 import { setupReserveToken } from "./reserve-token.ts";
@@ -73,8 +74,12 @@ async function main(): Promise<void> {
   const hub = new Hub(config, sessions);
   const openSessions = new OpenSessionStore(config.dataDir);
   const recorder = new OpenSessionRecorder(sessions, hub, openSessions);
-  const routines = new RoutineService(config, sessions, hub, new RoutineStore(config.dataDir));
-  const reservations = new ReservationService(config, sessions, hub, new ReservationStore(config.dataDir));
+  const routineAudit = new RoutineAudit(config.dataDir);
+  // 1時間の関門（設計 discord-pdca §4-3）。予約と定期実行を同じ順番待ちに並べる
+  const gate = new ScheduleGate();
+  const routines = new RoutineService(config, sessions, hub, new RoutineStore(config.dataDir), undefined, undefined, gate);
+  const reservations = new ReservationService(config, sessions, hub, new ReservationStore(config.dataDir), undefined, undefined, false, { gate, audit: (entry) => routineAudit.append({ at: new Date().toISOString(), ...entry }) });
+  gate.attach({ reservations: () => reservations.list(), reservationsReady: () => reservations.isLoaded(), routines: () => routines.list() });
   const relay = new RelayManager({ config, sessions, hub, relayDir: resolveRelayDir(config, process.env) });
   const meta = { saSource: await readSaSource(), claudeVersion: await fetchClaudeVersion(config.claudeBin), version: readVersion(), commit: await readCommit() };
 
@@ -85,7 +90,6 @@ async function main(): Promise<void> {
   hub.watchPicks(picks);
   const activity = startActivity({ config, hub, env: process.env, hooksSourceDir: path.join(process.cwd(), "hooks") });
   const routineApprovals = new RoutineApprovals();
-  const routineAudit = new RoutineAudit(config.dataDir);
   // closeWhenIdle の定期実行が開いたセッションを、idle が累計 10 分続いたら閉じる（標本は claude agents の定期取得）
   const closer = new RoutineCloser({
     session: (id) => { const s = sessions.get(id); return s === undefined ? undefined : { exited: s.exited, ...(s.claudeSessionId !== undefined ? { claudeSessionId: s.claudeSessionId } : {}) }; },

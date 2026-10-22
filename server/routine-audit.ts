@@ -7,8 +7,8 @@ export const ROUTINE_AUDIT_FILE = "routine-audit.jsonl";
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
 
-/** add / update / enable / disable は書き込み。approvalIssued は一時承認の発行。closed / kept は定期実行セッションの自動クローズ（設計 ac-hardening §7） */
-export type RoutineAuditAction = "add" | "update" | "enable" | "disable" | "approvalIssued" | "closed" | "kept";
+/** add / update / enable / disable は書き込み。approvalIssued は一時承認の発行。closed / kept は定期実行セッションの自動クローズ（設計 ac-hardening §7）。reserveCreate は予約の作成、reserveCancel は予約の取消、reserveDispatch は予約が時刻になって開くこと */
+export type RoutineAuditAction = "add" | "update" | "enable" | "disable" | "approvalIssued" | "closed" | "kept" | "reserveCreate" | "reserveCancel" | "reserveDispatch";
 
 export interface RoutineAuditEntry {
   at: string;
@@ -16,11 +16,15 @@ export interface RoutineAuditEntry {
   outcome: "ok" | "denied";
   /** 対象を解決できた行だけに入れる。その行では targetCreatedBy も必須 */
   routineId?: string;
-  /** 項目が無い（人が画面で作った）対象は "ui" */
+  /** 予約の行だけ */
+  reservationId?: string;
+  /** 項目が無い（人が画面で作った）対象は "ui"。予約の行では予約の createdBy */
   targetCreatedBy?: "agent" | "ui";
   /** UUID の形でなければ null */
   callerSessionId: string | null;
   roleId?: string;
+  /** reserveDispatch: 予約が開く役割。roleId は呼び出し元の役割 */
+  targetRoleId?: string;
   reason?: string;
   error?: string;
   /** approvalIssued: 承認を出した側 */
