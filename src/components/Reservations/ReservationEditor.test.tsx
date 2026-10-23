@@ -1,12 +1,17 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../../api";
 import "../../i18n";
 import type { ResumeTarget, RoleView } from "../../types";
 import { ReservationEditor } from "./ReservationEditor";
 
 const fetchResumeTargets = vi.fn();
-vi.mock("../../api", () => ({ fetchResumeTargets: () => fetchResumeTargets() }));
+const previewReservationSchedule = vi.fn();
+vi.mock("../../api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../api")>();
+  return { ApiError: actual.ApiError, fetchResumeTargets: () => fetchResumeTargets(), previewReservationSchedule: (...args: unknown[]) => previewReservationSchedule(...args) };
+});
 
 const roles: RoleView[] = [
   { id: "opus-designer", labelKey: "role.opusDesigner", needsWorktree: false },
@@ -25,7 +30,7 @@ const fillRest = (): void => {
   fireEvent.change(screen.getByLabelText(/^Claude に送る指示/), { target: { value: "p" } });
 };
 
-beforeEach(() => { fetchResumeTargets.mockReset(); fetchResumeTargets.mockResolvedValue({ items }); });
+beforeEach(() => { fetchResumeTargets.mockReset(); fetchResumeTargets.mockResolvedValue({ items }); previewReservationSchedule.mockReset(); previewReservationSchedule.mockResolvedValue({ ready: true, overlap: null }); });
 
 describe("ReservationEditor launch target", () => {
   it("R1: a main-checkout role shows no cwd/branch input and sends neither", async () => {
@@ -100,5 +105,66 @@ describe("ReservationEditor launch target", () => {
     pickRole("sonnet-impl");
     await waitFor(() => expect(screen.getByText("作業用コピーがありません")).toBeTruthy());
     expect(saveButton().disabled).toBe(true);
+  });
+});
+
+const overlap = { ready: true, overlap: { name: "相手A", kind: "reservation", at: "2026-10-23T10:00+09:00", before: "2026-10-23T09:00+09:00", after: null } };
+const slow = { timeout: 3000 };
+
+describe("ReservationEditor overlap notice", () => {
+  it("S1 an overlapping answer shows the other's name and the JST time", async () => {
+    previewReservationSchedule.mockResolvedValue(overlap);
+    render(<ReservationEditor roles={roles} onSave={vi.fn()} />);
+    fillRest();
+    const box = await screen.findByTestId("schedule-overlap", {}, slow);
+    expect(box.textContent).toContain("相手A");
+    expect(box.textContent).toContain("2026/10/23 10:00 JST");
+    expect(box.textContent).toContain("前 2026/10/23 09:00 JST ／ 後 なし");
+    expect(previewReservationSchedule).toHaveBeenLastCalledWith("2026-12-01", "09:00");
+  });
+
+  it("S2 no overlap shows nothing", async () => {
+    render(<ReservationEditor roles={roles} onSave={vi.fn()} />);
+    fillRest();
+    await waitFor(() => expect(previewReservationSchedule).toHaveBeenCalled(), slow);
+    expect(screen.queryByTestId("schedule-overlap")).toBeNull();
+  });
+
+  it("S3 the save button still works while the notice shows", async () => {
+    previewReservationSchedule.mockResolvedValue(overlap);
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<ReservationEditor roles={roles} onSave={onSave} />);
+    fillRest();
+    await screen.findByTestId("schedule-overlap", {}, slow);
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+  });
+
+  it("S4 an older answer arriving late is dropped", async () => {
+    let first: (v: unknown) => void = () => undefined;
+    previewReservationSchedule.mockImplementationOnce(() => new Promise((resolve) => { first = resolve; }));
+    previewReservationSchedule.mockResolvedValue({ ready: true, overlap: null });
+    render(<ReservationEditor roles={roles} onSave={vi.fn()} />);
+    fillRest();
+    await waitFor(() => expect(previewReservationSchedule).toHaveBeenCalledTimes(1), slow);
+    fireEvent.change(screen.getByLabelText(/^日付/), { target: { value: "2026-12-02" } });
+    await waitFor(() => expect(previewReservationSchedule).toHaveBeenCalledTimes(2), slow);
+    first(overlap);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByTestId("schedule-overlap")).toBeNull();
+  });
+
+  it("S5 a 400 shows nothing, another failure shows the could-not-check notice", async () => {
+    previewReservationSchedule.mockRejectedValue(new ApiError("bad", 400));
+    const view = render(<ReservationEditor roles={roles} onSave={vi.fn()} />);
+    fillRest();
+    await waitFor(() => expect(previewReservationSchedule).toHaveBeenCalled(), slow);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByTestId("schedule-overlap")).toBeNull();
+    previewReservationSchedule.mockRejectedValue(new ApiError("boom", 500));
+    fireEvent.change(screen.getByLabelText(/^日付/), { target: { value: "2026-12-03" } });
+    const box = await screen.findByTestId("schedule-overlap", {}, slow);
+    expect(box.textContent).toContain("重なりを確かめられませんでした");
+    view.unmount();
   });
 });

@@ -129,6 +129,10 @@ export interface Reservation {
 }
 export interface ReservationInput { name: string; roleId: string; cwd?: string; branch?: string; date: string; time: string; promptText: string; }
 
+/** サーバーの schedule-gate.ts と同じ形。画面に見せる重なり（before/after は予約の候補なら日時、定期実行の候補なら HH:mm。無ければ null） */
+export interface ScheduleOverlap { name: string; kind: "reservation" | "routine"; at: string; before: string | null; after: string | null }
+export type SchedulePreview = { ready: false } | { ready: true; overlap: ScheduleOverlap | null };
+
 /** 再開先の1行（本店=Opus 設計役 / 本店の worktree=Sonnet 実装役）。会話の一覧は持たない。 */
 export interface ResumeTarget {
   kind: "main" | "worktree";

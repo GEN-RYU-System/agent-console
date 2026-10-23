@@ -245,7 +245,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const reserve: ReserveAccess = options.reserve ?? { token: RESERVE_TOKEN };
   const routineApprovals = new RoutineApprovals(() => clock.t);
   const server = createServer(
-    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines, reservations, relay, reserve, routineApprovals }),
+    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines, reservations, schedule: gate, relay, reserve, routineApprovals }),
   );
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Reservation } from "../../server/reservations.ts";
 import type { Routine } from "../../server/routines.ts";
-import { ScheduleConflictError, ScheduleGate } from "../../server/schedule-gate.ts";
+import { PassThroughGate, ScheduleConflictError, ScheduleGate } from "../../server/schedule-gate.ts";
 import { SessionInputError } from "../../server/sessions.ts";
 import { startHarness, type Harness } from "./helpers/harness.ts";
 
@@ -168,5 +168,77 @@ describe("ScheduleGate one line for reservations and routines", () => {
     expect(passed).toHaveLength(1);
     expect(refused).toHaveLength(1);
     expect(String((refused[0].reason as Error).message)).toContain("schedule conflict");
+  });
+});
+
+describe("ScheduleGate preview (画面用。止めない)", () => {
+  const msgOf = (fn: () => void): string => { try { fn(); } catch (e) { return (e as Error).message; } return ""; };
+
+  it("P1 reservation: 59 minutes apart gives the other one and the same before/after as the refusal text", () => {
+    const g = gateOf([resv("other", at("2026-10-13T10:00"))], []);
+    const p = g.previewReservation(at("2026-10-13T10:59"), NOW);
+    expect(p).toEqual({ ready: true, overlap: { name: "other", kind: "reservation", at: "2026-10-13T10:00+09:00", before: "2026-10-13T09:00+09:00", after: "2026-10-13T11:00+09:00" } });
+    const m = msgOf(() => g.checkReservation(at("2026-10-13T10:59"), NOW, "c"));
+    expect(m).toContain("空いている近い時刻: 前 2026-10-13T09:00+09:00 ／ 後 2026-10-13T11:00+09:00");
+  });
+
+  it("P2 reservation: exactly 60 minutes apart is null", () => {
+    const g = gateOf([resv("other", at("2026-10-13T10:00"))], []);
+    expect(g.previewReservation(at("2026-10-13T11:00"), NOW)).toEqual({ ready: true, overlap: null });
+  });
+
+  it("P3 routine: the other is a routine, before/after are HH:mm, and its own id is skipped", () => {
+    const g = gateOf([], [rout("x", "daily", [1, 2], "10:00")]);
+    const cand = { name: "", weekdays: [1, 2], timeHHmm: "10:30" };
+    const p = g.previewRoutine(cand, NOW);
+    expect(p.ready).toBe(true);
+    if (!p.ready || p.overlap === null) throw new Error("no overlap");
+    expect(p.overlap.kind).toBe("routine");
+    expect(p.overlap.name).toBe("daily");
+    expect(p.overlap.before).toMatch(/^\d{2}:\d{2}$/);
+    expect(p.overlap.after).toMatch(/^\d{2}:\d{2}$/);
+    const m = msgOf(() => g.checkRoutine(cand, NOW));
+    expect(m).toContain(`前 ${p.overlap.before} ／ 後 ${p.overlap.after}`);
+    expect(g.previewRoutine({ ...cand, id: "x" }, NOW)).toEqual({ ready: true, overlap: null });
+  });
+
+  it("P3b routine with no weekdays is null", () => {
+    const g = gateOf([], [rout("x", "daily", [1, 2], "10:00")]);
+    expect(g.previewRoutine({ name: "", weekdays: [], timeHHmm: "10:00" }, NOW)).toEqual({ ready: true, overlap: null });
+  });
+
+  it("P4 no free time gives null (the refusal says なし)", () => {
+    const dense: Reservation[] = [];
+    for (let k = 1; k <= 60; k++) dense.push(resv(`d${k}`, NOW + k * 100 * MIN));
+    const g = gateOf(dense, []);
+    const p = g.previewReservation(NOW + 50 * 60 * MIN, NOW);
+    expect(p).toMatchObject({ ready: true, overlap: { before: null, after: null } });
+    expect(msgOf(() => g.checkReservation(NOW + 50 * 60 * MIN, NOW, "c"))).toMatch(/前 なし ／ 後 なし$/);
+  });
+
+  it("P5 not ready gives ready:false without throwing; before attach it throws", () => {
+    const g = gateOf([resv("other", at("2026-10-13T10:00"))], [], false);
+    expect(g.previewReservation(at("2026-10-13T10:10"), NOW)).toEqual({ ready: false });
+    expect(g.previewRoutine({ name: "", weekdays: [1], timeHHmm: "10:00" }, NOW)).toEqual({ ready: false });
+    const bare = new ScheduleGate();
+    expect(() => bare.previewReservation(NOW, NOW)).toThrow("attach() was not called");
+    expect(() => bare.previewRoutine({ name: "", weekdays: [1], timeHHmm: "10:00" }, NOW)).toThrow("attach() was not called");
+  });
+
+  it("P6 preview does not wait in the run queue", async () => {
+    const g = gateOf([resv("other", at("2026-10-13T10:00"))], []);
+    let release: () => void = () => undefined;
+    const held = g.run(() => new Promise<void>((resolve) => { release = resolve; }));
+    await new Promise((r) => setTimeout(r, 20));
+    const p = g.previewReservation(at("2026-10-13T10:10"), NOW);
+    expect(p.ready).toBe(true);
+    release();
+    await held;
+  });
+
+  it("P7 PassThroughGate previews are always no-overlap", () => {
+    const g = new PassThroughGate();
+    expect(g.previewReservation()).toEqual({ ready: true, overlap: null });
+    expect(g.previewRoutine()).toEqual({ ready: true, overlap: null });
   });
 });

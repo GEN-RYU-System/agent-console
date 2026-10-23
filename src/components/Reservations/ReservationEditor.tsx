@@ -8,6 +8,9 @@ import { Textarea } from "@sa/components/Textarea";
 import { TextField } from "@sa/components/TextField";
 import { LaunchTargetField } from "../LaunchTargetField/LaunchTargetField";
 import { launchBlocked, launchFields, useLaunchTargets } from "../LaunchTargetField/launchTarget";
+import { previewReservationSchedule } from "../../api";
+import { ScheduleOverlapNotice } from "../ScheduleOverlap/ScheduleOverlapNotice";
+import { useSchedulePreview } from "../ScheduleOverlap/useSchedulePreview";
 import type { ReservationInput, RoleView } from "../../types";
 
 interface Props { roles: RoleView[]; onSave: (input: ReservationInput) => Promise<void>; }
@@ -25,6 +28,7 @@ export function ReservationEditor({ roles: allRoles, onSave }: Props) {
   const [error, setError] = useState<string | null>(null);
   const role = roles.find((r) => r.id === roleId);
   const { targets, loadError } = useLaunchTargets(true);
+  const { preview, failed: previewFailed } = useSchedulePreview(date !== "" && /^\d{2}:\d{2}$/.test(time), `${date} ${time}`, () => previewReservationSchedule(date, time));
   const submit = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
     setBusy(true);
@@ -45,6 +49,7 @@ export function ReservationEditor({ roles: allRoles, onSave }: Props) {
     <TextField label={t("ac.reservations.time")} value={time} onChange={(e) => setTime(e.target.value)} helperText={t("ac.reservations.timeHint")} required fullWidth />
     <Textarea label={t("ac.reservations.prompt")} value={promptText} onChange={(e) => setPrompt(e.target.value)} maxLength={8192} rows={5} required fullWidth />
     <Callout variant="info" title={t("ac.reservations.newSessionTitle")}>{t("ac.reservations.newSessionNotice")}</Callout>
+    <ScheduleOverlapNotice preview={preview} failed={previewFailed} />
     {error && <Callout variant="warning" title={t("ac.reservations.error")}>{error}</Callout>}
     <Button type="submit" disabled={launchBlocked(role, targets, loadError)} loading={busy} loadingText={t("ac.reservations.saving")}>{t("ac.reservations.save")}</Button>
   </Stack></form>;

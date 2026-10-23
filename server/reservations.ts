@@ -100,7 +100,7 @@ export class ReservationStore {
 }
 
 /** 日付と時刻（日本時間）から runAt と runAtJst を作る。存在しない日付は SessionInputError */
-function resolveRunAt(date: unknown, time: unknown): { runAt: number; runAtJst: string } {
+export function resolveRunAt(date: unknown, time: unknown): { runAt: number; runAtJst: string } {
   if (typeof date !== "string" || !DATE.test(date)) throw new SessionInputError("reservation date invalid");
   if (typeof time !== "string" || !TIME.test(time)) throw new SessionInputError("reservation time invalid");
   const [y, m, d] = date.split("-").map(Number);
