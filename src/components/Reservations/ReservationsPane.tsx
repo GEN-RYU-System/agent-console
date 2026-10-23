@@ -8,12 +8,11 @@ import { Modal } from "@sa/components/Modal";
 import { cancelReservation, createReservation, fetchReservations } from "../../api";
 import type { Reservation, ReservationInput, RoleView } from "../../types";
 import { ReservationEditor } from "./ReservationEditor";
+import { formatJst } from "./formatJst";
 import "./Reservations.css";
 
 const POLL_MS = 10000;
 
-/** "2026-10-15T09:00+09:00" -> "2026/10/15 09:00 JST" */
-const formatJst = (key: string): string => `${key.slice(0, 10).replaceAll("-", "/")} ${key.slice(11, 16)} JST`;
 const finishedAt = (r: Reservation): number => r.finishedAt ?? r.updatedAt;
 
 function statusView(r: Reservation, t: (key: string, opts?: Record<string, unknown>) => string): { label: string; variant: BadgeVariant } {

@@ -29,9 +29,9 @@ import { SessionConflictError, SessionInputError, SessionNotFoundError, isClaude
 import { WorktreeError } from "./worktree.ts";
 import { RoutineApprovals } from "./routine-approvals.ts";
 import { RoutineLimitError, validateReason, type RoutineService } from "./routines.ts";
-import { ScheduleConflictError } from "./schedule-gate.ts";
+import { ScheduleConflictError, type ScheduleGate, type SchedulePreview } from "./schedule-gate.ts";
 import { RoutineAudit, type RoutineAuditAction, type RoutineAuditEntry } from "./routine-audit.ts";
-import type { ReservationService } from "./reservations.ts";
+import { resolveRunAt, type ReservationService } from "./reservations.ts";
 import type { RelayManager } from "./relay.ts";
 import type { ReserveAccess } from "./reserve-token.ts";
 
@@ -67,6 +67,8 @@ export interface AppDeps {
   routines: RoutineService;
   /** 予約（日時を指定して 1 回送る）。正本は dataDir/reservations.json */
   reservations: ReservationService;
+  /** 1時間の関門。画面には preview で重なりを見せるだけ（止めない） */
+  schedule: ScheduleGate;
   /** 引き継ぎ（今のセッションに引き継ぎ書を書かせ、次のセッションへ渡す）。進行はメモリだけ */
   relay: RelayManager;
   /** AI 用コマンドの合言葉（dataDir/reserve-token）。作れなかった・本番のポートでないときは token が null */
@@ -144,6 +146,23 @@ async function serveStatic(staticDir: string, pathname: string, res: ServerRespo
   stream.pipe(res);
 }
 
+const PREVIEW_TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** 画面用の重なりの確認（読むだけ。監査には書かない）。入力の誤りは SessionInputError で 400 */
+function schedulePreview(gate: ScheduleGate, q: URLSearchParams): SchedulePreview {
+  const kind = q.get("kind");
+  if (kind === "reservation") return gate.previewReservation(resolveRunAt(q.get("date"), q.get("time")).runAt, Date.now());
+  if (kind !== "routine") throw new SessionInputError("schedule preview input invalid");
+  const time = q.get("time");
+  const raw = q.get("weekdays");
+  if (time === null || !PREVIEW_TIME.test(time) || raw === null) throw new SessionInputError("schedule preview input invalid");
+  const weekdays = raw === "" ? [] : raw.split(",").map((x) => (/^[0-6]$/.test(x) ? Number(x) : -1));
+  if (weekdays.some((d) => d < 0) || new Set(weekdays).size !== weekdays.length) throw new SessionInputError("schedule preview input invalid");
+  const excludeId = q.get("excludeId");
+  if (excludeId !== null && (excludeId.length < 1 || excludeId.length > 200)) throw new SessionInputError("schedule preview input invalid");
+  return gate.previewRoutine({ ...(excludeId !== null ? { id: excludeId } : {}), name: "", weekdays, timeHHmm: time }, Date.now());
+}
+
 async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerResponse, url: URL, authKind: AuthMethod): Promise<void> {
   const { sessions, hub, config, meta } = deps;
   if (await handleRoutineApproval(deps, req, res, url, authKind)) return;
@@ -194,6 +213,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   if (routineMatch && req.method === "PUT") { sendJson(res, 200, await deps.routines.update(routineMatch[1], jsonBody(await readJsonBody(req)) as never)); return; }
   if (routineEnabledMatch && req.method === "POST") { sendJson(res, 200, await deps.routines.setEnabled(routineEnabledMatch[1], jsonBody(await readJsonBody(req)).enabled)); return; }
   if (req.method === "GET" && url.pathname === "/api/reservations") { sendJson(res, 200, { items: await deps.reservations.listReady() }); return; }
+  if (req.method === "GET" && url.pathname === "/api/schedule/preview") { sendJson(res, 200, schedulePreview(deps.schedule, url.searchParams)); return; }
   if (req.method === "POST" && url.pathname === "/api/reservations") { sendJson(res, 201, await deps.reservations.create(uiReservationInput(jsonBody(await readJsonBody(req))), "ui", { callerSessionId: null })); return; }
   const reservationCancel = /^\/api\/reservations\/([^/]+)\/cancel$/.exec(url.pathname);
   if (req.method === "POST" && reservationCancel) { sendJson(res, 200, await deps.reservations.cancel(reservationCancel[1], { callerSessionId: null })); return; }

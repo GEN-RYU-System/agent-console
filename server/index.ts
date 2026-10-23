@@ -105,7 +105,7 @@ async function main(): Promise<void> {
 
   const memory = new MemoryCollector();
   let stopMetrics: (() => void) | null = null;
-  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity: activity.store, checkHooks: activity.check, memory, staticDir: path.join(process.cwd(), "dist"), meta, routines, reservations, relay, reserve, routineApprovals }));
+  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity: activity.store, checkHooks: activity.check, memory, staticDir: path.join(process.cwd(), "dist"), meta, routines, reservations, schedule: gate, relay, reserve, routineApprovals }));
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   // 期限切れ（12 時間）になったセッションの WebSocket を閉じる
   setInterval(() => controls.sweep(), SESSION_SWEEP_MS).unref();

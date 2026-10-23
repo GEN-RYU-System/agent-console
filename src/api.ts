@@ -1,4 +1,4 @@
-import type { AccountResponse, ActivityResponse, BoardResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileContentResponse, FileDiff, FilesResponse, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, Reservation, ReservationInput, ResumeTarget, Routine, RoutineInput, UsageResponse } from "./types";
+import type { AccountResponse, ActivityResponse, BoardResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileContentResponse, FileDiff, FilesResponse, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, Reservation, ReservationInput, ResumeTarget, Routine, RoutineInput, SchedulePreview, UsageResponse } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -165,6 +165,8 @@ export const setRoutineEnabled = (id: string, enabled: boolean): Promise<Routine
 export const fetchReservations = (): Promise<{ items: Reservation[] }> => request("/api/reservations");
 export const createReservation = (input: ReservationInput): Promise<Reservation> => request("/api/reservations", { method: "POST", body: JSON.stringify(input) });
 export const cancelReservation = (id: string): Promise<Reservation> => request(`/api/reservations/${encodeURIComponent(id)}/cancel`, { method: "POST", body: "{}" });
+export const previewReservationSchedule = (date: string, time: string): Promise<SchedulePreview> => request(`/api/schedule/preview?${new URLSearchParams({ kind: "reservation", date, time })}`);
+export const previewRoutineSchedule = (weekdays: number[], timeHHmm: string, excludeId?: string): Promise<SchedulePreview> => request(`/api/schedule/preview?${new URLSearchParams({ kind: "routine", weekdays: weekdays.join(","), time: timeHHmm, ...(excludeId ? { excludeId } : {}) })}`);
 
 /** ペアリングコードを引換えてセッショントークンを得る（認証前の API）。 */
 export async function redeemCode(code: string): Promise<string> {

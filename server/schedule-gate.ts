@@ -1,4 +1,4 @@
-// 1時間の関門（設計 docs/handoff/discord-pdca/design.md §4-3）。予約と定期実行の作成・変更を1本の順番待ちで並べ、AI のものだけ開始の差が60分未満を拒む
+// 1時間の関門（設計 docs/handoff/discord-pdca/design.md §4-3）。予約と定期実行の作成・変更を1本の順番待ちで並べ、AI のものだけ開始の差が60分未満を拒む。画面には preview で重なりを見せる（止めない）
 import { createSerial } from "./json-store.ts";
 import type { Reservation } from "./reservations.ts";
 import type { Routine } from "./routines.ts";
@@ -22,6 +22,13 @@ export interface ScheduleSources {
 }
 
 export interface RoutineCandidate { id?: string; name: string; weekdays: number[]; timeHHmm: string }
+
+/** 画面に見せる重なり。at は相手のぶつかった回の YYYY-MM-DDTHH:mm+09:00。before/after は空いている近い時刻（予約の候補は YYYY-MM-DDTHH:mm+09:00、定期実行の候補は HH:mm。無ければ null） */
+export interface ScheduleOverlap { name: string; kind: "reservation" | "routine"; at: string; before: string | null; after: string | null }
+/** ready=false は予約の一覧をまだ読めていない */
+export type SchedulePreview = { ready: false } | { ready: true; overlap: ScheduleOverlap | null };
+
+interface Found { hit: Hit; prev: string | null; next: string | null }
 
 interface Point { ms: number; name: string; kind: "予約" | "定期実行" }
 interface Hit { name: string; kind: "予約" | "定期実行"; otherMs: number; gap: number }
@@ -47,6 +54,11 @@ export class ScheduleGate {
   /** 比べる相手を受け取る（配線で予約と定期実行の両方を作ったあとに1回呼ぶ） */
   attach(sources: ScheduleSources): void { this.sources = sources; }
 
+  private attached(): ScheduleSources {
+    if (this.sources === null) throw new Error("schedule gate: attach() was not called");
+    return this.sources;
+  }
+
   private ready(): ScheduleSources {
     if (this.sources === null) throw new Error("schedule gate: attach() was not called");
     if (!this.sources.reservationsReady()) throw new ScheduleConflictError("schedule conflict: 予約の一覧をまだ読めていないため確かめられません（起動直後なら数秒待って再試行。続くなら PO に報告）");
@@ -57,34 +69,66 @@ export class ScheduleGate {
   checkReservation(runAt: number, nowMs: number, name: string): void {
     void name;
     const s = this.ready();
+    const f = this.findReservation(s, runAt, nowMs);
+    if (f === null) return;
+    throw this.conflict(f.hit, f.prev ?? "なし", f.next ?? "なし");
+  }
+
+  /** AI の定期実行の候補（有効になるもの）。変更・切り替えは id で自分自身を外す */
+  checkRoutine(candidate: RoutineCandidate, nowMs: number): void {
+    const s = this.ready();
+    const f = this.findRoutine(s, candidate, nowMs);
+    if (f === null) return;
+    throw this.conflict(f.hit, f.prev ?? "なし", f.next ?? "なし");
+  }
+
+  /** 画面用: 予約の候補の重なりを返す。保存・監査・順番待ちをしない */
+  previewReservation(runAt: number, nowMs: number): SchedulePreview {
+    const s = this.attached();
+    if (!s.reservationsReady()) return { ready: false };
+    return { ready: true, overlap: this.toOverlap(this.findReservation(s, runAt, nowMs)) };
+  }
+
+  /** 画面用: 定期実行の候補の重なりを返す。保存・監査・順番待ちをしない */
+  previewRoutine(candidate: RoutineCandidate, nowMs: number): SchedulePreview {
+    const s = this.attached();
+    if (!s.reservationsReady()) return { ready: false };
+    if (candidate.weekdays.length === 0) return { ready: true, overlap: null };
+    return { ready: true, overlap: this.toOverlap(this.findRoutine(s, candidate, nowMs)) };
+  }
+
+  private toOverlap(f: Found | null): ScheduleOverlap | null {
+    if (f === null) return null;
+    return { name: f.hit.name, kind: f.hit.kind === "予約" ? "reservation" : "routine", at: stamp(f.hit.otherMs), before: f.prev, after: f.next };
+  }
+
+  private findReservation(s: ScheduleSources, runAt: number, nowMs: number): Found | null {
     const points = this.pointsAround(s, runAt, nowMs, undefined);
     let best: Hit | null = null;
     for (const p of points) {
       const gap = Math.abs(p.ms - runAt);
       if (gap < GAP_MS) best = nearer(best, { name: p.name, kind: p.kind, otherMs: p.ms, gap });
     }
-    if (best === null) return;
+    if (best === null) return null;
     const free = (x: number): boolean => points.every((p) => Math.abs(p.ms - x) >= GAP_MS);
-    let prev = "なし";
+    let prev: string | null = null;
     for (let x = runAt - MINUTE_MS; x >= runAt - SEARCH_MS && x >= nowMs + MINUTE_MS; x -= MINUTE_MS) if (free(x)) { prev = stamp(x); break; }
-    let next = "なし";
+    let next: string | null = null;
     for (let x = runAt + MINUTE_MS; x <= runAt + SEARCH_MS && x <= nowMs + WINDOW_MS; x += MINUTE_MS) if (free(x)) { next = stamp(x); break; }
-    throw this.conflict(best, prev, next);
+    return { hit: best, prev, next };
   }
 
-  /** AI の定期実行の候補（有効になるもの）。変更・切り替えは id で自分自身を外す */
-  checkRoutine(candidate: RoutineCandidate, nowMs: number): void {
-    const s = this.ready();
+  private findRoutine(s: ScheduleSources, candidate: RoutineCandidate, nowMs: number): Found | null {
     const minute = minuteOfDay(candidate.timeHHmm);
     const best = this.routineHit(s, candidate, minute, nowMs);
-    if (best === null) return;
+    if (best === null) return null;
     const busy = this.busyWeek(s, candidate.id, nowMs);
     const free = (m: number): boolean => candidate.weekdays.every((w) => busy[w * 1440 + m] === 0);
-    let prev = "なし";
+    let prev: string | null = null;
     for (let m = minute - 1; m >= 0; m--) if (free(m)) { prev = hhmm(m); break; }
-    let next = "なし";
+    let next: string | null = null;
     for (let m = minute + 1; m < 1440; m++) if (free(m)) { next = hhmm(m); break; }
-    throw this.conflict(best, prev, next);
+    return { hit: best, prev, next };
   }
 
   private conflict(hit: Hit, prev: string, next: string): ScheduleConflictError {
@@ -169,4 +213,6 @@ export class ScheduleGate {
 export class PassThroughGate extends ScheduleGate {
   override checkReservation(): void { /* 比べない */ }
   override checkRoutine(): void { /* 比べない */ }
+  override previewReservation(): SchedulePreview { return { ready: true, overlap: null }; }
+  override previewRoutine(): SchedulePreview { return { ready: true, overlap: null }; }
 }

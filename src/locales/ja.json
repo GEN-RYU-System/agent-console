@@ -305,6 +305,18 @@
       "noneTitle": "作業用コピーがありません",
       "none": "本店で動く役割を選ぶか、先に作業用コピーを作ってください"
     },
+    "schedule": {
+      "overlapTitle": "ほかの予定と開始が1時間以内です",
+      "overlapBody": "「{{name}}」（{{kind}}・{{at}}）と開始の差が60分未満です。",
+      "kind": { "reservation": "予約", "routine": "定期実行" },
+      "freeTimes": "空いている近い時刻: 前 {{before}} ／ 後 {{after}}",
+      "none": "なし",
+      "saveAllowed": "このまま保存することもできます。",
+      "notReadyTitle": "重なりをまだ確かめられません",
+      "notReady": "予約の一覧をまだ読めていません。数秒待ってから時刻を選び直してください。",
+      "checkFailedTitle": "重なりを確かめられませんでした",
+      "checkFailed": "保存はできます。続くときは AI に知らせてください。"
+    },
     "reservations": {
       "title": "予約",
       "new": "予約を登録",
