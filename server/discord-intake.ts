@@ -26,7 +26,7 @@ interface IntakeState {
   dropCounts: Record<DropKey, number>;
 }
 
-export type ChannelStatus = "reading" | "waitingGuildCheck" | "waitingFirstRead" | "notReady" | "disabled" | "guildMismatch" | "forbidden" | "notFound";
+export type ChannelStatus = "reading" | "waitingGuildCheck" | "waitingFirstRead" | "notReady" | "disabled" | "guildMismatch" | "forbidden" | "notFound" | "intakeStopped";
 
 export interface DiscordIntakeStatus {
   state: "disabled" | "running" | "stopped";
@@ -241,9 +241,9 @@ export class DiscordIntake {
   private channelStatus(ch: IntakeChannelConfig, rt: ChannelRuntime | undefined): ChannelStatus {
     if (ch.kind === "error-report") return "notReady";
     if (!ch.enabled) return "disabled";
-    if (rt === undefined) return "waitingGuildCheck";
-    if (rt.halted !== null) return rt.halted;
-    if (!rt.guildConfirmed) return "waitingGuildCheck";
+    if (rt !== undefined && rt.halted !== null) return rt.halted;
+    if (this.state !== "running") return "intakeStopped";
+    if (rt === undefined || !rt.guildConfirmed) return "waitingGuildCheck";
     return this.st.channels[ch.channelId] === undefined ? "waitingFirstRead" : "reading";
   }
 
@@ -267,6 +267,8 @@ export class DiscordIntake {
     try {
       await this.doRound(dropped);
     } catch {
+      this.lastError = "internal";
+      this.consecutiveFailures++;
       console.error("discord-intake: round failed");
     }
     if (this.stopped) return;
@@ -337,9 +339,9 @@ export class DiscordIntake {
     }
   }
 
-  private haltChannel(rt: ChannelRuntime, res: { kind: "forbidden" | "notFound"; status: number }): void {
+  private haltChannel(rt: ChannelRuntime, res: Extract<ApiResult<unknown>, { kind: "forbidden" | "notFound" }>): void {
     rt.halted = res.kind;
-    this.lastError = errorCode(res as never);
+    this.lastError = errorCode(res);
     this.notify(`【異常】${formatJst(this.now())} 受付チャンネルを読めません（${res.status}）。このチャンネルを止めました。`);
   }
 

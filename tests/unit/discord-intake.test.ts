@@ -379,6 +379,12 @@ describe("I12 401 / 403 / 500", () => {
     expect(st.channels.map((c) => c.status)).toEqual(["forbidden", "reading"]);
     expect(st.lastError).toBe("forbidden:403");
     expect(h.notes).toHaveLength(1);
+    const listedBefore = h.calls.list.length;
+    await h.nextRound();
+    const added = h.calls.list.slice(listedBefore);
+    expect(added.filter((c) => c.channelId === CH)).toHaveLength(0);
+    expect(added.filter((c) => c.channelId === CH2)).toHaveLength(1);
+    expect(h.notes).toHaveLength(1);
   });
   it("500 は次の周回でやり直し、知らせない。読めたら続けての失敗は0に戻る", async () => {
     const h = setup({ preState: seeded(ID(0)) });
@@ -516,6 +522,10 @@ describe("I18 stop()", () => {
     expect(h.timers.state.scheduled).toBe(0);
     expect(h.notifier.stops).toBe(1);
     expect(h.notes).toHaveLength(0);
+    const cleared = h.timers.state.cleared;
+    h.intake.stop();
+    expect(h.notifier.stops).toBe(1);
+    expect(h.timers.state.cleared).toBe(cleared);
   });
   it("start の途中（設定の読み込み中）で stop → 周回は始まらない", async () => {
     const h = setup({ preState: seeded(ID(0)) });
@@ -530,5 +540,43 @@ describe("I18 stop()", () => {
     expect(h.timers.state.scheduled).toBe(0);
     expect(h.notifier.made).toHaveLength(0);
     expect(h.notes).toHaveLength(0);
+  });
+});
+
+describe("I19 思わぬ例外", () => {
+  it("api が reject → lastError internal・失敗1・running・タイマー1・知らせ0。次に読めたら失敗0", async () => {
+    const h = setup({ preState: seeded(ID(0)) });
+    h.world.list = async () => { throw new Error("boom"); };
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await h.intake.start();
+    const st = h.intake.status();
+    expect([st.lastError, st.consecutiveFailures, st.state]).toEqual(["internal", 1, "running"]);
+    expect(h.timers.state.pending).toHaveLength(1);
+    expect(h.notes).toHaveLength(0);
+    h.world.list = undefined;
+    await h.nextRound();
+    expect(h.intake.status().consecutiveFailures).toBe(0);
+  });
+});
+
+describe("I20 受け口が止まっているときのチャンネルの表示", () => {
+  it("秘密が unreadable で止まる → 有効な bug は intakeStopped、無効は disabled、error-report は notReady", async () => {
+    const h = setup({ credState: { bot: "unreadable", webhook: "ok" }, channels: [bugCh(), bugCh({ channelId: CH2, enabled: false }), erCh()] });
+    await h.intake.start();
+    const st = h.intake.status();
+    expect(st.state).toBe("stopped");
+    expect(st.channels.map((c) => c.status)).toEqual(["intakeStopped", "disabled", "notReady"]);
+  });
+  it("401 で止まる → 読んでいたチャンネルは intakeStopped、先に forbidden で止めたチャンネルは forbidden のまま", async () => {
+    const CH3 = ID(23);
+    const h = setup({ channels: [bugCh(), bugCh({ channelId: CH2 }), bugCh({ channelId: CH3 })], preState: { ...seeded(ID(0)), channels: { [CH]: { lastSeenId: ID(0) }, [CH2]: { lastSeenId: ID(0) }, [CH3]: { lastSeenId: ID(0) } } } });
+    h.world.list = async (c: string) => (c === CH ? { ok: false, kind: "forbidden", status: 403 } : { ok: true, value: [] });
+    await h.intake.start();
+    expect(h.intake.status().channels.map((c) => c.status)).toEqual(["forbidden", "reading", "reading"]);
+    h.world.list = async () => ({ ok: false, kind: "unauthorized" });
+    await h.nextRound();
+    const st = h.intake.status();
+    expect(st.state).toBe("stopped");
+    expect(st.channels.map((c) => c.status)).toEqual(["forbidden", "intakeStopped", "intakeStopped"]);
   });
 });
