@@ -145,7 +145,7 @@ export function QuickPromptEditor({ prompts, onChanged, onTogglePinned, onUse, u
             </Callout>
           )}
           <div className="ac-quick-editor__actions">
-            <Button type="submit" loading={busy} loadingText={t("ac.quick.saving")}>
+            <Button type="submit" loading={busy}>
               {editingId === null ? t("ac.quick.add") : t("ac.quick.save")}
             </Button>
             {editingId !== null && (

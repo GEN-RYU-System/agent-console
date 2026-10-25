@@ -59,7 +59,7 @@ export function NewSessionForm({ roles, busy, error, onSubmit }: Props) {
             {error}
           </Callout>
         )}
-        <Button type="submit" loading={busy} loadingText={t("ac.form.creating")}>
+        <Button type="submit" loading={busy}>
           {t("ac.form.submit")}
         </Button>
       </Stack>

@@ -2,6 +2,7 @@
 
 版を出すたびに 1 行追記する（版の正本は git タグ `vX.Y.Z`）。
 
+- 0.45.1 金型 Button の props から `loadingText` が消えた（Sales Anchor 6979613ca）のに合わせ、8 か所の `loadingText` 属性を外した（押下中も元の言葉のまま、丸だけが回る）。辞書の使われなくなったキーは残している。戻し方は `bash scripts/ac-update.sh v0.45.0`。
 - 0.45.0 画面で予約・定期実行を作る・変えるとき、ほかの予約・有効な定期実行と開始が60分未満なら、確認の欄に相手の名前・時刻と空いている近い時刻を出す（保存は止めない。一覧の有効切り替えボタンには出さない）。戻し方は `bash scripts/ac-update.sh v0.44.0`。設計は docs/handoff/discord-pdca/design.md §4-3・§8 便1b。
 - 0.44.0 AI の予約・定期実行に1時間の関門を足した（AI の作成・変更は、ほかの予約・定期実行と開始が60分未満なら拒み、空いている近い時刻を示す。画面からの操作にはかけない）／予約の作成・取消・開始を監査記録（routine-audit.jsonl の reserveCreate・reserveCancel・reserveDispatch）へ／ac-reserve は呼び出し元の役割で絞る（設定 `reserveRoles`、既定 opus-designer・shell。外は 403）／役割の `reservable: false` で予約の選択肢から外す。戻し方は `bash scripts/ac-update.sh v0.43.0`。設計は docs/handoff/discord-pdca/design.md。
 - 0.43.0 AI の予約（purpose measure）の待機中の上限を10件→20件にした（`server/reservations.ts` の MAX_AGENT_PENDING。全体の50件と定期実行の AI 分10件は変えない）。理由: 測定の予約が1週間分で10件に達し、新しい測定を入れられなかった（PO 2026-10-18 y）。設計は docs/handoff/agent-pending-20/design.md。

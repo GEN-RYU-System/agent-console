@@ -49,7 +49,7 @@ export function RoutineApprovalBar({ sessionId }: Props) {
       {remaining !== null ? (
         <p role="status" className="ac-right__approval-active">{t("ac.routineApproval.active", { minutes: remaining })}</p>
       ) : (
-        <Button size="sm" variant="outline" onClick={approve} loading={busy} loadingText={t("ac.routineApproval.approving")}>{t("ac.routineApproval.approve")}</Button>
+        <Button size="sm" variant="outline" onClick={approve} loading={busy}>{t("ac.routineApproval.approve")}</Button>
       )}
       {failed && <Callout variant="warning" title={t("ac.routineApproval.error")} />}
     </div>
