@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { listChanges, readFileDiff } from "../../server/diff.ts";
 import { startHarness, TOKEN, type Harness } from "./helpers/harness.ts";
 
 // git を何度も起動する試験。他のプロセスで機械が混んでいても 5 秒の既定に収まらないことがあるため長くする
@@ -321,5 +322,64 @@ describe("send-check and mark-sent (K5, K6)", () => {
 
   it("rejects a mark-sent body without an ids array (400)", async () => {
     expect((await api("POST", `/api/sessions/${sessionId}/diff-comments/mark-sent`, { ids: "x" })).status).toBe(400);
+  });
+});
+
+describe("git safety overrides (ADR-1039 2b-1)", () => {
+  let dir: string;
+  let marks: string;
+  beforeAll(() => {
+    dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), "ac-diff-safe-")));
+    marks = realpathSync(mkdtempSync(path.join(os.tmpdir(), "ac-diff-mark-")));
+  });
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(marks, { recursive: true, force: true });
+  });
+
+  it("D-fsm: core.fsmonitor in the working place config is not run by listChanges / readFileDiff", async () => {
+    git(dir, "init", "-q", "-b", "main");
+    writeFileSync(path.join(dir, "f.txt"), "1\n2\n");
+    git(dir, "add", "-A");
+    git(dir, "commit", "-q", "-m", "base");
+    git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
+    const mark = path.join(marks, "fired");
+    const hook = path.join(marks, "fsm.sh");
+    writeFileSync(hook, `#!/bin/sh\ntouch "${mark}"\nprintf '\\0'\n`);
+    chmodSync(hook, 0o755);
+    git(dir, "config", "core.fsmonitor", hook);
+    writeFileSync(path.join(dir, "f.txt"), "1\nX\n");
+    // 対照: 上書きなしの git では印ができる（できなければ status でもう1回試す）
+    git(dir, "diff", "--merge-base", "origin/main", "--numstat");
+    let controlFired = existsSync(mark);
+    if (!controlFired) {
+      git(dir, "status", "--porcelain");
+      controlFired = existsSync(mark);
+    }
+    rmSync(mark, { force: true });
+    if (!controlFired) console.warn("D-fsm: fsmonitor was not fired by this git without overrides (control)");
+    const list = await listChanges(dir, "origin/main");
+    expect(list).toEqual({ baseRef: "origin/main", files: [{ path: "f.txt", added: 1, removed: 1, binary: false, untracked: false }] });
+    if ("files" in list) {
+      const fd = await readFileDiff(dir, "origin/main", list.files[0], 4000);
+      expect("lines" in fd && fd.lines.find((l) => l.kind === "add")).toEqual({ kind: "add", newLine: 2, text: "X" });
+    }
+    expect(existsSync(mark)).toBe(false);
+  });
+
+  it("D-sub: a nested repository is not counted in listChanges", async () => {
+    const sub = path.join(dir, "nested");
+    mkdirSync(sub);
+    git(sub, "init", "-q", "-b", "main");
+    writeFileSync(path.join(sub, "n.txt"), "n1\n");
+    git(sub, "add", "-A");
+    git(sub, "commit", "-q", "-m", "nested");
+    git(dir, "config", "--unset", "core.fsmonitor");
+    git(dir, "add", "nested");
+    git(dir, "commit", "-q", "-m", "add nested");
+    writeFileSync(path.join(sub, "n.txt"), "n1\nn2\n");
+    const list = await listChanges(dir, "origin/main");
+    expect("files" in list).toBe(true);
+    if ("files" in list) expect(list.files.map((f) => f.path)).toEqual(["f.txt"]);
   });
 });

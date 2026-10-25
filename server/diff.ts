@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { safeGitArgs } from "./git-safe.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -32,7 +33,7 @@ export class DiffGitError extends Error {}
 
 /** 出力の大きさは byte で数えたいので、buffer で受けてから UTF-8 に直す。 */
 const git = async (dir: string, args: string[], maxBuffer: number): Promise<{ stdout: string }> => {
-  const { stdout } = await execFileAsync("git", ["-C", dir, ...args], { timeout: GIT_TIMEOUT_MS, maxBuffer, encoding: "buffer" });
+  const { stdout } = await execFileAsync("git", safeGitArgs(dir, args), { timeout: GIT_TIMEOUT_MS, maxBuffer, encoding: "buffer" });
   return { stdout: stdout.toString("utf8") };
 };
 
@@ -63,7 +64,7 @@ export async function listChanges(dir: string, baseRef: string): Promise<ChangeL
   }
   try {
     const [tracked, others] = await Promise.all([
-      git(dir, ["diff", "--merge-base", baseRef, "--no-renames", "--no-ext-diff", "--no-textconv", "--numstat", "-z"], LIST_MAX_BUFFER),
+      git(dir, ["diff", "--merge-base", baseRef, "--no-renames", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all", "--numstat", "-z"], LIST_MAX_BUFFER),
       git(dir, ["ls-files", "--others", "--exclude-standard", "-z"], LIST_MAX_BUFFER),
     ]);
     const known = new Set<string>();
@@ -116,7 +117,7 @@ export async function readFileDiff(dir: string, baseRef: string, file: ChangedFi
   if (file.untracked) return { untracked: true };
   if (file.binary) return { binary: true };
   try {
-    const { stdout } = await git(dir, ["diff", "--merge-base", baseRef, "--no-renames", "--no-color", "--no-ext-diff", "--no-textconv", "--", file.path], maxBytes);
+    const { stdout } = await git(dir, ["diff", "--merge-base", baseRef, "--no-renames", "--no-color", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all", "--", file.path], maxBytes);
     return { lines: parseUnifiedDiff(stdout) };
   } catch (err) {
     if ((err as { code?: unknown }).code === MAX_BUFFER_CODE) return { tooLarge: true };
