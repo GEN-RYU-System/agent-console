@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { safeGitArgs } from "./git-safe.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -177,7 +178,7 @@ export interface PrTarget {
 export type TargetResult = { kind: "target"; target: PrTarget } | { kind: "immediate"; response: PrResponse };
 
 async function gitOut(dir: string, args: readonly string[]): Promise<string> {
-  const { stdout } = await execFileAsync("git", ["-C", dir, ...args], { timeout: GIT_TIMEOUT_MS });
+  const { stdout } = await execFileAsync("git", safeGitArgs(dir, args), { timeout: GIT_TIMEOUT_MS });
   return stdout.trim();
 }
 
