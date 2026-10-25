@@ -46,6 +46,17 @@ describe("ac-discord-secret.sh", () => {
     expect(e.secret()).toBe("");
     expect(e.log()).not.toContain("security -i");
   });
+  it.each([
+    ["二重引用符", `printf '%s\\n' 'a"b'`],
+    ["単一引用符", `printf '%s\\n' "a'b"`],
+    ["バックスラッシュ", `printf '%s\\n' 'a\\b'`],
+  ])("%s を含む値は保存しない", async (_name, body) => {
+    const e = await fresh();
+    const r = e.run("ac-discord-secret.sh", ["discord-bot"], { AC_OSASCRIPT: fakeOsascript(e, body) });
+    expect(r.status).not.toBe(0);
+    expect(e.secret()).toBe("");
+    expect(e.log()).not.toContain("security -i");
+  });
   it("知らない項目は保存しない", async () => {
     const e = await fresh();
     const r = e.run("ac-discord-secret.sh", ["other"], { AC_OSASCRIPT: fakeOsascript(e, `echo ${FAKE}`) });

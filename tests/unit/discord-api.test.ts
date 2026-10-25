@@ -42,6 +42,14 @@ describe("listMessagesAfter", () => {
       expect(await createDiscordApi(fake(reply).fetch).listMessagesAfter(TOKEN, CH, null)).toEqual({ ok: false, kind: "failed", reason: "badJson" });
     }
   });
+  it("badJson when id or channel_id is not 1-20 digits; a 20-digit id passes", async () => {
+    const bad = [msg({ id: "12a" }), msg({ id: "" }), msg({ id: "1".repeat(21) }), msg({ channel_id: "x" })];
+    for (const m of bad) {
+      expect(await createDiscordApi(fake({ body: [msg(), m] }).fetch).listMessagesAfter(TOKEN, CH, null)).toEqual({ ok: false, kind: "failed", reason: "badJson" });
+    }
+    const ok = msg({ id: "1000000000000000000".concat("1") });
+    expect(await createDiscordApi(fake({ body: [ok] }).fetch).listMessagesAfter(TOKEN, CH, null)).toEqual({ ok: true, value: [ok] });
+  });
 });
 
 describe("failures are discriminated", () => {

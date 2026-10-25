@@ -35,8 +35,11 @@ const defaultFetch: FetchFn = (url, init) => globalThis.fetch(url, init);
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isStr = (v: unknown): v is string => typeof v === "string";
 
+/** Discord の id（snowflake は 64 ビットの数で最大20桁） */
+const SNOWFLAKE_RE = /^\d{1,20}$/;
+
 function toMessage(v: unknown): DiscordMessage | null {
-  if (!isObj(v) || !isStr(v.id) || !isStr(v.channel_id) || !isStr(v.content) || !isStr(v.timestamp) || typeof v.type !== "number") return null;
+  if (!isObj(v) || !isStr(v.id) || !SNOWFLAKE_RE.test(v.id) || !isStr(v.channel_id) || !SNOWFLAKE_RE.test(v.channel_id) || !isStr(v.content) || !isStr(v.timestamp) || typeof v.type !== "number") return null;
   const a = v.author;
   if (!isObj(a) || !isStr(a.id)) return null;
   if (a.bot !== undefined && typeof a.bot !== "boolean") return null;
