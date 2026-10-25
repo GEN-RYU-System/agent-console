@@ -240,6 +240,35 @@ node scripts/ac-hooks.mjs install
 node scripts/ac-hooks.mjs check
 ```
 
+## Discord の受け口（便2a、v0.46.0）
+
+Discord の受付チャンネルを30秒ごとに読み、ふるいにかけて順番待ちに入れる受け口の芯です。**既定は無効**で、設定ファイルを置かない限り動きません。**この版ではセッションを1つも開きません**（開くのは後の便）。
+
+- 設定ファイル: `dataDir/discord-intake.config.json`（無い・形が違う・ボットの秘密が読めない、のどれかなら受け口だけが止まり、サーバーのほかの動きは続きます）。id は数字の文字列です（下は作り物の例）。受付チャンネル（`bug`）を `enabled: true` にできるのは `testMode: true` のときだけです。`error-report` はこの版では読みません（`notReady`）。
+
+```json
+{
+  "testMode": true,
+  "forbiddenBotIds": ["100000000000000001"],
+  "channels": [
+    {
+      "kind": "bug",
+      "enabled": true,
+      "guildId": "100000000000000002",
+      "channelId": "100000000000000003",
+      "allowedAuthors": [{ "id": "100000000000000004", "name": "例" }],
+      "allowedMessageTypes": [0, 19]
+    }
+  ]
+}
+```
+
+- 秘密の登録（Keychain。値は画面に出ません）: `bash scripts/ac-discord-secret.sh discord-bot`（ボットのトークン）、`bash scripts/ac-discord-secret.sh discord-report-webhook`（報告チャンネルの Webhook URL）。形の確かめは状態の入口の `credentials` で行います。
+- 状態の入口: `GET /api/discord-intake/status`（認証が要ります。id・トークン・URL・本文は出しません）。
+- **この版では順番待ちは減りません**。20件で満杯になり、以後は1周回につき1件の満杯の知らせが出ます。試験のあとに空にするには、サーバーを止めてから `dataDir/discord-intake.json` を消します（次の起動は「初めて読む」扱いで、過去の投稿は受けません）。
+- ボットに `MESSAGE_CONTENT` の特権インテントが無いと、投稿の本文が空で返り、保存する文字数が0になります（Discord の公式資料）。
+- 設計: `docs/handoff/discord-pdca/design.md` §4-1、指示書: `docs/handoff/discord-pdca/bin2a-card.md`。
+
 ## 設計メモ
 
 - 設計・調査・実装メモ: `docs/handoff/stage1/`（段階1）、`docs/handoff/stage1-5/`（段階1.5: 起動・版管理・セキュリティ）

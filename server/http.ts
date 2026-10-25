@@ -34,6 +34,7 @@ import { RoutineAudit, type RoutineAuditAction, type RoutineAuditEntry } from ".
 import { resolveRunAt, type ReservationService } from "./reservations.ts";
 import type { RelayManager } from "./relay.ts";
 import type { ReserveAccess } from "./reserve-token.ts";
+import { disabledIntakeStatus, type DiscordIntakeStatus } from "./discord-intake.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -75,6 +76,8 @@ export interface AppDeps {
   reserve: ReserveAccess;
   /** ac-routine の一時承認の保管。無ければ deps ごとにメモリに 1 つ作る（試験では時刻を差し替えたものを渡す） */
   routineApprovals?: RoutineApprovals;
+  /** Discord の受け口（設計 discord-pdca §4-1）。省略時は状態の入口が notStarted を返す */
+  discordIntake?: { status(): DiscordIntakeStatus };
 }
 
 export function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -214,6 +217,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   if (routineEnabledMatch && req.method === "POST") { sendJson(res, 200, await deps.routines.setEnabled(routineEnabledMatch[1], jsonBody(await readJsonBody(req)).enabled)); return; }
   if (req.method === "GET" && url.pathname === "/api/reservations") { sendJson(res, 200, { items: await deps.reservations.listReady() }); return; }
   if (req.method === "GET" && url.pathname === "/api/schedule/preview") { sendJson(res, 200, schedulePreview(deps.schedule, url.searchParams)); return; }
+  if (req.method === "GET" && url.pathname === "/api/discord-intake/status") { sendJson(res, 200, deps.discordIntake?.status() ?? disabledIntakeStatus()); return; }
   if (req.method === "POST" && url.pathname === "/api/reservations") { sendJson(res, 201, await deps.reservations.create(uiReservationInput(jsonBody(await readJsonBody(req))), "ui", { callerSessionId: null })); return; }
   const reservationCancel = /^\/api\/reservations\/([^/]+)\/cancel$/.exec(url.pathname);
   if (req.method === "POST" && reservationCancel) { sendJson(res, 200, await deps.reservations.cancel(reservationCancel[1], { callerSessionId: null })); return; }

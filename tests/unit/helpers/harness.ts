@@ -79,6 +79,8 @@ async function freePort(): Promise<number> {
 }
 
 export interface HarnessOptions {
+  /** Discord の受け口の状態（指定すると GET /api/discord-intake/status がそれを返す） */
+  discordIntake?: { status(): import("../../../server/discord-intake.ts").DiscordIntakeStatus };
   /** 指定すると、そのポートで待ち受ける（launchctl kickstart による起動の再現用）。 */
   port?: number;
   /** 引き継ぎ書の置き場。未指定なら引き継ぎは使えない（409 relay not configured） */
@@ -245,7 +247,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const reserve: ReserveAccess = options.reserve ?? { token: RESERVE_TOKEN };
   const routineApprovals = new RoutineApprovals(() => clock.t);
   const server = createServer(
-    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines, reservations, schedule: gate, relay, reserve, routineApprovals }),
+    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines, reservations, schedule: gate, relay, reserve, routineApprovals, ...(options.discordIntake ? { discordIntake: options.discordIntake } : {}) }),
   );
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));

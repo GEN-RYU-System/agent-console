@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fro
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { readKeychainSecret } from "../../server/keychain.ts";
+import { readKeychainItem, readKeychainSecret } from "../../server/keychain.ts";
 import { resolveSecret, securityBinFor } from "../../server/secret.ts";
 
 const SECRET = "ab".repeat(32);
@@ -84,5 +84,23 @@ describe("securityBinFor (no override in production)", () => {
 
   it("uses AC_SECURITY in test mode", () => {
     expect(securityBinFor({ AC_SECURITY: "/tmp/stub", AC_STUB_LOG: "/tmp/log" })).toBe("/tmp/stub");
+  });
+});
+
+describe("readKeychainItem (Discord の項目)", () => {
+  it("runs find-generic-password for service agent-console and the given account", async () => {
+    const { bin, argvLog } = stub('echo "  fake-value  "');
+    expect(await readKeychainItem(bin, "discord-bot")).toBe("fake-value");
+    expect(readFileSync(argvLog, "utf8").trim()).toBe("find-generic-password -s agent-console -a discord-bot -w");
+  });
+
+  it("fails without echoing the output or the value", async () => {
+    const { bin } = stub('echo "leak-marker-value"; echo "denied-marker" >&2; exit 44');
+    const err = await readKeychainItem(bin, "discord-report-webhook").catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    const msg = (err as Error).message;
+    expect(msg).toContain("discord-report-webhook");
+    expect(msg).not.toContain("leak-marker-value");
+    expect(msg).not.toContain("denied-marker");
   });
 });

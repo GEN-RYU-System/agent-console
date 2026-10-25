@@ -13,7 +13,7 @@ import { createRequestHandler } from "./http.ts";
 import { MemoryCollector } from "./memory.ts";
 import { startPolling } from "./poll.ts";
 import { writeSessionMetrics } from "../hooks/ac-statusline.mjs";
-import { setupPicker } from "./picker-extension.ts";
+import { isPickerSetupEnabled, setupPicker } from "./picker-extension.ts";
 import { PickStore } from "./picks.ts";
 import { UploadStore } from "./uploads.ts";
 import { QuickPromptStore } from "./quick-prompts.ts";
@@ -28,7 +28,9 @@ import { ScheduleGate } from "./schedule-gate.ts";
 import { ReservationService, ReservationStore } from "./reservations.ts";
 import { RelayManager, resolveRelayDir } from "./relay.ts";
 import { setupReserveToken } from "./reserve-token.ts";
-import { resolveSecret } from "./secret.ts";
+import { DiscordIntake } from "./discord-intake.ts";
+import { osascriptSender } from "./notify.ts";
+import { resolveSecret, securityBinFor } from "./secret.ts";
 import { SessionManager } from "./sessions.ts";
 import { readSaSource } from "./tokens.ts";
 import { attachWebSockets, SESSION_SWEEP_MS } from "./ws.ts";
@@ -86,6 +88,8 @@ async function main(): Promise<void> {
   // 拡張の合言葉とフォルダの作り直しは、本番のポートで起動したときだけ（AGENT_CONSOLE_PORT があれば作らない）。作れなくてもサーバーは止めない
   const picker = await setupPicker({ env: process.env, dataDir: config.dataDir, port: config.port, sourceDir: path.join(process.cwd(), "extension") });
   const reserve = await setupReserveToken({ env: process.env, dataDir: config.dataDir, port: config.port });
+  // Discord の受け口は本番のポートのときだけ作る（試験・自己診断が同じ dataDir を2つのサーバーで読まないため）。設定ファイルが無ければ動かない（設計 discord-pdca §4-1）
+  const discordIntake = isPickerSetupEnabled(process.env) ? new DiscordIntake({ dataDir: config.dataDir, securityBin: securityBinFor(process.env), macos: config.notify.macos ? osascriptSender(config.notify.osascriptBin) : null }) : null;
   const picks = new PickStore(config.dataDir, config.pickMaxKeep);
   hub.watchPicks(picks);
   const activity = startActivity({ config, hub, env: process.env, hooksSourceDir: path.join(process.cwd(), "hooks") });
@@ -105,13 +109,15 @@ async function main(): Promise<void> {
 
   const memory = new MemoryCollector();
   let stopMetrics: (() => void) | null = null;
-  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity: activity.store, checkHooks: activity.check, memory, staticDir: path.join(process.cwd(), "dist"), meta, routines, reservations, schedule: gate, relay, reserve, routineApprovals }));
+  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity: activity.store, checkHooks: activity.check, memory, staticDir: path.join(process.cwd(), "dist"), meta, routines, reservations, schedule: gate, relay, reserve, routineApprovals, ...(discordIntake ? { discordIntake } : {}) }));
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   // 期限切れ（12 時間）になったセッションの WebSocket を閉じる
   setInterval(() => controls.sweep(), SESSION_SWEEP_MS).unref();
 
   server.listen(config.port, LISTEN_HOST, () => {
     hub.start();
+    // 起動の失敗でサーバーを止めない
+    void discordIntake?.start().catch((e) => console.error("discord-intake: start failed:", e instanceof Error ? e.message : e));
     // Mac とセッションの CPU・RAM・Disk の定期計測。計測は MemoryCollector 1 か所、statusline への受け渡しは session-metrics.json（設計 docs/handoff/pc-meter/design.md §4.1-4.2）
     stopMetrics = startPolling(async () => {
       const names = hub.displayNames();
@@ -153,6 +159,7 @@ async function main(): Promise<void> {
     activity.stop();
     routines.stop();
     reservations.stop();
+    discordIntake?.stop();
     // 停止で端末が終わっても、復元リストは書き換えない（再起動のあとに開き直すため）
     sessions.beginShutdown();
     sessions.killAll();
