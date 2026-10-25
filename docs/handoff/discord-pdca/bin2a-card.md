@@ -18,7 +18,7 @@ PO 承認: 2026-10-25「1」（「次の段階の指示書を作る：Discord �
 - **受付チャンネル（`bug`）を有効にできるのは `testMode: true` のときだけ**（設計 §8 の便2「便3 の受入が通るまで testMode でだけ有効」）。`testMode: false` で `bug` を `enabled: true` にした設定は「形が違う」として受け口を動かさない。
 - **誤り報告チャンネル（`error-report`）は、この便では読まない**（設計 :505「enabled を true にするのは ADR-1025 の便4 の受入」）。設定に書けるが、`enabled` が true でも読まず、状態に `notReady` と出す。ADR-1025 の便4 のために、判定の関数 `matchesErrorReport` だけを作って試験する。
 - **guildId の確かめ方**: Discord の公式資料のメッセージの項目に `guild_id` は無い（点検 j）。そこで、ボットの照合と同じ時（最初の読み取りの前と1時間ごと）に、チャンネル自身を `GET /channels/{id}` で読み、その `guild_id` が設定の `guildId` と同じかを見る。違えばそのチャンネルを止めて知らせる（設計 :149 の「guildId が設定の値と同じ」をこの形で守る）。**まだ確かめられていないチャンネルは読まない**（状態 `waitingGuildCheck`）。`getChannel` が `failed`・`rateLimited` なら、そのチャンネルは読まずに次の周回で確かめ直す（1時間を待たない）。確かめられたら以後1時間ごとに確かめ直し、その間は読む。
-- **初めて読んで0件だったとき**は、`lastSeenId` を `"0"` にせず、**読んだ時刻から作った snowflake** にする: `String((BigInt(now) - 1420070400000n) << 22n)`（点検 j の snowflake の作り方）。`READ_MESSAGE_HISTORY` が無いと0件で返り（点検 j）空と見分けられないため、`"0"` にすると、あとで権限を直したときに過去の投稿を全部受けてしまう。投稿があれば一番大きい id にする（設計 :152）。
+- **初めて読んで0件だったとき**は、`lastSeenId` を `"0"` にせず、**読んだ時刻から作った snowflake** にする: `String((BigInt(now) - 1420070400000n) << 22n)`（点検 j の snowflake の作り方）。`READ_MESSAGE_HISTORY` が無いと0件で返り（点検 j）空と見分けられないため、`"0"` にすると、あとで権限を直したときに過去の投稿を全部受けてしまう。投稿があれば一番大きい id にする（設計 :152）。Mac と Discord の時計のずれの補正は入れない（ずれの大きさを測っておらず、影響は「0件で始まった直後の数秒」に限られるため。審査 P5 は見送り）。
 - **ふるいの順番**: 1つの投稿は、最初に当たった1つの理由だけで数える。順は `channel`（channel_id が違う）→ `webhook`（webhook_id がある）→ `bot`（author.bot が true）→ `messageType` → `notAllowedAuthor` → `queueFull`。Webhook を bot より先に見るのは、設計 K2（:84）が Webhook の投稿を Webhook の理由で数えるため。
 - **秘密の形の決まりは1か所**（`server/discord-credentials.ts`）。登録の台本は形を判定しない（同じ決まりを2つ作らない）。台本は保存だけして、形は状態の入口（`credentials`）で確かめる。
 - 外へ出る通信の行き先は `discord.com` だけ（コードの定数。台本・設定で変えられない）。
@@ -112,12 +112,12 @@ export async function loadDiscordCredentials(securityBin: string, read = readKey
 ### 4. `server/discord-api.ts`（新規。Discord への通信はこのファイルだけ）
 - `fetch` を差し替えられる形（既定は globalThis.fetch）。1回の通信は `AbortSignal.timeout(10_000)`
 - 関数:
-  - `listMessagesAfter(token, channelId, after: string | null, limit = 100)` → `GET ${DISCORD_API_BASE}/channels/${channelId}/messages?limit=100`（after があれば `&after=`）
+  - `listMessagesAfter(token, channelId, after: string | null)` → `GET ${DISCORD_API_BASE}/channels/${channelId}/messages?limit=100`（after があれば `&after=`。limit は 100 の決め打ちで引数にしない）
   - `getChannel(token, channelId)` → `GET …/channels/${channelId}`（`guild_id` を返す）
   - `getCurrentUser(token)` → `GET …/users/@me`（`id` を返す）
   - `executeWebhook(url, content)` → `POST ${url}?wait=true`、本文 `{ content: content.slice(0, 2000), allowed_mentions: { parse: [] } }`、`Content-Type: application/json`。**200 だけを成功とする**（204 は wait が効いていないので失敗扱い。点検 j の wait=false の注意）
 - 見出しは `Authorization: Bot ${token}`（Webhook には付けない）
-- 戻り値は判別できる形: `{ ok: true, value }` ／ `{ ok: false, kind: "rateLimited", retryAfterMs }` ／ `{ ok: false, kind: "unauthorized" }`（401）／ `{ ok: false, kind: "forbidden" | "notFound", status }`（403・404）／ `{ ok: false, kind: "failed", status?: number }`（そのほか・通信の失敗・時間切れ・形の違う JSON）
+- 戻り値は判別できる形: `{ ok: true, value }` ／ `{ ok: false, kind: "rateLimited", retryAfterMs }` ／ `{ ok: false, kind: "unauthorized" }`（401）／ `{ ok: false, kind: "forbidden" | "notFound", status }`（403・404）／ `{ ok: false, kind: "failed", reason: "http" | "timeout" | "network" | "badJson" | "badHost", status?: number }`（`http` はそのほかの HTTP の状態で `status` 必須・`timeout` は時間切れ・`network` は通信の失敗・`badJson` は形の違う JSON と欄の欠け・`badHost` は行き先が discord.com でない。`reason` は必須）
 - 429 の待ち: 本文の `retry_after`（秒）を優先し、無ければ見出し `Retry-After`（秒）。`Math.ceil(秒 * 1000)`。どちらも読めなければ `retryAfterMs: null`
 - 送る前に `new URL(url).host === DISCORD_HOST` を確かめ、違えば通信せず `failed`（行き先の定数。R12）
 - メッセージは使う欄だけに絞った型（`id`・`channel_id`・`author: { id; bot? }`・`content`・`timestamp`・`webhook_id?`・`type`）で返す。欄が欠けたものは `failed`
@@ -148,10 +148,10 @@ export const NOTIFY_QUEUE_LIMIT = 50;
   export const BUG_QUEUE_LIMIT = 20;                // 設計 :178
   export const BOT_CHECK_INTERVAL_MS = 3_600_000;   // 設計 :156
   export class DiscordIntake {
-    constructor(opts: { dataDir: string; securityBin: string; macos: NotificationSender | null }, overrides?: Partial<{ now: () => number; setTimer; clearTimer; api: §4 の関数の束; loadCredentials: () => Promise<DiscordCredentials>; readConfig: () => Promise<ConfigResult>; makeNotifier: … }>)
+    constructor(opts: { dataDir: string; securityBin: string; macos: NotificationSender | null }, overrides?: Partial<{ now: () => number; setTimer; clearTimer; api: §4 の関数の束; loadCredentials: () => Promise<DiscordCredentials>; readConfig: () => Promise<ConfigResult>; makeNotifier: (webhookUrl: string | null) => { notify(text: string): void; stop(): void } }>)
     // overrides は試験用。省いたものは本物（Date.now・setTimeout/clearTimeout・§4 の関数・loadDiscordCredentials(securityBin)・readIntakeConfig(dataDir)・§5 の DiscordNotifier）
     start(): Promise<void>
-    stop(): void
+    stop(): void   // 周回のタイマーを止める・notifier.stop()・途中の通信の結果は捨てて状態ファイルに書かない。以後の周回は始めない
     status(): DiscordIntakeStatus
   }
   export function matchesErrorReport(msg: { webhook_id?: string; content: string }, reportWebhookId: string): boolean
@@ -160,7 +160,7 @@ export const NOTIFY_QUEUE_LIMIT = 50;
 - 周回（前の周回が終わってから `POLL_INTERVAL_MS` 後に次。重ならない。`setTimer` の連鎖で、`setInterval` は使わない）:
   1. `pausedUntil` より前なら何もしない
   2. 前回のボットの照合から `BOT_CHECK_INTERVAL_MS` 以上（または未実施）なら照合: `getCurrentUser` の id が `forbiddenBotIds` にあれば受け口を止め、知らせる。読めなければこの周回は読まない（照合できないまま読まない）
-  3. guildId の確かめ: `kind: "bug"` かつ `enabled: true` かつ止まっていないチャンネルのうち、未確認（`waitingGuildCheck`）のもの、または前回の確かめから `BOT_CHECK_INTERVAL_MS` 以上たったものに `getChannel`。`guild_id` が設定と同じなら確認済みにして時刻を残す。違えばそのチャンネルを止めて知らせる。`failed`・`rateLimited` なら、確認済みでないチャンネルは `waitingGuildCheck` のまま（この周回は読まない。次の周回で確かめ直す）、確認済みのチャンネルは前の確認のまま読み、次の周回で確かめ直す（`rateLimited` は下の「通信の失敗の扱い」の `pausedUntil` も守る）。`unauthorized` は下の扱い。`forbidden`・`notFound` はそのチャンネルを止めて知らせる
+  3. guildId の確かめ: `kind: "bug"` かつ `enabled: true` かつ止まっていないチャンネルのうち、未確認（`waitingGuildCheck`）のもの、または前回の確かめから `BOT_CHECK_INTERVAL_MS` 以上たったものに `getChannel`。`guild_id` が設定と同じなら確認済みにして時刻を残す。違えば、または `guild_id` が無ければ（`guild_id?` は省かれることがある。点検 j）、そのチャンネルを止めて（`guildMismatch`）知らせる。`failed`・`rateLimited` なら、確認済みでないチャンネルは `waitingGuildCheck` のまま（この周回は読まない。次の周回で確かめ直す）、確認済みのチャンネルは前の確認のまま読み、次の周回で確かめ直す（`rateLimited` は下の「通信の失敗の扱い」の `pausedUntil` も守る）。`unauthorized` は下の扱い。`forbidden`・`notFound` はそのチャンネルを止めて知らせる
   4. 読む対象 = `kind: "bug"` かつ `enabled: true` かつ止まっていなくて guildId を確認済みのチャンネル。1つずつ順に読む
   5. `lastSeenId` が無い: `listMessagesAfter(token, id, null)`。返った中の一番大きい id を、0件なら読んだ時刻の snowflake（決めたこと）を `lastSeenId` にして保存。投稿は受けない
   6. `lastSeenId` がある: `after = lastSeenId` で読み、返ったページを id（BigInt）の小さい順に並べ、`lastSeenId` より大きいものだけを小さい順にふるいにかける。ページが100件なら `after` をそのページの一番大きい id にして続きを読む。1周回で `MAX_PAGES_PER_ROUND` 回まで。5回目も100件なら「取りこぼしの可能性」を知らせ、チャンネルに「追いついていない」の印を立てて次の周回で続きから。**印が立っている間は、続けて上限に当たっても知らせない**（設計 :153 の「1件」）。ある周回で最後のページが100件未満になったら（追いついた）印を外す。印はメモリだけに持つ（起こし直したら外れる）
@@ -178,7 +178,7 @@ export const NOTIFY_QUEUE_LIMIT = 50;
   - `unauthorized`: 受け口を止め、「ボットのトークンが拒まれました」を知らせる（1回）
   - `forbidden`・`notFound`: そのチャンネルを止め、知らせる（1回）。ほかのチャンネルは続ける
   - `failed`: その周回のそのチャンネルは終わり。`lastError` と続けての失敗の数を状態に出す。次の周回でやり直す（知らせない）。読めた周回で続けての失敗の数を0に戻す
-  - `lastError` に入れるのは決まった値だけ: `"rateLimited"`・`"unauthorized"`・`"forbidden:403"`・`"notFound:404"`・`"failed:<status>"`（HTTP の数字）・`"timeout"`・`"network"`・`"badJson"`（形の違う JSON・欄の欠け）。例外の文・URL・トークン・応答の本文は入れない（§4 の戻り値に、この値を作るための `reason` を持たせてよい）
+  - `lastError` に入れるのは決まった値だけ: `"rateLimited"`・`"unauthorized"`・`"forbidden:403"`・`"notFound:404"`・`"failed:<status>"`（HTTP の数字）・`"timeout"`・`"network"`・`"badJson"`（形の違う JSON・欄の欠け）・`"badHost"`。§4 の `failed` の `reason` と `status` から作る（`http` → `"failed:<status>"`）。例外の文・URL・トークン・応答の本文は入れない
 - 状態ファイルの形（設計 :347。本文は入れない）:
   ```json
   { "version": 1,
@@ -280,7 +280,7 @@ export const NOTIFY_QUEUE_LIMIT = 50;
   - I7 状態ファイルが壊れている: 読みに行かず、ファイルを書き換えず、`stateUnreadable`、知らせ1件（Webhook が ok なら Webhook に、無ければ macOS に。知らせの部品が先に作られていること）
   - I8 書けない（dataDir を書込不可にする等）: `stateWriteFailed` で止まり、`lastSeenId` が進まない
   - I9 ボットの照合: 最初の読みの前に1回、59分後は呼ばず、60分後に1回。`forbiddenBotIds` の id なら止まり知らせ1件・メッセージを読まない。照合が `failed` ならその周回は読まない
-  - I10 チャンネルの `guild_id` が設定と違う: そのチャンネルだけ止まり知らせ1件、ほかは読む。`getChannel` が `failed` なら、そのチャンネルへのメッセージの読み取りの通信は0回で `waitingGuildCheck`、次の周回で `getChannel` をやり直し、同じなら読む。確認済みのあとの1時間ごとの確かめが `failed` でも読み続ける
+  - I10 チャンネルの `guild_id` が設定と違う: そのチャンネルだけ止まり知らせ1件、ほかは読む。`getChannel` が `failed` なら、そのチャンネルへのメッセージの読み取りの通信は0回で `waitingGuildCheck`、次の周回で `getChannel` をやり直し、同じなら読む。確認済みのあとの1時間ごとの確かめが `failed` でも読み続ける。`guild_id` が無いチャンネルは `guildMismatch` で止まり知らせ1件
   - I11 429: `pausedUntil` まで通信0回、過ぎたら読む
   - I12 401 で止まり知らせ1件。403 でそのチャンネルだけ止まる。500 は次の周回でやり直し、知らせない
   - I13 周回が重ならない: 通信が終わらない間に30秒たっても次の周回が始まらない
