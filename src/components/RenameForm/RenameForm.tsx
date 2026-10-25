@@ -44,7 +44,7 @@ export function RenameForm({ session, busy, error, onSubmit }: Props) {
             {error}
           </Callout>
         )}
-        <Button type="submit" disabled={blocked} loading={busy} loadingText={t("ac.rename.sending")}>
+        <Button type="submit" disabled={blocked} loading={busy}>
           {t("ac.rename.submit")}
         </Button>
       </Stack>

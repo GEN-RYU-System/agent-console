@@ -52,7 +52,7 @@ export function CommentForm({ initialBody = "", onSubmit, onCancel }: Props) {
           </Callout>
         )}
         <div className="ac-diff__actions">
-          <Button size="sm" loading={busy} loadingText={t("ac.diff.commentSaving")} disabled={body.trim() === ""} onClick={() => void submit()}>
+          <Button size="sm" loading={busy} disabled={body.trim() === ""} onClick={() => void submit()}>
             {t("ac.diff.commentSave")}
           </Button>
           <Button size="sm" variant="ghost" disabled={busy} onClick={onCancel}>

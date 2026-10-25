@@ -53,7 +53,7 @@ export function ResumePicker({ items, busyPath, error, onResume }: Props) {
                 <span className="ac-resume__name">{x.kind === "main" ? t("ac.resume.mainRow") : t("ac.resume.worktreeRow", { name: nameOf(x) })}</span>
                 <span className="ac-resume__muted">{x.path}</span>
               </div>
-              <Button variant="outline" size="sm" disabled={busyPath !== null} loading={busyPath === x.path} loadingText={t("ac.resume.resuming")} onClick={() => onResume(x)}>
+              <Button variant="outline" size="sm" disabled={busyPath !== null} loading={busyPath === x.path} onClick={() => onResume(x)}>
                 {t("ac.resume.resume")}
               </Button>
             </div>

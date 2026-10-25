@@ -51,6 +51,6 @@ export function ReservationEditor({ roles: allRoles, onSave }: Props) {
     <Callout variant="info" title={t("ac.reservations.newSessionTitle")}>{t("ac.reservations.newSessionNotice")}</Callout>
     <ScheduleOverlapNotice preview={preview} failed={previewFailed} />
     {error && <Callout variant="warning" title={t("ac.reservations.error")}>{error}</Callout>}
-    <Button type="submit" disabled={launchBlocked(role, targets, loadError)} loading={busy} loadingText={t("ac.reservations.saving")}>{t("ac.reservations.save")}</Button>
+    <Button type="submit" disabled={launchBlocked(role, targets, loadError)} loading={busy}>{t("ac.reservations.save")}</Button>
   </Stack></form>;
 }
