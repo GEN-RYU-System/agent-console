@@ -48,7 +48,7 @@ PO 承認: 2026-10-25「1」（「次の段階の指示書を作る：Discord �
 - l. Keychain への入れ方の前例: `scripts/ac-install.sh:25` `printf 'add-generic-password -U -s agent-console -a server -w %s\n' "$secret" | "$AC_SECURITY" -i`（値を引数に出さない）。`scripts/lib/ac-common.sh:9-11` はテストモード以外で `AC_*` を消す、`:19` `AC_SECURITY="${AC_SECURITY:-security}"`、`:50` `ac_guard_test_paths`。台本の試験は `tests/unit/scripts.test.ts`（`helpers/ac-env.ts`）
 - m. macOS の入力画面: `/System/Library/ScriptingAdditions/StandardAdditions.osax/Contents/Resources/StandardAdditions.sdef:123-126` に `display dialog` の `default answer` と `hidden answer`（点で隠す）、`:151` に `text returned`（実物を読んだ）。`security add-generic-password -h` に `-U`（あれば上書き）・`-w`（実物）
 - n. 誤り報告の本文の形: Sales Anchor `backend/app/services/discord_notifier.py:93` `誤り報告 {report_code} 項目: …`、`:126` `誤り報告 {code} 照合: …`。ADR-1025 の設計 `docs/handoff/analysis-error-report/design.md:68`・`:70`（webhook_id が決めた webhook と同じで、本文が `ER-` と6桁）
-- o. 版: `package.json:3` 0.45.0
+- o. 版: `package.json:3` 0.45.1（#75 で 0.45.0 から上がった）
 
 ## 守ること
 - 触ってよいのは §変更 のファイルだけ。`hooks/`・`agent-console.config.json`・`.github/`・予約・定期実行・関門・routine-closer・sessions・launch は触らない
@@ -113,13 +113,13 @@ export async function loadDiscordCredentials(securityBin: string, read = readKey
 - `fetch` を差し替えられる形（既定は globalThis.fetch）。1回の通信は `AbortSignal.timeout(10_000)`
 - 関数:
   - `listMessagesAfter(token, channelId, after: string | null)` → `GET ${DISCORD_API_BASE}/channels/${channelId}/messages?limit=100`（after があれば `&after=`。limit は 100 の決め打ちで引数にしない）
-  - `getChannel(token, channelId)` → `GET …/channels/${channelId}`（`guild_id` を返す）
+  - `getChannel(token, channelId)` → `GET …/channels/${channelId}`（`{ guild_id: string | null }` を返す。`guild_id` が欠けている・null のときは `null` で返し、`badJson` にしない。止めるかどうかは §5 の 3 で決める）
   - `getCurrentUser(token)` → `GET …/users/@me`（`id` を返す）
   - `executeWebhook(url, content)` → `POST ${url}?wait=true`、本文 `{ content: content.slice(0, 2000), allowed_mentions: { parse: [] } }`、`Content-Type: application/json`。**200 だけを成功とする**（204 は wait が効いていないので失敗扱い。点検 j の wait=false の注意）
 - 見出しは `Authorization: Bot ${token}`（Webhook には付けない）
 - 戻り値は判別できる形: `{ ok: true, value }` ／ `{ ok: false, kind: "rateLimited", retryAfterMs }` ／ `{ ok: false, kind: "unauthorized" }`（401）／ `{ ok: false, kind: "forbidden" | "notFound", status }`（403・404）／ `{ ok: false, kind: "failed", reason: "http" | "timeout" | "network" | "badJson" | "badHost", status?: number }`（`http` はそのほかの HTTP の状態で `status` 必須・`timeout` は時間切れ・`network` は通信の失敗・`badJson` は形の違う JSON と欄の欠け・`badHost` は行き先が discord.com でない。`reason` は必須）
 - 429 の待ち: 本文の `retry_after`（秒）を優先し、無ければ見出し `Retry-After`（秒）。`Math.ceil(秒 * 1000)`。どちらも読めなければ `retryAfterMs: null`
-- 送る前に `new URL(url).host === DISCORD_HOST` を確かめ、違えば通信せず `failed`（行き先の定数。R12）
+- 送る前に `new URL(url).host === DISCORD_HOST` を確かめ、違えば通信せず `{ ok: false, kind: "failed", reason: "badHost" }`（行き先の定数。R12）
 - メッセージは使う欄だけに絞った型（`id`・`channel_id`・`author: { id; bot? }`・`content`・`timestamp`・`webhook_id?`・`type`）で返す。欄が欠けたものは `failed`
 - 失敗の文・ログにトークンと URL を出さない
 
@@ -261,7 +261,7 @@ export const NOTIFY_QUEUE_LIMIT = 50;
 
 ### 11. 版・文書
 - `package.json`・`package-lock.json`（2 か所）・`extension/manifest.json` を 0.46.0
-- `docs/CHANGELOG.md` の先頭に 0.46.0 の1行（Discord の受付チャンネルを読む受け口の芯。既定は無効で、設定と Keychain の2つの秘密があり testMode のときだけ動く。セッションは開かない／戻し方 `bash scripts/ac-update.sh v0.45.0`／設計パス）
+- `docs/CHANGELOG.md` の先頭に 0.46.0 の1行（Discord の受付チャンネルを読む受け口の芯。既定は無効で、設定と Keychain の2つの秘密があり testMode のときだけ動く。セッションは開かない／戻し方 `bash scripts/ac-update.sh v0.45.1`／設計パス）
 - `README.md` に「Discord の受け口（便2a）」の節を足す: 設定ファイルの場所と形（id は例の作り物）・登録の台本の使い方・状態の入口 `GET /api/discord-intake/status`・この版ではセッションを開かないこと・**この版では順番待ちは減らない**（20件で満杯になり、以後は1周回1件の満杯の知らせが出る。試験のあとに空にするには、サーバーを止めてから `dataDir/discord-intake.json` を消す。次の起動は「初めて読む」扱いで、過去の投稿は受けない）・ボットに `MESSAGE_CONTENT` のインテントが無いと文字数が0になること（点検 j）
 
 ### 12. テスト（偽の時計・偽のタイマー・偽の fetch・偽の security。本物の Keychain と Discord は使わない）
@@ -288,6 +288,7 @@ export const NOTIFY_QUEUE_LIMIT = 50;
   - I15 `error-report` のチャンネルは `enabled: true` でも読まず `notReady`
   - I16 状態ファイル・`status()`・知らせ・console に、投稿の本文（試験で入れた目印の文字列）とトークン（目印）が1つも出ない
   - I17 `matchesErrorReport`: webhook_id が同じで `ER-000123` を含む→true。webhook_id が違う・無い・`ER-12345`（5桁）・`ER-1234567`（7桁）・`XER-123456`→false
+  - I18 `stop()`: 通信の途中（偽の api の Promise を解かずに止めておく）で `stop()` を呼び、そのあと Promise を解く → 状態ファイルへの書き込み0回・`setTimer` の呼び出し0回・`notifier.stop()` は1回だけ。`start()` の途中（`readConfig` を止めておく）で `stop()` を呼んでから解く → 周回は始まらない（`listMessagesAfter` 0回・`setTimer` 0回）
 - 入口の試験（`tests/unit/discord-intake-status.test.ts`。harness と同じ作り方で `createRequestHandler` に偽の `discordIntake` を渡す。harness を使えなければ http を直接立てる）: 認証なし 401、認証ありで 200 と `status()` の中身、`discordIntake` を渡さないと `notStarted`
 - 台本の試験（`tests/unit/scripts.test.ts` に足す。`AC_STUB_LOG` のテストモード・`AC_OSASCRIPT` と `AC_SECURITY` の偽物）: 値が `security` の標準入力にだけ渡り、`security` の引数・台本の標準出力・標準エラーに値が出ない。取り消し（偽の osascript が 1 で終わる）で保存0回・`ac_die` の文が出る。空白入りの値で保存0回。知らない account で保存0回。保存の確かめ（偽の `find-generic-password`）が失敗したら 0 以外で終わる
 
