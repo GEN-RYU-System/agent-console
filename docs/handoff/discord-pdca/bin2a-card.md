@@ -268,7 +268,7 @@ export const NOTIFY_QUEUE_LIMIT = 50;
 - `tests/unit/keychain.test.ts` に足す（今の試験は変えない）: `readKeychainItem(bin, "discord-bot")` の引数が `find-generic-password -s agent-console -a discord-bot -w`。失敗の文に出力が入らない
 - `tests/unit/discord-credentials.test.ts`: トークンの通る形・通らない形（空・201字・空白・`:`）。URL は `discord.com` の正しい形だけ通り、`discordapp.com`・`http://`・余計な道・空の token が通らない。読めない→`unreadable`、形違い→`invalid`、値が null
 - `tests/unit/discord-intake-config.test.ts`: 無い→`missing`、壊れた JSON・知らない欄・id の形違い・同じ channelId 2つ・`testMode: false` で `bug` が有効 → `invalid`（`problem` に値が入らない）、正しい形→`ok`
-- `tests/unit/discord-api.test.ts`: URL と見出し（`Bot ` が付く・Webhook には付かない）、`after` の有無、429 の本文の `retry_after: 1.5` → 1500、本文が無く見出しだけ → その秒、401・403・404・500・通信の失敗・形の違う JSON の判別、host が違う URL では fetch を呼ばない、Webhook の本文が2000字で切れて `allowed_mentions.parse` が空、Webhook の URL に `?wait=true` が付き、200 は成功・204 は失敗
+- `tests/unit/discord-api.test.ts`: URL と見出し（`Bot ` が付く・Webhook には付かない）、`after` の有無、429 の本文の `retry_after: 1.5` → 1500、本文が無く見出しだけ → その秒、401・403・404・500・通信の失敗・形の違う JSON の判別、host が違う URL では fetch を呼ばず `{ ok: false, kind: "failed", reason: "badHost" }` を返す、`getChannel` の応答に `guild_id` が無い・null のとき `{ ok: true, value: { guild_id: null } }`（`badJson` にならない）、Webhook の本文が2000字で切れて `allowed_mentions.parse` が空、Webhook の URL に `?wait=true` が付き、200 は成功・204 は失敗
 - `tests/unit/discord-notifier.test.ts`: 成功で1回だけ送る。失敗が続くと 30秒・2分・10分で送り直し、4回目も失敗で macOS に1回。途中で成功したら macOS は呼ばない。URL が null ならすぐ macOS。`stop()` で以後送らない。2件続けて `notify` すると、1件目のやり直しが終わるまで2件目は送らず、順番どおりに送る。待ち行列が50件のとき51件目はすぐ macOS
 - `tests/unit/discord-intake.test.ts`（偽の時計で、設計 :530 の上限・時計のテストのうちこの便の分）:
   - I1 初めて読む: 3件あっても受けず、`lastSeenId` が一番大きい id。0件なら `lastSeenId` は読んだ時刻（偽の時計）の snowflake で、次の周回でそれより新しい1件は受け、それより古い id の投稿（権限を直したあとに見えるようになった過去の投稿の代わり）は受けない
@@ -288,7 +288,7 @@ export const NOTIFY_QUEUE_LIMIT = 50;
   - I15 `error-report` のチャンネルは `enabled: true` でも読まず `notReady`
   - I16 状態ファイル・`status()`・知らせ・console に、投稿の本文（試験で入れた目印の文字列）とトークン（目印）が1つも出ない
   - I17 `matchesErrorReport`: webhook_id が同じで `ER-000123` を含む→true。webhook_id が違う・無い・`ER-12345`（5桁）・`ER-1234567`（7桁）・`XER-123456`→false
-  - I18 `stop()`: 通信の途中（偽の api の Promise を解かずに止めておく）で `stop()` を呼び、そのあと Promise を解く → 状態ファイルへの書き込み0回・`setTimer` の呼び出し0回・`notifier.stop()` は1回だけ。`start()` の途中（`readConfig` を止めておく）で `stop()` を呼んでから解く → 周回は始まらない（`listMessagesAfter` 0回・`setTimer` 0回）
+  - I18 `stop()`: 通信の途中（偽の api の Promise を解かずに止めておく）で `stop()` を呼び、そのあと Promise を解く → 状態ファイルへの書き込み0回・`setTimer` の呼び出し0回・`notifier.stop()` は1回だけ。`start()` の途中（`readConfig` を止めておく）で `stop()` を呼んでから解く → 周回は始まらない（`listMessagesAfter` 0回・`setTimer` 0回・`makeNotifier` 0回・知らせ0件）
 - 入口の試験（`tests/unit/discord-intake-status.test.ts`。harness と同じ作り方で `createRequestHandler` に偽の `discordIntake` を渡す。harness を使えなければ http を直接立てる）: 認証なし 401、認証ありで 200 と `status()` の中身、`discordIntake` を渡さないと `notStarted`
 - 台本の試験（`tests/unit/scripts.test.ts` に足す。`AC_STUB_LOG` のテストモード・`AC_OSASCRIPT` と `AC_SECURITY` の偽物）: 値が `security` の標準入力にだけ渡り、`security` の引数・台本の標準出力・標準エラーに値が出ない。取り消し（偽の osascript が 1 で終わる）で保存0回・`ac_die` の文が出る。空白入りの値で保存0回。知らない account で保存0回。保存の確かめ（偽の `find-generic-password`）が失敗したら 0 以外で終わる
 
