@@ -276,7 +276,7 @@ export class SessionManager {
     this.pending += 1;
     try {
       const cwd = branch
-        ? await createWorktree(this.config.salesanchorRoot, this.config.newWorktreeScript, branch)
+        ? await createWorktree(this.config.salesanchorRoot, this.config.salesanchorToolsRoot, this.config.newWorktreeScript, branch)
         : this.config.salesanchorRoot;
       const session = this.spawnSession(name, role, branch, cwd);
       session.initialName = name;

@@ -3,6 +3,7 @@ import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { ResumeScope, RoleConfig } from "./config.ts";
+import { checkMainLink } from "./git-safe.ts";
 import { SessionInputError } from "./sessions.ts";
 import { parseWorktreePorcelain, type WorktreeEntry } from "./worktree.ts";
 
@@ -23,6 +24,8 @@ export type ListWorktrees = (root: string) => Promise<WorktreeEntry[]>;
 
 /** `git worktree list --porcelain` の worktree 一覧（本店を含む）。 */
 export const listWorktreeEntries: ListWorktrees = async (root) => {
+  const linkReason = await checkMainLink(root);
+  if (linkReason !== null) throw new Error(`main link check failed: ${linkReason}`);
   const { stdout } = await execFileAsync("git", ["-C", root, "worktree", "list", "--porcelain"], { timeout: GIT_TIMEOUT_MS });
   return parseWorktreePorcelain(stdout);
 };

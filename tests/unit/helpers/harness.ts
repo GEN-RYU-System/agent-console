@@ -178,6 +178,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const config: Config = {
     port,
     salesanchorRoot: root,
+    salesanchorToolsRoot: root,
     newWorktreeScript: "scripts/slow-worktree.sh",
     ledgerLookupScript: "scripts/ledger.sh",
     ledgerDir: "ledger",

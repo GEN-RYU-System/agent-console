@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { listChanges, readFileDiff } from "../../server/diff.ts";
+import { makeFakeCommon, OVERRIDDEN_DIFF_ARGS } from "./helpers/fake-common.ts";
 import { startHarness, TOKEN, type Harness } from "./helpers/harness.ts";
 
 // git を何度も起動する試験。他のプロセスで機械が混んでいても 5 秒の既定に収まらないことがあるため長くする
@@ -357,7 +358,7 @@ describe("git safety overrides (ADR-1039 2b-1)", () => {
       controlFired = existsSync(mark);
     }
     rmSync(mark, { force: true });
-    if (!controlFired) console.warn("D-fsm: fsmonitor was not fired by this git without overrides (control)");
+    expect(controlFired).toBe(true);
     const list = await listChanges(dir, "origin/main");
     expect(list).toEqual({ baseRef: "origin/main", files: [{ path: "f.txt", added: 1, removed: 1, binary: false, untracked: false }] });
     if ("files" in list) {
@@ -367,19 +368,130 @@ describe("git safety overrides (ADR-1039 2b-1)", () => {
     expect(existsSync(mark)).toBe(false);
   });
 
-  it("D-sub: a nested repository is not counted in listChanges", async () => {
-    const sub = path.join(dir, "nested");
-    mkdirSync(sub);
-    git(sub, "init", "-q", "-b", "main");
-    writeFileSync(path.join(sub, "n.txt"), "n1\n");
-    git(sub, "add", "-A");
-    git(sub, "commit", "-q", "-m", "nested");
-    git(dir, "config", "--unset", "core.fsmonitor");
-    git(dir, "add", "nested");
-    git(dir, "commit", "-q", "-m", "add nested");
-    writeFileSync(path.join(sub, "n.txt"), "n1\nn2\n");
-    const list = await listChanges(dir, "origin/main");
-    expect("files" in list).toBe(true);
-    if ("files" in list) expect(list.files.map((f) => f.path)).toEqual(["f.txt"]);
+  it("D-sub: a nested repository is not counted in listChanges and its config is not run", async () => {
+    const repo = realpathSync(mkdtempSync(path.join(os.tmpdir(), "ac-diff-sub-")));
+    try {
+      git(repo, "init", "-q", "-b", "main");
+      writeFileSync(path.join(repo, "f.txt"), "1\n");
+      git(repo, "add", "-A");
+      git(repo, "commit", "-q", "-m", "base");
+      git(repo, "update-ref", "refs/remotes/origin/main", "HEAD");
+      const sub = path.join(repo, "sub");
+      mkdirSync(sub);
+      git(sub, "init", "-q", "-b", "main");
+      writeFileSync(path.join(sub, "n.txt"), "n1\n");
+      git(sub, "add", "-A");
+      git(sub, "commit", "-q", "-m", "nested");
+      git(repo, "add", "sub");
+      git(repo, "commit", "-q", "-m", "add nested");
+      const mark = path.join(marks, "sub-fired");
+      const hook = path.join(marks, "sub-fsm.sh");
+      writeFileSync(hook, `#!/bin/sh\ntouch "${mark}"\nprintf '\\0'\n`);
+      chmodSync(hook, 0o755);
+      writeFileSync(path.join(sub, ".git", "config"), `${readFileSync(path.join(sub, ".git", "config"), "utf8")}[core]\n\tfsmonitor = ${hook}\n`);
+      writeFileSync(path.join(repo, "f.txt"), "2\n");
+      writeFileSync(path.join(sub, "n.txt"), "n2\n");
+      const list = await listChanges(repo, "origin/main");
+      expect("files" in list).toBe(true);
+      if ("files" in list) expect(list.files.map((f) => f.path)).toEqual(["f.txt"]);
+      expect(existsSync(mark)).toBe(false);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("git link check (ADR-1039 2b-2)", () => {
+  let tmp: string;
+  let mark: string;
+  beforeAll(() => {
+    tmp = realpathSync(mkdtempSync(path.join(os.tmpdir(), "ac-diff-link-")));
+  });
+  afterAll(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const blocked = async (id: string): Promise<void> => {
+    const a = await diffOf(id);
+    const b = await fileDiffOf(id, "a.txt");
+    expect(a.status).toBe(409);
+    expect(b.status).toBe(409);
+    expect(String(a.json.error)).toContain("git link check failed");
+    expect(String(b.json.error)).toContain("git link check failed");
+    expect(existsSync(mark)).toBe(false);
+  };
+  const addWorktree = (branch: string, name: string): string => {
+    const dir = path.join(tmp, name);
+    git(root, "worktree", "add", "-q", "-b", branch, dir);
+    writeFileSync(path.join(dir, "a.txt"), "a1\nA2\na3\n");
+    return dir;
+  };
+
+  it("L-common: a worktree whose commondir points at a fake store gets 409 and runs no git", async () => {
+    mark = path.join(tmp, "mark-common");
+    const dir = addWorktree("release/link-common", "wt-common");
+    const gitdir = git(dir, "rev-parse", "--absolute-git-dir").trim();
+    const original = readFileSync(path.join(gitdir, "commondir"), "utf8");
+    try {
+      const fake = makeFakeCommon(path.join(root, ".git"), tmp, mark);
+      writeFileSync(path.join(gitdir, "commondir"), `${fake}\n`);
+      // 対照: 本番と同じ上書きでも、偽の置き場の filter で印ができる
+      execFileSync("git", [...OVERRIDDEN_DIFF_ARGS], { cwd: dir, encoding: "utf8" });
+      expect(existsSync(mark)).toBe(true);
+      rmSync(mark, { force: true });
+      const s = h.sessions.restore({ role: h.config.roles[0], name: "link-common", cwd: dir, branch: null });
+      await blocked(s.id);
+      await h.sessions.close(s.id);
+    } finally {
+      writeFileSync(path.join(gitdir, "commondir"), original);
+      git(root, "worktree", "remove", "--force", dir);
+      git(root, "branch", "-D", "release/link-common");
+      rmSync(path.join(tmp, "fake-common"), { recursive: true, force: true });
+    }
+  });
+
+  it("L-dotgit: a worktree whose .git file points at a fake gitdir gets 409 and runs no git", async () => {
+    mark = path.join(tmp, "mark-dotgit");
+    const dir = addWorktree("release/link-dotgit", "wt-dotgit");
+    const gitdir = git(dir, "rev-parse", "--absolute-git-dir").trim();
+    const dotgit = path.join(dir, ".git");
+    const original = readFileSync(dotgit, "utf8");
+    try {
+      const fake = makeFakeCommon(path.join(root, ".git"), tmp, mark);
+      const fakeGitdir = path.join(tmp, "fake-gitdir");
+      cpSync(gitdir, fakeGitdir, { recursive: true });
+      writeFileSync(path.join(fakeGitdir, "commondir"), `${fake}\n`);
+      writeFileSync(dotgit, `gitdir: ${fakeGitdir}\n`);
+      const s = h.sessions.restore({ role: h.config.roles[0], name: "link-dotgit", cwd: dir, branch: null });
+      await blocked(s.id);
+      await h.sessions.close(s.id);
+    } finally {
+      writeFileSync(dotgit, original);
+      git(root, "worktree", "remove", "--force", dir);
+      git(root, "branch", "-D", "release/link-dotgit");
+      rmSync(path.join(tmp, "fake-common"), { recursive: true, force: true });
+      rmSync(path.join(tmp, "fake-gitdir"), { recursive: true, force: true });
+    }
+  });
+
+  it("L-main: a main checkout whose .git/commondir points at a fake store runs no git", async () => {
+    mark = path.join(tmp, "mark-main");
+    const commondir = path.join(root, ".git", "commondir");
+    try {
+      const fake = makeFakeCommon(path.join(root, ".git"), tmp, mark);
+      writeFileSync(commondir, `${fake}\n`);
+      // 対照: 同じ状態で上書き付きの git diff を動かすと印ができる
+      execFileSync("git", [...OVERRIDDEN_DIFF_ARGS], { cwd: root, encoding: "utf8" });
+      expect(existsSync(mark)).toBe(true);
+      rmSync(mark, { force: true });
+      const s = h.sessions.restore({ role: h.config.roles[0], name: "link-main", cwd: root, branch: null });
+      const res = await diffOf(s.id);
+      expect([409, 500], `status ${res.status}`).toContain(res.status);
+      expect(existsSync(mark)).toBe(false);
+      await h.sessions.close(s.id);
+    } finally {
+      rmSync(commondir, { force: true });
+      rmSync(path.join(tmp, "fake-common"), { recursive: true, force: true });
+    }
   });
 });

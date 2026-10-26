@@ -2,6 +2,7 @@
 
 版を出すたびに 1 行追記する（版の正本は git タグ `vX.Y.Z`）。
 
+- 0.46.3 作業場所の git の繋がり・本店の繋がりが合わないときは、差分の表示・PR の状態・作業場所の一覧と作成・台帳の照会の git と台本を動かさない。作業場所の作成の台本を道具の写しから動かす（新しい任意の設定 `salesanchorToolsRoot`、既定 `~/.salesanchor-tools`）。試験の直しを含む。入れる前に Sales Anchor の対応の PR のマージと道具の写しの取り直しが要る。戻し方は `bash scripts/ac-update.sh v0.46.2`。設計は docs/handoff/discord-pdca/design.md §4-5・ADR-1039 便2b-2。
 - 0.46.2 差分の表示と PR の状態で動かす git に、作業場所の設定（core.fsmonitor・core.hooksPath）で命令が動かない上書きを付けた。入れ子のリポジトリの差分は数えない（--ignore-submodules=all）。ほかの動きは変わらない。戻し方は `bash scripts/ac-update.sh v0.46.1`。設計は docs/handoff/discord-pdca/design.md §4-5・ADR-1039 便2b-1。
 - 0.46.1 Discord 受け口の直し（数字でない id の投稿は badJson にして失敗として数える／思わぬ例外も lastError "internal"・失敗の数に残す／受け口が止まっているときの有効な bug チャンネルは intakeStopped と表示／型の逃げ道を消した）。設定ファイルが無い今の本番の動きは変わらない。戻し方は `bash scripts/ac-update.sh v0.46.0`。
 - 0.46.0 Discord の受付チャンネルを読む受け口の芯を足した（Keychain の2つの秘密と dataDir の設定ファイルがあり testMode のときだけ動く。既定は無効で、設定ファイルを置かない限り何も変わらない。30秒ごとに読み、ふるいにかけ、順番待ちに入れ、異常を Webhook／macOS の通知で知らせ、状態は `GET /api/discord-intake/status`。セッションは開かない・順番待ちは減らない）。登録の台本 `scripts/ac-discord-secret.sh` を追加。戻し方は `bash scripts/ac-update.sh v0.45.1`。設計は docs/handoff/discord-pdca/design.md §4-1・§8 便2a。

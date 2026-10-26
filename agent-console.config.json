@@ -2,6 +2,7 @@
   "port": 4319,
   "salesanchorRoot": "~/salesanchor",
   "newWorktreeScript": "scripts/new-worktree.sh",
+  "salesanchorToolsRoot": "~/.salesanchor-tools",
   "ledgerLookupScript": "scripts/ledger-lookup.sh",
   "ledgerDir": ".claude-pipeline/active-work.d",
   "claudeBin": "claude",

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import { parseConfig } from "../../server/config.ts";
 
 const valid = {
@@ -16,6 +17,15 @@ const valid = {
   roles: [{ id: "shell", labelKey: "role.shell", command: ["/bin/zsh", "-i"], needsWorktree: false }],
   routineManagerRoles: ["shell"],
 };
+
+describe("parseConfig: salesanchorToolsRoot (ADR-1039 2b-2)", () => {
+  it("defaults to ~/.salesanchor-tools, expands ~, and rejects an empty string or a number", () => {
+    expect(parseConfig(valid).salesanchorToolsRoot).toBe(path.join(os.homedir(), ".salesanchor-tools"));
+    expect(parseConfig({ ...valid, salesanchorToolsRoot: "~/x" }).salesanchorToolsRoot).toBe(path.join(os.homedir(), "x"));
+    expect(() => parseConfig({ ...valid, salesanchorToolsRoot: "" })).toThrow(/salesanchorToolsRoot must be a non-empty string/);
+    expect(() => parseConfig({ ...valid, salesanchorToolsRoot: 5 })).toThrow(/salesanchorToolsRoot must be a non-empty string/);
+  });
+});
 
 describe("parseConfig: routineManagerRoles (ac-routine)", () => {
   const { routineManagerRoles: _r, ...rest } = valid;
