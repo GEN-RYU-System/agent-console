@@ -12,6 +12,10 @@ const block = (reason) => {
 
 const under = (p, base) => p === base || p.startsWith(base + "/");
 
+/** 拒否の一覧との比べ用。APFS は大文字小文字と Unicode の正規化を区別しない（toUpperCase は ſ を s にそろえるため）。許す側の比べには使わない */
+const fold = (s) => s.normalize("NFKC").toUpperCase().toLowerCase();
+const underFolded = (p, base) => under(fold(p), fold(base));
+
 /** 字面で . .. を縮めない。ある道は realpath、無い道は一番近いある親の realpath に外した名前をそのままつなぐ */
 function resolvePath(p) {
   if (typeof p !== "string" || !p.startsWith("/")) block("path is not an absolute string");
@@ -22,6 +26,14 @@ function resolvePath(p) {
       const real = fs.realpathSync.native(cur);
       return tail.length === 0 ? real : (real === "/" ? "" : real) + "/" + tail.join("/");
     } catch (err) {
+      if (err?.code !== "ENOENT" && err?.code !== "ENOTDIR") block("path cannot be resolved");
+    }
+    // realpath が解けないのに何かがある＝先の無いシンボリックリンク。W の外を指しうるので止める
+    try {
+      fs.lstatSync(cur);
+      block("path cannot be resolved");
+    } catch (err) {
+      if (err instanceof Block) throw err;
       if (err?.code !== "ENOENT" && err?.code !== "ENOTDIR") block("path cannot be resolved");
     }
     const name = cur.slice(cur.lastIndexOf("/") + 1);
@@ -73,7 +85,7 @@ function decide(input, c) {
   if (name === "Edit" || name === "Write" || name === "NotebookEdit") {
     const real = resolvePath(obj.file_path ?? obj.notebook_path);
     checkHardLink(real);
-    if (denyWrite.some((d) => under(real, d))) block("write to a protected path");
+    if (denyWrite.some((d) => underFolded(real, d))) block("write to a protected path");
     if (under(real, worktree) || under(real, report)) return;
     block("write outside the case work area");
   }
@@ -85,7 +97,7 @@ function decide(input, c) {
     const raw = name === "Read" ? obj.file_path : (obj.path ?? worktree);
     const real = resolvePath(raw);
     checkHardLink(real);
-    if (denyRead.some((d) => under(real, d))) block("read of a protected path");
+    if (denyRead.some((d) => underFolded(real, d))) block("read of a protected path");
     if (under(real, worktree) || under(real, report) || under(real, tmp)) return;
     block("read outside the case work area");
   }

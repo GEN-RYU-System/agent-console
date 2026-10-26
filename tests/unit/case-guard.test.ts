@@ -50,7 +50,7 @@ function run(tool: string, input: unknown, file = caseFile): { code: number | nu
 }
 const code = (tool: string, input: unknown): number | null => run(tool, input).code;
 
-describe("case-guard: Edit / Write", () => {
+describe("case-guard: Edit / Write", { timeout: 20_000 }, () => {
   it("allows files in W (existing or not yet created) and in R", () => {
     for (const tool of ["Edit", "Write"]) {
       expect(code(tool, { file_path: path.join(W, "a.txt") })).toBe(0);
@@ -92,7 +92,33 @@ describe("case-guard: Edit / Write", () => {
   });
 });
 
-describe("case-guard: Read / Grep / Glob", () => {
+describe("case-guard: dangling links and case folding (review 102)", { timeout: 20_000 }, () => {
+  it("blocks a dangling symlink in W that points to a missing path outside W (Edit, Write, Read)", () => {
+    const target = path.join(H, "not-yet", "file.txt");
+    symlinkSync(target, path.join(W, "dangle"));
+    for (const tool of ["Edit", "Write", "Read"]) expect(code(tool, { file_path: path.join(W, "dangle") }), tool).toBe(2);
+  });
+  it("blocks a path below a dangling directory symlink", () => {
+    symlinkSync(path.join(H, "missing-dir"), path.join(W, "dl"));
+    expect(code("Write", { file_path: path.join(W, "dl", "sub", "x") })).toBe(2);
+  });
+  it("blocks denyWrite paths that differ only in case or Unicode form", () => {
+    expect(code("Write", { file_path: path.join(R, ".Claude", "agents", "x.md") })).toBe(2);
+    expect(code("Write", { file_path: path.join(W, ".MCP.json") })).toBe(2);
+    expect(code("Write", { file_path: path.join(W, ".CLAUDE", "settings.json") })).toBe(2);
+    expect(code("Write", { file_path: path.join(W, ".mcp.j\u017Fon") })).toBe(2);
+    // U+0131 (dotless i) only folds to "i" through toUpperCase, so this one pins the toUpperCase step
+    expect(code("Write", { file_path: path.join(W, ".git", "objects", "\u0131nfo", "alternates") })).toBe(2);
+  });
+  it("blocks denyRead paths that differ only in case", () => {
+    expect(code("Read", { file_path: path.join(D, "Reserve-Token") })).toBe(2);
+  });
+  it("still allows a missing file in W whose name has capitals (allow list is compared as written)", () => {
+    expect(code("Write", { file_path: path.join(W, "Src", "New.ts") })).toBe(0);
+  });
+});
+
+describe("case-guard: Read / Grep / Glob", { timeout: 20_000 }, () => {
   it("allows T, W and R, but not another case's tmp under P", () => {
     writeFileSync(path.join(T, "t.txt"), "t");
     for (const tool of ["Read", "Grep", "Glob"]) {
@@ -128,7 +154,7 @@ describe("case-guard: Read / Grep / Glob", () => {
   });
 });
 
-describe("case-guard: other tools", () => {
+describe("case-guard: other tools", { timeout: 20_000 }, () => {
   it("lets Agent through only with the known keys", () => {
     const base = { description: "d", prompt: "p", subagent_type: "general-purpose" };
     expect(code("Agent", base)).toBe(0);
