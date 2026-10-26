@@ -38,6 +38,11 @@
 - 上に書いた変更と下の試験だけ。ほかの振る舞い・文言・既存の試験の期待は変えない（上限の判定の式の意味、止まった窓を数えること、`too many sessions` の文、400 の扱い）
 - `tests/unit/helpers/harness.ts` は、options に `configMaxSessions?: number` を足し、作る config に `...(options.configMaxSessions !== undefined ? { maxSessions: options.configMaxSessions } : {})` を足すことだけ許す
 - `src/pages/ConsolePage.test.tsx` など、`ConsoleState` の形の見本を持つ試験は、型が通るよう `maxSessions`・`openCount` を足すことだけ許す
+- `tests/unit/config.test.ts` の既存2試験は、同梱の設定の中身（役割の一覧）を確かめる試験なので、`sonnet-impl` を外したことに合わせて次のとおり直す（期待を弱めるのではなく、設計の変更に合わせる。1回目の実装で見つかり、設計者が決定。PO 2026-10-26「1」）。これ以外の既存の試験は変えない
+  - :92 の試験名を `...and the shipped config pairs main with Opus only` にする。:96-99 の期待を `[["opus-designer", "main"]]` にする。:102（`sonnet-impl` の resumeCommand）を消す
+  - :121 の試験名を `...for Opus, none for the shell, ...` にする。:125 を `expect(shipped.roles.find((r) => r.id === "sonnet-impl")).toBeUndefined();` にする
+  - `NewSessionForm.test.tsx`・`ResumePicker.test.tsx`・harness・e2e-env の `"sonnet-impl"` は試験用の見本の役割表なので変えない
+- 設定の説明の表は無かった（README.md:75 は文だけ）。表は足さない
 - 部品は SA の金型だけ（ADR-144 と同じ考え。lint の design-governance が見る）。文言は全部 `t()`
 - 実装の前に確かめて生出力を残す: `grep -rn "maxSessions\|DEFAULT_MAX_SESSIONS\|hasCapacity\|sessions.size" server/ src/ tests/`。上の「調べた実物」と違う呼び口（上限を別の式で数えている所）があれば、作らずに止まって報告する
 
