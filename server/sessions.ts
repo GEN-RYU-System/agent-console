@@ -1,8 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { accessSync, constants as fsConstants, existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import os from "node:os";
 import { spawn, type IPty } from "node-pty";
 import type { WebSocket } from "ws";
 import { ACCOUNT_LOGIN_ROLE_ID, CHILD_ENV_BLOCKLIST, DEFAULT_MAX_SESSIONS, TERMINAL_ENV_FORBIDDEN, type Config, type RoleConfig } from "./config.ts";
+import { hookPathIn } from "./activity-setup.ts";
+import { caseBranchOf, caseCloneDir, checkCaseClone, createCaseClone } from "./case-clone.ts";
+import { CaseSandboxUnavailableError, caseDirOf, casePaths, caseNodeHome, removeCaseFiles, writeCaseFiles } from "./case-sandbox.ts";
 import { descendantPids, readProcessTable } from "./process-tree.ts";
 import { RingBuffer } from "./ring-buffer.ts";
 import { sessionName } from "./terminal-host/tmux-protocol.ts";
@@ -47,7 +52,25 @@ export interface SessionManagerOptions {
   logger?: TerminalLogger;
   /** control client のつなぎ直しの間隔（ms）。試験用 */
   reattachIntervalMs?: number;
+  /** 件のセッションの囲いの実行ファイル（試験用。既定 /usr/bin/sandbox-exec） */
+  sandboxExecPath?: string;
+  /** 件のセッションを開く zsh の関数の置き場（既定 realpath(process.cwd())/ops/shell/ccdiscord.zsh） */
+  caseShellPath?: string;
+  /** 件の見張りのフック（既定 realpath(process.cwd())/ops/case/case-guard.mjs） */
+  caseGuardPath?: string;
+  /** H と件の写しの置き場に使うホーム（試験用。既定 os.homedir()） */
+  caseHomeDir?: string;
+  /** 件の一時の置き場 P の親（試験用。既定 realpath("/tmp")） */
+  caseTmpRoot?: string;
 }
+
+const realOr = (p: string): string => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+};
 
 export interface CreateSessionInput {
   name: unknown;
@@ -178,6 +201,11 @@ export class SessionManager {
   private readonly cannotAttach = new Map<string, string>();
   /** 起動時に tmux 側で見つけた ac-* のセッション名 */
   private sweptNames: string[] = [];
+  private readonly sandboxExecPath: string;
+  private readonly caseShellPath: string;
+  private readonly caseGuardPath: string;
+  private readonly caseHomeDir: string;
+  private readonly caseTmpRoot: string;
 
   constructor(
     private readonly config: Config,
@@ -187,6 +215,11 @@ export class SessionManager {
     this.closeGraceMs = options.closeGraceMs ?? DEFAULT_CLOSE_GRACE_MS;
     this.logger = options.logger ?? consoleLogger;
     this.reattachIntervalMs = options.reattachIntervalMs;
+    this.sandboxExecPath = options.sandboxExecPath ?? "/usr/bin/sandbox-exec";
+    this.caseShellPath = options.caseShellPath ?? path.join(realOr(process.cwd()), "ops", "shell", "ccdiscord.zsh");
+    this.caseGuardPath = options.caseGuardPath ?? path.join(realOr(process.cwd()), "ops", "case", "case-guard.mjs");
+    this.caseHomeDir = options.caseHomeDir ?? os.homedir();
+    this.caseTmpRoot = options.caseTmpRoot ?? "/tmp";
     this.tmuxCtx = config.terminalHost === "tmux" ? this.setupTmux(options.tmuxConf) : null;
   }
 
@@ -274,6 +307,7 @@ export class SessionManager {
     if (this.occupiedCount() >= this.maxSessions) throw new SessionInputError("too many sessions");
     this.pending += 1;
     try {
+      if (role.caseSandbox === true) return await this.createCase(name, role, input.branch);
       const cwd = branch
         ? await createWorktree(this.config.salesanchorRoot, this.config.salesanchorToolsRoot, this.config.newWorktreeScript, branch)
         : this.config.salesanchorRoot;
@@ -283,6 +317,96 @@ export class SessionManager {
     } finally {
       this.pending -= 1;
     }
+  }
+
+  /**
+   * 件のセッション（役割 caseSandbox）を開く: 件ごとの写しを作って確かめ、件ごとの設定を書いて、写しを作業場所に開く。
+   * 途中で失敗したら、作った設定・一時の置き場・写しを消して同じ誤りを投げ直す（終わった件の片付けは別）。
+   */
+  private async createCase(name: string, role: RoleConfig, inputBranch: unknown): Promise<Session> {
+    if (inputBranch !== undefined && inputBranch !== null) throw new SessionConflictError("case role does not take a branch");
+    const M = realOr(this.config.salesanchorRoot);
+    const id = randomUUID();
+    const paths = casePaths({ id, H: this.caseHomeDir, D: this.config.dataDir, tmpRoot: this.caseTmpRoot });
+    let W: string | undefined;
+    let filesWritten = false;
+    try {
+      W = await createCaseClone({ M, H: paths.H, id });
+      const reason = await checkCaseClone(W, M);
+      if (reason !== null) throw new SessionConflictError(`case clone check failed: ${reason}`);
+      await writeCaseFiles({ M, W, T: paths.T, D: paths.D, H: paths.H, R: paths.R, GH: paths.GH, guardScript: this.caseGuardPath, nodeBin: process.execPath, hookPath: hookPathIn(paths.D) }, id);
+      filesWritten = true;
+      const session = this.spawnSession(name, role, caseBranchOf(id), W, role.command, {}, undefined, id, true);
+      session.initialName = name;
+      return session;
+    } catch (err) {
+      await removeCaseFiles(paths.D, id, filesWritten ? { tmp: true, tmpRoot: this.caseTmpRoot } : {}).catch(() => undefined);
+      if (filesWritten) await rm(paths.R, { recursive: true, force: true }).catch(() => undefined);
+      if (W !== undefined && W === caseCloneDir(paths.H, id)) await rm(W, { recursive: true, force: true }).catch(() => undefined);
+      throw err;
+    }
+  }
+
+  /**
+   * 件のセッションを開く前の確かめ（同期）。create・resume・restore・createAccountLogin のどの道からも spawnSession で通る。
+   * 1つでも落ちたら CaseSandboxUnavailableError。通ったら、起動の環境に足す道と印を返す（秘密は入れない）。
+   */
+  private checkCaseSandbox(id: string, cwd: string): Record<string, string> {
+    const fail = (reason: string): never => {
+      throw new CaseSandboxUnavailableError(`sandbox unavailable: ${reason}`);
+    };
+    const D = realOr(this.config.dataDir);
+    const dir = caseDirOf(D, id);
+    const settings = path.join(dir, "settings.json");
+    const caseFile = path.join(dir, "case.json");
+    if (!existsSync(settings) || !existsSync(caseFile)) return fail("case settings are missing");
+    let info: { worktree?: unknown; report?: unknown; tmp?: unknown };
+    try {
+      info = JSON.parse(readFileSync(caseFile, "utf8"));
+    } catch {
+      return fail("case.json is unreadable");
+    }
+    if (typeof info.worktree !== "string" || typeof info.report !== "string" || typeof info.tmp !== "string") return fail("case.json is incomplete");
+    let realCwd: string;
+    try {
+      realCwd = realpathSync(cwd);
+    } catch {
+      return fail("working directory is missing");
+    }
+    if (realCwd !== info.worktree) return fail("working directory differs from the case");
+    try {
+      accessSync(this.sandboxExecPath, fsConstants.X_OK);
+    } catch {
+      return fail("sandbox-exec is not executable");
+    }
+    try {
+      accessSync(this.caseShellPath, fsConstants.R_OK);
+      accessSync(this.caseGuardPath, fsConstants.R_OK);
+    } catch {
+      return fail("case shell or guard is unreadable");
+    }
+    const isDir = (p: string): boolean => {
+      try {
+        return statSync(p).isDirectory();
+      } catch {
+        return false;
+      }
+    };
+    if (!isDir(info.report)) return fail("report directory is missing");
+    if (!isDir(info.tmp)) return fail("tmp directory is missing");
+    try {
+      caseNodeHome({ H: realOr(this.caseHomeDir), nodeBin: process.execPath });
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : "node home is not usable");
+    }
+    return {
+      AC_CASE_SETTINGS: settings,
+      AC_CASE_GH_DIR: path.join(D, "case-gh", id),
+      AC_CASE_REPORT: info.report,
+      AC_CASE_TMP: info.tmp,
+      AC_CASE_SHELL: this.caseShellPath,
+      AC_DISCORD_CASE: `manual-${id}:1`,
+    };
   }
 
   /**
@@ -400,9 +524,11 @@ export class SessionManager {
     extraEnv: Record<string, string> = {},
     claudeSessionId?: string,
     knownId?: string,
+    isNew?: boolean,
   ): Session {
     const id = knownId !== undefined && !this.sessions.has(knownId) ? knownId : randomUUID();
-    const { term, reattached } = this.openTerminal(id, role, cwd, command, extraEnv, knownId === id);
+    const caseEnv = role.caseSandbox === true ? this.checkCaseSandbox(id, cwd) : {};
+    const { term, reattached } = this.openTerminal(id, role, cwd, command, { ...extraEnv, ...caseEnv }, knownId === id && isNew !== true);
     const session: Session = {
       id,
       name,

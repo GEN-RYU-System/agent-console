@@ -530,3 +530,25 @@ describe("git link check (ADR-1039 2b-2)", () => {
     }
   });
 });
+
+describe("git safety overrides (ADR-1039 2b-1)", () => {
+  it("core.fsmonitor in the working place config is not run when resolving the PR target", async () => {
+    clearFx();
+    const { id, dir } = newPlace("release/pr-fsm");
+    const marks = mkdtempSync(path.join(os.tmpdir(), "ac-pr-mark-"));
+    try {
+      const mark = path.join(marks, "fired");
+      const hook = path.join(marks, "fsm.sh");
+      writeFileSync(hook, `#!/bin/sh\ntouch "${mark}"\nprintf '\\0'\n`);
+      chmodSync(hook, 0o755);
+      git(dir, "config", "core.fsmonitor", hook);
+      setPr("release/pr-fsm", 31, "OPEN", [check("pass", "ok1")]);
+      const res = await refreshPr(id);
+      expect(res.status).toBe(200);
+      expect(res.json.status).toBe("ok");
+      expect(existsSync(mark)).toBe(false);
+    } finally {
+      rmSync(marks, { recursive: true, force: true });
+    }
+  });
+});

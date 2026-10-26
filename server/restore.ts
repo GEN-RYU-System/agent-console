@@ -1,8 +1,11 @@
+import { readFile, realpath } from "node:fs/promises";
+import { checkCaseClone } from "./case-clone.ts";
+import { caseDirOf } from "./case-sandbox.ts";
 import { ACCOUNT_LOGIN_ROLE_ID, type Config } from "./config.ts";
 import type { Hub } from "./hub.ts";
 import { classifyCwd, listWorktreeEntries, type ListWorktrees } from "./resume-targets.ts";
 import { normalizeItem, type OpenSessionItem, type OpenSessionStore } from "./session-store.ts";
-import type { SessionManager } from "./sessions.ts";
+import { isSessionId, type SessionManager } from "./sessions.ts";
 import type { WorktreeEntry } from "./worktree.ts";
 
 const MAX_NAME_LENGTH = 40;
@@ -14,6 +17,23 @@ export type RestoreNoticeReason = "missingCwd" | "unknownRole" | "startFailed" |
 export interface RestoreNotice {
   reason: RestoreNoticeReason;
   name?: string;
+}
+
+/** 件の項目を照らす: case.json の worktree が cwd の実体と同じで、写しが作ったままの形。落ちた理由か null */
+async function checkCaseItem(dataDir: string, mainRoot: string, item: OpenSessionItem): Promise<string | null> {
+  if (!isSessionId(item.id)) return "no case id";
+  const real = await realpath(item.cwd).catch(() => null);
+  if (real === null) return "cwd is missing";
+  const text = await readFile(`${caseDirOf(await realpath(dataDir).catch(() => dataDir), item.id)}/case.json`, "utf8").catch(() => null);
+  if (text === null) return "case.json is unreadable";
+  let worktree: unknown;
+  try {
+    worktree = (JSON.parse(text) as { worktree?: unknown }).worktree;
+  } catch {
+    return "case.json is broken";
+  }
+  if (worktree !== real) return "cwd differs from the case worktree";
+  return checkCaseClone(real, mainRoot);
 }
 
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -130,10 +150,23 @@ export async function restoreOnStartup(deps: RestoreDeps): Promise<RestoreNotice
         notices.push({ reason: "unknownRole", name: item.name });
         continue;
       }
-      const verdict = await classifyCwd(item.cwd, config.salesanchorRoot, worktrees);
-      if (verdict.real === null || verdict.block !== null) {
-        notices.push({ reason: "missingCwd", name: item.name });
-        continue;
+      let realCwd: string;
+      if (role.caseSandbox === true) {
+        // 件の写しは classifyCwd に載らない。case.json の worktree と同じことと、写しが作ったままの形であることで照らす
+        const reason = await checkCaseItem(config.dataDir, config.salesanchorRoot, item);
+        if (reason !== null) {
+          console.error(`open-sessions: case clone check failed (${item.name}): ${reason}`);
+          notices.push({ reason: "missingCwd", name: item.name });
+          continue;
+        }
+        realCwd = await realpath(item.cwd);
+      } else {
+        const verdict = await classifyCwd(item.cwd, config.salesanchorRoot, worktrees);
+        if (verdict.real === null || verdict.block !== null) {
+          notices.push({ reason: "missingCwd", name: item.name });
+          continue;
+        }
+        realCwd = verdict.real;
       }
       if (!sessions.hasCapacity()) {
         notices.push({ reason: "overLimit", name: item.name });
@@ -143,7 +176,7 @@ export async function restoreOnStartup(deps: RestoreDeps): Promise<RestoreNotice
       // つなぎ直しは新しい claude を起動しないので、間を空けるのは直前に「開き直した（resume）」ときだけ
       if (needSleep) await sleep(config.restoreStaggerMs);
       try {
-        const s = sessions.restore({ role, name: item.name, cwd: verdict.real, branch: item.branch ?? null, claudeSessionId: item.claudeSessionId, id: item.id });
+        const s = sessions.restore({ role, name: item.name, cwd: realCwd, branch: item.branch ?? null, claudeSessionId: item.claudeSessionId, id: item.id });
         needSleep = !s.reattached;
         if (s.reattached) reattached += 1;
         else resumed += 1;

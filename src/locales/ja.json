@@ -657,6 +657,7 @@
     "opusDesigner": "Opus 設計",
     "sonnetImpl": "Sonnet 実装",
     "shell": "シェル",
-    "accountLogin": "アカウント切り替え"
+    "accountLogin": "アカウント切り替え",
+    "discordCase": "不具合の件（Discord）"
   }
 }

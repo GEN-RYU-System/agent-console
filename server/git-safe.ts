@@ -35,6 +35,8 @@ export async function checkMainLink(mainRoot: string): Promise<string | null> {
 }
 
 async function readLinkTarget(file: string, base: string): Promise<string | null> {
+  const st = await lstatOrNull(file);
+  if (st === null || !st.isFile() || st.isSymbolicLink()) return null;
   const text = await readFile(file, "utf8").catch(() => null);
   if (text === null) return null;
   const body = text.endsWith("\n") ? text.slice(0, -1) : text;
@@ -66,7 +68,8 @@ export async function checkGitLink(dir: string, mainRoot: string): Promise<strin
     if (G === null) return "gitdir unresolvable";
     if (path.dirname(G) !== path.join(C, "worktrees")) return "gitdir outside main worktrees";
     if ((await readLinkTarget(path.join(G, "commondir"), G)) !== C) return "commondir does not match main";
-    if ((await readLinkTarget(path.join(G, "gitdir"), G)) !== (await realOrNull(dotgit))) return "gitdir back-link mismatch";
+    const realDotgit = await realOrNull(dotgit);
+    if (realDotgit === null || (await readLinkTarget(path.join(G, "gitdir"), G)) !== realDotgit) return "gitdir back-link mismatch";
     if (!(await absent(path.join(G, "config")))) return "worktree config present";
     if (!(await absent(path.join(G, "config.worktree")))) return "worktree config.worktree present";
     return null;

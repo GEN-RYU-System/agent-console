@@ -314,3 +314,36 @@ describe("parseConfig: maxSessions (window-limit 便1)", () => {
     expect(raw.maxSessions).toBe(16);
   });
 });
+
+describe("parseConfig: caseSandbox (discord-pdca 便2b-3a)", () => {
+  const caseRole = { id: "discord-case", labelKey: "role.discordCase", command: ["/bin/zsh", "-c", "x"], needsWorktree: false, reservable: false, caseSandbox: true };
+  it("accepts a valid case role", () => {
+    const c = parseConfig({ ...valid, roles: [...valid.roles, caseRole] });
+    expect(c.roles.find((r) => r.id === "discord-case")?.caseSandbox).toBe(true);
+    expect(c.roles[0].caseSandbox).toBeUndefined();
+  });
+  it("refuses needsWorktree:true, a missing reservable:false, a resumeCommand and a non-boolean caseSandbox", () => {
+    for (const bad of [
+      { ...caseRole, needsWorktree: true },
+      { ...caseRole, reservable: undefined },
+      { ...caseRole, resumeCommand: ["/bin/zsh", "-ic", "x"] },
+      { ...caseRole, caseSandbox: "yes" },
+    ]) {
+      expect(() => parseConfig({ ...valid, roles: [...valid.roles, bad] })).toThrow(/caseSandbox/);
+    }
+  });
+  it("refuses a case role in reserveRoles or routineManagerRoles", () => {
+    expect(() => parseConfig({ ...valid, roles: [...valid.roles, caseRole], reserveRoles: ["discord-case"] })).toThrow(/caseSandbox/);
+    expect(() => parseConfig({ ...valid, roles: [...valid.roles, caseRole], routineManagerRoles: ["discord-case"] })).toThrow(/caseSandbox/);
+  });
+  it("the shipped config has discord-case with caseSandbox, not reservable and no resumeCommand", () => {
+    const shipped = parseConfig(JSON.parse(readFileSync("agent-console.config.json", "utf8")));
+    const role = shipped.roles.find((r) => r.id === "discord-case");
+    expect(role?.caseSandbox).toBe(true);
+    expect(role?.reservable).toBe(false);
+    expect(role?.needsWorktree).toBe(false);
+    expect(role?.resumeCommand).toBeUndefined();
+    expect(shipped.reserveRoles).not.toContain("discord-case");
+    expect(shipped.routineManagerRoles).not.toContain("discord-case");
+  });
+});

@@ -40,6 +40,15 @@
       "resumeCommand": ["/bin/zsh", "-ic", "ccopusgo --resume"],
       "restoreCommand": ["/bin/zsh", "-ic", "ccopusgo --resume \"$AC_RESUME_ID\""]
     },
-    { "id": "shell", "labelKey": "role.shell", "command": ["/bin/zsh", "-i"], "needsWorktree": false }
+    { "id": "shell", "labelKey": "role.shell", "command": ["/bin/zsh", "-i"], "needsWorktree": false },
+    {
+      "id": "discord-case",
+      "labelKey": "role.discordCase",
+      "command": ["/bin/zsh", "-c", "source \"$AC_CASE_SHELL\" && ccdiscordcase"],
+      "restoreCommand": ["/bin/zsh", "-c", "source \"$AC_CASE_SHELL\" && ccdiscordcase"],
+      "needsWorktree": false,
+      "reservable": false,
+      "caseSandbox": true
+    }
   ]
 }

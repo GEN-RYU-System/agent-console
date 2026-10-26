@@ -1,5 +1,5 @@
 import { realpath } from "node:fs/promises";
-import { checkGitLink } from "./git-safe.ts";
+import { checkGitLink, checkMainLink } from "./git-safe.ts";
 import type { Config } from "./config.ts";
 import type { CommentScope, KnownPlace } from "./diff-comments.ts";
 import { branchName, classifyCwd, listWorktreeEntries } from "./resume-targets.ts";
@@ -24,6 +24,8 @@ export async function resolveWorkplace(deps: WorkplaceDeps, sessionId: string): 
   const session = deps.sessions.get(sessionId);
   if (!session) throw new SessionNotFoundError("session not found");
   const root = deps.config.salesanchorRoot;
+  const mainReason = await checkMainLink(root);
+  if (mainReason !== null) throw new SessionConflictError(`git link check failed: ${mainReason}`);
   const entries = await listWorktreeEntries(root);
   const verdict = await classifyCwd(session.cwd, root, entries.map((e) => e.path));
   if (verdict.real === null || verdict.scope === null) throw new SessionConflictError(`working directory is ${verdict.block ?? "missing"}`);

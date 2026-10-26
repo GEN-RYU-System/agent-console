@@ -41,6 +41,10 @@ jobs:
           sudo make install
       - name: tmux version
         run: tmux -V
+      # 件のセッションの zsh 関数の試験（ccdiscord-zsh.test.ts）に必要
+      - name: Install zsh (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y zsh
       - run: npm ci
       - name: npm audit (moderate 以上で失敗)
         run: npm audit --audit-level=moderate
