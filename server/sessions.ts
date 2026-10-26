@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { spawn, type IPty } from "node-pty";
 import type { WebSocket } from "ws";
-import { ACCOUNT_LOGIN_ROLE_ID, CHILD_ENV_BLOCKLIST, TERMINAL_ENV_FORBIDDEN, type Config, type RoleConfig } from "./config.ts";
+import { ACCOUNT_LOGIN_ROLE_ID, CHILD_ENV_BLOCKLIST, DEFAULT_MAX_SESSIONS, TERMINAL_ENV_FORBIDDEN, type Config, type RoleConfig } from "./config.ts";
 import { descendantPids, readProcessTable } from "./process-tree.ts";
 import { RingBuffer } from "./ring-buffer.ts";
 import { sessionName } from "./terminal-host/tmux-protocol.ts";
@@ -12,7 +12,6 @@ import { consoleLogger, type TerminalHandle, type TerminalLogger, type TmuxConte
 import path from "node:path";
 import { createWorktree, isValidBranch, WorktreeError } from "./worktree.ts";
 
-const DEFAULT_MAX_SESSIONS = 16;
 const MAX_NAME_LENGTH = 40;
 const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 30;
@@ -184,7 +183,7 @@ export class SessionManager {
     private readonly config: Config,
     options: SessionManagerOptions = {},
   ) {
-    this.maxSessions = options.maxSessions ?? DEFAULT_MAX_SESSIONS;
+    this.maxSessions = options.maxSessions ?? config.maxSessions ?? DEFAULT_MAX_SESSIONS;
     this.closeGraceMs = options.closeGraceMs ?? DEFAULT_CLOSE_GRACE_MS;
     this.logger = options.logger ?? consoleLogger;
     this.reattachIntervalMs = options.reattachIntervalMs;
@@ -272,7 +271,7 @@ export class SessionManager {
       branch = input.branch;
     }
     // 枠を先に確保してから worktree を作る（同時作成で上限を超えない）
-    if (this.sessions.size + this.pending >= this.maxSessions) throw new SessionInputError("too many sessions");
+    if (this.occupiedCount() >= this.maxSessions) throw new SessionInputError("too many sessions");
     this.pending += 1;
     try {
       const cwd = branch
@@ -293,7 +292,7 @@ export class SessionManager {
   resume(input: { roleId: unknown; name: unknown; cwd: string }): Session {
     const role = this.findRole(input.roleId);
     if (!role.resumeCommand) throw new SessionInputError("role cannot resume sessions");
-    if (this.sessions.size + this.pending >= this.maxSessions) throw new SessionInputError("too many sessions");
+    if (this.occupiedCount() >= this.maxSessions) throw new SessionInputError("too many sessions");
     return this.spawnSession(validateName(input.name), role, null, input.cwd, role.resumeCommand);
   }
 
@@ -314,7 +313,22 @@ export class SessionManager {
 
   /** 新しい端末を開く余裕があるか（作成途中の分を含む）。 */
   hasCapacity(): boolean {
-    return this.sessions.size + this.pending < this.maxSessions;
+    return this.occupiedCount() < this.maxSessions;
+  }
+
+  /** 場所をふさいでいる窓の数（作成途中の分を含む）。 */
+  occupiedCount(): number {
+    return this.sessions.size + this.pending;
+  }
+
+  /** 今開いている窓の数（作成途中を含まない）。 */
+  openCount(): number {
+    return this.sessions.size;
+  }
+
+  /** 同時に開ける窓の数の上限。 */
+  maxSessionCount(): number {
+    return this.maxSessions;
   }
 
   /**

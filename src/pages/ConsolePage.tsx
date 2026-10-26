@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Badge } from "@sa/components/Badge";
 import { Button } from "@sa/components/Button";
 import { Callout } from "@sa/components/Callout";
 import { EmptyState } from "@sa/components/EmptyState";
@@ -419,6 +420,11 @@ export function ConsolePage() {
       <aside className="ac-page__left">
         <div className="ac-page__bar">
           <h1 className="ac-page__title">{t("ac.sessions")}</h1>
+          {state.maxSessions !== undefined && (
+            <Badge variant={state.openCount >= state.maxSessions ? "warning" : "neutral"} size="sm">
+              {t("ac.openCount", { count: state.openCount, max: state.maxSessions })}
+            </Badge>
+          )}
           <Button size="sm" onClick={() => setFormOpen(true)}>
             {t("ac.newSession")}
           </Button>
