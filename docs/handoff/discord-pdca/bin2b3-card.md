@@ -47,7 +47,7 @@
   - 引数1つ（case.json の道）。標準入力の JSON の `tool_name` と `tool_input` を読む。どこかで例外になれば終了の番号 2（`onFailure: "block"` にも重ねる）。止めるときは理由の短い英語を標準エラーに1行出して終了の番号 2、通すときは何も出さず 0
   - 道の解き方（下の 1. 2. で共通）: 文字列でない・絶対の道でない → 止める。字面で `.`・`..` を縮めない（`path.resolve`・`path.normalize` を使わない）。`fs.realpathSync` にそのまま渡し、無い道なら、末尾から1つずつ名前を外して一番近いある親の realpath を取り、外した名前をそのままつなぐ（外した名前に `..` があれば止める）。`worktree`・`report`・一覧の道も起動の時に realpath にそろえてある
   - 先の無いリンク（第24版。審査 102 H-1）: 上の「末尾から1つずつ名前を外す」とき、外す前の道を `fs.lstatSync` で調べ、何かがある（ENOENT・ENOTDIR でない）なら止める（realpath が解けないのに何かがある＝先の無いシンボリックリンク。途中の名前でも同じ）。`lstatSync` が ENOENT・ENOTDIR 以外で失敗しても止める
-  - 拒否の一覧との比べ（第24版。審査 102 H-2）: `denyWrite`・`denyRead` の「下」の判定だけは、解いた道と一覧の道の両方を `fold(s) = s.normalize("NFKC").toUpperCase().toLowerCase()` にそろえてから行う（APFS は大文字小文字と Unicode の正規化を区別しない。`toUpperCase` を挟むのは `ſ`（U+017F）を `s` にそろえるため）。`fold` は `case-guard.mjs` の中の関数1つに置く。`worktree`・`report`・`tmp` の許す判定はそろえずに今のまま字のとおり比べる（そろえると許す側が広がる）
+  - 拒否の一覧との比べ（第24版。審査 102 H-2）: `denyWrite`・`denyRead` の「下」の判定だけは、解いた道と一覧の道の両方を `fold(s) = s.normalize("NFKC").toUpperCase().toLowerCase()` にそろえてから行う（APFS は大文字小文字と Unicode の正規化を区別しない。`toUpperCase` を挟むのは `ı`（U+0131、点の無い i）を `i` にそろえるため。`ſ`（U+017F）は NFKC だけで `s` になる。実装係の報告 103 で直した）。`fold` は `case-guard.mjs` の中の関数1つに置く。`worktree`・`report`・`tmp` の許す判定はそろえずに今のまま字のとおり比べる（そろえると許す側が広がる）
   - 「X の下」の判定: 解いた道が X と同じか、`X + "/"` で始まる
   - ハードリンク: 解いた道にすでに本物のファイルがあり、`fs.statSync(道).nlink >= 2` なら、下の 1. 2. のどちらでも止める（realpath はハードリンクを見分けない）
   - 判定（上から順に）:
@@ -121,7 +121,7 @@
   - Agent: `{description, prompt, subagent_type}` → 0。`isolation: "worktree"` を足す → 2。`name` を足す → 2。知らない鍵 → 2
   - `mcp__x__y`・`WebFetch`・`WebSearch` → 2。`Bash`・`TodoWrite` → 0。知らない名前（`EnterWorktree`）→ 2
   - 壊れた JSON・case.json が無い → 2
-  - 第24版（審査 102）: W の中のシンボリックリンク `W/dangle` が、まだ無い W の外のファイル（偽の H の下）を指す → Edit・Write・Read のどれも 2。先の無いリンクのディレクトリ `W/dl`（まだ無い W の外のディレクトリを指す）の下の `W/dl/sub/x` → Write 2。`R/.Claude/agents/x.md`・`W/.MCP.json`・`W/.CLAUDE/settings.json` の Write → 2（R に `.claude` がまだ無い状態で。Linux の CI でも 2 になる）。`W/.mcp.jſon`（`ſ` は U+017F）の Write → 2。偽の `D/Reserve-Token` の Read → 2。字のとおりで許す側の試験: W の中のまだ無い `W/Src/New.ts` の Write → 0（大文字の名前でも W の中なら通る）
+  - 第24版（審査 102）: W の中のシンボリックリンク `W/dangle` が、まだ無い W の外のファイル（偽の H の下）を指す → Edit・Write・Read のどれも 2。先の無いリンクのディレクトリ `W/dl`（まだ無い W の外のディレクトリを指す）の下の `W/dl/sub/x` → Write 2。`R/.Claude/agents/x.md`・`W/.MCP.json`・`W/.CLAUDE/settings.json` の Write → 2（R に `.claude` がまだ無い状態で。Linux の CI でも 2 になる）。`W/.mcp.jſon`（`ſ` は U+017F）の Write → 2。`W/.git/objects/ınfo/alternates`（`ı` は U+0131）の Write → 2。偽の `D/Reserve-Token` の Read → 2。字のとおりで許す側の試験: W の中のまだ無い `W/Src/New.ts` の Write → 0（大文字の名前でも W の中なら通る）
   - このファイルの試験は `describe` に `{ timeout: 20_000 }` を付ける（審査 102 L-1。まとめて流すと既定の5秒を超えた）
 - `tests/unit/case-clone.test.ts`（新規。一時の置き場に、元になる bare のリポジトリ B と、B から作った M を作る。M の `remote.origin.url` は `https://github.com/test/repo.git`、試験の間だけ `process.env` の `GIT_CONFIG_COUNT`・`GIT_CONFIG_KEY_0=url.<B の file:// の道>.insteadOf`・`GIT_CONFIG_VALUE_0=https://github.com/test/repo.git` で B に向ける。M の手元の main を B の main より1つ古くしておく。H は一時の置き場）:
   - `createCaseClone`: W = `H/worktrees/discord-cases/<id>` ができ、`checkCaseClone(W, M)` が null。`W/.git/objects/pack` の pack のリンクの数が 1。枝が `release/discord-case-<id の先頭8字>` で、HEAD が B の main の sha（M の手元の main ではない）。`core.hooksPath` が `frontend/.husky`。user.name・user.email が M と同じ。`remote.origin.url` が `https://github.com/test/repo.git`。`branch.<枝>.remote` が `origin`、`branch.<枝>.merge` が `refs/heads/<枝>`。台帳のファイルができ、1行目が `branch: <枝>` で、S:scripts/ledger-lookup.sh:21 と同じ規則（`|` で区切った2つ目の欄の前後の空白を除いたものが枝の名前と同じ行）で行が1つ見つかる（試験の M には `.claude-pipeline/active-work.md` と `.claude-pipeline/active-work.d/.gitkeep` を入れておく。Sales Anchor の台本は写さない。本物の ledger-lookup.sh は便2b-3b で動かす）
@@ -182,7 +182,7 @@
    - `workplace.ts` の本店の確かめを外す → L-main が落ちる
    - case-guard の先の無いリンクの `lstatSync` の確かめを外す → `W/dangle` の試験が落ちる（第24版）
    - case-guard の拒否の比べの `fold` を外す（字のとおりに戻す）→ `R/.Claude/agents/x.md` の試験が落ちる（第24版）
-   - case-guard の `fold` から `toUpperCase()` を外す → `W/.mcp.jſon` の試験が落ちる（第24版）
+   - case-guard の `fold` から `toUpperCase()` を外す → `W/.git/objects/ınfo/alternates`（`ı` は U+0131）の試験が落ちる（第24版。`W/.mcp.jſon` は NFKC だけで止まるので落ちない。報告 103）
 6. 1コミット（共著者行 `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`）、PR は `--base main`、本文に「この指示書のどこを満たしたか」「本物のセッションは開いていない（便2b-3b）」「Evaluator は画面のファイル変更が言葉1つのため省く」「触ったファイルの全部（docs を含む）」を書く
 
 ## 想定分岐
