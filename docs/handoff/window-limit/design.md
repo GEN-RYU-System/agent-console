@@ -1,5 +1,5 @@
 # 設計書: 同時に開ける窓の上限と、使っていない窓を休ませる（window-limit）第1.5版
-作成: Claude Opus（設計）2026-10-26。状態: 第1.0版〜第1.3版を別の審査役（claude -p・Opus）が REVISE → 第1.4版が **APPROVE**（重大・要修正なし、軽微 7）→ 第1.5版で軽微 7 件を反映・PO 承認待ち。実装未着手。
+作成: Claude Opus（設計）2026-10-26。状態: 第1.0版〜第1.3版を別の審査役（claude -p・Opus）が REVISE → 第1.4版が **APPROVE**（重大・要修正なし、軽微 7）→ 第1.5版で軽微 7 件を反映。**PO 承認済み（2026-10-26「1」＝この設計で作り始める）**。便1 の作業指示書は `bin1-card.md`。
 
 ## 1. 目的（PO の言葉）
 - 原文（2026-10-26）: 「agent consoleでは新しいセッションも過去の会話も含めて全てopusだけが展開して、sonnetは全てクラウドで作業を指せる仕組みにしたい、そうすればCPUやRAMが軽くなると考えるがどうか？」
@@ -44,7 +44,7 @@ recon: docs/handoff/window-limit/recon.md（基準 origin/main 21df257、v0.46.2
 - `Config` に任意キー `maxSessions`。検証は正の**整数**（`parsePositive`＝`config.ts:203-207` は整数を見ないので、`Number.isInteger` の確認を足した `parsePositiveInt` を新設）。既定 16。`DEFAULT_MAX_SESSIONS` は `sessions.ts:15` から `config.ts` の `DEFAULT_*` 群へ移す。`server/index.ts:75` で `new SessionManager(config, { maxSessions: config.maxSessions })`。
 - 実ファイル `agent-console.config.json` に `"maxSessions": 6`。
 - 上限の数え方を 1 つの関数にそろえる（審査 M3）: `SessionManager.occupiedCount()` = `[...sessions.values()].filter((s) => !s.sleeping).length + pending`。`create`（`sessions.ts:275`）・`resume`（`:296`）・`hasCapacity`（`:316-317`）の 3 か所すべてで `occupiedCount() < maxSessions` を使う。**止まった（exited で sleeping でない）窓は今までどおり数える**（今の振る舞いを変えない）。便1 では sleeping がまだ無いので、数は今と同じ。
-- `/api/state` に `maxSessions` と `openCount`（＝`occupiedCount()` から pending を引いた値）。名前は `activity.store.runningCount` と紛れないよう `openCount` にする。一覧の見出しに「開いている 5 / 6」（`t("ac.sessions.openCount", {count, max})`）。
+- `/api/state` に `maxSessions` と `openCount`（＝`occupiedCount()` から pending を引いた値）。名前は `activity.store.runningCount` と紛れないよう `openCount` にする。一覧の見出しに「開いている 5 / 6」（`t("ac.openCount", {count, max})`）。
 - `roles` から `sonnet-impl` を外す。影響の点検（審査 M9）: 定期実行・予約は保存した役割を config から探す（`launch.ts:46`、`reservations.ts:211`）。手元の保存では `sonnet-impl` を使うものは 0 件（§3）。導入の直前に Opus が同じ grep をもう一度行い、1 件でもあれば導入を止めて PO に聞く。復元リストに残っていれば既存の `unknownRole` 案内で外れる（`restore.ts:13`）。
 
 ### 4-2 休ませる・起こす（便2）
@@ -105,7 +105,7 @@ recon: docs/handoff/window-limit/recon.md（基準 origin/main 21df257、v0.46.2
 - 一覧の上: 候補が 1 本以上あれば Callout「休ませられる窓が N 本あります」＋「まとめて休ませる」ボタン。
 - 確認: `ConfirmModal`。本文に対象の名前を全部並べ、「休ませた窓は『起こす』で同じ会話の続きから開き直せます。作業中の窓は対象にしていません」。まとめて休ませるときは 1 本ずつ `sleep` を呼び、409 になった窓は理由を並べて表示する（ほかの窓は続ける）。
 - 満席: 作成・再開が「too many sessions」のとき、既存の失敗表示に「休ませられる窓が N 本あります」と「まとめて休ませる」ボタンを添える。
-- 文言はすべて `t("ac.sleep.*")`・`t("ac.sessions.openCount")`。例外 2 つ（審査 S4）: 状態の表示名 `ac.state.sleeping`（`StatusDot.tsx:5` は全状態の表なので必須。`ja.json:22-29` の並び）と、復元の案内の理由 `notResumable`（サーバー `restore.ts:13`・画面の型 `src/types.ts:37`・文言 `ja.json:127-131` の並びの 3 か所に足す）。部品は SA の金型（Badge・Button・Callout・ConfirmModal）だけ。金型の props は `npm run sa-sync` で `.sa-cache` を展開してから確かめる（recon 未確認のため）。
+- 文言はすべて `t("ac.sleep.*")`・`t("ac.openCount")`。例外 2 つ（審査 S4）: 状態の表示名 `ac.state.sleeping`（`StatusDot.tsx:5` は全状態の表なので必須。`ja.json:22-29` の並び）と、復元の案内の理由 `notResumable`（サーバー `restore.ts:13`・画面の型 `src/types.ts:37`・文言 `ja.json:127-131` の並びの 3 か所に足す）。部品は SA の金型（Badge・Button・Callout・ConfirmModal）だけ。金型の props は `npm run sa-sync` で `.sa-cache` を展開してから確かめる（recon 未確認のため）。
 
 - **409・400 の理由と文言の対応表（審査 Y4。ここが 1 か所の正）**: サーバーは理由の文字列を `error` に入れる（`http.ts:670-671`）。画面は `t("ac.sleep.reason.<理由>")` で引く（`descendants remain`・`session did not stop`・`too many sessions` は空白入りのため、画面側で `descendantsRemain`・`didNotStop`・`tooManySessions` に読み替える）。
   | 理由 | 出る所 | 文言（ja） |
@@ -273,5 +273,6 @@ recon: docs/handoff/window-limit/recon.md（基準 origin/main 21df257、v0.46.2
 | Y6 | §8: 休ませる途中の relay も受け入れる |
 | Y7 | relay.ts:180・180-185、ja.json:127-131 に直した |
 
-### PO に決めてもらうこと
-- この設計で進めてよいか（上限 6・候補は待機 30 分以上・休ませるのは人が確かめてから）。
+### PO の決定
+- 2026-10-26 PO「1」: この設計で作り始める（上限 6・候補は待機 30 分以上・休ませるのは人が確かめてから）。実装と試験はクラウド（Sonnet）、導入は設計者。
+- 第1.5版の実装上の補足（設計の筋は変えない）: 一覧の見出しの文言キーは `ac.sessions` が既に文字列（`src/locales/ja.json:4`）なので、`ac.sessions.openCount` ではなく `ac.openCount` にする。
