@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classifyLookupFailure, groupByState, isSafeLedgerBranch, loadLedger, parseBranchLine, parseLedgerRow, parseStartedAt } from "../../server/ledger.ts";
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -64,6 +64,7 @@ describe("isSafeLedgerBranch", () => {
 describe("loadLedger", () => {
   function makeRoot(script: string | null): string {
     const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "ac-ledger-")));
+    mkdirSync(path.join(root, ".git"));
     mkdirSync(path.join(root, "scripts"));
     mkdirSync(path.join(root, "ledger"));
     writeFileSync(path.join(root, "ledger", "a.md"), "branch: release/a\n");
@@ -88,6 +89,16 @@ describe("loadLedger", () => {
     expect(snap.groups.IN_PROGRESS.map((c) => c.branch)).toEqual(["release/a"]);
     expect(snap.errors.map((e) => e.branch)).toEqual(["-bad"]);
     expect(snap.groups.UNREGISTERED).toEqual([]);
+  });
+
+  it("runs no lookup script and reports an error when the main .git/commondir exists (ADR-1039 2b-2)", async () => {
+    const mark = path.join(os.tmpdir(), `ac-ledger-mark-${process.pid}-${Date.now()}`);
+    const root = makeRoot(`#!/bin/bash\ntouch ${mark}\necho "| release/a | x | d | IN_PROGRESS |"\n`);
+    writeFileSync(path.join(root, ".git", "commondir"), "/nonexistent\n");
+    const snap = await loadLedger(root, "ledger", "scripts/lookup.sh");
+    expect(snap.groups.IN_PROGRESS.map((c) => c.branch)).not.toContain("release/a");
+    expect(JSON.stringify(snap.errors)).toContain("main link check failed");
+    expect(existsSync(mark)).toBe(false);
   });
 
   it("survives an unreadable ledger entry", async () => {

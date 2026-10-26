@@ -113,6 +113,7 @@ export function prepareE2eEnv(): void {
   const config = {
     port: E2E_PORT,
     salesanchorRoot: root,
+    salesanchorToolsRoot: root,
     newWorktreeScript: "scripts/new-worktree.sh",
     ledgerLookupScript: "scripts/ledger-lookup.sh",
     ledgerDir: ".claude-pipeline/active-work.d",

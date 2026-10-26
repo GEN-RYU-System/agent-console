@@ -52,6 +52,7 @@ async function startServer(env: Record<string, string>, extraRoles: unknown[] = 
   const config = {
     port,
     salesanchorRoot: root,
+    salesanchorToolsRoot: root,
     newWorktreeScript: "scripts/new-worktree.sh",
     ledgerLookupScript: "scripts/ledger-lookup.sh",
     ledgerDir: "ledger",

@@ -3,6 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeFakeCommon } from "./helpers/fake-common.ts";
 import { startHarness, TOKEN, type Harness } from "./helpers/harness.ts";
 
 vi.setConfig({ testTimeout: 60000, hookTimeout: 60000 });
@@ -501,23 +502,30 @@ describe("K6: gh が失敗したとき", () => {
   });
 });
 
-describe("git safety overrides (ADR-1039 2b-1)", () => {
-  it("core.fsmonitor in the working place config is not run when resolving the PR target", async () => {
+describe("git link check (ADR-1039 2b-2)", () => {
+  it("a worktree whose commondir points at a fake store gets 409 from getPr / refreshPr and runs no git or gh", async () => {
     clearFx();
-    const { id, dir } = newPlace("release/pr-fsm");
-    const marks = mkdtempSync(path.join(os.tmpdir(), "ac-pr-mark-"));
+    const { id, dir } = newPlace("release/pr-link");
+    const marks = realpathSync(mkdtempSync(path.join(os.tmpdir(), "ac-pr-mark-")));
+    const mark = path.join(marks, "fired");
+    const gitdir = git(dir, "rev-parse", "--absolute-git-dir").trim();
+    const original = readFileSync(path.join(gitdir, "commondir"), "utf8");
     try {
-      const mark = path.join(marks, "fired");
-      const hook = path.join(marks, "fsm.sh");
-      writeFileSync(hook, `#!/bin/sh\ntouch "${mark}"\nprintf '\\0'\n`);
-      chmodSync(hook, 0o755);
-      git(dir, "config", "core.fsmonitor", hook);
-      setPr("release/pr-fsm", 31, "OPEN", [check("pass", "ok1")]);
-      const res = await refreshPr(id);
-      expect(res.status).toBe(200);
-      expect(res.json.status).toBe("ok");
+      writeFileSync(path.join(dir, "seed.txt"), "SEED\n");
+      const fake = makeFakeCommon(path.join(root, ".git"), marks, mark);
+      writeFileSync(path.join(gitdir, "commondir"), `${fake}\n`);
+      // 対照: 本番と同じ上書きでも、偽の置き場の filter で印ができる
+      execFileSync("git", ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "diff", "HEAD", "--numstat", "-z"], { cwd: dir, encoding: "utf8" });
+      expect(existsSync(mark)).toBe(true);
+      rmSync(mark, { force: true });
+      setPr("release/pr-link", 31, "OPEN", [check("pass", "ok1")]);
+      writeFileSync(logFile, "");
+      expect((await getPr(id)).status).toBe(409);
+      expect((await refreshPr(id)).status).toBe(409);
+      expect(calls()).toEqual([]);
       expect(existsSync(mark)).toBe(false);
     } finally {
+      writeFileSync(path.join(gitdir, "commondir"), original);
       rmSync(marks, { recursive: true, force: true });
     }
   });

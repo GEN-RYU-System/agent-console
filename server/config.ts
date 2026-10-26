@@ -63,6 +63,8 @@ export interface Config {
   port: number;
   salesanchorRoot: string;
   newWorktreeScript: string;
+  /** 作業場所の作成の台本を動かす道具の写しの場所（`~` 可）。無ければ ~/.salesanchor-tools */
+  salesanchorToolsRoot: string;
   ledgerLookupScript: string;
   ledgerDir: string;
   claudeBin: string;
@@ -180,6 +182,12 @@ function parseNotify(raw: unknown): NotifyConfig {
   return { macos: (n.macos as boolean | undefined) ?? true, osascriptBin: (n.osascriptBin as string | undefined) ?? DEFAULT_OSASCRIPT_BIN };
 }
 
+function parseToolsRoot(raw: unknown): string {
+  if (raw === undefined) return expandHome("~/.salesanchor-tools");
+  if (typeof raw !== "string" || raw === "") throw new Error("config: salesanchorToolsRoot must be a non-empty string");
+  return expandHome(raw);
+}
+
 function parseDataDir(raw: unknown): string {
   if (raw === undefined) return expandHome(DEFAULT_DATA_DIR);
   if (typeof raw !== "string" || raw === "") throw new Error("config: dataDir must be a non-empty string");
@@ -287,6 +295,7 @@ export function parseConfig(raw: unknown): Config {
     port: o.port as number,
     salesanchorRoot: expandHome(o.salesanchorRoot as string),
     newWorktreeScript: o.newWorktreeScript as string,
+    salesanchorToolsRoot: parseToolsRoot(o.salesanchorToolsRoot),
     ledgerLookupScript: o.ledgerLookupScript as string,
     ledgerDir: o.ledgerDir as string,
     claudeBin: o.claudeBin as string,

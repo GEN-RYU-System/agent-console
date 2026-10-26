@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { RoleConfig } from "../../server/config.ts";
-import { listResumeTargets, resolveResumeTarget, roleForScope } from "../../server/resume-targets.ts";
+import { listResumeTargets, listWorktreeEntries, resolveResumeTarget, roleForScope } from "../../server/resume-targets.ts";
 import type { WorktreeEntry } from "../../server/worktree.ts";
 
 const roleOf = (id: string, resumeScope?: "main" | "worktree"): RoleConfig => ({
@@ -81,6 +81,20 @@ describe("resolveResumeTarget (K4)", () => {
   });
   it("rejects when the kind has no role", async () => {
     await expect(resolveResumeTarget("main", root, root, [roleOf("sonnet", "worktree")], list)).rejects.toThrow();
+  });
+});
+
+describe("listWorktreeEntries main link check (ADR-1039 2b-2)", () => {
+  it("throws main link check failed when the main .git/commondir exists", async () => {
+    const r = realpathSync(mkdtempSync(path.join(os.tmpdir(), "ac-resume-link-")));
+    try {
+      execFileSync("git", ["init", "-q"], { cwd: r });
+      expect((await listWorktreeEntries(r)).length).toBe(1);
+      writeFileSync(path.join(r, ".git", "commondir"), "/nonexistent\n");
+      await expect(listWorktreeEntries(r)).rejects.toThrow(/main link check failed/);
+    } finally {
+      rmSync(r, { recursive: true, force: true });
+    }
   });
 });
 

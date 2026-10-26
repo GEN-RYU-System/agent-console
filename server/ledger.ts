@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { checkMainLink } from "./git-safe.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -109,6 +110,8 @@ export function classifyLookupFailure(err: ExecFailure): LookupResult {
 }
 
 export async function lookupBranch(root: string, script: string, branch: string): Promise<LookupResult> {
+  const linkReason = await checkMainLink(root);
+  if (linkReason !== null) return { kind: "error", message: `main link check failed: ${linkReason}` };
   try {
     const { stdout } = await execFileAsync("bash", [path.join(root, script), branch], { cwd: root, timeout: LOOKUP_TIMEOUT_MS });
     const row = parseLedgerRow(stdout.split("\n").find((l) => l.trim() !== "") ?? "");
