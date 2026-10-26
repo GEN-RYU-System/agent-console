@@ -29,7 +29,7 @@
   "uploadMaxBytes": 5242880,
   "uploadMaxKeep": 100,
   "accountLoginCommand": ["/bin/zsh", "-ic", "claude auth logout; claude auth login"],
-  "maxSessions": 6,
+  "maxSessions": 16,
   "roles": [
     {
       "id": "opus-designer",

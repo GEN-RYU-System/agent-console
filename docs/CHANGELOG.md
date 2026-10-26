@@ -2,6 +2,7 @@
 
 版を出すたびに 1 行追記する（版の正本は git タグ `vX.Y.Z`）。
 
+- 0.47.1 同梱の設定の同時に開ける窓の数を、いったん 16 にした（窓が 11 本開いた状態で 6 の版を入れると、更新のときに 5 本が開き直されないため）。6 に下げるのは窓が減ってから。ほかの動きは 0.47.0 と同じ。戻し方は `bash scripts/ac-update.sh v0.47.0`（窓が 6 本以下のとき）または `v0.46.3`。設計は docs/handoff/window-limit/design.md §10 便1b。
 - 0.47.0 同時に開ける窓の数を設定 `maxSessions`（正の整数・既定16）で決められるようにし、この Mac の設定は 6 にした。一覧の見出しに『開いている N / M』を出す。新しい窓の役割から Sonnet 実装を外した（Sonnet の作業はクラウドで行う）。戻し方は `bash scripts/ac-update.sh v0.46.3`。設計は docs/handoff/window-limit/design.md §4-1 便1。
 - 0.46.3 作業場所の git の繋がり・本店の繋がりが合わないときは、差分の表示・PR の状態・作業場所の一覧と作成・台帳の照会の git と台本を動かさない。作業場所の作成の台本を道具の写しから動かす（新しい任意の設定 `salesanchorToolsRoot`、既定 `~/.salesanchor-tools`）。試験の直しを含む。入れる前に Sales Anchor の対応の PR のマージと道具の写しの取り直しが要る。戻し方は `bash scripts/ac-update.sh v0.46.2`。設計は docs/handoff/discord-pdca/design.md §4-5・ADR-1039 便2b-2。
 - 0.46.2 差分の表示と PR の状態で動かす git に、作業場所の設定（core.fsmonitor・core.hooksPath）で命令が動かない上書きを付けた。入れ子のリポジトリの差分は数えない（--ignore-submodules=all）。ほかの動きは変わらない。戻し方は `bash scripts/ac-update.sh v0.46.1`。設計は docs/handoff/discord-pdca/design.md §4-5・ADR-1039 便2b-1。

@@ -308,9 +308,9 @@ describe("parseConfig: maxSessions (window-limit 便1)", () => {
       expect(() => parseConfig({ ...valid, maxSessions: bad })).toThrow("config: maxSessions must be a positive integer");
     }
   });
-  it("K10: the shipped config has no sonnet-impl role and maxSessions 6", () => {
+  it("K10: the shipped config has no sonnet-impl role and maxSessions 16", () => {
     const raw = JSON.parse(readFileSync("agent-console.config.json", "utf8")) as { roles: { id: string }[]; maxSessions?: number };
     expect(raw.roles.map((r) => r.id)).not.toContain("sonnet-impl");
-    expect(raw.maxSessions).toBe(6);
+    expect(raw.maxSessions).toBe(16);
   });
 });
