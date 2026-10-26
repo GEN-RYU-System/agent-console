@@ -1,5 +1,5 @@
-# 設計書: 同時に開ける窓の上限と、使っていない窓を休ませる（window-limit）第1.0版
-作成: Claude Opus（設計）2026-10-26。状態: 設計案作成済み・自己審査済み（同一 AI による審査。独立した第二者審査ではない）・PO 承認待ち。実装未着手。
+# 設計書: 同時に開ける窓の上限と、使っていない窓を休ませる（window-limit）第1.1版
+作成: Claude Opus（設計）2026-10-26。状態: 第1.0版を別の審査役（claude -p・Opus）が REVISE → 第1.1版で全指摘に対応・再審査待ち・PO 承認待ち。実装未着手。
 
 ## 1. 目的（PO の言葉）
 - 原文（2026-10-26）: 「agent consoleでは新しいセッションも過去の会話も含めて全てopusだけが展開して、sonnetは全てクラウドで作業を指せる仕組みにしたい、そうすればCPUやRAMが軽くなると考えるがどうか？」
@@ -22,6 +22,7 @@ recon: docs/handoff/window-limit/recon.md（基準 origin/main 21df257、v0.46.2
 - 続きから開く仕組みは既にある: `restore({id, claudeSessionId})` が役割の `restoreCommand` を `AC_RESUME_ID` 付きで起動（`sessions.ts:324-331`）。同じアプリ id を引き継げる（`:331,388-391`）。v0.3.8 から本番で使用中（docs/CHANGELOG.md 0.3.8）。
 - 一言も入力していない窓は `claude agents --json` に出ず sessionId が取れない（v0.3.8 design.md:16、2026-10-12 に 3 回実測）。
 - 窓の状態は 10 秒ごとの標本（`agentsPollMs`、`hub.ts:145`）。標本ごとの「アプリ id → 状態」を `onAgentsSampled` で購読できる（`hub.ts:181-189`、定期実行の自動クローズが既に使用 `index.ts:107`）。窓ごとの「最後に動いた時刻」は `Session` には無い（recon §3）。
+- 手元の Mac の保存（2026-10-26 13:3x JST、`~/Library/Application Support/agent-console/` を grep）: `routines.json` の役割は opus-designer 8 件、`reservations.json` は opus-designer 23 件・shell 1 件、`open-sessions.json` は opus-designer 10 件。`sonnet-impl` を使うものは 0 件。
 - 既存の自動クローズは定期実行が開いた窓だけ（idle 累計 10 分、`routine-closer.ts:8,42`）。
 - 未処理の予約・名前予約がある窓は `hasPendingWork`（`hub.ts:245`）で分かる。
 - 役割の設定（origin/main `agent-console.config.json`）: `opus-designer`（ccopusgo）、`sonnet-impl`（`claude --model sonnet`）、`shell`。`reserveRoles`・`routineManagerRoles` は未設定。
@@ -29,89 +30,142 @@ recon: docs/handoff/window-limit/recon.md（基準 origin/main 21df257、v0.46.2
 - Context7: 本件は agent-console 内部のコードと Claude Code の `--resume` だけで、新しいライブラリの仕様に依存しない。`--resume` の振る舞いは v0.3.8 以来の本番実績に依る。
 
 ## 4. 設計
-### 4-1 上限を設定にする（便1）
-- `Config` に任意キー `maxSessions`（正の整数、既定 16＝今と同じ）。`parsePositive` で検証。`new SessionManager(config, { maxSessions: config.maxSessions })` と渡す。`DEFAULT_MAX_SESSIONS` は `config.ts` の `DEFAULT_*` 群へ移す（既定値の置き場を 1 か所にする）。
+### 4-0 休止中の窓の作り（審査 C3 への答え。ほかの節はこれを前提にする）
+- **端末（term）は残し、`exited` は真、`sleeping: true` を足す**。休止中の窓は「止まった窓の一種」として既存の各所を安全に通す（MemoryCollector `memory.ts:117`・RoutineCloser `routine-closer.ts:51`・relay `relay.ts:175,208`・launch `launch.ts:71` は exited を見て外す＝審査 (2) の事実）。
+- 休ませた窓は、止めた端末の `term` をそのまま持つ（pid は死んだ pid。子孫は無い）。
+- 再起動のあとに休止中として戻す窓は、新しい部品 `DormantTerminal`（`server/dormant-terminal.ts`）を持つ。`pid` は **-1**（0 は macOS で launchd の親 pid に当たり、`descendantPids(0, …)` が全プロセスを拾う恐れがあるため使わない）。`write`・`resize`・`kill`・`release` は何もしない。`onExit` は登録した時点で即呼ぶ。単体試験で `descendantPids(-1, table)` が空であることを固定する。
+- 状態の判定: `Hub.snapshot`（`hub.ts:710-731`）と `detectBreaks`（`hub.ts:570-571`）で、`s.sleeping` を **`stateForSession` より先に** 見て `"sleeping"` にする（`stateForSession` は exited を見て先に `"stopped"` を返すため＝`agents.ts:106`）。`detectBreaks` は休止中の窓に `claudeSessionId` を付け替えない（休止中の窓は飛ばす）。`hub.ts:255,321,351,500,594,602` の入力・チャットの判定は、exited が真なので既存どおり「入力できない」になる（変更しない）。
+- 休止中の窓の行で許す操作は「起こす」と「外す」だけ。
+  - 「外す」は既存の `remove()`（`sessions.ts:480`）。休止中の窓は exited なのでそのまま通る。画面では確認画面を挟み、本文は「{{name}} を一覧から外しますか？ 会話は『過去の会話を再開』から戻せます」。
+  - 「閉じる」ボタンは出さない（`SessionList.tsx:176` の条件に `state !== "sleeping"` を足す）。`POST /api/sessions/:id/close` に休止中の窓が来たら、既存の exited の扱い（`http.ts:303-307`＝remove）のまま。
+
+### 4-1 上限を設定にする・Sonnet の役割を外す（便1）
+- `Config` に任意キー `maxSessions`。検証は正の**整数**（`parsePositive`＝`config.ts:203-207` は整数を見ないので、`Number.isInteger` の確認を足した `parsePositiveInt` を新設）。既定 16。`DEFAULT_MAX_SESSIONS` は `sessions.ts:15` から `config.ts` の `DEFAULT_*` 群へ移す。`server/index.ts:75` で `new SessionManager(config, { maxSessions: config.maxSessions })`。
 - 実ファイル `agent-console.config.json` に `"maxSessions": 6`。
-- 数えるのは「動いている窓」だけ（休止中は数えない。4-2）。
-- `/api/state` に `maxSessions` と `runningCount` を足し、一覧の見出しに「動いている 5 / 6」を出す。
-- 同じ便で `roles` から `sonnet-impl` を外す。復元リストに残っている `sonnet-impl` の項目は既存の `unknownRole` 案内で外れる（`restore.ts:12`）。
+- 上限の数え方を 1 つの関数にそろえる（審査 M3）: `SessionManager.occupiedCount()` = `[...sessions.values()].filter((s) => !s.sleeping).length + pending`。`create`（`sessions.ts:275`）・`resume`（`:296`）・`hasCapacity`（`:316-317`）の 3 か所すべてで `occupiedCount() < maxSessions` を使う。**止まった（exited で sleeping でない）窓は今までどおり数える**（今の振る舞いを変えない）。便1 では sleeping がまだ無いので、数は今と同じ。
+- `/api/state` に `maxSessions` と `openCount`（＝`occupiedCount()` から pending を引いた値）。名前は `activity.store.runningCount` と紛れないよう `openCount` にする。一覧の見出しに「開いている 5 / 6」（`t("ac.sessions.openCount", {count, max})`）。
+- `roles` から `sonnet-impl` を外す。影響の点検（審査 M9）: 定期実行・予約は保存した役割を config から探す（`launch.ts:46`、`reservations.ts:211`）。手元の保存では `sonnet-impl` を使うものは 0 件（§3）。導入の直前に Opus が同じ grep をもう一度行い、1 件でもあれば導入を止めて PO に聞く。復元リストに残っていれば既存の `unknownRole` 案内で外れる（`restore.ts:13`）。
 
 ### 4-2 休ませる・起こす（便2）
-- 新しい状態「休止中」: `Session` に `sleeping: true` を持たせ、端末は持たない。`SessionState` に `sleeping` を足す（`agents.ts:19`）。
-- `SessionManager.sleep(id)`: 条件をすべて満たすときだけ実行。満たさなければ `SessionConflictError(<理由>)`。
-  1. 動いている窓で、状態が `idle`
-  2. `claudeSessionId` が UUID、かつ役割に `restoreCommand` がある（＝続きから開ける。shell 役・一言も入力していない窓は対象外）
-  3. `hasPendingWork` が偽、定期実行の自動クローズが追跡中でない、引き継ぎ中でない
-  - 処理: 既存の `closeRunning` と同じ止め方（SIGHUP → 猶予 → SIGKILL）で端末を止め、`Session` は消さず `sleeping: true` にして残す。
-- `SessionManager.wake(id)`: `hasCapacity()` を確かめ、`restore({id, claudeSessionId, roleId, name, cwd, branch})` で開き直す。満席なら 400（画面は 4-3 の案内）。
-- 復元リスト: 項目に任意の `sleeping: true` を足す（`version` は 1 のまま。古い版は未知の項目を捨てる＝`server/session-store.ts:28-52` ので、戻したときは休止中の窓も普通に開き直る＝安全側）。起動時の復元は `sleeping` の項目を開かず、休止中として一覧に戻す。
-- 休ませられる候補の判定: `onAgentsSampled` で窓ごとに「idle が連続した時間」をメモリで数える（`RoutineCloser` と同じ作り。標本の間隔が `gapLimitMsFor(agentsPollMs)` を超えたら数え直し）。設定 `sleepSuggestMinutes`（既定 30）以上で候補。作業画面の再起動で数え直しになる（許容。候補が遅れて出るだけで、勝手に閉じることは無い）。
-- HTTP: `POST /api/sessions/:id/sleep`、`POST /api/sessions/:id/wake`。`/api/state` の各窓に `sleepable: boolean` と `idleMinutes`。
+**部品の分け方（審査 M1）**: 端末を止める・起こすのは `SessionManager`、休ませてよいかの確認と待機時間の計測は新しい部品 `SessionSleeper`（`server/sleeper.ts`）。`SessionSleeper` は `sessions`・`hub`・`closer`（RoutineCloser）・`relay`（RelayManager）・`activity` を受け取る。`index.ts:98-112` で作り、HTTP に渡す部品の束（`index.ts:112`）に入れる。
+- `RoutineCloser` に公開関数 `isTracking(id): boolean`、`RelayManager` に `isBusy(id): boolean` を足す（今は private＝`routine-closer.ts:39`、`relay.ts:138`）。
+- **待機時間の計測**: `SessionSleeper` が `hub.onAgentsSampled` を購読し、窓ごとに「`state === "idle"` かつ `activity.store.runningCount(claudeSessionId) === 0`」が連続した時間を数える（`RoutineCloser` の `sample`＝`routine-closer.ts:51-61` と同じ作り。標本の間隔が `gapLimitMsFor(agentsPollMs)` を超えたら数え直し）。ほかの状態が 1 回でも来たら 0 に戻す。作業画面の再起動で 0 から数え直す（候補が遅れて出るだけ）。
+- **候補**: 待機の連続が `sleepSuggestMinutes`（config の任意キー、正の整数、既定 30）以上で、下の条件 2〜4 を満たす窓。
+- **`SessionSleeper.sleep(id)` の手順**（`RelayManager.start`＝`relay.ts:170-187` と同じ「確認 → 取り直し → もう一度確認」）:
+  1. 窓が動いていて（exited でない）、sleeping でない
+  2. `claudeSessionId` が UUID で、役割に `restoreCommand` がある
+  3. `hub.hasPendingWork(id)` が偽、`closer.isTracking(id)` が偽、`relay.isBusy(id)` が偽
+  4. `hub.checkInput(id)`（`relay.ts:182` と同じ）で取り直した状態が idle、かつ `activity.store.runningCount(claudeSessionId) === 0`（裏で担当が動いていない＝審査 M2）
+  - どれかを満たさなければ `SessionConflictError(<理由>)` → HTTP 409。理由は `notIdle`・`noResumeId`・`pendingWork`・`routine`・`relay`・`subagentRunning` のどれか（画面は i18n で文言にする）。
+  - 満たせば、止める前に Hub の表示名（Claude 側の名前、`hub.ts:717`）を `sessions.rename(id, 表示名)` で `s.name` に写す（審査 M5。`relay.ts:188` と同じ）→ `sessions.sleep(id)`。
+- **`SessionManager.sleep(id)`**: 既存の `closeRunning`（`sessions.ts:523-543`）と同じ止め方で端末を止め、**`remove()` は呼ばず** `sleeping = true` にする。止まらなかった（pid 0 など）ときは既存どおり `SessionConflictError("session did not stop")` で、sleeping にしない。
+- **`SessionManager.wake(id)`（審査 C1）**: 休止中の窓だけが対象。`hasCapacity()` を確かめ（満席なら `SessionInputError("too many sessions")` → 400）、作業場所を `classifyCwd` でもう一度確かめ（無ければ `SessionConflictError("missingCwd")` → 409、休止中のまま）、`spawnSession` で **同じ id のまま** 開き直す。`spawnSession` の id の決め方（`sessions.ts:390`＝`!this.sessions.has(knownId) ? knownId : randomUUID()`）に「既にある Session が sleeping なら knownId を使う」を足す。`Map.set` は既にあるキーなら並び順を保つので、一覧の位置も変わらない。`remove()` を通らないので、Hub の未読・名前の予約・チャットの予約は消えない（`hub.ts:134-140` が呼ばれない）。起動に失敗したら古い Session（sleeping）を Map に戻して休止中のまま残し、失敗を返す。
+- **復元リスト（審査 C2）**: 次の 4 か所を変える。
+  1. `OpenSessionItem` に `sleeping?: true`（`session-store.ts:15-23`）
+  2. `parseItem`（`:27-38`）と `normalizeItem`（`:41-50`）が `sleeping: true` を通す（true 以外は捨てる）
+  3. `OpenSessionRecorder.sync` の絞り込み（`restore.ts:74`）を `(!s.exited || s.sleeping)` にし、休止中の項目には `sleeping: true` を付ける
+  4. `version` は 1 のまま。旧版は `sleeping` を捨てる（`normalizeItem` が知らない項目を持たない）ので、旧版へ戻すと休止中の窓も普通に開き直す（窓は失われない）
+- **起動時の復元（審査 M4）**: `restoreOnStartup`（`restore.ts:106-163`）で `sleeping` の項目は次のとおり扱う。
+  - 役割の照合（`:128`）と作業場所の照合（`:133`）は今までどおり行い、外れたら既存の案内（`unknownRole`・`missingCwd`）で外す
+  - 上限の判定（`:138`）はかけない（休止中は数えない）
+  - `known.add`（`:142,156`）はしない（休止中の窓には tmux が無いはず。もし `ac-<id>` が残っていれば、既存の `reportOrphans`＝`:37` 相当で迷子として報告される）
+  - 端末を起動せずに Session を作る新しい入口 `SessionManager.addSleeping(item)` を使う（`DormantTerminal` を持ち、exited 真・sleeping 真・同じ id・名前・作業場所・ブランチ・claudeSessionId）
+  - 起動の間隔（`restoreStaggerMs`）は空けない（claude を起動しないため）
+- **HTTP**: `POST /api/sessions/:id/sleep`（`SessionSleeper.sleep`）、`POST /api/sessions/:id/wake`（`sessions.wake`）。
+- **画面への配信（審査 M6）**: `Hub` に `setSleepInfo(fn: (id) => { sleepable: boolean; idleMinutes: number } | undefined)` を足し、`snapshot`（`hub.ts:710-731`）が各窓に `sleepable` と `idleMinutes` を載せる。`idleMinutes` は **5 分単位に切り捨て**（10 秒ごとに配信が増えないように。値が変わったときだけ `publish`）。`/api/state` と WebSocket（`hub.ts:748-756`）の両方に同じ値が出る。`src/types.ts` の `SessionView` に `sleepable`・`idleMinutes`、`SessionState` に `"sleeping"` を足す（サーバー側 `agents.ts:19` と `hub.ts:15-37` も同じ）。
 - **自動で休ませる処理は作らない**（PO 決定「閉じる前に必ず確かめる」）。
 
 ### 4-3 画面（便2）
-- 一覧の行: 候補の行に「休ませられます（待機 45 分）」の Badge と「休ませる」ボタン。休止中の行は灰色の点と「休止中」、「起こす」ボタン。
+- 一覧の行: 候補の行に Badge「休ませられます（待機 45 分）」と「休ませる」ボタン。休止中の行は灰色の点（`StatusDot` の `STATE_LABEL_KEY`＝`StatusDot.tsx:5` に sleeping を足す）と「休止中」、「起こす」「外す」ボタン。
 - 一覧の上: 候補が 1 本以上あれば Callout「休ませられる窓が N 本あります」＋「まとめて休ませる」ボタン。
-- 確認: `ConfirmModal`。本文に対象の名前を全部並べ、「休ませた窓は『起こす』で同じ会話の続きから開き直せます。作業中の窓は対象にしていません」。
-- 満席: 作成・再開が「too many sessions」のとき、既存の失敗表示に「休ませられる窓が N 本あります」とボタンを添える。
-- 文言はすべて `t("ac.sleep.*")`。部品は SA の金型（Badge・Button・Callout・ConfirmModal）だけ。
+- 確認: `ConfirmModal`。本文に対象の名前を全部並べ、「休ませた窓は『起こす』で同じ会話の続きから開き直せます。作業中の窓は対象にしていません」。まとめて休ませるときは 1 本ずつ `sleep` を呼び、409 になった窓は理由を並べて表示する（ほかの窓は続ける）。
+- 満席: 作成・再開が「too many sessions」のとき、既存の失敗表示に「休ませられる窓が N 本あります」と「まとめて休ませる」ボタンを添える。
+- 文言はすべて `t("ac.sleep.*")`・`t("ac.sessions.openCount")`。部品は SA の金型（Badge・Button・Callout・ConfirmModal）だけ。金型の props は `npm run sa-sync` で `.sa-cache` を展開してから確かめる（recon 未確認のため）。
 
 ## 5. 対象と対象外
-- 対象: agent-console のサーバー（config・sessions・restore・hub・http）、画面（SessionList・ConsolePage・ja.json）、試験、`agent-console.config.json`、CHANGELOG、版（便1 v0.47.0、便2 v0.48.0）。
-- 対象外: 予約・定期実行・引き継ぎが満席で `full` になる既存の扱い（変えない）、定期実行の自動クローズ（変えない）、tmux の作り、メモリ計測、salesanchor リポジトリ、~/.claude 配下。窓の自動休止（作らない）。
+- 対象: agent-console のサーバー（config・sessions・dormant-terminal〔新規〕・sleeper〔新規〕・restore・session-store・hub・agents・routine-closer〔公開関数 1 つ〕・relay〔公開関数 1 つ〕・http・index）、画面（types・SessionList・StatusDot・ConsolePage・ja.json）、試験、`agent-console.config.json`、CHANGELOG、版（便1 v0.47.0、便2 v0.48.0。`extension/manifest.json` も合わせる）。
+- 対象外: 予約・定期実行・引き継ぎが満席で `full` になる既存の扱い、定期実行の自動クローズの判定、tmux の作り、メモリ計測、salesanchor リポジトリ、~/.claude 配下。窓の自動休止（作らない）。
 
 ## 6. 受入条件と検証方法
 | 基準 | 検証方法 |
 |---|---|
-| K1 config に `maxSessions` を書くとその数が上限になる。書かなければ 16 | 単体（config）＋統合（harness に config 経由で渡す） |
-| K2 上限に達すると作成・再開が 400、画面に案内と「まとめて休ませる」ボタン | 統合＋e2e |
-| K3 休止中の窓は上限に数えない | 統合（上限 2、1 本休ませると 1 本開ける） |
-| K4 `sleep` は idle・sessionId あり・restoreCommand あり・未処理なしのときだけ成功。working・waiting・shell 役・sessionId なし・予約あり・定期実行追跡中は 409 で窓は動いたまま | 統合（偽 claude の状態ファイルで各条件） |
-| K5 休ませると、その窓のプロセス（端末と子孫）がすべて無くなり、一覧には「休止中」で残る | 統合（子孫 pid の生存確認） |
-| K6 起こすと、同じアプリ id・同じ名前・同じ作業場所で、`AC_RESUME_ID`＝休ませる前の sessionId で起動する | 統合（偽 claude が受け取った環境変数を記録） |
-| K7 再起動後、休止中の窓は開かずに休止中で一覧に戻る。動いていた窓は従来どおり開き直す | 統合（session-restore の既存試験に追加） |
-| K8 待機が `sleepSuggestMinutes` 以上続いた窓だけ候補になる。途中で working になると数え直す | 単体（標本を時刻つきで与える） |
-| K9 自動で休ませる経路が無い（sleep を呼ぶのは HTTP の入口だけ） | `grep -rn "\.sleep(" server/` が http.ts の 1 か所だけ |
-| K10 新しい窓の役割に Sonnet が出ない | e2e（作成フォームの選択肢） |
+| K1 config に `maxSessions` を書くとその数が上限になる。書かなければ 16。2.5・0・"6" は起動中止 | 単体（config.test.ts）＋統合（harness に config の値を渡す口を足す＝今は options のみ `tests/unit/helpers/harness.ts:228`） |
+| K2 上限に達すると作成・再開が 400。画面に「開いている N / M」と案内（便2 で「まとめて休ませる」ボタン） | 統合＋e2e（上限を下げた別のサーバー設定で行う。既存 e2e は上限 16 前提＝`console.spec.ts:542,949-951`） |
+| K3 休止中の窓は上限に数えない。止まった（休止でない）窓は今までどおり数える | 統合（上限 2、1 本休ませると 1 本開ける。止まった窓 1 本では開けない） |
+| K4 `sleep` は 4-2 の条件 1〜4 をすべて満たすときだけ成功。working・waiting・shell 役・sessionId なし・予約あり・定期実行追跡中・引き継ぎ中・裏の担当が動作中・取り直しで idle でない は 409（理由つき）で窓は動いたまま | 統合（偽 claude の状態ファイル・activity の記録で各条件） |
+| K5 休ませると、その窓の端末と子孫のプロセスがすべて無くなり、一覧には同じ id・休ませる前の表示名で「休止中」として残る | 統合（子孫 pid の生存確認・名前の照合） |
+| K6 起こすと、同じ id・同じ名前・同じ作業場所で、`AC_RESUME_ID`＝休ませる前の sessionId で起動し、一覧の位置が変わらず、未読・名前の予約が残る。満席なら 400、作業場所が無ければ 409 で休止中のまま | 統合（偽 claude が受け取った環境変数を記録） |
+| K7 再起動後、休止中の窓は claude を起動せずに休止中で一覧に戻る（同じ id）。動いていた窓は従来どおり開き直す。作業場所が無い休止中の項目は `missingCwd` で外れる | 統合（session-restore の既存試験に追加） |
+| K8 待機（idle かつ裏の担当 0）が `sleepSuggestMinutes` 以上続いた窓だけ候補。途中で working・裏の担当あり・標本の途切れがあると数え直す。`idleMinutes` は 5 分単位 | 単体（標本を時刻つきで与える） |
+| K9 自動で休ませる道が無い: `server/` で `sessions.sleep(` を呼ぶのは `server/sleeper.ts` の 1 か所だけ、`sleeper.sleep(` を呼ぶのは `server/http.ts` の 1 か所だけ | `grep -rn` の件数（試験に組み込む） |
+| K10 実物の `agent-console.config.json` の roles に `sonnet-impl` が無く、`maxSessions` が 6 | 単体（実物の設定ファイルを読む試験。e2e は試験用の役割表＝`tests/fixtures/e2e-env.ts:143-146` で動くため使わない） |
 | K11 文言はすべて t()、金型以外の部品 0 | `npm run lint`（design-governance） |
 | K12 既存の試験・CI（ubuntu・macOS）がすべて緑 | CI |
-| K13（導入後・実機）PO の Mac で、休ませた窓を起こすと同じ会話の続きが表示される | PO の目視＋設計者が `claude agents --json` の sessionId を休止前後で照合 |
-| K14（導入後・実機）動いている claude の窓が 6 本以下のとき、claude プロセスの CPU と RSS の合計を記録する（基準値: 9 本で CPU 85.3%・RSS 932MB） | 設計者が `ps` を 導入前・休止後 に取り、生出力をファイルに残して比べる（目標値は置かない。4-4 参照） |
+| K13 `DormantTerminal` の pid -1 で `descendantPids` が空。休止中の窓に `detectBreaks` が sessionId を付け替えない | 単体 |
+| K14（導入後・実機）PO の Mac で、休ませた窓を起こすと同じ会話の続きが表示される | PO の目視＋設計者が `claude agents --json` の sessionId を休止前後で照合 |
+| K15（導入後・実機）動いている claude の窓の CPU と RSS の合計を、導入前と休止後に記録する（基準値: 9 本で CPU 85.3%・RSS 932MB） | 設計者が `ps` の生出力をファイルに残す。**目標値は置かない。○×は「記録が残ったか」だけ**（4-4） |
 
 ### 4-4 効果の見込みについて（事実のみ）
-- 1 の実測では、重い窓（CPU 32.1%・RSS 263MB など）と軽い窓（CPU 0.4%・RSS 19MB など）の差が大きい。休ませて軽くなる量は「休ませた窓がどれだけ使っていたか」で決まり、待機中の窓が軽ければ効果は小さい。どの窓が待機中だったかは 1 の実測に含まれないため、効果の大きさは未確認。K14 で測る。
+- §1 の実測では、重い窓（CPU 32.1%・RSS 263MB など）と軽い窓（CPU 0.4%・RSS 19MB など）の差が大きい。休ませて軽くなる量は「休ませた窓がどれだけ使っていたか」で決まり、待機中の窓が軽ければ効果は小さい。どの窓が待機中だったかは §1 の実測に含まれないため、効果の大きさは未確認。K15 で記録する。
 
 ## 7. 代替案と選んだ理由
-- A 一定時間で自動的に休ませる: 不採用。PO 決定「閉じる前に必ず確かめる」に反する。作業中に見えて実は待機中の窓（人が読んでいる最中）を止める恐れ。
+- A 一定時間で自動的に休ませる: 不採用。PO 決定「閉じる前に必ず確かめる」に反する。人が読んでいる最中の待機中の窓を止める恐れ。
 - B 上限だけ入れて休止は作らない: 不採用。満席のとき人が窓を選んで閉じるしかなく、閉じた窓の sessionId が残らないため「過去の会話を再開」の一覧から探し直す手間が残る。
-- C 休ませた窓を一覧から消し、別の「休止中リスト」ファイルに残す: 不採用。窓の情報の置き場が 2 つになる（復元リストと休止リスト）。今の復元リストに `sleeping` を足して 1 か所に保つ。
-- D 選んだ案: 上限の設定化＋人が確かめて休ませる＋同じ会話で起こす。既存の `closeRunning`・`restore()`・`onAgentsSampled`・復元リストを使い、新しい仕組みを最小にする。
+- C 休ませた窓を一覧から消し、別の「休止中リスト」ファイルに残す: 不採用。窓の情報の置き場が 2 つになる。今の復元リストに `sleeping` を足して 1 か所に保つ。
+- D 休止中の窓の term を undefined にする: 不採用。`Session.term` は省略できない型で（`sessions.ts:66`）、`hub.ts` の 8 か所が exited を見ずに `term.pid` を読む（審査 C3）。term は残し、exited 真で既存の「止まった窓」の扱いに乗せる。
+- E 起こすときに先に `remove()` してから開く: 不採用。Hub が未読・名前の予約・チャットの予約を忘れ、WebSocket も閉じる（`sessions.ts:484,487`、`hub.ts:134-140`）。同じ id で上書きする（4-2）。
+- F 選んだ案: 上限の設定化＋人が確かめて休ませる＋同じ id・同じ会話で起こす。既存の `closeRunning`・`restore` の起動・`onAgentsSampled`・復元リストを使い、新しい部品は `DormantTerminal` と `SessionSleeper` の 2 つに限る。
 
 ## 8. リスクと対処
-- 休ませた窓を起こしたときに会話の続きが開けない（sessionId のずれ）: 条件 2 で sessionId が UUID のものだけ対象。K13 で実測。開けなかった場合は通常の新しい会話にはせず、失敗を表示して休止中のまま残す（`restore` の失敗をそのまま返す）。
-- 起こすときの読み込みのトークン消費: 会話の長さ次第で未確認。休ませるのは人の判断なので、長い会話は休ませない選択ができる。
-- 戻したとき（旧版へ）: 復元リストの `sleeping` は無視され（旧版の `parseItem`・`normalizeItem` は知らない項目を捨てる＝`server/session-store.ts:28-52`）、休止中の窓も開き直る＝窓は失われない。
-- 上限 6 で予約・定期実行が `full` で開かない回が増える: 既存の扱い（記録して諦める）のまま。満席の件数は予約・定期実行の履歴で見える。様子を見て上限を設定で変えられる。
+- 起こしたときに会話の続きが開けない（sessionId のずれ）: 条件 2 で sessionId が UUID のものだけ対象。K14 で実測。起動に失敗したら休止中のまま残し、失敗を表示する。
+- 起こすときの読み込みのトークン消費: 会話の長さ次第で未確認。休ませるのは人の判断。
+- 旧版へ戻したとき: 復元リストの `sleeping` は旧版が捨て（`session-store.ts:41-50`）、休止中の窓も開き直る＝窓は失われない。ただし上限（旧版は 16）を超える分は `overLimit` の案内で外れる。
+- 上限 6 で予約・定期実行が `full` で開かない回が増える: 既存の扱い（記録して諦める）のまま。満席の件数は予約・定期実行の履歴で見える。設定で上限を変えられる。
+- 休ませる直前に人が入力を始める: 条件 4 の取り直しで idle でなければ 409。取り直しから止めるまでの間（数百ミリ秒）に入力された分は失われうる（引き継ぎ＝relay と同じ程度の幅）。
 
 ## 9. 戻し方
 - 便1: `agent-console.config.json` の `maxSessions` を消せば 16 に戻る。`roles` に `sonnet-impl` を戻せば Sonnet の役割が戻る。版を戻す場合は前の版を導入し直す。
-- 便2: 前の版を導入し直す（復元リストは互換。8 参照）。
+- 便2: 前の版を導入し直す（8 の「旧版へ戻したとき」）。
 
 ## 10. 工程
-- 便1: 4-1（config・SessionManager 生成・/api/state・一覧の見出し・役割）＋ K1・K2（案内文までで、まとめて休ませるボタンは便2）・K10・K11・K12。
-- 便2: 4-2・4-3 ＋ K2（ボタン）〜K9・K11・K12。導入後に K13・K14。
+- 便1: 4-1 ＋ K1・K2（ボタン以外）・K10・K11・K12。導入直前に Opus が `sonnet-impl` の使用 0 件を再確認。
+- 便2: 4-0・4-2・4-3 ＋ K2（ボタン）〜K9・K11・K12・K13。導入後に K14・K15。
 - 実装と試験はクラウド（Sonnet）で行う（PO 決定 2026-10-26「1」）。手元の Mac で担当を起動しない。
+- 導入（更新）は、すべての窓が idle で waitingFor が無いときに行う（既存の更新の条件）。
 
 ## 11. 維持する担当・仕組み
-- 上限と候補の時間は config の 2 項目だけ。変えるときは設定ファイルを直すだけで、コードは触らない。
-- 自動休止が無いこと（K9）は試験で固定する。
+- 上限と候補の時間は config の 2 項目だけ。変えるときは設定ファイルを直すだけ。
+- 自動休止が無いこと（K9）と、旧版との互換（K7・8）は試験で固定する。
 
 ## 12. 外部事例
 - Google Chrome の Memory Saver（2023 年 2 月、Chrome 110。Windows・macOS・Linux・ChromeOS）: 使っていないタブをメモリから外し、開いたときに読み込み直す。Google は「最大 40%・10GB のメモリ削減」と発表したと報じられている（一次資料の Google の文面は未確認。二次資料: techradar.com「Google Chrome gets memory and energy saver modes」、alternativeto.net 2022-12 の記事）。音声再生中・入力途中のフォームなどは外さない例外がある。
 - 適用の限界: ブラウザのタブと Claude の会話では、外したあとに戻す費用（会話の読み込み直し）が違う。数値（40%）は Chrome の最良の場合の値で、本件の効果の証明には使わない。取り入れたのは「使っていないものだけを外し、見た目は残して、触れたら戻す」「作業中のものは例外にする」という作りだけ。
 
-## 13. 自己審査（Architect）
-- 判定: APPROVE（設計として実装可能）。同一 AI による審査であり、独立した第二者審査ではない。
-- 確かめたこと: 既存の上限・閉じる・復元・標本購読の file:line を recon で確認し、新しい仕組みはそれらの組み合わせに限った。受入条件はすべて試験か実測で ○× が付く。データの置き場は復元リスト 1 か所（案 C を退けた）。PO 決定（自動で閉じない）を K9 で固定。
-- 未解決（実装は止めない）: 効果の大きさ（K14）、起こすときのトークン消費、`.sa-cache` の金型の props（recon 未確認。実装時に `npm run sa-sync` 後に確かめる）。
-- PO に決めてもらうこと: この設計で進めてよいか（上限 6・候補は待機 30 分以上）。
+## 13. 審査
+### 第1.0版
+- 自己審査（同一 AI）: APPROVE としていた。
+- 別の審査役（claude -p・Opus、detached の写し 15af5cb）: **REVISE**。生出力 /tmp/CC報告ファイル/window-limit/review1.txt。重大 3（C1 起こすと別 id になる・C2 休止中の印が保存されない・C3 端末を持たない Session が型と呼び出し元に合わない）、要修正 9（M1〜M9）、軽微 6（L1〜L6）。
+### 第1.1版での対応
+| 指摘 | 対応 |
+|---|---|
+| C1 | 4-2 wake: sleeping の Session は同じ id で上書き（`sessions.ts:390` の条件を足す）。remove を通らない。代替案 E を不採用に追記 |
+| C2 | 4-2 復元リスト: 変更 4 か所（型・parseItem/normalizeItem・sync の絞り込み・版） |
+| C3 | 4-0 を新設: term は残し exited 真・sleeping 真。再起動後は DormantTerminal（pid -1）。状態は sleeping を先に判定。休止中の行は「起こす」「外す」だけ。代替案 D |
+| M1 | 4-2: 確認と計測は SessionSleeper（新規）、端末の操作は SessionManager。closer.isTracking・relay.isBusy を公開 |
+| M2 | 4-2 条件 4: 直前に hub.checkInput で取り直し、activity の runningCount 0 を条件に。待機の計測も同じ条件 |
+| M3 | 4-1: occupiedCount() を 3 か所にそろえる式を明記。止まった窓は今までどおり数える。名前は openCount |
+| M4 | 4-2 起動時の復元: 照合は行う・上限はかけない・known.add しない・addSleeping の新設・間隔なし。wake で classifyCwd をかけ直す |
+| M5 | 4-2 sleep 手順: 止める前に表示名を s.name へ写す |
+| M6 | 4-2 画面への配信: Hub.setSleepInfo・5 分単位・types.ts の変更 |
+| M7 | K10 を実物の設定ファイルを読む単体試験に |
+| M8 | K9 を「sessions.sleep( は sleeper.ts だけ、sleeper.sleep( は http.ts だけ」に |
+| M9 | §3 に手元の保存の grep 結果（sonnet-impl 0 件）、4-1 と §10 に導入直前の再確認 |
+| L1 | `restore.ts:13` に直した |
+| L2 | `session-store.ts:27-38`・`:41-50` に直した |
+| L3 | parsePositiveInt を新設（整数の確認） |
+| L4 | K2 の e2e は別のサーバー設定で |
+| L5 | K1 に harness の口を足すと明記 |
+| L6 | K15 は記録だけと明記 |
+
+### PO に決めてもらうこと
+- この設計で進めてよいか（上限 6・候補は待機 30 分以上・休ませるのは人が確かめてから）。
