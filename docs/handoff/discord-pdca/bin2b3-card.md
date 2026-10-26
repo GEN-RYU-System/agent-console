@@ -1,6 +1,6 @@
 # 便2b-3a 件ごとの写し・件のセッションの囲いの設定・Claude の道具の見張り・役割 discord-case と起動関数・秘密の登録の入力の直し（v0.47.2）作る係への指示書
 
-- 設計: `docs/handoff/discord-pdca/design.md` 第23版 §4-5（「件ごとの写し」・「Claude の道具の囲い」・「外への通信を塞ぐ」・(a') の書ける場所・「読み取りの拒否の書き方」・起動コマンド・gh の名義・使えない状態の扱い）・§8 便2b-3a・§9 K17・§15。ADR-1039（Sales Anchor・Accepted）
+- 設計: `docs/handoff/discord-pdca/design.md` 第24版（第23版に審査 102 の H-1・H-2 の直しを足した版） §4-5（「件ごとの写し」・「Claude の道具の囲い」・「外への通信を塞ぐ」・(a') の書ける場所・「読み取りの拒否の書き方」・起動コマンド・gh の名義・使えない状態の扱い）・§8 便2b-3a・§9 K17・§15。ADR-1039（Sales Anchor・Accepted）
 - 目的: ①件のセッション（役割 `discord-case`）を開くとき、サーバーが件ごとの設定（権限・囲い・見張りのフック）を作り、それが無ければ開かない。②件のセッションは `--restricted` で開き、PO のユーザー設定と Sales Anchor のプロジェクトの設定（フックを含む）を読ませない。Claude の Read・Edit・Write などの道具も、件の作業場所と報告の置き場の外へは書けず、外を読めない。②'件の作業場所は linked worktree でなく、本店から切り離した丸ごとの写し（clone）にし、件ごとの一時の置き場を使う（設計第18版。PO 2026-10-26「1」）。③秘密の登録の台本（`scripts/ac-discord-secret.sh`）を、貼り付けが効かなかった入力画面から、端末で打つ読み取りに替える。④PR #80 の審査の LOW（L-1・L-2・L-4・L-5）を直す
 - この便に入れないもの: 本物のセッションを開く試験（K11・K13・K17。便2b-3b。お金が掛かる）、`discord-measure`（便3）、受け口からの起動・順番待ちの消化・`launch_failed` の出来事・指示書 `S:docs/ai-agents/ops-incident-agent.md`（便2b-4）、終わった件の設定の片付け（便2b-4。作成の途中の失敗の片付けはこの便）。今ある役割（opus-designer・shell。sonnet-impl は v0.47.0 で外れた）の振る舞いと、v0.47.0 の同時に開ける窓の上限 `maxSessions` の振る舞いは変えない
 - 入れる順番: 作る係は PR を作るところまで。審査・マージ・タグ・入れるのは設計者
@@ -46,6 +46,8 @@
 - 新しいファイル `ops/case/case-guard.mjs`（見張りのフック。node だけで動き、依存を足さない）:
   - 引数1つ（case.json の道）。標準入力の JSON の `tool_name` と `tool_input` を読む。どこかで例外になれば終了の番号 2（`onFailure: "block"` にも重ねる）。止めるときは理由の短い英語を標準エラーに1行出して終了の番号 2、通すときは何も出さず 0
   - 道の解き方（下の 1. 2. で共通）: 文字列でない・絶対の道でない → 止める。字面で `.`・`..` を縮めない（`path.resolve`・`path.normalize` を使わない）。`fs.realpathSync` にそのまま渡し、無い道なら、末尾から1つずつ名前を外して一番近いある親の realpath を取り、外した名前をそのままつなぐ（外した名前に `..` があれば止める）。`worktree`・`report`・一覧の道も起動の時に realpath にそろえてある
+  - 先の無いリンク（第24版。審査 102 H-1）: 上の「末尾から1つずつ名前を外す」とき、外す前の道を `fs.lstatSync` で調べ、何かがある（ENOENT・ENOTDIR でない）なら止める（realpath が解けないのに何かがある＝先の無いシンボリックリンク。途中の名前でも同じ）。`lstatSync` が ENOENT・ENOTDIR 以外で失敗しても止める
+  - 拒否の一覧との比べ（第24版。審査 102 H-2）: `denyWrite`・`denyRead` の「下」の判定だけは、解いた道と一覧の道の両方を `fold(s) = s.normalize("NFKC").toUpperCase().toLowerCase()` にそろえてから行う（APFS は大文字小文字と Unicode の正規化を区別しない。`toUpperCase` を挟むのは `ſ`（U+017F）を `s` にそろえるため）。`fold` は `case-guard.mjs` の中の関数1つに置く。`worktree`・`report`・`tmp` の許す判定はそろえずに今のまま字のとおり比べる（そろえると許す側が広がる）
   - 「X の下」の判定: 解いた道が X と同じか、`X + "/"` で始まる
   - ハードリンク: 解いた道にすでに本物のファイルがあり、`fs.statSync(道).nlink >= 2` なら、下の 1. 2. のどちらでも止める（realpath はハードリンクを見分けない）
   - 判定（上から順に）:
@@ -119,6 +121,8 @@
   - Agent: `{description, prompt, subagent_type}` → 0。`isolation: "worktree"` を足す → 2。`name` を足す → 2。知らない鍵 → 2
   - `mcp__x__y`・`WebFetch`・`WebSearch` → 2。`Bash`・`TodoWrite` → 0。知らない名前（`EnterWorktree`）→ 2
   - 壊れた JSON・case.json が無い → 2
+  - 第24版（審査 102）: W の中のシンボリックリンク `W/dangle` が、まだ無い W の外のファイル（偽の H の下）を指す → Edit・Write・Read のどれも 2。先の無いリンクのディレクトリ `W/dl`（まだ無い W の外のディレクトリを指す）の下の `W/dl/sub/x` → Write 2。`R/.Claude/agents/x.md`・`W/.MCP.json`・`W/.CLAUDE/settings.json` の Write → 2（R に `.claude` がまだ無い状態で。Linux の CI でも 2 になる）。`W/.mcp.jſon`（`ſ` は U+017F）の Write → 2。偽の `D/Reserve-Token` の Read → 2。字のとおりで許す側の試験: W の中のまだ無い `W/Src/New.ts` の Write → 0（大文字の名前でも W の中なら通る）
+  - このファイルの試験は `describe` に `{ timeout: 20_000 }` を付ける（審査 102 L-1。まとめて流すと既定の5秒を超えた）
 - `tests/unit/case-clone.test.ts`（新規。一時の置き場に、元になる bare のリポジトリ B と、B から作った M を作る。M の `remote.origin.url` は `https://github.com/test/repo.git`、試験の間だけ `process.env` の `GIT_CONFIG_COUNT`・`GIT_CONFIG_KEY_0=url.<B の file:// の道>.insteadOf`・`GIT_CONFIG_VALUE_0=https://github.com/test/repo.git` で B に向ける。M の手元の main を B の main より1つ古くしておく。H は一時の置き場）:
   - `createCaseClone`: W = `H/worktrees/discord-cases/<id>` ができ、`checkCaseClone(W, M)` が null。`W/.git/objects/pack` の pack のリンクの数が 1。枝が `release/discord-case-<id の先頭8字>` で、HEAD が B の main の sha（M の手元の main ではない）。`core.hooksPath` が `frontend/.husky`。user.name・user.email が M と同じ。`remote.origin.url` が `https://github.com/test/repo.git`。`branch.<枝>.remote` が `origin`、`branch.<枝>.merge` が `refs/heads/<枝>`。台帳のファイルができ、1行目が `branch: <枝>` で、S:scripts/ledger-lookup.sh:21 と同じ規則（`|` で区切った2つ目の欄の前後の空白を除いたものが枝の名前と同じ行）で行が1つ見つかる（試験の M には `.claude-pipeline/active-work.md` と `.claude-pipeline/active-work.d/.gitkeep` を入れておく。Sales Anchor の台本は写さない。本物の ledger-lookup.sh は便2b-3b で動かす）
   - B の main に `.claude-pipeline/active-work.md` が無い（その形の commit を B に積む）→ 投げ、W が無い。B の main で `.claude-pipeline` を W の外のディレクトリへのシンボリックリンクとして commit する（リンクの先に `active-work.md` と `active-work.d/` がある）→ 投げ、リンクの先に台帳のファイルができない（審査 91 L-2。W は B の main の sha を取り出すので、M の作業場所で作っても届かない。審査 96 L-b）
@@ -176,6 +180,9 @@
    - ⑩ の realpath の確かめを外す → `W/.claude-pipeline` をシンボリックリンクにした試験が落ちる
    - `CASE_DENY_READ_SANDBOX` から P を外す → その試験が落ちる
    - `workplace.ts` の本店の確かめを外す → L-main が落ちる
+   - case-guard の先の無いリンクの `lstatSync` の確かめを外す → `W/dangle` の試験が落ちる（第24版）
+   - case-guard の拒否の比べの `fold` を外す（字のとおりに戻す）→ `R/.Claude/agents/x.md` の試験が落ちる（第24版）
+   - case-guard の `fold` から `toUpperCase()` を外す → `W/.mcp.jſon` の試験が落ちる（第24版）
 6. 1コミット（共著者行 `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`）、PR は `--base main`、本文に「この指示書のどこを満たしたか」「本物のセッションは開いていない（便2b-3b）」「Evaluator は画面のファイル変更が言葉1つのため省く」「触ったファイルの全部（docs を含む）」を書く
 
 ## 想定分岐
@@ -186,7 +193,7 @@
 - `createCaseClone` で作ったままの写しの `W/.git/config` に、許す一覧に無い鍵が入る（git の版による）→ 一覧を広げずに止まって、鍵の名前と生出力を報告する
 - 試験の M の `.claude-pipeline/active-work.md` を git に入れると、ほかの試験（M を使う既存の試験の作り）が変わる → 件の試験の M だけに入れる。既存の試験の作りは変えない
 - 試験の環境で `GIT_CONFIG_COUNT` の insteadOf が `git clone --local` に効かない（M からの写しは本店の道を使うので本来は要らない。要るのは M の fetch だけ）→ M の fetch だけに効いているかを生出力で示し、効かなければ止まって報告
-- CI が ubuntu で `zsh` が無い → `ci.yml` の該当の job に `sudo apt-get install -y zsh` の1段を足す（試験を飛ばさない）。足すと決めたことを PR 本文に書く
+- CI が ubuntu で `zsh` が無い → `ci.yml` の該当の job に `sudo apt-get update && sudo apt-get install -y zsh` の1段を足す（第24版で `apt-get update` を足す。審査 102 L-3）（試験を飛ばさない）。足すと決めたことを PR 本文に書く
 - tmux の `newSession` が `extraEnv` を受け取らない形だった・direct（node-pty）の道で `extraEnv` が渡らない → 両方に渡す最小の直しを入れ、PR 本文に書く。直しが3行を超えるなら止まって報告
 - `hooks` の `command` と `args` の形が今の Claude Code の設定の型で通らない（試験で設定を読む道が無いので、公式資料 doc-hooks.md:902-945 の例と、`buildHandler` の形と同じにする）→ 例と違う形にしない。迷ったら止まって報告
 - `addHandlers` が空の設定 `{}` を受け取れない・`hookPathIn` が `server/activity-setup.ts` から出ていない → 形を変えずに使える呼び方を探し、無ければ止まって報告（手でフックの一覧を写さない）
