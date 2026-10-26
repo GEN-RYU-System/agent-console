@@ -18,6 +18,8 @@ export interface RoleConfig {
   restoreCommand?: string[];
   /** false なら予約で選べない。画面の選択肢から外し、予約の入口で 400。省くと true */
   reservable?: boolean;
+  /** true なら件のセッション（Discord の不具合の件）。件ごとの写し・囲いの設定・見張りのフックを作って開く。needsWorktree:false・reservable:false・再開の命令なしが必須 */
+  caseSandbox?: boolean;
 }
 
 /** アカウント切り替えの端末に付ける予約済みの役割 id（config の roles では使えない） */
@@ -154,7 +156,18 @@ function parseRole(raw: unknown, index: number): RoleConfig {
   }
   if (typeof r.needsWorktree !== "boolean") throw new Error(`config: roles[${index}].needsWorktree must be boolean`);
   if (r.reservable !== undefined && typeof r.reservable !== "boolean") throw new Error(`config: roles[${index}].reservable must be boolean`);
-  const base: RoleConfig = { id: r.id, labelKey: r.labelKey, command: r.command as string[], needsWorktree: r.needsWorktree, ...(r.reservable === false ? { reservable: false } : {}) };
+  if (r.caseSandbox !== undefined && typeof r.caseSandbox !== "boolean") throw new Error(`config: roles[${index}].caseSandbox must be boolean`);
+  if (r.caseSandbox === true && (r.needsWorktree !== false || r.reservable !== false || r.resumeCommand !== undefined || r.resumeScope !== undefined)) {
+    throw new Error(`config: roles[${index}] caseSandbox requires needsWorktree:false, reservable:false and no resumeCommand`);
+  }
+  const base: RoleConfig = {
+    id: r.id,
+    labelKey: r.labelKey,
+    command: r.command as string[],
+    needsWorktree: r.needsWorktree,
+    ...(r.reservable === false ? { reservable: false } : {}),
+    ...(r.caseSandbox === true ? { caseSandbox: true } : {}),
+  };
   const role = r.restoreCommand === undefined ? base : { ...base, restoreCommand: parseCommand(r.restoreCommand, `roles[${index}].restoreCommand`) };
   if (r.resumeCommand === undefined) {
     if (r.resumeScope !== undefined) throw new Error(`config: roles[${index}].resumeScope requires resumeCommand`);
@@ -301,6 +314,10 @@ export function parseConfig(raw: unknown): Config {
   }
   const routineManagerRoles = parseRoutineManagerRoles(o.routineManagerRoles, ids);
   const reserveRoles = parseReserveRoles(o.reserveRoles, ids);
+  const caseRoleIds = new Set(roles.filter((r) => r.caseSandbox === true).map((r) => r.id));
+  for (const id of [...routineManagerRoles, ...reserveRoles]) {
+    if (caseRoleIds.has(id)) throw new Error(`config: role ${id} (caseSandbox) cannot be in routineManagerRoles or reserveRoles`);
+  }
   return {
     port: o.port as number,
     salesanchorRoot: expandHome(o.salesanchorRoot as string),

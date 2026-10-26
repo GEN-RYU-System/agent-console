@@ -111,6 +111,12 @@ export interface HarnessOptions {
   accountLoginCommand?: string[];
   /** 試験用に足す役割 */
   extraRoles?: RoleConfig[];
+  /** 件のセッション（caseSandbox）の試験用の差し替え。SessionManager の options に通す */
+  sandboxExecPath?: string;
+  caseShellPath?: string;
+  caseGuardPath?: string;
+  caseHomeDir?: string;
+  caseTmpRoot?: string;
   /** 1 ファイルの変更の表示上限（byte）。既定は config の既定値 */
   diffMaxFileBytes?: number;
   /** 送る文章の上限（byte）。既定は config の既定値 */
@@ -229,7 +235,15 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
       ...(options.extraRoles ?? []),
     ],
   };
-  const sessions = new SessionManager(config, { maxSessions: options.maxSessions, closeGraceMs: options.closeGraceMs });
+  const sessions = new SessionManager(config, {
+    maxSessions: options.maxSessions,
+    closeGraceMs: options.closeGraceMs,
+    ...(options.sandboxExecPath !== undefined ? { sandboxExecPath: options.sandboxExecPath } : {}),
+    ...(options.caseShellPath !== undefined ? { caseShellPath: options.caseShellPath } : {}),
+    ...(options.caseGuardPath !== undefined ? { caseGuardPath: options.caseGuardPath } : {}),
+    ...(options.caseHomeDir !== undefined ? { caseHomeDir: options.caseHomeDir } : {}),
+    ...(options.caseTmpRoot !== undefined ? { caseTmpRoot: options.caseTmpRoot } : {}),
+  });
   const hub = new Hub(config, sessions, options.sendNotification ?? null, { ghTimeoutMs: options.ghTimeoutMs });
   const store = new OpenSessionStore(config.dataDir);
   const recorder = new OpenSessionRecorder(sessions, hub, store);

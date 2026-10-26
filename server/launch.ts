@@ -45,6 +45,7 @@ export function validateLaunchText(input: LaunchTextInput, label: string): { nam
 export async function validateLaunchTarget(config: Config, input: LaunchTargetInput, label: string): Promise<{ cwd: string }> {
   const role = config.roles.find((r) => r.id === input.roleId);
   if (!role) throw new SessionInputError("unknown role");
+  if (role.caseSandbox === true) throw new SessionInputError("role cannot be scheduled");
   // 本店で動く役割（needsWorktree=false）は cwd を省ける。省いたときだけ本店（config.salesanchorRoot）を使う（本店の正本は config の1か所）
   const cwdIn = input.cwd === undefined && !role.needsWorktree ? config.salesanchorRoot : input.cwd;
   if (typeof cwdIn !== "string") throw new SessionInputError(`${label} cwd invalid`);

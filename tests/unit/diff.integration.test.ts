@@ -486,7 +486,8 @@ describe("git link check (ADR-1039 2b-2)", () => {
       rmSync(mark, { force: true });
       const s = h.sessions.restore({ role: h.config.roles[0], name: "link-main", cwd: root, branch: null });
       const res = await diffOf(s.id);
-      expect([409, 500], `status ${res.status}`).toContain(res.status);
+      expect(res.status).toBe(409);
+      expect(String(res.json.error)).toContain("git link check failed");
       expect(existsSync(mark)).toBe(false);
       await h.sessions.close(s.id);
     } finally {

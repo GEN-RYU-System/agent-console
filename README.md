@@ -263,11 +263,20 @@ Discord の受付チャンネルを30秒ごとに読み、ふるいにかけて�
 }
 ```
 
-- 秘密の登録（Keychain。値は画面に出ません）: `bash scripts/ac-discord-secret.sh discord-bot`（ボットのトークン）、`bash scripts/ac-discord-secret.sh discord-report-webhook`（報告チャンネルの Webhook URL）。形の確かめは状態の入口の `credentials` で行います。
+- 秘密の登録（Keychain。値は端末で打ちます。打った文字は画面に出ません。macOS の端末の1行は 1024 バイトまで）: `bash scripts/ac-discord-secret.sh discord-bot`（ボットのトークン）、`bash scripts/ac-discord-secret.sh discord-report-webhook`（報告チャンネルの Webhook URL）。形の確かめは状態の入口の `credentials` で行います。
 - 状態の入口: `GET /api/discord-intake/status`（認証が要ります。id・トークン・URL・本文は出しません）。
 - **この版では順番待ちは減りません**。20件で満杯になり、以後は1周回につき1件の満杯の知らせが出ます。試験のあとに空にするには、サーバーを止めてから `dataDir/discord-intake.json` を消します（次の起動は「初めて読む」扱いで、過去の投稿は受けません）。
 - ボットに `MESSAGE_CONTENT` の特権インテントが無いと、投稿の本文が空で返り、保存する文字数が0になります（Discord の公式資料）。
 - 設計: `docs/handoff/discord-pdca/design.md` §4-1、指示書: `docs/handoff/discord-pdca/bin2a-card.md`。
+
+## 件の役割 discord-case（便2b-3a、v0.47.2）
+
+Discord の不具合の件を調べる Claude のセッション用の役割です。**この版では本物のセッションを開く試験をしていません**（便2b-3b）。受け口からの自動の起動もまだありません（便2b-4）。画面の新規作成から手で開けます。
+
+- 件ごとに、本店（`salesanchorRoot`）から切り離した丸ごとの写し（clone）を `~/worktrees/discord-cases/<セッション id>` に作ります。枝は `release/discord-case-<id の先頭8字>`、基準は本店の `origin/main` です。作れない・形が崩れているときは開きません。
+- Claude は `--restricted` で開き、PO のユーザー設定と Sales Anchor のプロジェクトの設定（フックを含む）を読みません。Read・Edit・Write などの道具は、件の写しと報告の置き場（`/tmp/CC報告ファイル/discord-case/<id>`）と件ごとの一時の置き場の外へは書けず、秘密の置き場やホームを読めません。外への通信は GitHub・Sales Anchor の API などに絞ります。
+- 件ごとの設定（権限・囲い・見張りのフック）は `dataDir/cases/<id>/`、gh の名義は `dataDir/case-gh/<id>/` に置きます。それが無い・囲いの実行ファイルが使えないときは、開かずに HTTP 503（`sandbox unavailable`）を返します。
+- 定期実行・予約には選べません。終わった件の写しの片付けは便2b-4 です。
 
 ## 設計メモ
 

@@ -131,6 +131,32 @@ describe("checkGitLink", () => {
   });
 });
 
+describe("checkGitLink: link files and the worktree .git", () => {
+  it("fails when G/commondir is a symlink to a file that names the main .git (L-2)", async () => {
+    const { dir, G } = fresh();
+    const real = path.join(tmp, `commondir-real-${n++}`);
+    writeFileSync(real, `${path.join(main, ".git")}\n`);
+    rmSync(path.join(G, "commondir"));
+    symlinkSync(real, path.join(G, "commondir"));
+    expect(await checkGitLink(dir, main)).toContain("commondir");
+  });
+
+  it("fails when G/gitdir is a symlink to a file that names the worktree .git (L-e)", async () => {
+    const { dir, G } = fresh();
+    const real = path.join(tmp, `gitdir-real-${n++}`);
+    writeFileSync(real, `${path.join(dir, ".git")}\n`);
+    rmSync(path.join(G, "gitdir"));
+    symlinkSync(real, path.join(G, "gitdir"));
+    expect(await checkGitLink(dir, main)).toContain("gitdir");
+  });
+
+  it("fails when the worktree .git has no real file behind it (L-1)", async () => {
+    const { dir } = fresh();
+    rmSync(path.join(dir, ".git"));
+    expect(await checkGitLink(dir, main)).not.toBeNull();
+  });
+});
+
 describe("safeGitArgs", () => {
   it("puts the config overrides before -C and keeps the given args", () => {
     expect(safeGitArgs("/x", ["rev-parse", "HEAD"])).toEqual(["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-C", "/x", "rev-parse", "HEAD"]);

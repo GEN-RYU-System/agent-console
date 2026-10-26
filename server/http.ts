@@ -25,6 +25,7 @@ import { handleUploadFiles, handleUploads } from "./uploads-routes.ts";
 import type { UploadStore } from "./uploads.ts";
 import { listResumeTargets, resolveResumeTarget } from "./resume-targets.ts";
 import type { QuickPromptStore } from "./quick-prompts.ts";
+import { CaseSandboxUnavailableError } from "./case-sandbox.ts";
 import { SessionConflictError, SessionInputError, SessionNotFoundError, isClaudeSessionId, validateName, type SessionManager } from "./sessions.ts";
 import { WorktreeError } from "./worktree.ts";
 import { RoutineApprovals } from "./routine-approvals.ts";
@@ -665,6 +666,11 @@ export function createRequestHandler(deps: AppDeps) {
       }
       if (err instanceof SessionNotFoundError) {
         sendJson(res, 404, { error: err.message });
+        return;
+      }
+      if (err instanceof CaseSandboxUnavailableError) {
+        console.error("case sandbox unavailable:", err.message);
+        sendJson(res, 503, { error: "sandbox unavailable" });
         return;
       }
       if (err instanceof SessionConflictError) {

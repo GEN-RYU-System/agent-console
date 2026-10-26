@@ -2,6 +2,7 @@
 
 版を出すたびに 1 行追記する（版の正本は git タグ `vX.Y.Z`）。
 
+- 0.47.2 件の役割 discord-case を足した（件ごとに本店から切り離した写しと、囲い・Claude の道具の見張りの設定を作り、`--restricted` で開く。作れないときは 503 で開かない）。秘密の登録の台本を、端末で打つ読み取りに変更。git の繋がりの確かめの直し（リンクの commondir・gitdir・本店の確かめを先に）。戻し方 `bash scripts/ac-update.sh v0.47.1`
 - 0.47.1 同梱の設定の同時に開ける窓の数を、いったん 16 にした（窓が 11 本開いた状態で 6 の版を入れると、更新のときに 5 本が開き直されないため）。6 に下げるのは窓が減ってから。ほかの動きは 0.47.0 と同じ。戻し方は `bash scripts/ac-update.sh v0.47.0`（窓が 6 本以下のとき）または `v0.46.3`。設計は docs/handoff/window-limit/design.md §10 便1b。
 - 0.47.0 同時に開ける窓の数を設定 `maxSessions`（正の整数・既定16）で決められるようにし、この Mac の設定は 6 にした。一覧の見出しに『開いている N / M』を出す。新しい窓の役割から Sonnet 実装を外した（Sonnet の作業はクラウドで行う）。戻し方は `bash scripts/ac-update.sh v0.46.3`。設計は docs/handoff/window-limit/design.md §4-1 便1。
 - 0.46.3 作業場所の git の繋がり・本店の繋がりが合わないときは、差分の表示・PR の状態・作業場所の一覧と作成・台帳の照会の git と台本を動かさない。作業場所の作成の台本を道具の写しから動かす（新しい任意の設定 `salesanchorToolsRoot`、既定 `~/.salesanchor-tools`）。試験の直しを含む。入れる前に Sales Anchor の対応の PR のマージと道具の写しの取り直しが要る。戻し方は `bash scripts/ac-update.sh v0.46.2`。設計は docs/handoff/discord-pdca/design.md §4-5・ADR-1039 便2b-2。

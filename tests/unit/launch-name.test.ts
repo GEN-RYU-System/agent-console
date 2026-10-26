@@ -4,7 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { Hub } from "../../server/hub.ts";
-import { launchAndSend } from "../../server/launch.ts";
+import type { Config } from "../../server/config.ts";
+import { launchAndSend, validateLaunchTarget } from "../../server/launch.ts";
+import { SessionInputError } from "../../server/sessions.ts";
 
 /** K6: 新しく開いたセッションへの書き込み順は「/rename <名前>\r → 指示の貼り付け → Enter」。restore には manualInitialName: true */
 const TIMING = { pollMs: 5, timeoutMs: 80, namePollMs: 5, nameTimeoutMs: 20 };
@@ -62,5 +64,23 @@ describe("K6 launchAndSend writes /rename first", () => {
     expect(warn).toHaveBeenCalled();
     t.hub.sendName = orig;
     warn.mockRestore();
+  });
+});
+
+describe("validateLaunchTarget: the case role", () => {
+  const cfgOf = (root: string) => ({
+    salesanchorRoot: root,
+    roles: [
+      { id: "opus-designer", labelKey: "role.opusDesigner", command: ["echo"], needsWorktree: false },
+      { id: "discord-case", labelKey: "role.discordCase", command: ["echo"], needsWorktree: false, reservable: false, caseSandbox: true },
+    ],
+  }) as unknown as Config;
+
+  it("refuses a caseSandbox role for scheduled launches, and still accepts opus-designer", async () => {
+    const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "ac-launch-case-")));
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    await expect(validateLaunchTarget(cfgOf(root), { roleId: "discord-case" }, "routine")).rejects.toThrow(SessionInputError);
+    await expect(validateLaunchTarget(cfgOf(root), { roleId: "discord-case" }, "routine")).rejects.toThrow("role cannot be scheduled");
+    await expect(validateLaunchTarget(cfgOf(root), { roleId: "opus-designer" }, "routine")).resolves.toEqual({ cwd: root });
   });
 });
