@@ -33,7 +33,7 @@
   - `server/ledger.ts` の `lookupBranch`: 台本の前で `checkMainLink(root)`。`null` でなければ `{ kind: "error", message: \`main link check failed: ${reason}\` }` を返す
 - 作業場所の作成の台本を道具の写しから動かす:
   - `server/config.ts`: 任意の設定 `salesanchorToolsRoot` を足す。`parseDataDir` と同じ形の関数 `parseToolsRoot`（`undefined` なら `expandHome("~/.salesanchor-tools")`、空でない文字列でなければ `config: salesanchorToolsRoot must be a non-empty string` で起動の誤り、文字列なら `expandHome`）。型（:64 付近）と返す形（:286-300）に足す。`STRING_KEYS` には入れない（任意のため）
-  - `server/worktree.ts`: `createWorktree(root: string, scriptRoot: string, script: string, branch: string)` にする。台本は `path.join(scriptRoot, script)`。`cwd` は今のまま `root`（作業の場所は本店）。台本を動かす前に `stat(path.join(scriptRoot, script))` が普通のファイルであることを確かめ、でなければ `WorktreeError(\`new-worktree script missing: ${path.join(scriptRoot, script)}\`)`
+  - `server/worktree.ts`: `createWorktree(root: string, scriptRoot: string, script: string, branch: string)` にする。台本は `path.join(scriptRoot, script)`。`cwd` は今のまま `root`（作業の場所は本店）。台本を動かす前に `stat(path.join(scriptRoot, script))` が普通のファイルであることを確かめ、でなければ `WorktreeError(\`new-worktree script missing: ${path.join(scriptRoot, script)}\`)`。台本の後の :47 の `git -C root worktree list --porcelain` は、`listWorktreeEntries(root)`（中で `checkMainLink` を通る）に置き換える（確かめと使う時のすき間を小さくする。PR #79 の再審査 L-7）。失敗は今と同じく `WorktreeError` にする（`listWorktreeEntries` の例外の文を `WorktreeError` の文に入れる）。返す場所の探し方（一覧から branch が一致する行の path）は変えない
   - `server/sessions.ts:279`: `createWorktree(this.config.salesanchorRoot, this.config.salesanchorToolsRoot, this.config.newWorktreeScript, branch)`
   - 台帳の照会の台本（`ledgerLookupScript`）は今のまま本店から動かす（この便では動かす場所を変えない。中は `rev-parse` だけ。設計 §4-5 (b') の確かめで守る）
 - ファイルの先頭の説明に1行ずつ足す（`server/git-safe.ts`: 囲いの外で git を動かす前に繋がりを確かめる。設計 §4-5。`server/worktree.ts`: 台本は道具の写しから動かす。設計 §4-5 (c)）
@@ -52,7 +52,7 @@
 5. `server/ledger.ts`: `lookupBranch` の確かめ
 6. `server/config.ts`: `salesanchorToolsRoot`
 7. `server/sessions.ts:279`: 呼び方
-8. `config.example.json` など設定の見本があれば `salesanchorToolsRoot` を書き足す（`grep -rln "newWorktreeScript" --include=*.json --include=*.md .` で見つけたもの。README の設定の表があればそこにも1行）
+8. 設定の見本や設定の表があれば `salesanchorToolsRoot` を書き足す。探し方は `git grep -ln newWorktreeScript -- '*.json' '*.md' ':!docs/handoff'`（`config.example.json` はリポジトリに無い。PR #79 の再審査 L-6）。見つかった README の設定の表などに1行
 9. 版を 0.46.3 に（`package.json`・`package-lock.json` の2か所・`extension/manifest.json`）。`docs/CHANGELOG.md` に1行（作業場所の git の繋がり・本店の繋がりが合わないときは git と台本を動かさない・作業場所の作成の台本を道具の写しから動かす（新しい任意の設定 `salesanchorToolsRoot`）・試験の直し・入れる前に Sales Anchor の対応の PR と道具の写しの取り直しが要る・戻し方 `bash scripts/ac-update.sh v0.46.2`）
 
 ## 試験
@@ -63,15 +63,15 @@
   - worktree の `.git` がシンボリックリンク／ディレクトリ／2行ある／`gitdir:` で始まらない／無い → 落ちる
   - `.git` が本店の `.git/worktrees` の外の gitdir（中身を写した偽の置き場）を指す → 落ちる
   - `commondir` が偽の置き場を指す → 落ちる。`gitdir` が別の場所を指す → 落ちる。`G/config`・`G/config.worktree` がある → 落ちる
-- `tests/unit/diff.integration.test.ts` に describe を1つ足す（既存の harness の `root` を本店にする）。偽の置き場の作り方は3つの試験で共通の関数にする: `root/.git` の中身を写し `worktrees` を除いたもの。その `config` に `[filter "evil"]` と `clean = touch <印>; cat`、`info/attributes` に `*.txt filter=evil` を書く:
-  - 下準備: `root` に追跡するファイル `f.txt`（中身 `1\n`）を commit し、`refs/remotes/origin/main` をその commit に向ける（harness に既にあれば使う）
-  - L-common: `git(root, "worktree", "add", "-q", "-b", "release/link-common", <dir>)`。`<dir>/f.txt` を `2\n` にする。worktree の `commondir` を偽の置き場の絶対パスに書き換える
+- `tests/unit/diff.integration.test.ts` に describe を1つ足す。本店はこのファイルの共通の `root`（:37-67 の `beforeAll` で作るもの）。**共通の `root` に新しい commit を足さない・`origin/main` を動かさない**（ほかの describe の基準がずれるため。PR #79 の再審査 M-3）。偽の置き場の作り方は3つの試験で共通の関数にする: `root/.git` の中身を写し `worktrees` を除いたもの。その `config` に `[filter "evil"]` と `clean = touch <印>; cat`、`info/attributes` に `*.txt filter=evil` を書く。この describe はファイルの末尾に置き、各 it は `try`/`finally` で、仕込んだ `commondir`・worktree・枝を必ず戻す:
+  - 変える1行: 追跡している `a.txt`（:47 で `a1\na2\na3\n` を commit 済み）を使う。worktree では `a1\nA2\na3\n` に同じ長さで書き換える。本店では :58 の未 commit の書き換え（`a2`→`A2`。同じ長さ）が既にあるので、新しく変えない
+  - L-common: `git(root, "worktree", "add", "-q", "-b", "release/link-common", <dir>)`。`<dir>/a.txt` を上のとおり書き換える。worktree の `commondir` を偽の置き場の絶対パスに書き換える
     - 対照: その worktree で `git -c core.fsmonitor=false -c core.hooksPath=/dev/null diff --merge-base origin/main --no-renames --no-ext-diff --no-textconv --ignore-submodules=all --numstat -z` を `execFileSync` で1回動かし、**印ができること**を `expect` で確かめてから印を消す
-    - `h.sessions.restore({ …, cwd: <dir> })` のセッションで、`/api/sessions/<id>/diff` と `/diff/file?path=f.txt` が 409、本文に `git link check failed` を含み、印ができない
-    - 試験の終わりに `commondir` を元に戻し、worktree を `git worktree remove --force` で消す
+    - `h.sessions.restore({ …, cwd: <dir> })` のセッションで、`/api/sessions/<id>/diff` と `/diff/file?path=a.txt` が 409、本文に `git link check failed` を含み、印ができない
+    - 試験の終わり（`finally`）に `commondir` を元に戻し、worktree を `git worktree remove --force` で消し、枝を `git branch -D` で消す
   - L-dotgit: 同じく worktree の `.git` ファイルを偽の gitdir（`root/.git/worktrees/<名>` の中身を写し、`commondir` を偽の置き場に向けたもの）に向ける。同じ2つの入口が 409、本文に `git link check failed`、印ができない（この回の対照は取らない。下調べで印ができなかったため）
-  - L-main: 本店の `root/.git/commondir` を偽の置き場の絶対パスにして（本店の `root/f.txt` も `2\n` にする）、本店そのものを `cwd` にしたセッションの `/api/sessions/<id>/diff` が 409 または 500 で、印ができない。対照: 同じ状態で本店で上の上書き付きの `git diff` を1回動かし**印ができること**を確かめてから印を消す。試験の終わりに `commondir` を消し、`f.txt` を戻す
-- `tests/unit/worktree.test.ts` に足す:
+  - L-main: 本店の `root/.git/commondir` を偽の置き場の絶対パスにして（本店の `a.txt` は :58 の書き換えのまま）、本店そのものを `cwd` にしたセッションの `/api/sessions/<id>/diff` が 409 または 500 で、印ができない。対照: 同じ状態で本店で上の上書き付きの `git diff` を1回動かし**印ができること**を確かめてから印を消す。試験の終わり（`finally`）に `commondir` を消す（本店のファイルは変えていないので戻すものは無い）
+- `tests/unit/worktree.test.ts` に足す（今のこのファイルには純粋な試験しか無く、`git init` した本店を作る関数が無い。このファイルの中に、`os.tmpdir()` の下で `git init -q -b main`・1回 commit した本店を作る小さな関数を作る。PR #79 の再審査 L-10）:
   - `createWorktree(root, scriptRoot, script, branch)` が `scriptRoot` の台本を `cwd: root` で動かす（台本は `pwd` と `$0` を印のファイルに書き、`git -C "$PWD" worktree add` で worktree を作る。印の中身で cwd が `root`、`$0` が `scriptRoot` の下であることを確かめる）。`root/scripts/` に同じ名前の別の台本を置き、それが動かないこと（そちらの印ができない）
   - `scriptRoot` に台本が無い → `WorktreeError`（`new-worktree script missing`）、台本の印ができない
   - 本店の `.git/commondir` がある → `WorktreeError`（`main link check failed`）、台本の印ができない
@@ -81,7 +81,7 @@
 - `tests/unit/pr.integration.test.ts`: :504-524 の試験を置き換える。`newPlace` で作った worktree の追跡しているファイルを同じ長さで変え、`commondir` を上と同じ偽の置き場に向け、`getPr`・`refreshPr` が 409、`calls()` が `[]`、印ができない。対照として、同じ worktree で上の上書き付きの `git diff` を動かすと印ができることを `expect` で確かめる（PR #79 の審査 L-1。409 と `calls()` だけに頼らない）。試験の終わりに戻す
 - LOW の直し（`tests/unit/diff.integration.test.ts`）:
   - D-fsm: :360 の `console.warn` をやめ、`expect(controlFired).toBe(true)` にする
-  - D-sub: D-fsm に頼らない。手順は次のとおり（PR #79 の審査 L-2）: ①`mkdtempSync` で新しいリポジトリ R を作り `git init -q -b main`、`f.txt`（`1\n`）を commit ②`git update-ref refs/remotes/origin/main HEAD` ③R の中に入れ子のリポジトリ `sub/`（`git init -q`、1回 commit）を作り、R で `git add sub` して commit ④`sub/.git/config` に `core.fsmonitor`（印を作る命令）を書く ⑤R の `f.txt` を `2\n` にし、`sub` の中にも未 commit の変更を作る ⑥R を `cwd` にしたセッションの差分の一覧が `f.txt` だけで、印ができない。:377 の `--unset` の行は消す
+  - D-sub: D-fsm に頼らない。手順は次のとおり（PR #79 の審査 L-2）: ①`mkdtempSync` で新しいリポジトリ R を作り `git init -q -b main`、`f.txt`（`1\n`）を commit ②`git update-ref refs/remotes/origin/main HEAD` ③R の中に入れ子のリポジトリ `sub/`（`git init -q`、1回 commit）を作り、R で `git add sub` して commit ④`sub/.git/config` に `core.fsmonitor`（印を作る命令）を書く ⑤R の `f.txt` を `2\n` にし、`sub` の中にも未 commit の変更を作る ⑥`listChanges(R, "origin/main")` を直接呼び（今の D-fsm・D-sub と同じ呼び方。R は本店の外なので、セッションを通すと :28 の照合で 409 になる。PR #79 の再審査 M-2'）、一覧が `f.txt` だけで、印ができない。:377 の `--unset` の行は消す
 
 ## 完了の確認（生出力を /tmp/CC報告ファイル/discord-pdca-bin2/55-impl2b2/ に保存）
 1. `npm run typecheck`  2. `npm run lint`  3. `npx vitest run tests/unit/git-safe.test.ts tests/unit/diff.integration.test.ts tests/unit/pr.integration.test.ts tests/unit/worktree.test.ts tests/unit/resume-targets.test.ts tests/unit/ledger.test.ts tests/unit/config.test.ts`  4. `npm test`
@@ -93,6 +93,8 @@
 
 ## 想定分岐
 - L-common・L-main の対照で印ができない（その git では偽の置き場の filter が読まれない）→ 試験を作らずに止まって、生出力の置き場を報告する（下調べと食い違うため）
+- D-fsm の対照（上書きなしの `diff` と `status`）で印ができず `expect(controlFired).toBe(true)` が落ちる → 対照の作り（`f.txt` の書き換えが同じ長さか・`core.fsmonitor` の台本が実行できるか）を1回見直す。それでも出なければ、緩めずに止まって生出力を報告する
+- 本店の確かめが落ちたとき、PR の見回り（`server/hub.ts:665-690`）は見回りのたびに誤りを1行出し、作業場所の一覧の失敗を握って空を返す所（`server/resume-targets.ts:63,93`・`server/restore.ts:121`・`server/launch.ts:101`）は理由なしの「worktree 無し」になる。どちらも git は動かないので、この便では変えない（PR #79 の再審査 L-8・L-9。PR 本文に「本店が仕込まれたときの表示の改善は別の便の候補」と書く）
 - 偽の置き場に向けた worktree が `git worktree list` に載らず、確かめの前に今の照合（:28）で 409 になる → 409 になること自体は合格。ただし PR 本文に「今の照合で止まった」と書き、単体の試験で同じ形が落ちることを確かめる
 - L-main で本店の `commondir` を仕込んだ後、`git worktree list` が別の一覧を返して照合の前に 500 以外の形になる → 印ができず、git を動かす入口が 2xx を返さないことを合格にし、出た応答コードを PR 本文に書く
 - `realpath` が macOS の `/private` 付きと無しで食い違う → C と比べる側をどちらも `realpath` にそろえる（文字列の前後の手直しはしない）。それでも合わなければ止まって報告
