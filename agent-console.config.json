@@ -29,6 +29,7 @@
   "uploadMaxBytes": 5242880,
   "uploadMaxKeep": 100,
   "accountLoginCommand": ["/bin/zsh", "-ic", "claude auth logout; claude auth login"],
+  "maxSessions": 6,
   "roles": [
     {
       "id": "opus-designer",
@@ -38,15 +39,6 @@
       "resumeScope": "main",
       "resumeCommand": ["/bin/zsh", "-ic", "ccopusgo --resume"],
       "restoreCommand": ["/bin/zsh", "-ic", "ccopusgo --resume \"$AC_RESUME_ID\""]
-    },
-    {
-      "id": "sonnet-impl",
-      "labelKey": "role.sonnetImpl",
-      "command": ["/bin/zsh", "-ic", "claude --model sonnet"],
-      "needsWorktree": true,
-      "resumeScope": "worktree",
-      "resumeCommand": ["/bin/zsh", "-ic", "claude --model sonnet --resume"],
-      "restoreCommand": ["/bin/zsh", "-ic", "claude --model sonnet --resume \"$AC_RESUME_ID\""]
     },
     { "id": "shell", "labelKey": "role.shell", "command": ["/bin/zsh", "-i"], "needsWorktree": false }
   ]

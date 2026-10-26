@@ -89,6 +89,8 @@ export interface HarnessOptions {
   relayTiming?: Partial<RelayTiming>;
   ledgerScript?: string;
   maxSessions?: number;
+  /** 設定ファイル側の maxSessions（options の maxSessions とは別の経路） */
+  configMaxSessions?: number;
   /** claude 役のスタブ（`agents --json` の出力を返す）。既定は存在しないパス */
   claudeBin?: string;
   /** 区切りの通知の送信先（既定は送らない） */
@@ -208,6 +210,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     terminalRenderer: "dom",
     uploadMaxBytes: options.uploadMaxBytes ?? DEFAULT_UPLOAD_MAX_BYTES,
     uploadMaxKeep: options.uploadMaxKeep ?? DEFAULT_UPLOAD_MAX_KEEP,
+    ...(options.configMaxSessions !== undefined ? { maxSessions: options.configMaxSessions } : {}),
     routineManagerRoles: options.routineManagerRoles ?? ["echo"],
     reserveRoles: options.reserveRoles ?? ["echo"],
     ...(options.accountLoginCommand !== undefined ? { accountLoginCommand: options.accountLoginCommand } : {}),

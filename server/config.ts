@@ -32,6 +32,8 @@ export interface NotifyConfig {
   osascriptBin: string;
 }
 
+/** 同時に開ける窓の数の既定 */
+export const DEFAULT_MAX_SESSIONS = 16;
 export const DEFAULT_OSASCRIPT_BIN = "/usr/bin/osascript";
 export const DEFAULT_RESTORE_STAGGER_MS = 3000;
 export const DEFAULT_DATA_DIR = "~/Library/Application Support/agent-console";
@@ -61,6 +63,8 @@ const DIFF_BASE_REF_PATTERN = /^[A-Za-z0-9_./][A-Za-z0-9_./-]*$/;
 
 export interface Config {
   port: number;
+  /** 同時に開ける窓の数（正の整数）。無ければ DEFAULT_MAX_SESSIONS */
+  maxSessions?: number;
   salesanchorRoot: string;
   newWorktreeScript: string;
   /** 作業場所の作成の台本を動かす道具の写しの場所（`~` 可）。無ければ ~/.salesanchor-tools */
@@ -214,6 +218,12 @@ function parsePositive(raw: unknown, key: string, fallback: number): number {
   return raw;
 }
 
+function parsePositiveInt(raw: unknown, key: string, fallback: number): number {
+  if (raw === undefined) return fallback;
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw <= 0) throw new Error(`config: ${key} must be a positive integer`);
+  return raw;
+}
+
 function parseSmoothScroll(raw: unknown): number {
   if (raw === undefined) return DEFAULT_TERMINAL_SMOOTH_SCROLL_MS;
   if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) throw new Error("config: terminalSmoothScrollMs must be a non-negative number");
@@ -299,6 +309,7 @@ export function parseConfig(raw: unknown): Config {
     ledgerLookupScript: o.ledgerLookupScript as string,
     ledgerDir: o.ledgerDir as string,
     claudeBin: o.claudeBin as string,
+    maxSessions: parsePositiveInt(o.maxSessions, "maxSessions", DEFAULT_MAX_SESSIONS),
     agentsPollMs: o.agentsPollMs as number,
     ledgerPollMs: o.ledgerPollMs as number,
     ringBufferBytes: o.ringBufferBytes as number,

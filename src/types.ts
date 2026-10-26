@@ -66,6 +66,10 @@ export interface ConsoleState {
   terminalNotices?: TerminalNotice[];
   /** 引き継ぎの進行。無ければキー自体が無い */
   relays?: RelayView[];
+  /** 同時に開ける窓の数の上限 */
+  maxSessions: number;
+  /** 今開いている窓の数 */
+  openCount: number;
   /** まだ Claude に送っていない部品の数（「部品」タブの件数） */
   picksUnsent: number;
   /** セッションの様子の記録の版（進んだら、右の欄の「このセッション」を取り直す） */

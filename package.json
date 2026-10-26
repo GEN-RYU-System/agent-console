@@ -1,6 +1,6 @@
 {
   "name": "agent-console",
-  "version": "0.46.3",
+  "version": "0.47.0",
   "private": true,
   "type": "module",
   "engines": { "node": ">=24" },

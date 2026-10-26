@@ -75,6 +75,10 @@ export interface Snapshot {
   terminalNotices?: TerminalNotice[];
   /** 引き継ぎの進行（メモリだけ）。空のときは項目ごと無い */
   relays?: RelayView[];
+  /** 同時に開ける窓の数の上限 */
+  maxSessions: number;
+  /** 今開いている窓の数 */
+  openCount: number;
   /** 部品タブの件数: まだ Claude に送っていない部品の数 */
   picksUnsent: number;
   /** セッションの様子の記録の版。進んだら、画面は右の欄を取り直す */
@@ -732,7 +736,7 @@ export class Hub {
     const previous = this.lastNames;
     this.lastNames = new Map(views.map((v) => [v.id, v.name]));
     if (views.some((v) => previous.has(v.id) && previous.get(v.id) !== v.name)) for (const l of this.nameListeners) l();
-    return { sessions: views, agentsAvailable: this.agents !== null, restoreNotices: this.restoreNotices, ...terminalNoticesField(this.sessions.terminalNotices()), picksUnsent: this.picksUnsent, activityRev: this.activityRev + this.chatRev, ...(this.relays.length > 0 ? { relays: this.relays } : {}) };
+    return { sessions: views, agentsAvailable: this.agents !== null, restoreNotices: this.restoreNotices, ...terminalNoticesField(this.sessions.terminalNotices()), maxSessions: this.sessions.maxSessionCount(), openCount: this.sessions.openCount(), picksUnsent: this.picksUnsent, activityRev: this.activityRev + this.chatRev, ...(this.relays.length > 0 ? { relays: this.relays } : {}) };
   }
 
   subscribe(ws: WebSocket): void {

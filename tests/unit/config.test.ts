@@ -89,17 +89,15 @@ describe("parseConfig", () => {
     expect(() => parseConfig({ ...valid, roles: [valid.roles[0], valid.roles[0]] })).toThrow(/duplicate/);
   });
 
-  it("accepts resumeScope with resumeCommand, and the shipped config pairs main with Opus and worktree with Sonnet", () => {
+  it("accepts resumeScope with resumeCommand, and the shipped config pairs main with Opus only", () => {
     const role = { ...valid.roles[0], resumeCommand: ["/bin/zsh", "-ic", "x"], resumeScope: "main" };
     expect(parseConfig({ ...valid, roles: [role] }).roles[0].resumeScope).toBe("main");
     const shipped = parseConfig(JSON.parse(readFileSync("agent-console.config.json", "utf8")));
     expect(shipped.roles.filter((r) => r.resumeScope !== undefined).map((r) => [r.id, r.resumeScope])).toEqual([
       ["opus-designer", "main"],
-      ["sonnet-impl", "worktree"],
     ]);
     // K2/K3: 起動する命令は config 固定。id なしの --resume で Claude 公式の選択リストを開く（AC_RESUME_ID は使わない）
     expect(shipped.roles.find((r) => r.id === "opus-designer")?.resumeCommand).toEqual(["/bin/zsh", "-ic", "ccopusgo --resume"]);
-    expect(shipped.roles.find((r) => r.id === "sonnet-impl")?.resumeCommand).toEqual(["/bin/zsh", "-ic", "claude --model sonnet --resume"]);
   });
 
   it("accepts restoreCommand, and rejects an empty or non-string one", () => {
@@ -118,11 +116,11 @@ describe("parseConfig", () => {
     expect(() => parseConfig({ ...valid, restoreStaggerMs: "3000" })).toThrow(/restoreStaggerMs/);
   });
 
-  it("the shipped config passes the id as AC_RESUME_ID (quoted, never concatenated) for Opus and Sonnet, none for the shell, with a 3000 ms interval", () => {
+  it("the shipped config passes the id as AC_RESUME_ID (quoted, never concatenated) for Opus, none for the shell, with a 3000 ms interval", () => {
     const shipped = parseConfig(JSON.parse(readFileSync("agent-console.config.json", "utf8")));
     expect(shipped.restoreStaggerMs).toBe(3000);
     expect(shipped.roles.find((r) => r.id === "opus-designer")?.restoreCommand).toEqual(["/bin/zsh", "-ic", 'ccopusgo --resume "$AC_RESUME_ID"']);
-    expect(shipped.roles.find((r) => r.id === "sonnet-impl")?.restoreCommand).toEqual(["/bin/zsh", "-ic", 'claude --model sonnet --resume "$AC_RESUME_ID"']);
+    expect(shipped.roles.find((r) => r.id === "sonnet-impl")).toBeUndefined();
     expect(shipped.roles.find((r) => r.id === "shell")?.restoreCommand).toBeUndefined();
   });
 
@@ -297,5 +295,22 @@ describe("parseConfig: terminal and upload settings (v0.7.0)", () => {
 
   it("the shipped config says terminalRenderer webgl explicitly", () => {
     expect(JSON.parse(readFileSync("agent-console.config.json", "utf8")).terminalRenderer).toBe("webgl");
+  });
+});
+
+describe("parseConfig: maxSessions (window-limit 便1)", () => {
+  it("K1: defaults to 16 when omitted, and takes a positive integer", () => {
+    expect(parseConfig(valid).maxSessions).toBe(16);
+    expect(parseConfig({ ...valid, maxSessions: 6 }).maxSessions).toBe(6);
+  });
+  it("K1: refuses 2.5, 0, -1 and a string", () => {
+    for (const bad of [2.5, 0, -1, "6"]) {
+      expect(() => parseConfig({ ...valid, maxSessions: bad })).toThrow("config: maxSessions must be a positive integer");
+    }
+  });
+  it("K10: the shipped config has no sonnet-impl role and maxSessions 6", () => {
+    const raw = JSON.parse(readFileSync("agent-console.config.json", "utf8")) as { roles: { id: string }[]; maxSessions?: number };
+    expect(raw.roles.map((r) => r.id)).not.toContain("sonnet-impl");
+    expect(raw.maxSessions).toBe(6);
   });
 });

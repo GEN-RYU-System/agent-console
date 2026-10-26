@@ -2,6 +2,7 @@
   "ac": {
     "title": "Agent Console",
     "sessions": "セッション",
+    "openCount": "開いている {{count}} / {{max}}",
     "newSession": "新しいセッション",
     "noSessions": "セッションがありません",
     "noSessionsHint": "「新しいセッション」から起動してください",

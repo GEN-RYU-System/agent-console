@@ -9,6 +9,8 @@ const state: ConsoleState = {
   sessions: [{ id: "s1", name: "dead", roleId: "shell", branch: null, cwd: "/", state: "stopped", createdAt: 1, unread: 0, hasClaude: false, canInput: false, canChat: false }],
   agentsAvailable: true,
   restoreNotices: [],
+  maxSessions: 16,
+  openCount: 1,
   picksUnsent: 3,
   activityRev: 0,
   roles: [{ id: "shell", labelKey: "role.shell", needsWorktree: false }],
@@ -730,5 +732,20 @@ describe("ConsolePage after the server restarts", () => {
     });
     await waitFor(() => expect(fetchState).toHaveBeenCalledTimes(2));
     expect(screen.queryByTestId("new-version")).toBeNull();
+  });
+});
+
+describe("ConsolePage open window count (便1 K2)", () => {
+  it("shows 開いている 5 / 6 with the neutral badge below the cap", async () => {
+    fetchState.mockResolvedValue({ ...state, openCount: 5, maxSessions: 6 });
+    render(<ConsolePage />);
+    const badge = await screen.findByText("開いている 5 / 6");
+    expect(badge.className).toContain("comp-badge--neutral");
+  });
+  it("switches to the warning badge when the cap is reached", async () => {
+    fetchState.mockResolvedValue({ ...state, openCount: 6, maxSessions: 6 });
+    render(<ConsolePage />);
+    const badge = await screen.findByText("開いている 6 / 6");
+    expect(badge.className).toContain("comp-badge--warning");
   });
 });
