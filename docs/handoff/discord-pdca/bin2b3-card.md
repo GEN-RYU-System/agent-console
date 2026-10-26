@@ -1,6 +1,6 @@
 # 便2b-3a 件のセッションの囲いの設定・Claude の道具の見張り・役割 discord-case と起動関数・秘密の登録の入力の直し（v0.46.4）作る係への指示書
 
-- 設計: `docs/handoff/discord-pdca/design.md` 第16版 §4-5（「Claude の道具の囲い」・「外への通信を塞ぐ」・(a') の書ける場所・「読み取りの拒否の書き方」・起動コマンド・gh の名義・使えない状態の扱い）・§8 便2b-3a・§9 K17・§15。ADR-1039（Sales Anchor・Accepted）
+- 設計: `docs/handoff/discord-pdca/design.md` 第17版 §4-5（「Claude の道具の囲い」・「外への通信を塞ぐ」・(a') の書ける場所・「読み取りの拒否の書き方」・起動コマンド・gh の名義・使えない状態の扱い）・§8 便2b-3a・§9 K17・§15。ADR-1039（Sales Anchor・Accepted）
 - 目的: ①件のセッション（役割 `discord-case`）を開くとき、サーバーが件ごとの設定（権限・囲い・見張りのフック）を作り、それが無ければ開かない。②件のセッションは `--restricted` で開き、PO のユーザー設定と Sales Anchor のプロジェクトの設定（フックを含む）を読ませない。Claude の Read・Edit・Write などの道具も、件の worktree と報告の置き場の外へは書けず、外を読めない。③秘密の登録の台本（`scripts/ac-discord-secret.sh`）を、貼り付けが効かなかった入力画面から、端末で打つ読み取りに替える。④PR #80 の審査の LOW（L-1・L-2・L-4・L-5）を直す
 - この便に入れないもの: 本物のセッションを開く試験（K11・K13・K17。便2b-3b。お金が掛かる）、`discord-measure`（便3）、受け口からの起動・順番待ちの消化・`launch_failed` の出来事・指示書 `S:docs/ai-agents/ops-incident-agent.md`（便2b-4）、終わった件の設定の片付け（便2b-4。作成の途中の失敗の片付けはこの便）。今ある役割（opus-designer・sonnet-impl・shell）の振る舞いは変えない
 - 入れる順番: 作る係は PR を作るところまで。審査・マージ・タグ・入れるのは設計者
@@ -16,22 +16,24 @@
   - `tests/unit/pr.integration.test.ts:505-531`（PR #80 で fsmonitor の試験を commondir の試験に置き換えた。fsmonitor の試験は v0.46.2 の `git show f4e14c8:tests/unit/pr.integration.test.ts` の :504-524 にある）
   - `agent-console.config.json:32-52` の roles（opus-designer・sonnet-impl・shell）
   - ccopusgo の形（PO の `~/.claude/shell/ccopusgo.zsh`。写し raw-ccopusgo.txt）: 指示書2つの読めること・空でないことを確かめ、`"\n\n"` でつないで `--append-system-prompt` に渡す
-  - 公式資料（Context7 は月の上限で使えず、直接読んだ。/tmp/CC報告ファイル/discord-pdca-bin2/81-recon2b3/doc-* と 84-verify-review83/）: フックの `onFailure: "block"`（doc-hooks.md:902-945。v2.1.295 以降。手元 2.1.310）、止めるフックは許可の規則より先に効く（doc-permissions.txt:653）、Write・Edit・Read の入力の道は `file_path`（doc-hooks.md:1830-1858）、`--restricted`（doc-cli-reference.md:125。v2.1.248 以降。ユーザー・プロジェクト・ローカルの設定を読まず、管理の設定と `--settings` だけ。組み込みの道具を作業場所に閉じ込め、命令を動かす道具は `--tools` で名指ししないと外れる）、`--tools`（:138。MCP には効かないので `--disallowedTools "mcp__*"`。:87）、`permissions.blockReadsOutsideWorkingDirectories`（doc-settings-reference.md:1038-1075。v2.1.257 以降）、`sandbox.filesystem.allowRead`（:1473）
+  - 公式資料（Context7 は月の上限で使えず、直接読んだ。/tmp/CC報告ファイル/discord-pdca-bin2/81-recon2b3/doc-* と 84-verify-review83/）: フックの `onFailure: "block"`（doc-hooks.md:902-945。v2.1.295 以降。手元 2.1.310）、止めるフックは許可の規則より先に効く（doc-permissions.txt:653）、Write・Edit・Read の入力の道は `file_path`（doc-hooks.md:1830-1858）、`--restricted`（doc-cli-reference.md:125。v2.1.248 以降。ユーザー・プロジェクト・ローカルの設定を読まず、管理の設定と `--settings` だけ。組み込みの道具を作業場所に閉じ込め、命令を動かす道具は `--tools` で名指ししないと外れる）、`--tools`（:138。MCP には効かないので `--disallowedTools "mcp__*"`。:87）、`permissions.blockReadsOutsideWorkingDirectories`（doc-settings-reference.md:1038-1075。linked worktree の元の `.git` を読めて書ける形に開け直し、`/private/tmp` は塞がない＝84-verify-review83/facts2.txt:3・:5。だから使わない）、`sandbox.filesystem.allowRead`（:1473-1492。ホームを `denyRead` で塞いで開け直す公式の形。ぴったりの `denyRead` は広い `allowRead` の中でも塞がれたまま）、`--add-dir` の場所から読まれる `.claude/agents`・skills・プラグインの設定（doc-permissions:702-710、doc-sub-agents:170・:251）、囲いの中の命令の `$TMPDIR` は利用者ごとの一時の置き場（doc-sandboxing.md:245）
 
 ## 決めたこと
 - 道の記号（どれも realpath にそろえる）: M = 本店（`config.salesanchorRoot`）、W = 件の worktree、G = W の gitdir（W の `.git` の1行 `gitdir: <G>` を W 起点で解いた realpath）、D = `config.dataDir`、H = `os.homedir()`、R = `realpath("/tmp")` + `/CC報告ファイル/discord-case/<セッション id>`（`os.tmpdir()` ではない。macOS では `/private/tmp/...`）、GH = `D/case-gh/<セッション id>`
 - 新しいファイル `server/case-sandbox.ts`（純粋な関数と、ファイルを書く関数を分ける）:
-  - `export const CASE_DENY_WRITE = (p) => [...]`: `M/.git/hooks`・`M/.git/config`・`G/commondir`・`G/gitdir`・`G/config`・`G/config.worktree`・`W/.git`・`W/.claude`・`W/.mcp.json`・`D/cases`・`D/case-gh`・`D/hooks`。囲いの `filesystem.denyWrite` と権限の `Edit(//…)` の deny の両方をこの1つの配列から作る（正本は1つ）
-  - `export const CASE_DENY_READ = (p) => [...]`: `D/reserve-token`・`H/.claude-access.env`・`H/.claude/channels`・`H/.claude/projects`・`H/Library/Keychains`・`H/.config/gh`・`D/cases`。囲いの `filesystem.denyRead` と権限の `Read(//…)` の deny の両方をこの1つの配列から作る（読み取りの守りの主は下の `blockReadsOutsideWorkingDirectories`。これは重ねの守り）
+  - `export const CASE_DENY_WRITE = (p) => [...]`: `M/.git/hooks`・`M/.git/config`・`G/commondir`・`G/gitdir`・`G/config`・`G/config.worktree`・`M/.git/commondir`・`M/.git/config.worktree`・`M/.git/info`・`W/.git`・`W/.claude`・`W/.mcp.json`・`R/.claude`・`D/cases`・`D/case-gh`・`D/hooks`。囲いの `filesystem.denyWrite` と権限の `Edit(//…)` の deny の両方をこの1つの配列から作る（正本は1つ）
+  - `export const CASE_DENY_READ = (p) => [...]`: `D/reserve-token`・`H/.claude-access.env`・`H/.claude/channels`・`H/.claude/projects`・`H/Library/Keychains`・`H/.config/gh`・`D/cases`。囲いの `filesystem.denyRead` と権限の `Read(//…)` の deny の両方をこの1つの配列から作る（秘密の置き場。下の `CASE_ALLOW_READ` の広い開け直しの中でも塞がれたまま。doc-settings-reference.md:1475）
+  - `export const CASE_DENY_READ_SANDBOX = (p) => [H, "/private/tmp/CC報告ファイル", "/private/tmp/claude-<uid>", realpath(os.tmpdir()), ...CASE_DENY_READ(p)]`（`<uid>` は `process.getuid()`。囲いの `filesystem.denyRead` にはこちらを入れる。権限の `Read(//…)` の deny は `CASE_DENY_READ` のまま。Claude の読む道具は `--restricted` と見張りの許す一覧で守る）
   - `export const CASE_ALLOW_WRITE = (p) => [...]`: `W`・`R`・`M/.git/objects`・`M/.git/refs`・`M/.git/logs`・`M/.git/packed-refs`・`M/.git/packed-refs.lock`・`M/.git/gc.pid`・`M/.git/gc.log`・`G`（設計 §4-5 (a')）
-  - `export const CASE_ALLOW_READ = (p) => [GH]`（囲いの中の gh が自分の置き場を読むため、読み取りの閉じ込めから開け直す）
+  - `export const CASE_ALLOW_READ = (p) => [W, R, GH, M/.git, H/.gitconfig, H/.config/git, nodeHome]`（囲いの中の命令に、塞いだホームの中から開け直す場所。`nodeHome` は `realpath(process.execPath)` の2つ上で、H の下にあるときだけ入れる。H の下でなければ入れない）
   - `export const CASE_ALLOWED_DOMAINS = ["api.github.com","github.com","api.salesanchor.jp","127.0.0.1","localhost"]`
   - `export function buildCaseSettings(p): object`（p は M・W・G・D・H・R・GH・`guardScript`・`nodeBin`・`caseFile`・`hookPath`）。`nodeBin` は呼ぶ側が `process.execPath` を渡す（PATH の上の node を使わない）。返す形:
-    - `permissions.defaultMode: "dontAsk"`、`permissions.disableBypassPermissionsMode: "disable"`、`permissions.blockReadsOutsideWorkingDirectories: true`、上の段の `disableAutoMode: "disable"`
+    - `permissions.defaultMode: "dontAsk"`、`permissions.disableBypassPermissionsMode: "disable"`、上の段の `disableAutoMode: "disable"`
+    - `permissions.blockReadsOutsideWorkingDirectories`: 入れない（設計第17版。linked worktree の元の `.git` を書ける形に開け直すため。facts2.txt:5）
     - `permissions.additionalDirectories`: 入れない（R は起動の `--add-dir` で渡す。2か所に書かない）
     - `permissions.allow`: `Bash`・`Agent`・`Edit(//<W>/**)`・`Edit(//<R>/**)`・`Read(//<R>/**)`（絶対の道は先頭を `//` にする。`<W>` は先頭の `/` を除いた realpath をつなぐ）
     - `permissions.deny`: `CASE_DENY_WRITE` の各道の `Edit(//<道>/**)` と `Edit(//<道>)`、`CASE_DENY_READ` の各道の `Read(//<道>/**)` と `Read(//<道>)`、`Bash(security *)`・`Bash(security)`・`Bash(gh auth *)`・`Bash(gh auth)`・`Bash(gh pr merge *)`・`Bash(gh pr merge)`・`Bash(ac-reserve *)`・`Bash(ac-reserve)`・`Bash(ac-routine *)`・`Bash(ac-routine)`
-    - `sandbox`: `enabled: true`・`failIfUnavailable: true`・`allowUnsandboxedCommands: false`・`enableWeakerNetworkIsolation: true`・`network.allowedDomains: CASE_ALLOWED_DOMAINS`・`network.strictAllowlist: true`（`--settings` から効くかは便2b-3b で確かめる。効かなくても見張りと deny が守る）・`network.allowLocalBinding: true`・`network.allowMachLookup: ["com.apple.SecurityServer","com.apple.securityd*"]`・`filesystem.allowWrite: CASE_ALLOW_WRITE`・`filesystem.denyWrite: CASE_DENY_WRITE`・`filesystem.denyRead: CASE_DENY_READ`・`filesystem.allowRead: CASE_ALLOW_READ`
+    - `sandbox`: `enabled: true`・`failIfUnavailable: true`・`allowUnsandboxedCommands: false`・`enableWeakerNetworkIsolation: true`・`network.allowedDomains: CASE_ALLOWED_DOMAINS`・`network.strictAllowlist: true`（`--settings` から効くかは便2b-3b で確かめる。効かなくても見張りと deny が守る）・`network.allowLocalBinding: true`・`network.allowMachLookup: ["com.apple.SecurityServer","com.apple.securityd*"]`・`filesystem.allowWrite: CASE_ALLOW_WRITE`・`filesystem.denyWrite: CASE_DENY_WRITE`・`filesystem.denyRead: CASE_DENY_READ_SANDBOX`・`filesystem.allowRead: CASE_ALLOW_READ`
     - `hooks`: まず `addHandlers({}, nodeBin, hookPath).settings`（`server/activity-hooks.ts:164`。agent-console の動きの記録と見張りのフックを、ユーザー設定と同じ組み立てで入れる。手で写さない）を取り、その `hooks.PreToolUse` の先頭に件の見張りの組 `{ matcher: "*", hooks: [{ type: "command", command: nodeBin, args: [guardScript, caseFile], onFailure: "block", timeout: 10 }] }` を足す
   - `export async function writeCaseFiles(p, sessionId): Promise<{ settingsPath, ghDir, caseFile }>`: `D/cases/<id>/settings.json`（`buildCaseSettings` の結果）、`D/cases/<id>/case.json`（`{ worktree: W, report: R, denyWrite: CASE_DENY_WRITE, denyRead: CASE_DENY_READ }`。見張りのフックが読む）、`GH/config.yml`（`version: "1"` の1行）、`GH/hosts.yml`（`github.com:` の下に `user: shingo-cc` と `users:` の `shingo-cc:` だけ。トークンは書かない）を作り、R の置き場を作る。ディレクトリは 0o700、ファイルは 0o600。GH は件のセッションの gh が読むので `CASE_DENY_READ` に入れない（書けないように `CASE_DENY_WRITE` には `D/case-gh` で入れる）
   - `export async function removeCaseFiles(D, sessionId)`: `D/cases/<id>` と `D/case-gh/<id>` だけを消す（`fs.rm(…, { recursive: true, force: true })`。道は `D/cases/` と `D/case-gh/` の下で、id が UUID の形のときだけ。そうでなければ何もしない）
@@ -40,6 +42,7 @@
   - 引数1つ（case.json の道）。標準入力の JSON の `tool_name` と `tool_input` を読む。どこかで例外になれば終了の番号 2（`onFailure: "block"` にも重ねる）。止めるときは理由の短い英語を標準エラーに1行出して終了の番号 2、通すときは何も出さず 0
   - 道の解き方（下の 1. 2. で共通）: 文字列でない・絶対の道でない → 止める。字面で `.`・`..` を縮めない（`path.resolve`・`path.normalize` を使わない）。`fs.realpathSync` にそのまま渡し、無い道なら、末尾から1つずつ名前を外して一番近いある親の realpath を取り、外した名前をそのままつなぐ（外した名前に `..` があれば止める）。`worktree`・`report`・一覧の道も起動の時に realpath にそろえてある
   - 「X の下」の判定: 解いた道が X と同じか、`X + "/"` で始まる
+  - ハードリンク: 解いた道にすでに本物のファイルがあり、`fs.statSync(道).nlink >= 2` なら、下の 1. 2. のどちらでも止める（realpath はハードリンクを見分けない）
   - 判定（上から順に）:
     1. `tool_name` が `Edit`・`Write`・`NotebookEdit`: 道は `tool_input.file_path`、無ければ `tool_input.notebook_path`。`denyWrite` のどれかの下なら止める。`worktree` か `report` の下なら通す。それ以外は止める
     2. `Read`・`Glob`・`Grep`: 道は `tool_input.file_path`（Read）、`tool_input.path`（Glob・Grep。無いときは作業場所 W として扱う）。Glob の `tool_input.pattern` が文字列でない、`/` か `~` で始まる、または `..` を含む → 止める。道が `denyRead` のどれかの下 → 止める。`worktree` か `report` の下なら通す（許す一覧）。それ以外（ホーム・`/Users` などの祖先を含む）は止める
@@ -52,8 +55,8 @@
 - `server/sessions.ts`:
   - `SessionManagerOptions` に `sandboxExecPath?: string`（試験用。既定 `/usr/bin/sandbox-exec`）・`caseShellPath?: string`（既定 `realpath(process.cwd())/ops/shell/ccdiscord.zsh`）・`caseGuardPath?: string`（既定 `realpath(process.cwd())/ops/case/case-guard.mjs`）を足す
   - `spawnSession` の引数の最後に `isNew?: boolean` を足す。`isNew === true` なら `openTerminal` の probe を false にする（`knownId === id && isNew !== true`）。今の呼び出しは渡さないので振る舞いは変わらない
-  - `create()`: 役割が `caseSandbox` のとき、`createWorktree` のあと、`const id = randomUUID()` を決め、`checkGitLink(cwd, M)` が null でなければ `SessionConflictError`、`writeCaseFiles(...)` を呼び、`spawnSession(name, role, branch, cwd, role.command, {}, undefined, id, true)` で開く。`writeCaseFiles` か `spawnSession` が投げたら、`removeCaseFiles(D, id)` を呼んでから同じ誤りを投げ直す（worktree の片付けは今の `create()` の作りに合わせ、この便では足さない）
-  - `spawnSession` の頭（:390 で id を決めた直後、`openTerminal` の前）に、`role.caseSandbox === true` のときの確かめを置く。どれも同期の関数（`existsSync`・`realpathSync`・`accessSync`・`readFileSync`）で書く。①`D/cases/<id>/settings.json` と `case.json` がある ②`realpath(cwd)` が `case.json` の `worktree` と同じ ③`sandboxExecPath` が実行できる（`accessSync(…, X_OK)`）④`caseShellPath` と `caseGuardPath` が読める。1つでも落ちたら `CaseSandboxUnavailableError("sandbox unavailable: <理由>")` を投げる（新しい誤りの型。http の層で 503）。通ったら `extraEnv` に `AC_CASE_SETTINGS`（settings.json の道）・`AC_CASE_GH_DIR`（GH）・`AC_CASE_REPORT`（R）・`AC_CASE_SHELL`（`caseShellPath`）・`AC_DISCORD_CASE`（`manual-<id>:1`）を足す（どれも道か印だけ。秘密は入れない）。この確かめは `create`・`resume`・`restore`・`createAccountLogin` のどの道からも通る
+  - `create()`: 役割が `caseSandbox` のとき、`createWorktree` のあと、`const id = randomUUID()` を決め、`await checkGitLink(cwd, M)`（async。`server/git-safe.ts:46`）が null でなければ `SessionConflictError`、`writeCaseFiles(...)` を呼び、`spawnSession(name, role, branch, cwd, role.command, {}, undefined, id, true)` で開く。`writeCaseFiles` か `spawnSession` が投げたら、`removeCaseFiles(D, id)` を呼んでから同じ誤りを投げ直す（worktree は残る。今の `create()` の作りに合わせ、片付けは便2b-4。PR 本文の「残ること」に書く）
+  - `spawnSession` の頭（:390 で id を決めた直後、`openTerminal` の前）に、`role.caseSandbox === true` のときの確かめを置く。どれも同期の関数（`existsSync`・`realpathSync`・`accessSync`・`readFileSync`）で書く。①`D/cases/<id>/settings.json` と `case.json` がある ②`realpath(cwd)` が `case.json` の `worktree` と同じ ③`sandboxExecPath` が実行できる（`accessSync(…, X_OK)`）④`caseShellPath` と `caseGuardPath` が読める ⑤`case.json` の `report`（R）がディレクトリとしてある（`/tmp` は再起動で消える。作り直さない）。1つでも落ちたら `CaseSandboxUnavailableError("sandbox unavailable: <理由>")` を投げる（新しい誤りの型。http の層で 503）。通ったら `extraEnv` に `AC_CASE_SETTINGS`（settings.json の道）・`AC_CASE_GH_DIR`（GH）・`AC_CASE_REPORT`（R）・`AC_CASE_SHELL`（`caseShellPath`）・`AC_DISCORD_CASE`（`manual-<id>:1`）を足す（どれも道か印だけ。秘密は入れない）。この確かめは `create`・`resume`・`restore`・`createAccountLogin` のどの道からも通る
   - `resume()` は今のまま（件の役割は `resumeCommand` を持たないので :295 で拒まれる）
 - `server/http.ts`: `CaseSandboxUnavailableError` を 503 と本文 `{ error: "sandbox unavailable" }` に変える（今の誤りの型を http に変える所と同じ形で1つ足す）
 - `server/workplace.ts`: `listWorktreeEntries` を呼ぶ前に `checkMainLink(root)` を呼び、null でなければ `SessionConflictError(\`git link check failed: ${reason}\`)`（409。設計 §4-5「落ちたとき」）。これで L-main が 409 の1通りになる
@@ -93,13 +96,14 @@
 ## 試験
 - `tests/unit/case-sandbox.test.ts`（新規）:
   - `buildCaseSettings` の `permissions.deny` の Edit の道の集まりが `CASE_DENY_WRITE` と、Read の道の集まりが `CASE_DENY_READ` と、`sandbox.filesystem.denyWrite`・`denyRead`・`allowWrite`・`allowRead` がそれぞれ同じ配列と一致する（正本1つの確かめ）
-  - `defaultMode` が `dontAsk`、`disableBypassPermissionsMode`・`disableAutoMode` が `disable`、`blockReadsOutsideWorkingDirectories` が true、`allow` に道を付けない `Edit`・`Write`・`Read`・`WebFetch`・`WebSearch` が無い
-  - `CASE_DENY_WRITE` に `W/.claude`・`W/.mcp.json`・`D/hooks` がある
+  - `defaultMode` が `dontAsk`、`disableBypassPermissionsMode`・`disableAutoMode` が `disable`、`allow` に道を付けない `Edit`・`Write`・`Read`・`WebFetch`・`WebSearch` が無い
+  - `CASE_DENY_WRITE` に `W/.claude`・`W/.mcp.json`・`R/.claude`・`D/hooks`・`M/.git/commondir`・`M/.git/config.worktree`・`M/.git/info` がある。`permissions.blockReadsOutsideWorkingDirectories` が無い
+  - `sandbox.filesystem.denyRead` が `CASE_DENY_READ_SANDBOX` と同じで H と `CASE_DENY_READ` の全部を含み、`allowRead` が `CASE_ALLOW_READ` と同じで、`allowRead` に `CASE_DENY_READ` のどの道も（同じか、その祖先として）入っていない。`nodeHome` は H の外の node の道を渡すと入らない
   - `hooks.PreToolUse` の先頭が件の見張り（`matcher: "*"`・`onFailure: "block"`・`command` が渡した `nodeBin`・`args[1]` が case.json の道）。`addHandlers({}, nodeBin, hookPath)` の `hooks` のほかの全部の組がそのまま入っている（同じ関数の結果と比べる）
   - `allowWrite` に `M/.git` そのもの・`M/.git/config`・`M/.git/hooks` が無く、(a') の一覧がそろう。`allowedDomains` が5つだけ
   - `writeCaseFiles`: 4つのファイルができ、権限が 0o600、`hosts.yml` に `shingo-cc` だけで `oauth_token` を含まない。`removeCaseFiles` で2つの置き場が消え、UUID でない id では何も消えない
 - `tests/unit/case-guard.test.ts`（新規。`spawnSync(process.execPath, [guard, caseFile], { input })` で動かす。W・R・偽の D・偽の H は一時の置き場）:
-  - Edit・Write: W の中のファイル（ある・まだ無い）→ 0。R の中 → 0。W の外（偽の H の下）→ 2。`W/.git` → 2。`W/.claude/settings.json` → 2。G の `commondir` → 2。W の中のシンボリックリンクが W の外を指す → 2。`W/a/../../x`（字面では W の外）→ 2。相対の道 → 2。`file_path` が数 → 2。`file_path` 無し → 2
+  - Edit・Write: W の中のファイル（ある・まだ無い）→ 0。R の中 → 0。`R/.claude/agents/x.md` → 2。W の中のファイルで、W の外のファイルへのハードリンク（`fs.linkSync` で作る）→ 2（Read も 2）。W の外（偽の H の下）→ 2。`W/.git` → 2。`W/.claude/settings.json` → 2。G の `commondir` → 2。W の中のシンボリックリンクが W の外を指す → 2。`W/a/../../x`（字面では W の外）→ 2。相対の道 → 2。`file_path` が数 → 2。`file_path` 無し → 2
   - NotebookEdit: `notebook_path` が W の中 → 0、外 → 2
   - Read: 偽の `D/reserve-token` → 2。偽の `H/.claude/projects/x` → 2。偽の `H/.ssh/id` → 2。W の中 → 0。R の中 → 0
   - Grep・Glob: `path` が偽の H（祖先）→ 2。`path` が `/` → 2。`path` が偽の `H/Library/Keychains` → 2。`path` 無し → 0。Glob の `pattern` が `/etc/**` → 2、`~/x` → 2、`../x` → 2、`src/**` → 0
@@ -111,7 +115,7 @@
 - `tests/unit/sessions.case.test.ts`（新規。今の sessions の試験の作り（`tests/unit/helpers/harness.ts` など）を使う。`sandboxExecPath`・`caseShellPath`・`caseGuardPath` を一時の置き場の差し替えにする）:
   - 件の役割の `create()` で、`D/cases/<id>/settings.json`・`case.json` ができ、開いたセッションの id が同じで、`extraEnv` に5つの変数が入る（値は道か印だけ）。様子見（probe）が呼ばれない
   - `sandboxExecPath` が無い → `create()` が `CaseSandboxUnavailableError`、セッション0件、`D/cases/<id>`・`D/case-gh/<id>` が残っていない。HTTP の作成の入口で 503
-  - `restore()` で settings.json が無い id → 投げる。`case.json` の worktree と違う `cwd` → 投げる
+  - `restore()` で settings.json が無い id → 投げる。`case.json` の worktree と違う `cwd` → 投げる。`case.json` の `report` が無い → 投げる
   - `resume()` → `role cannot resume sessions`
   - 件でない役割は今のまま開く（確かめを通らない。`restore()` の probe も今のまま）
 - `tests/unit/ccdiscord-zsh.test.ts`（新規。`zsh -c 'source <ccdiscord.zsh> && ccdiscordcase'` を、差し替えの `claude`（`--version` には決めた版を出し、それ以外は受けた引数を印のファイルに書く）・`gh`（作り物の値を出す）と一時の HOME で動かす）:
@@ -132,6 +136,7 @@
    - case-guard の 1. の「それ以外は止める」を「通す」に替える → W の外の Edit の試験が落ちる
    - case-guard の 2. の許す一覧を外す（拒否の一覧だけにする）→ Grep の祖先の試験が落ちる
    - case-guard の 4. の鍵の検査を外す → Agent の `isolation` の試験が落ちる
+   - case-guard のハードリンクの検査を外す → ハードリンクの試験が落ちる
    - `buildCaseSettings` の Edit の deny を `CASE_DENY_WRITE` でない手書きの配列（1つ少ない）にする → 正本1つの試験が落ちる
    - ccdiscord.zsh の `--restricted` を外す → 引数の試験が落ちる
    - `workplace.ts` の本店の確かめを外す → L-main が落ちる
