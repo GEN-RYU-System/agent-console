@@ -1,6 +1,6 @@
 # 便2b-3b 件のセッションを本物で開いて囲いを確かめる試験（K11・K13・K17）試す係への手順書
 
-第6版（2026-10-27）: 審査 #86 第1回（HIGH 3・MEDIUM 10・LOW 11）・第2回（HIGH 2・MEDIUM 5・LOW 10）・第3回（HIGH 1・MEDIUM 3・LOW 6）・第4回（HIGH 1・MEDIUM 5・LOW 5）・第5回（HIGH 1・MEDIUM 4・LOW 5）を受けて直した。直した所は末尾の「第2版で直したこと」〜「第6版で直したこと」。
+第7版（2026-10-27）: 審査 #86 第1回（HIGH 3・MEDIUM 10・LOW 11）・第2回（HIGH 2・MEDIUM 5・LOW 10）・第3回（HIGH 1・MEDIUM 3・LOW 6）・第4回（HIGH 1・MEDIUM 5・LOW 5）・第5回（HIGH 1・MEDIUM 4・LOW 5）を受けて直した。第7版は、1回目の本物の試し（2026-10-27 14:07〜14:44、段階1の 5c で止めた）で分かったことを入れた。直した所は末尾の「第2版で直したこと」〜「第7版で直したこと」。
 
 - 設計: `docs/handoff/discord-pdca/design.md` 第24版
   - §2: K11（:104）・K13（:106）・K17（:110）
@@ -135,7 +135,20 @@
     - 子孫・殻あり: P が `-c` を付けた殻（`/bin/zsh`・`/bin/bash`・`sh`）で、かつ P の命令行に、段階1の 5b で写した Bash の道具の殻にしか無い字（殻の写しの道 `shell-snapshots` や `eval` など。5b で決めて `s1/shell-form.txt` に書く）が合うもの。囲いの中。数と命令だけ記録する（第6版 MEDIUM-4）
     - 子孫・殻不明: P が `-c` を付けた殻だが、上の字が合わないもの（Claude Code が自分で動かす殻かもしれず、囲いがかかるか分からない）。1つでもあれば止めて設計に戻す
     - 子孫・フック: P が node で、引数に `case-guard.mjs`・`activity-hook.mjs`・`board-guard.mjs`・`ac-routine-guard.mjs`・`server-kill-guard.mjs` のどれかを含む（件の設定に入るフック全部。case-sandbox.ts:139、activity-hooks.ts:49-71。第6版 LOW-1）。フックは git を動かさない作り（どれも child_process を使わない）なので、1つでもあれば止めて設計に戻す
-    - 子孫・殻なし: 件の claude の子孫で、上のどれでもないもの（claude の直の子の git など）。囲いの外の疑い。1つでもあれば止めて設計に戻す
+    - 子孫・殻なし: 件の claude の子孫で、上のどれでもないもの（claude の直の子の git など）。囲いの外の疑い。1つでもあれば止めて設計に戻す。ただし下の「本体・固め」の条件を全部満たすものは、数えで別に分けて止めない（第7版）
+    - 本体・固め（第7版。数えのときに `tools/self-git-check.py` が分ける）: Claude Code 本体が自分で動かす git。1回目の試しで、起動のあと（14:13:49・:52・:56）と一文を送ったあと（14:26:26）に、件の claude の直の子として、`-c core.fsmonitor= -c core.hooksPath=/dev/null -c core.askPass= -c protocol.ext.allow=never -c submodule.recurse=false -c log.showSignature=false -c format.pretty=medium -c gc.auto=0 -c maintenance.auto=false -c hook.<名>.enabled=false …` の形で出た（`run1/proc.txt`。400字で切れて命令の種類は見えなかった）。次の5つを全部満たすものだけを「本体・固め」とする
+      1. git が件の claude の直の子（P が git そのもの）
+      2. 命令行に、段階1の 5c で Opus が `s1/self-git-form.txt` に書いた固めの `-c` が全部ある。固めの `-c` のほかの `-c` が無い
+      3. `-C`・`--git-dir`・`--work-tree`・`--exec-path`・`--namespace` が無い
+      4. 命令の種類（固めの `-c` の後ろの最初の字）が、読むだけの一覧にある: `status`・`rev-parse`・`log`・`show`・`diff`・`ls-files`・`rev-list`・`merge-base`・`for-each-ref`・`show-ref`・`cat-file`・`describe`・`symbolic-ref`（引数1つ）・`branch`（引数なし・`--show-current`・`--list`）・`remote`（引数なし・`-v`・`get-url`）・`config`（`--get`・`--get-regexp`・`--list`・`-l`）・`worktree list`
+      5. 作業場所（`lsof -a -p <pid> -d cwd -Fn`）が W そのもの（W の下の入れ子ではない）
+      - どれか1つでも満たさなければ「子孫・殻なし」のまま止める。作業場所が取れなかったもの（0.3秒より短い）は、1〜4 を満たせば「本体・固め（場所なし）」として数えだけ分け、段階4のあと（入れ子があるとき）に出たら止める
+      - これで止めなくてよい理由（事実）
+        - 属性（`.gitattributes`・`<W>/.git/info/attributes`）だけでは外の命令は動かない。動かす定義（filter・diff の textconv/command・diff.external・merge の driver・include）は、system・Command Line Tools 同梱・global・XDG のどこにも無い（`run1/s1/gitcfg/`）。git-lfs も無い（`run1/s1/gitcfg/06-lfs.txt`）
+        - 定義を置ける W の設定 `<W>/.git/config` は、件の囲いが書けない（case-sandbox.ts:66-79 の CASE_DENY_WRITE）
+        - フックと fsmonitor は、命令行の `-c core.hooksPath=/dev/null`・`-c core.fsmonitor=` が W の設定より先に効く
+        - `.git` の名前を変えて別の設定を読ませる道は、手順 E1（`mv <W>/.git`）と E3 で確かめる
+      - 限界: 固めの `-c` は Claude Code の版で変わりうる。版が 2.1.311 と違えば、5c で取り直す
     - 子孫でない: 件の claude の子孫でない git のうち、引数に `/Users/tanizawashingo/worktrees/discord-cases/` を含むもの（ps では絶対の道で出る。第6版 LOW-3）、または `lsof -a -p <pid> -d cwd -Fn` の作業場所がその下のもの
     - 殻の形は、段階1の 5b で害のない1手順を流し、殻の実物の命令行を `s1/shell-form.txt` に書き写して確かめてから決める。形が上と違えば Opus に返す
   - 試す係が囲いの外で W に触れる命令は、流す前と後の時刻と、外してよい git の形を `122-run/windows.txt` に書く（第5版 MEDIUM-2）
@@ -154,7 +167,9 @@
   - W の中のフック・fsmonitor・filter が動いたかは、`marks/` の印をいちばんの証拠にする（`proc-watch.sh` は補い）
   - 各段階の終わりの数え（第6版 MEDIUM-2）: 段階1の 5c、段階2のあと、段階3の終わり、段階4の 6b、段階5の 10 の前に、【Opus】が `proc.txt` を区分ごとに数え、前の数えからの増えを `sN/proc-count.txt` に書く
     - 殻なし・殻不明・フック、範囲の外の「子孫でない」が1つでも増えていたら、次の段階を渡さない。試験を止めて段階7の片付けに進み、設計に戻す
-    - 手順A の A45（Agent の `isolation: "worktree"`）では、claude 本体が囲いの外で直に `git worktree add` を動かすかもしれない。A45 の後に殻なしの git が増えていたら、その git の命令行を記録して同じく止める（段階2のあとの数えで拾う）
+    - 数えは `python3 -I tools/self-git-check.py proc.txt s1/self-git-form.txt <W>` で「本体・固め」を分けてから行う。台本は git の命令行を全部（切らずに）と作業場所を出す（第7版）
+    - 数えの前に【Opus】が `state.mjs` で件の窓が一覧にあることを確かめる。無ければ、そこで止めて記録する（第7版。1回目の試しでは 14:44:11 に件の窓が誰の操作か分からないまま閉じた。`run1/s1/trust-note.md`）
+    - 手順A の A45（Agent の `isolation: "worktree"`）では、claude 本体が囲いの外で直に `git worktree add` を動かすかもしれない。A45 の後に殻なしの git が増えていたら、その git の命令行を記録して同じく止める（A45 を含む手順のファイルが終わった直後に【Opus】が数える。第7版 LOW-D）。`worktree add` は読むだけの一覧に無いので、「本体・固め」の形でも止める
     - 起動直後（段階1の 5c）に殻なし・殻不明が出たときも同じ。Claude Code 本体が自分で動かす git の形が分かるまで、手順を渡さない
   - 確かめは `bash -n`（第4版 LOW-5）
 - `secitem.js`・`secitem.py`: A32・A33 で使う。`SecItemCopyMatching` を呼び、OSStatus だけを出す。値は捨てる
@@ -223,6 +238,7 @@
 14. Opus に返す（段階0の生出力の場所）
 
 ### 段階1 件のセッションを開く（ここからお金が掛かる）
+0. 取り直しのとき（第7版）: 1回目の試しの記録は `122-run/run1/` に移して残す（`s1/`・`proc.txt`・`screen.log*`・`windows.txt`・`session-id.txt`・`open-response.txt`）。1回目の W・`D/cases/<id>`・`D/case-gh/<id>` は証拠として消さない。段階0のうち時刻で変わるもの（4 の窓の数、5 の費用の基準値、13b の検索の基準値）だけを取り直してから 1 に進む。`proc-watch.sh` は止めずに動かしたままにする
 1. 【Opus】`drive.mjs open case-test-2b3b` を流す。流す前と後の時刻を `windows.txt` に書く
    - 201 でなければ、返った本文を保存して止める（503・`too many sessions` も止める）
 2. 【Opus】すぐに `drive.mjs watch <id> 122-run/screen.log` を後ろで動かす。段階7まで止めない
@@ -234,15 +250,26 @@
    - T（Sonnet）
 5. 【Opus】`wait screen.log "❯" 180` で入力待ちになるのを待つ（合図の文は実物の画面で確かめてから決めてよい。決めた文を記録する）。
    - 起動関数が止まったら（`ccdiscordcase:` の1行）、その行を保存して止める
+   - 作業場所を信頼するかの窓（「Do you trust the files in this folder?」。1回目の試しでは「This folder pre-approves 27 tool permissions in .claude/settings.json … These will apply without asking.」の文が出た）が出たら、【Opus】が窓の文を `s1/trust.txt` に写してから「Yes」を選ぶ（第7版）
+     - 選ぶと `~/.claude.json` に W の信頼の印が書かれる。段階7で消さず、結果の表に書く（W は証拠として残すため）
+     - 設計の抜け: 受け口から無人で開くとき、この窓で止まる。設計にも第6版の手順書にもこの窓の扱いが無かった（入れ忘れ）。直しは別の便（結果の表の「落ちた項目」に書く）
+5a. 【Opus】`/status` を打ち、出た画面を `s1/status.txt` に写す（第7版。道具を使わない打ち込みで、お金は掛からない）
+   - 設定の出どころ（Setting sources などの行）に、プロジェクトの設定（`<W>/.claude/settings.json`）が入っているかを記録する。design.md:361-362（第16版）は「`--restricted` はプロジェクトの設定を読まない」としているが、上の窓の文はそれと食い違う
+   - 入っていても止めない。手順A〜E は実際の設定のままの結果を測り、【通ったら止める】で止まる。プロジェクトのフック `check-freshness.sh` が動けば、git fetch が「子孫・殻不明」か「子孫・殻なし」に出て 5c で止まる
+   - 入っていたら、design.md:361-362 との食い違いを結果の表の「落ちた項目」に書く。手順A の結果で、プロジェクトの許可（27個）で通ったものを分けて書く
 5b. 【Opus】殻の形の確かめ（第5版 MEDIUM-1・第6版 MEDIUM-4・LOW-4）: 下の「手順の渡し方」で `tests-S.md`（S1: Bash `sleep 30; echo shell-form > <R>/out/S1.txt 2>&1`）を渡す。その30秒の間に Opus が `ps -axo pid,ppid,command` を何度か取り、件の claude の直の子の命令行を全部 `s1/shell-form.txt` に書く
    - `sleep 30` を含む殻の命令行から、Bash の道具の殻にしか無い字を Opus が決めて `s1/shell-form.txt` に書く（`proc-watch.sh` の「殻あり」の決め方に使う）。ほかの `-c` 殻（`sleep 30` を含まないもの）があれば、それも記録する
    - 決めた字を `proc-watch.sh` に渡す形は、Sonnet が段階0で作るときに、字を外から読む作り（`s1/shell-form.txt` の決めた行を読む）にしておく。決まる前は全部「殻不明」として記録だけする
 5c. 【Opus】ここまでの `proc.txt` を数える（下の「各段階の終わりの数え」）。起動直後に殻なし・殻不明・フックの git があれば、試験を止めて段階7の片付けに進み、設計に戻す
+   - 第7版: 起動のあとの Claude Code 本体の git（1回目の試しの形）は、まず命令行を全部 `s1/self-git-full.txt` に写す。Opus が固めの `-c` の並びを `s1/self-git-form.txt` に `FLAG:` の行で1つずつ書き、命令の種類も記録する
+   - そのうえで `self-git-check.py` で「本体・固め」の5つの条件を見る。全部満たせば止めない。1つでも満たさない git があれば止める
+   - 起動のあとに本体の git が1本も出なければ、`s1/self-git-form.txt` は書けない。そのときは段階2の前に「一文を送ったあと」に出る分（1回目の試しでは 14:26:26）で同じことを行う。それでも出なければ、出ないことを記録して進む（出ないのは止める理由ではない。のちに出たら、そのとき写して判断する）
 6. 起動直後の画面が screen.log にあること。§4-5「claude のログインが通る」の証拠になる
 7. ccusage の値を記録する
 
 ### 手順の渡し方（段階2・3・5 で共通）
 - 手順のファイルは、囲いの外の Sonnet が R に書く。道は字のまま（`<W>`・`<R>`・`<M>`・`<D>`・X・番地は、実物の字に置き換えてから書く）
+- 【Opus】渡す前に `state.mjs` で件の窓が一覧にあることを確かめる。無ければ渡さずに止める（第7版）
 - 【Opus】一文「`<R>/<手順のファイル>` を読み、書いてある手順を順に行ってください。」を打つ（:386。手順の中身を入力欄に打たない）
 - 【Opus】`wait screen.log "試験の手順を終えました" <秒>` で待つ。秒は手順の数 × 60（最短 600）
   - 「止める印に当たりました」「値が出た」が出たら、その場で `wait` を止めて Opus に返す
@@ -358,7 +385,7 @@
 - B1: `cd <W>/frontend && npm ci > R/out/B1.txt 2>&1`
   - 通らなければ記録して止め、段階3を Opus に返す
   - 落ちた理由は生の文で分ける。npm の置き場に届かない（通信）のか、`prepare` の husky が `.git/config` に書けない（L-9）のか
-  - Opus は、囲いの外で Sonnet が `HUSKY=0 npm --prefix <W>/frontend ci` を流してから B2 以降を続ける形を決める（第6版 HIGH-1）。`HUSKY=0` が無いと husky が `core.hooksPath` を `frontend/.husky/_` に書き換え、段階5の再開でサーバーの確かめ（case-clone.ts:136-137）が落ちる。流す前と後の時刻を `windows.txt` に書き、流したあと `<W>/.git/config` の sha256 が `s1/w-git.txt` と同じであることを確かめる。違えば止めて Opus に返す。:385 第22版の「PO に上げる」点は、段階7の最後の報告にまとめる
+  - Opus は、囲いの外で Sonnet が `HUSKY=0 npm --prefix <W>/frontend ci` を流してから B2 以降を続ける形を決める（第6版 HIGH-1）。`HUSKY=0` が無いと husky が `core.hooksPath` を `frontend/.husky/_` に書き換え、段階5の再開でサーバーの確かめ（case-clone.ts:136-137）が落ちる。流す前と後の時刻を `windows.txt` に書き、流したあと `<W>/.git/config` の sha256 が `s1/w-git.txt` と同じであることを確かめる。違えば止めて Opus に返す。B1 が通ったときも、段階3の終わりに同じ sha256 の比べを行う（第7版 LOW-B）。:385 第22版の「PO に上げる」点は、段階7の最後の報告にまとめる
 - B2: `cd <W> && mkdir -p docs/handoff/discord-case-test && printf "試験\n" > docs/handoff/discord-case-test/<id の先頭8字>.md && git add -A docs/handoff/discord-case-test && git commit -m "test: 便2b-3b 件のセッションの commit の確かめ（すぐ閉じる）"`
 - B3: 変更を1つ作ってから `git stash push`・`git stash pop` を行う（stash が空になるまで）
 - B4: `git branch tmp-2b3b && git branch -d tmp-2b3b`
@@ -426,7 +453,8 @@
    - E1・E2 のどちらかが通ったら、そこで止める。囲いの外で戻してから段階6へ進む（第3版 LOW-5）
      - E1 が通った: `mv <W>/.git-moved <W>/.git`
      - E2 が通った: 段階1の `s1/w-head.txt` の中身で `<W>/.git/HEAD` を作り直す
-     - 戻したあと `git -C <W> status --short | head -5` が通ることを記録する
+     - 戻したあと `git -C <W> status --short | head -5` が通ることを記録する。この git は囲いの外で W に触れるので、流す前と後の時刻と形を `windows.txt` に書く（第7版 LOW-A）
+   - E3 の 1〜3 の間は W の `.git` が M を指す。その間に Claude Code 本体の git が出たら、作業場所と命令行を記録し、「本体・固め」でも止めて設計に戻す（第7版）
    - E1・E2 が拒まれたら、囲いの外で次の3つを行う
      1. `<W>/.git` を `<W>/.git-orig` に退け、`gitdir: <M>/.git/worktrees/x` の1行のファイルに差し替える。`x` は字のまま（M に無い名前。段階0の `ls <M>/.git/worktrees` に無いことを確かめる）
      2. 手順E3（`tests-E3.md`）を渡す。E3 は Bash `touch <M>/.git/ac-test-2b3b-e3; git -C <W> status`（【通ったら止める】）
@@ -675,3 +703,15 @@
 - LOW-3: 子孫でない git の道を絶対の道で書いた。手元の版を 2.1.311 にした
 - LOW-4: 5b の待ちを30秒にした
 - LOW-5: 段階6の対照で印ができなければ「marks/ が空」は判定できないとした
+
+## 第7版で直したこと（1回目の本物の試し 2026-10-27 14:07〜14:44 の結果）
+- 1回目の試しは段階1の 5c で止めた。件の claude（2.1.311・--restricted）の直の子の git が、起動のあとに3本、一文を送ったあとに1本出た。どれも固めの `-c` が付いた形だったが、見張りの台本が命令行を400字で切っていて命令の種類が見えなかった。台本は切らないように直した（`run1/s1/proc-watch-fix.diff`）。記録は `122-run/run1/`
+- 「本体・固め」の区分と5つの条件を足し、属性だけでは外の命令が動かないことを `run1/s1/gitcfg/` の事実で書いた。判定の台本 `tools/self-git-check.py` を段階0で作る
+- 作業場所を信頼するかの窓の扱いを段階1の 5 に足した。無人で開くときに止まる点は設計の抜け（入れ忘れ）として結果の表に書く
+- 段階1の 5a に `/status` を足し、プロジェクトの設定が `--restricted` でも読まれるかを記録する（design.md:361-362 との食い違いの確かめ）
+- 1回目の試しでは、件の窓が 14:44:11 に誰の操作か分からないまま閉じた（v0.47.2 には件の窓を自分で閉じる処理は無い）。手順を渡す前と数えの前に、窓が一覧にあることを確かめる
+- 段階1の 0 に、取り直しのときの記録の移し方と、取り直す基準値を書いた
+- LOW-A: E のあとの戻しの `git -C <W> status` を windows.txt に書く
+- LOW-B: B1 が通ったときも `.git/config` の sha256 を比べる
+- LOW-D: A45 を含む手順のファイルの直後に数える
+- E3 の間に本体の git が出たら止める
