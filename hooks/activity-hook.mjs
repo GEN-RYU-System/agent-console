@@ -8,6 +8,9 @@ import { fileURLToPath } from "node:url";
 
 /** 1 行の上限（byte、改行を含む JSON 全体）。1 回の write に収めるための上限。macOS と Linux は、実用上、1 回の write を分割しない（並列の試験で固定する） */
 export const MAX_LINE_BYTES = 64 * 1024;
+/** `--post` で送る本文の上限（byte）。書く 1 行の上限 MAX_LINE_BYTES とは別（大きい入力を 1 行にするのは、受けたサーバーの run()＝buildRecord が行う） */
+export const POST_MAX_BYTES = 8 * 1024 * 1024;
+const POST_TIMEOUT_MS = 2000;
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
 
@@ -234,6 +237,29 @@ export function run(stdinText, dataDir, now = Date.now()) {
   return record === null ? false : appendRecord(path.join(dataDir, "activity"), record);
 }
 
+/** `--post <url>` の url。引数に --post が無ければ undefined、あっても host が 127.0.0.1 の http の url でなければ null */
+export function postUrlOf(args) {
+  const i = args.indexOf("--post");
+  if (i < 0) return undefined;
+  try {
+    const url = new URL(args[i + 1] ?? "");
+    return url.protocol === "http:" && url.hostname === "127.0.0.1" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 標準入力の文字列をそのまま POST する（ファイルには書かない）。送れたら true。上限を超える本文・どんな失敗でも例外は出さない */
+export async function postActivity(url, body, fetchImpl = fetch) {
+  try {
+    if (Buffer.byteLength(body, "utf8") > POST_MAX_BYTES) return false;
+    const res = await fetchImpl(url, { method: "POST", headers: { "content-type": "application/json" }, body, signal: AbortSignal.timeout(POST_TIMEOUT_MS) });
+    return res.status >= 200 && res.status < 300;
+  } catch {
+    return false;
+  }
+}
+
 function isMain() {
   try {
     // 一時フォルダなどがシンボリックリンク越し（macOS の /var → /private/var）でも同じ実体と判定する
@@ -251,8 +277,15 @@ if (isMain()) {
     } catch {
       text = "";
     }
-    const here = path.dirname(fileURLToPath(import.meta.url));
-    run(text, path.resolve(here, ".."));
+    const args = process.argv.slice(2);
+    const postUrl = postUrlOf(args);
+    if (postUrl === undefined) {
+      const here = path.dirname(fileURLToPath(import.meta.url));
+      run(text, path.resolve(here, ".."));
+    } else if (postUrl !== null) {
+      // 件のセッション: ファイルには書かず、サーバーの受け口へ送る。終わるまで待つ（process.exit しない）
+      await postActivity(postUrl, text);
+    }
   } catch {
     // どんな失敗でも Claude を止めない
   }

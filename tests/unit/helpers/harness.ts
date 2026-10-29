@@ -117,6 +117,11 @@ export interface HarnessOptions {
   caseGuardPath?: string;
   caseHomeDir?: string;
   caseTmpRoot?: string;
+  /** 件の部屋の確かめ ⑪（macOS の版の記録）と ⑨（受付の待ち受け）の差し替え。SessionManager の options に通す */
+  caseRoomMacosOk?: boolean;
+  caseProxyListening?: () => boolean;
+  /** 件の活動の入口が、送り元の番号から pid を引く関数（AppDeps.lookupPid）の差し替え */
+  lookupPid?: (sourcePort: number) => Promise<number[]>;
   /** 1 ファイルの変更の表示上限（byte）。既定は config の既定値 */
   diffMaxFileBytes?: number;
   /** 送る文章の上限（byte）。既定は config の既定値 */
@@ -243,6 +248,8 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     ...(options.caseGuardPath !== undefined ? { caseGuardPath: options.caseGuardPath } : {}),
     ...(options.caseHomeDir !== undefined ? { caseHomeDir: options.caseHomeDir } : {}),
     ...(options.caseTmpRoot !== undefined ? { caseTmpRoot: options.caseTmpRoot } : {}),
+    ...(options.caseRoomMacosOk !== undefined ? { caseRoomMacosOk: options.caseRoomMacosOk } : {}),
+    ...(options.caseProxyListening !== undefined ? { caseProxyListening: options.caseProxyListening } : {}),
   });
   const hub = new Hub(config, sessions, options.sendNotification ?? null, { ghTimeoutMs: options.ghTimeoutMs });
   const store = new OpenSessionStore(config.dataDir);
@@ -265,7 +272,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const reserve: ReserveAccess = options.reserve ?? { token: RESERVE_TOKEN };
   const routineApprovals = new RoutineApprovals(() => clock.t);
   const server = createServer(
-    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines, reservations, schedule: gate, relay, reserve, routineApprovals, ...(options.discordIntake ? { discordIntake: options.discordIntake } : {}) }),
+    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines, reservations, schedule: gate, relay, reserve, routineApprovals, ...(options.discordIntake ? { discordIntake: options.discordIntake } : {}), ...(options.lookupPid ? { lookupPid: options.lookupPid } : {}) }),
   );
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));

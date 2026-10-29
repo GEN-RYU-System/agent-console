@@ -36,6 +36,11 @@ import { resolveRunAt, type ReservationService } from "./reservations.ts";
 import type { RelayManager } from "./relay.ts";
 import type { ReserveAccess } from "./reserve-token.ts";
 import { disabledIntakeStatus, type DiscordIntakeStatus } from "./discord-intake.ts";
+import { POST_MAX_BYTES, run as runActivityHook } from "../hooks/activity-hook.mjs";
+import { lookupPidByLsof, readLstart, singleOtherPid, type LookupPid } from "./case-proxy.ts";
+import { caseDirOf } from "./case-sandbox.ts";
+import { readJsonFile, writeJsonAtomic } from "./json-store.ts";
+import { readProcessTable } from "./process-tree.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -79,6 +84,8 @@ export interface AppDeps {
   routineApprovals?: RoutineApprovals;
   /** Discord の受け口（設計 discord-pdca §4-1）。省略時は状態の入口が notStarted を返す */
   discordIntake?: { status(): DiscordIntakeStatus };
+  /** 送り元の番号から pid を引く関数（試験で差し替える）。無いときは本物の lsof（case-proxy の lookupPidByLsof） */
+  lookupPid?: LookupPid;
 }
 
 export function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -381,6 +388,67 @@ async function handleRoutineApproval(deps: AppDeps, req: IncomingMessage, res: S
   return true;
 }
 
+const CASE_ACTIVITY_PATH = "/api/agent/case-activity";
+/** 親をたどる段数の上限（輪になった表でも止まる） */
+const MAX_PARENT_STEPS = 64;
+const casePinChains = new Map<string, Promise<unknown>>();
+
+/** 送り元の番号から件のセッションを決める。lsof で pid を引き（サーバー自身を除いて 1 つ）、ppid で上へたどって（出発の pid も数える）、件の本体の記録（pid と開始時刻）に行き着いたらその件 */
+async function caseOfRequest(deps: AppDeps, req: IncomingMessage): Promise<string | null> {
+  const sourcePort = req.socket.remotePort;
+  if (sourcePort === undefined) return null;
+  const mains = deps.sessions.caseMainProcesses();
+  if (mains.size === 0) return null;
+  const start = singleOtherPid(await (deps.lookupPid ?? lookupPidByLsof)(sourcePort));
+  if (start === null) return null;
+  const parentOf = new Map((await readProcessTable()).map((r) => [r.pid, r.ppid] as const));
+  const seen = new Set<number>();
+  for (let pid: number | undefined = start, step = 0; pid !== undefined && pid > 1 && !seen.has(pid) && step < MAX_PARENT_STEPS; pid = parentOf.get(pid), step += 1) {
+    seen.add(pid);
+    for (const [id, main] of mains) {
+      if (main.pid === pid && main.lstart === (await readLstart(pid))) return id;
+    }
+  }
+  return null;
+}
+
+/** その件で最初に受けた session_id を D/cases/<id>/session-id に固定する。同じ番号なら true、違う番号なら false。件の置き場が無ければ null */
+function pinCaseSessionId(deps: AppDeps, caseId: string, sessionId: string): Promise<boolean | null> {
+  const dir = caseDirOf(deps.config.dataDir, caseId);
+  const file = path.join(dir, "session-id");
+  const job = (casePinChains.get(caseId) ?? Promise.resolve()).catch(() => undefined).then(async (): Promise<boolean | null> => {
+    if (!(await stat(dir).then((st) => st.isDirectory(), () => false))) return null;
+    const pinned = await readJsonFile(file).catch(() => undefined);
+    const current = typeof pinned === "object" && pinned !== null ? (pinned as { sessionId?: unknown }).sessionId : undefined;
+    if (isClaudeSessionId(current)) return current === sessionId;
+    await writeJsonAtomic(file, { sessionId });
+    return true;
+  });
+  casePinChains.set(caseId, job);
+  void job.then(() => { if (casePinChains.get(caseId) === job) casePinChains.delete(caseId); }, () => { if (casePinChains.get(caseId) === job) casePinChains.delete(caseId); });
+  return job;
+}
+
+/**
+ * 件のセッションの活動の受け口（POST /api/agent/case-activity）。合言葉は持たない（件の鍵は使わない。設計 room-design §4-6）。Host は検査済み。
+ * 順序（件が分かる前に大きい本文を読まない）: Origin があれば 403 → pid から件を引く（引けなければ 401）→ 本文を読む（JSON でなければ 400）→ session_id の固定（違えば 409）→ activity-hook の run() で書く（204）。
+ */
+async function handleCaseActivity(deps: AppDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (req.method !== "POST") { sendJson(res, 405, { error: "method not allowed" }); return; }
+  if (req.headers.origin !== undefined) { sendJson(res, 403, { error: "forbidden" }); return; }
+  const caseId = await caseOfRequest(deps, req);
+  if (caseId === null) { sendJson(res, 401, { error: "unauthorized" }); return; }
+  const body = await readJsonBody(req, POST_MAX_BYTES);
+  const sessionId = jsonBody(body).session_id;
+  if (isClaudeSessionId(sessionId)) {
+    const pinned = await pinCaseSessionId(deps, caseId, sessionId);
+    if (pinned === null) { sendJson(res, 401, { error: "unauthorized" }); return; }
+    if (!pinned) { sendJson(res, 409, { error: "session_id differs from the case" }); return; }
+    runActivityHook(JSON.stringify(body), deps.config.dataDir);
+  }
+  res.writeHead(204).end();
+}
+
 const FORBIDDEN_RESERVE_MESSAGE = "ac-reserve is limited to reserve role sessions (起動直後は数秒〜数十秒待って再試行)";
 const AGENT_RESERVATION_PATH = /^\/api\/agent\/reservations(?:\/([^/]+)\/cancel)?$/;
 
@@ -638,6 +706,11 @@ export function createRequestHandler(deps: AppDeps) {
       const agentRoutine = AGENT_ROUTINE_PATH.exec(url.pathname);
       if (agentRoutine) {
         await handleAgentRoutines(deps, req, res, agentRoutine);
+        return;
+      }
+      // 件のセッションの活動の受け口。合言葉を持たないので、/api/ の認証の前に置く（件の判定は送り元の pid）
+      if (url.pathname === CASE_ACTIVITY_PATH) {
+        await handleCaseActivity(deps, req, res);
         return;
       }
       if (url.pathname.startsWith("/api/")) {

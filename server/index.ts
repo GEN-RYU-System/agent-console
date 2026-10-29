@@ -5,6 +5,8 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { createAuth, DEV_PAIRING_TTL_MS, isAuthPersistEnabled } from "./auth.ts";
 import { startActivity } from "./activity-start.ts";
+import { caseRoomMacosAccepted, readProductVersion, startCaseProxy, type CaseProxy } from "./case-proxy.ts";
+import { caseProxyDomains } from "./case-sandbox.ts";
 import { fetchClaudeVersion } from "./agents.ts";
 import { loadConfig } from "./config.ts";
 import { DiffCommentStore } from "./diff-comments.ts";
@@ -72,11 +74,16 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const { token, mode } = await resolveSecret(process.env);
   const auth = createAuth(token, config.port, { sessionsFile: isAuthPersistEnabled(process.env) ? path.join(config.dataDir, "auth-sessions.json") : undefined });
-  const sessions = new SessionManager(config);
+  // 件の部屋（Seatbelt）: macOS の版が記録と同じか（サーバーの起動のときに 1 回読む）と、受付が待ち受けているか（⑪・⑨）
+  const caseRoomMacosOk = caseRoomMacosAccepted(config.dataDir, await readProductVersion());
+  let caseProxy: CaseProxy | null = null;
+  const sessions = new SessionManager(config, { caseRoomMacosOk, caseProxyListening: () => caseProxy?.isListening() ?? false });
   const hub = new Hub(config, sessions);
   const openSessions = new OpenSessionStore(config.dataDir);
   const recorder = new OpenSessionRecorder(sessions, hub, openSessions);
   const routineAudit = new RoutineAudit(config.dataDir);
+  // 件の外への通信の受付。本番のポートのときだけ待ち受ける（自己診断の 2 つ目のサーバーでは起こさない）。待ち受けに失敗してもサーバーは止めない
+  caseProxy = startCaseProxy({ domains: caseProxyDomains(), mainOf: () => sessions.caseMainProcesses(), audit: (entry) => routineAudit.append(entry) });
   // 1時間の関門（設計 discord-pdca §4-3）。予約と定期実行を同じ順番待ちに並べる
   const gate = new ScheduleGate();
   const routines = new RoutineService(config, sessions, hub, new RoutineStore(config.dataDir), undefined, undefined, gate);
@@ -146,7 +153,8 @@ async function main(): Promise<void> {
       console.log(`agent-console: http://${LISTEN_HOST}:${config.port}/pair?code=${code}`);
     }
     // 前回開いていたセッションを開き直す（失敗してもサーバーは止めない）
-    const restored = heldRestored.then(() => startOpenSessionRestore(process.env, { config, sessions, hub, store: openSessions, recorder })).catch((err) => console.error("restore failed:", err));
+    // 受付の待ち受けが始まってから（失敗したときも解ける。そのときは件が ⑨ で 503 になる）
+    const restored = Promise.all([heldRestored, caseProxy?.ready]).then(() => startOpenSessionRestore(process.env, { config, sessions, hub, store: openSessions, recorder })).catch((err) => console.error("restore failed:", err));
     // 予約の時計は復元の完了を待ってから動かす（復元が先に席を取れるように）。復元の成否・無効に関わらず始まる
     void reservations.start(restored).catch((err) => console.error("reservations failed:", err));
     // 復元のあとで見張りに戻す（復元より前だと session が無く、すぐ外される）。失敗はログだけ
@@ -160,6 +168,7 @@ async function main(): Promise<void> {
     routines.stop();
     reservations.stop();
     discordIntake?.stop();
+    void caseProxy?.close();
     // 停止で端末が終わっても、復元リストは書き換えない（再起動のあとに開き直すため）
     sessions.beginShutdown();
     sessions.killAll();

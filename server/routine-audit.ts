@@ -7,8 +7,8 @@ export const ROUTINE_AUDIT_FILE = "routine-audit.jsonl";
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
 
-/** add / update / enable / disable は書き込み。approvalIssued は一時承認の発行。closed / kept は定期実行セッションの自動クローズ（設計 ac-hardening §7）。reserveCreate は予約の作成、reserveCancel は予約の取消、reserveDispatch は予約が時刻になって開くこと */
-export type RoutineAuditAction = "add" | "update" | "enable" | "disable" | "approvalIssued" | "closed" | "kept" | "reserveCreate" | "reserveCancel" | "reserveDispatch";
+/** add / update / enable / disable は書き込み。approvalIssued は一時承認の発行。closed / kept は定期実行セッションの自動クローズ（設計 ac-hardening §7）。reserveCreate は予約の作成、reserveCancel は予約の取消、reserveDispatch は予約が時刻になって開くこと。caseProxy は件の受付（case-proxy）の通した・断った1回、caseRoomMacosAccepted は macOS の版の記録（scripts/ac-case-macos.mjs accept） */
+export type RoutineAuditAction = "add" | "update" | "enable" | "disable" | "approvalIssued" | "closed" | "kept" | "reserveCreate" | "reserveCancel" | "reserveDispatch" | "caseProxy" | "caseRoomMacosAccepted";
 
 export interface RoutineAuditEntry {
   at: string;
@@ -41,6 +41,14 @@ export interface RoutineAuditEntry {
   approvalRestored?: boolean;
   /** closed / kept: 自動クローズの理由（kept は decision / no-reply / waiting） */
   closeReason?: string;
+  /** caseProxy: 本体と一致した件のセッション id（一致したときだけ） */
+  caseSessionId?: string;
+  /** caseProxy: 受けた CONNECT の host（小文字・末尾の点を落とした形） */
+  host?: string;
+  /** caseProxy: 送り元が件の本体だったか */
+  main?: boolean;
+  /** caseRoomMacosAccepted: 記録した macOS の版（sw_vers -productVersion） */
+  productVersion?: string;
 }
 
 export class RoutineAudit {
