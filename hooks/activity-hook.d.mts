@@ -1,5 +1,6 @@
 // activity-hook.mjs の型（試験とサーバーから import するため）。本体は node の標準の部品だけで動く素の JS。
 export const MAX_LINE_BYTES: number;
+export const POST_MAX_BYTES: number;
 export type ActivityRecord = Record<string, unknown> & { ts: number; event: string; session_id: string };
 export function buildRecord(input: unknown, now?: number): ActivityRecord | null;
 export function activityFileName(ts: number): string;
@@ -10,3 +11,5 @@ export function appendRecord(activityDir: string, record: ActivityRecord, io?: A
 export function run(stdinText: string, dataDir: string, now?: number): boolean;
 export const FILE_TOOLS: readonly string[];
 export function isRecordablePath(p: unknown): p is string;
+export function postUrlOf(args: readonly string[]): string | null | undefined;
+export function postActivity(url: string, body: string, fetchImpl?: typeof fetch): Promise<boolean>;

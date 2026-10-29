@@ -7,7 +7,8 @@ import type { WebSocket } from "ws";
 import { ACCOUNT_LOGIN_ROLE_ID, CHILD_ENV_BLOCKLIST, DEFAULT_MAX_SESSIONS, TERMINAL_ENV_FORBIDDEN, type Config, type RoleConfig } from "./config.ts";
 import { hookPathIn } from "./activity-setup.ts";
 import { caseBranchOf, caseCloneDir, checkCaseClone, createCaseClone } from "./case-clone.ts";
-import { CaseSandboxUnavailableError, caseDirOf, casePaths, caseNodeHome, removeCaseFiles, writeCaseFiles } from "./case-sandbox.ts";
+import { readLstartSync, type MainProcess } from "./case-proxy.ts";
+import { CASE_PROXY_PORT, CaseSandboxUnavailableError, caseDirOf, caseNodeHome, casePaths, caseRoomLiteral, removeCaseFiles, resolveClaudeReal, rewriteCaseClaudeJson, writeCaseFiles, writeCaseRoom, type CaseParams } from "./case-sandbox.ts";
 import { descendantPids, readProcessTable } from "./process-tree.ts";
 import { RingBuffer } from "./ring-buffer.ts";
 import { sessionName } from "./terminal-host/tmux-protocol.ts";
@@ -62,6 +63,10 @@ export interface SessionManagerOptions {
   caseHomeDir?: string;
   /** 件の一時の置き場 P の親（試験用。既定 realpath("/tmp")） */
   caseTmpRoot?: string;
+  /** macOS の版の記録がサーバーの起動のときに読んだ版と同じか（起動の確かめ ⑪）。無いときは偽として扱う */
+  caseRoomMacosOk?: boolean;
+  /** 受付が待ち受けているか（起動の確かめ ⑨）。無いときは偽として扱う */
+  caseProxyListening?: () => boolean;
 }
 
 const realOr = (p: string): string => {
@@ -206,6 +211,10 @@ export class SessionManager {
   private readonly caseGuardPath: string;
   private readonly caseHomeDir: string;
   private readonly caseTmpRoot: string;
+  private readonly caseRoomMacosOk: boolean;
+  private readonly caseProxyListening: () => boolean;
+  /** 件のセッション id → 本体（tmux の pane の pid と開始時刻）。サーバーが起き直したら空から始める（restore で件ごとに引き直す） */
+  private readonly caseMain = new Map<string, MainProcess>();
 
   constructor(
     private readonly config: Config,
@@ -220,6 +229,8 @@ export class SessionManager {
     this.caseGuardPath = options.caseGuardPath ?? path.join(realOr(process.cwd()), "ops", "case", "case-guard.mjs");
     this.caseHomeDir = options.caseHomeDir ?? os.homedir();
     this.caseTmpRoot = options.caseTmpRoot ?? "/tmp";
+    this.caseRoomMacosOk = options.caseRoomMacosOk === true;
+    this.caseProxyListening = options.caseProxyListening ?? (() => false);
     this.tmuxCtx = config.terminalHost === "tmux" ? this.setupTmux(options.tmuxConf) : null;
   }
 
@@ -253,6 +264,18 @@ export class SessionManager {
       ...(this.tmuxMissing ? [{ reason: "tmuxMissing" as const }] : []),
       ...[...this.cannotAttach.values()].map((name) => ({ reason: "cannotAttach" as const, name })),
     ];
+  }
+
+  /** 件のセッションの本体の記録の写し（受付と活動の入口が、pid から件を逆引きするために回す） */
+  caseMainProcesses(): ReadonlyMap<string, MainProcess> {
+    return new Map(this.caseMain);
+  }
+
+  /** 件の本体の pid を記録する（pid が 0・開始時刻が引けないときは入れない。受付は断る側） */
+  private recordCaseMain(id: string, pid: number): void {
+    const lstart = pid > 0 ? readLstartSync(pid) : null;
+    if (lstart === null) this.caseMain.delete(id);
+    else this.caseMain.set(id, { pid, lstart });
   }
 
   /** 保存リストにも今の一覧にも無い ac-* の tmux セッションを、ログに出す（消さない） */
@@ -334,7 +357,7 @@ export class SessionManager {
       W = await createCaseClone({ M, H: paths.H, id });
       const reason = await checkCaseClone(W, M);
       if (reason !== null) throw new SessionConflictError(`case clone check failed: ${reason}`);
-      await writeCaseFiles({ M, W, T: paths.T, D: paths.D, H: paths.H, R: paths.R, GH: paths.GH, guardScript: this.caseGuardPath, nodeBin: process.execPath, hookPath: hookPathIn(paths.D) }, id);
+      await writeCaseFiles({ M, W, T: paths.T, D: paths.D, H: paths.H, R: paths.R, GH: paths.GH, CH: paths.CH, guardScript: realOr(this.caseGuardPath), nodeBin: process.execPath, hookPath: hookPathIn(paths.D) }, id, this.config.port);
       filesWritten = true;
       const session = this.spawnSession(name, role, caseBranchOf(id), W, role.command, {}, undefined, id, true);
       session.initialName = name;
@@ -351,7 +374,7 @@ export class SessionManager {
    * 件のセッションを開く前の確かめ（同期）。create・resume・restore・createAccountLogin のどの道からも spawnSession で通る。
    * 1つでも落ちたら CaseSandboxUnavailableError。通ったら、起動の環境に足す道と印を返す（秘密は入れない）。
    */
-  private checkCaseSandbox(id: string, cwd: string): Record<string, string> {
+  private checkCaseSandbox(id: string, cwd: string, claudeReal: string): Record<string, string> {
     const fail = (reason: string): never => {
       throw new CaseSandboxUnavailableError(`sandbox unavailable: ${reason}`);
     };
@@ -399,6 +422,31 @@ export class SessionManager {
     } catch (err) {
       return fail(err instanceof Error ? err.message : "node home is not usable");
     }
+    // ⑧ room.sb がある
+    const room = path.join(dir, "room.sb");
+    let roomText: string;
+    try {
+      roomText = readFileSync(room, "utf8");
+    } catch {
+      return fail("room profile is missing");
+    }
+    // ⑨ 受付が待ち受けている
+    if (!this.caseProxyListening()) return fail("case proxy is not listening");
+    // ⑩ case-home がディレクトリ
+    const CH = casePaths({ id, H: this.caseHomeDir, D: this.config.dataDir, tmpRoot: this.caseTmpRoot }).CH;
+    if (!isDir(CH)) return fail("case-home is missing");
+    // ⑪ macOS の版がサーバーの起動のときに記録と同じだった
+    if (!this.caseRoomMacosOk) return fail("macOS version is not accepted");
+    // ⑫ claude の実体の道が room.sb に書いた literal と同じ文字列で、そのファイルがある
+    if (!roomText.includes(caseRoomLiteral(claudeReal))) return fail("claude binary differs from the room profile");
+    try {
+      if (!statSync(claudeReal).isFile()) return fail("claude binary is not a file");
+      accessSync(claudeReal, fsConstants.X_OK);
+    } catch {
+      return fail("claude binary is missing");
+    }
+    // ⑬ 端末の置き場が tmux（node-pty では開かない）
+    if (this.config.terminalHost !== "tmux" || this.tmuxCtx === null) return fail("tmux is required for case sessions");
     return {
       AC_CASE_SETTINGS: settings,
       AC_CASE_GH_DIR: path.join(D, "case-gh", id),
@@ -406,7 +454,37 @@ export class SessionManager {
       AC_CASE_TMP: info.tmp,
       AC_CASE_SHELL: this.caseShellPath,
       AC_DISCORD_CASE: `manual-${id}:1`,
+      AC_CASE_ROOM: room,
+      AC_CASE_HOME: CH,
+      AC_CLAUDE_BIN: claudeReal,
+      AC_CASE_PROXY: `http://127.0.0.1:${CASE_PROXY_PORT}`,
     };
+  }
+
+  /**
+   * 件を開くたび（作成・restore・つなぎ直し）に、起動の確かめの前に room.sb を書き直す。claude の実体の道（E）は、その前にここで解く。
+   * 解けなければ書かずに投げる。前に開いたときの room.sb は使わない
+   */
+  private prepareCaseRoom(id: string): { claudeReal: string; CH: string; W: string } {
+    const claudeReal = resolveClaudeReal(this.config.claudeBin, process.env.PATH);
+    if (claudeReal === null) throw new CaseSandboxUnavailableError("sandbox unavailable: claude binary not found");
+    const paths = casePaths({ id, H: this.caseHomeDir, D: this.config.dataDir, tmpRoot: this.caseTmpRoot });
+    const params: CaseParams = {
+      M: realOr(this.config.salesanchorRoot),
+      W: paths.W,
+      T: paths.T,
+      D: paths.D,
+      H: paths.H,
+      R: paths.R,
+      GH: paths.GH,
+      CH: paths.CH,
+      guardScript: realOr(this.caseGuardPath),
+      nodeBin: process.execPath,
+      caseFile: path.join(caseDirOf(paths.D, id), "case.json"),
+      hookPath: hookPathIn(paths.D),
+    };
+    writeCaseRoom(params, { proxyPort: CASE_PROXY_PORT, consolePort: this.config.port, claudeReal, guardScript: params.guardScript });
+    return { claudeReal, CH: paths.CH, W: paths.W };
   }
 
   /**
@@ -527,8 +605,13 @@ export class SessionManager {
     isNew?: boolean,
   ): Session {
     const id = knownId !== undefined && !this.sessions.has(knownId) ? knownId : randomUUID();
-    const caseEnv = role.caseSandbox === true ? this.checkCaseSandbox(id, cwd) : {};
-    const { term, reattached } = this.openTerminal(id, role, cwd, command, { ...extraEnv, ...caseEnv }, knownId === id && isNew !== true);
+    const isCase = role.caseSandbox === true;
+    const room = isCase ? this.prepareCaseRoom(id) : null;
+    const caseEnv = room === null ? {} : this.checkCaseSandbox(id, cwd, room.claudeReal);
+    // 新しく claude を起動するときだけ、case-home の .claude.json を書き直す（つなぎ直しでは書き直さない）
+    const beforeNew = room === null ? undefined : (): void => rewriteCaseClaudeJson(room.CH, realOr(cwd));
+    const { term, reattached, pid } = this.openTerminal(id, role, cwd, command, { ...extraEnv, ...caseEnv }, knownId === id && isNew !== true, beforeNew);
+    if (isCase) this.recordCaseMain(id, pid);
     const session: Session = {
       id,
       name,
@@ -565,6 +648,7 @@ export class SessionManager {
     });
     term.onExit(() => {
       session.exited = true;
+      this.caseMain.delete(id);
       this.cannotAttach.delete(id);
       this.notify();
     });
@@ -576,28 +660,38 @@ export class SessionManager {
   /**
    * 端末を開く。tmux が使えて、アカウント切り替え以外なら tmux の中に作る（probe 付きなら、動いている物へつなぎ直す）。
    * それ以外は node-pty（今までの方式）。tmux の作成に失敗したら direct に落とす。
+   * 件の役割（beforeNew を渡された物）は node-pty に落とさない（tmux が無い・作れないときは CaseSandboxUnavailableError）。
+   * 戻りの pid は tmux の pane の pid（新しく起動したとき）かつなぎ直した先の pid。分からないとき・tmux でないときは 0
    */
-  private openTerminal(id: string, role: RoleConfig, cwd: string, command: string[], extraEnv: Record<string, string>, probe: boolean): { term: TerminalHandle; reattached: boolean } {
+  private openTerminal(id: string, role: RoleConfig, cwd: string, command: string[], extraEnv: Record<string, string>, probe: boolean, beforeNew?: () => void): { term: TerminalHandle; reattached: boolean; pid: number } {
     const ctx = this.tmuxCtx;
+    const isCase = role.caseSandbox === true;
+    if (isCase && (ctx === null || !isSessionId(id))) throw new CaseSandboxUnavailableError("sandbox unavailable: tmux is required for case sessions");
     if (ctx !== null && role.id !== ACCOUNT_LOGIN_ROLE_ID && isSessionId(id)) {
       const name = sessionName(id);
       const env = this.childEnv();
       const base = { ctx, name, env, logger: this.logger, ...(this.reattachIntervalMs !== undefined ? { reattachIntervalMs: this.reattachIntervalMs } : {}) };
       if (probe) {
         const found = probeSession(ctx, name, env);
-        if (found.state === "alive") return { term: new TmuxControlTerminal({ ...base, pid: found.pid }), reattached: true };
+        if (found.state === "alive") return { term: new TmuxControlTerminal({ ...base, pid: found.pid }), reattached: true, pid: found.pid };
         if (found.state === "unreachable") {
           // 新しく起動し直さない（同じ会話の claude が二重に動くため）。つなぎ直しを試し、駄目なら案内を出す
           this.logger.warn(`terminal: ${name} is unreachable, trying to attach`);
-          return { term: new TmuxControlTerminal({ ...base, pid: 0 }), reattached: true };
+          return { term: new TmuxControlTerminal({ ...base, pid: 0 }), reattached: true, pid: 0 };
         }
       }
       try {
         const paneEnv: Record<string, string> = {};
         for (const [k, v] of Object.entries(this.config.terminalEnv)) if (!TERMINAL_ENV_FORBIDDEN.has(k)) paneEnv[k] = v;
+        beforeNew?.();
         const pid = newSession(ctx, { name, cols: DEFAULT_COLS, rows: DEFAULT_ROWS, cwd, command, env: { ...paneEnv, ...extraEnv } }, env);
-        return { term: new TmuxControlTerminal({ ...base, pid }), reattached: false };
+        return { term: new TmuxControlTerminal({ ...base, pid }), reattached: false, pid };
       } catch (err) {
+        if (isCase) {
+          if (err instanceof CaseSandboxUnavailableError) throw err;
+          this.logger.warn(`terminal: tmux session could not be created for a case session: ${err instanceof Error ? err.message : String(err)}`);
+          throw new CaseSandboxUnavailableError("sandbox unavailable: tmux session could not be created");
+        }
         this.logger.warn(`terminal: tmux session could not be created, using direct: ${err instanceof Error ? err.message : String(err)}`);
         // 黙って続けない: 更新で保たれない会話になるので、tmux が使えない時と同じ案内を出す
         if (!this.tmuxMissing) {
@@ -613,7 +707,7 @@ export class SessionManager {
       cwd,
       env: { ...this.childEnv(), ...extraEnv },
     });
-    return { term: new DirectTerminal(pty), reattached: false };
+    return { term: new DirectTerminal(pty), reattached: false, pid: 0 };
   }
 
   /** 終了済みのセッションを一覧から外す（実行中は拒否）。 */
@@ -623,6 +717,7 @@ export class SessionManager {
     if (!session.exited) throw new SessionConflictError("session is still running");
     for (const ws of session.clients) ws.close();
     this.sessions.delete(id);
+    this.caseMain.delete(id);
     this.cannotAttach.delete(id);
     for (const l of this.removedListeners) l(id);
     this.notify();

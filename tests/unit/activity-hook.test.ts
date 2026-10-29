@@ -3,7 +3,9 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdir
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MAX_LINE_BYTES, activityFileName, appendRecord, buildRecord } from "../../hooks/activity-hook.mjs";
+import { MAX_LINE_BYTES, POST_MAX_BYTES, activityFileName, appendRecord, buildRecord, postActivity, postUrlOf, run } from "../../hooks/activity-hook.mjs";
+import { createServer, type IncomingMessage, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 
 vi.setConfig({ testTimeout: 60000 });
 
@@ -395,5 +397,141 @@ describe("file-viewer K3 / K8: PostToolUse の Write・Edit・MultiEdit・Notebo
     const parsed = JSON.parse(line);
     expect(parsed).toMatchObject({ event: "PostToolUse", session_id: SID, tool: "Write", path: "/tmp/fv.md" });
     expect(line).not.toContain("content");
+  });
+});
+
+describe("--post（件のセッション: ファイルに書かず、サーバーの受け口へ送る。便2b-3c）", () => {
+  interface Seen {
+    method: string | undefined;
+    type: string | undefined;
+    url: string | undefined;
+    body: string;
+  }
+  let server: Server | undefined;
+  afterEach(async () => {
+    await new Promise<void>((resolve) => (server === undefined ? resolve() : server.close(() => resolve())));
+    server = undefined;
+  });
+  /** 127.0.0.1 の受け口を立てる。受けた物を seen に積む。onBody があれば本文を渡す */
+  async function listen(onBody?: (body: string) => void): Promise<{ port: number; seen: Seen[] }> {
+    const seen: Seen[] = [];
+    server = createServer((req: IncomingMessage, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", () => {
+        const body = Buffer.concat(chunks).toString("utf8");
+        seen.push({ method: req.method, type: req.headers["content-type"], url: req.url, body });
+        onBody?.(body);
+        res.writeHead(204).end();
+      });
+    });
+    await new Promise<void>((resolve) => server?.listen(0, "127.0.0.1", resolve));
+    return { port: (server?.address() as AddressInfo).port, seen };
+  }
+  /** 非同期に動かす（受け口は同じプロセスにあるので spawnSync は使えない） */
+  function runAsync(hook: string, args: string[], stdin: string): Promise<{ status: number | null; stdout: string; stderr: string }> {
+    return new Promise((resolve) => {
+      const child = spawn(process.execPath, [hook, ...args], { stdio: ["pipe", "pipe", "pipe"] });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (c: Buffer) => (stdout += c.toString()));
+      child.stderr.on("data", (c: Buffer) => (stderr += c.toString()));
+      child.on("close", (status) => resolve({ status, stdout, stderr }));
+      child.stdin.on("error", () => undefined);
+      child.stdin.end(stdin);
+    });
+  }
+  const stopInput = JSON.stringify({ session_id: SID, hook_event_name: "Stop", last_assistant_message: "done" });
+
+  it("POST_MAX_BYTES は 8MiB で、書く 1 行の上限 MAX_LINE_BYTES とは別", () => {
+    expect(POST_MAX_BYTES).toBe(8 * 1024 * 1024);
+    expect(POST_MAX_BYTES).not.toBe(MAX_LINE_BYTES);
+  });
+
+  it("標準入力をそのまま POST し（content-type: application/json）、ファイルには書かない。終了コード 0・出力なし", async () => {
+    const { port, seen } = await listen();
+    const { dataDir, hook } = installHook();
+    const r = await runAsync(hook, ["--post", `http://127.0.0.1:${port}/api/agent/case-activity`], stopInput);
+    expect(r).toEqual({ status: 0, stdout: "", stderr: "" });
+    expect(seen).toEqual([{ method: "POST", type: "application/json", url: "/api/agent/case-activity", body: stopInput }]);
+    expect(existsSync(path.join(dataDir, "activity"))).toBe(false);
+  });
+
+  it("host が 127.0.0.1 でない url へは送らない（localhost・別の loopback・外の名前・http でない）。書きもしない。終了コード 0", async () => {
+    const { port, seen } = await listen();
+    const { dataDir, hook } = installHook();
+    for (const url of [`http://localhost:${port}/x`, `http://127.0.0.2:${port}/x`, `http://example.com:${port}/x`, `https://127.0.0.1:${port}/x`, "not a url", ""]) {
+      const r = await runAsync(hook, ["--post", url], stopInput);
+      expect(r.status, url).toBe(0);
+      expect(r.stdout + r.stderr, url).toBe("");
+    }
+    // --post の後ろに url が無い
+    expect((await runAsync(hook, ["--post"], stopInput)).status).toBe(0);
+    expect(seen).toEqual([]);
+    expect(existsSync(path.join(dataDir, "activity"))).toBe(false);
+  });
+
+  it("送れなくても（待ち受けが無い）投げず、終了コード 0・出力なし", async () => {
+    const { port } = await listen();
+    await new Promise<void>((resolve) => server?.close(() => resolve()));
+    server = undefined;
+    const { hook } = installHook();
+    const r = await runAsync(hook, ["--post", `http://127.0.0.1:${port}/x`], stopInput);
+    expect(r).toEqual({ status: 0, stdout: "", stderr: "" });
+  });
+
+  it("本文が POST_MAX_BYTES（byte で数える）を超えるときは送らない。ちょうどの長さは送る", async () => {
+    const { port, seen } = await listen();
+    const url = `http://127.0.0.1:${port}/x`;
+    expect(await postActivity(url, "あ".repeat(Math.floor(POST_MAX_BYTES / 3) + 1))).toBe(false);
+    expect(seen).toHaveLength(0);
+    expect(await postActivity(url, "a".repeat(POST_MAX_BYTES))).toBe(true);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].body).toHaveLength(POST_MAX_BYTES);
+  });
+
+  it("postUrlOf: --post が無ければ undefined、host が 127.0.0.1 の http の url でなければ null", () => {
+    expect(postUrlOf([])).toBeUndefined();
+    expect(postUrlOf(["--other"])).toBeUndefined();
+    expect(postUrlOf(["--post", "http://127.0.0.1:4319/a"])).toBe("http://127.0.0.1:4319/a");
+    expect(postUrlOf(["--post", "http://localhost:4319/a"])).toBeNull();
+    expect(postUrlOf(["--post"])).toBeNull();
+  });
+
+  it("--post が無いときの動きは今と同じ（ファイルに書く）", async () => {
+    const { dataDir, hook } = installHook();
+    const r = await runAsync(hook, [], stopInput);
+    expect(r.status).toBe(0);
+    expect(readdirSync(path.join(dataDir, "activity"))).toHaveLength(1);
+  });
+
+  it("大きい入力: 100KiB の content の PostToolUse Write と 100KiB の last_assistant_message の Stop を --post で送ると、サーバー側の run() が、ファイルに書く今の形のときと同じ 1 行を書く（後者は切った印つき）", async () => {
+    const serverData = path.join(tmp(), "server-data");
+    const { port } = await listen((body) => void run(body, serverData, NOW));
+    const big = "x".repeat(100 * 1024);
+    const inputs = [
+      JSON.stringify({ session_id: SID, hook_event_name: "PostToolUse", tool_name: "Write", tool_input: { file_path: "/work/a.ts", content: big }, tool_response: { ok: true } }),
+      JSON.stringify({ session_id: SID, hook_event_name: "Stop", last_assistant_message: big }),
+    ];
+    const posted = installHook();
+    const filed = installHook();
+    for (const input of inputs) {
+      expect((await runAsync(posted.hook, ["--post", `http://127.0.0.1:${port}/api/agent/case-activity`], input)).status).toBe(0);
+      expect(runHook(filed.hook, input).status).toBe(0);
+    }
+    const strip = (line: string): Record<string, unknown> => {
+      const { ts: _ts, ...rest } = JSON.parse(line) as Record<string, unknown>;
+      void _ts;
+      return rest;
+    };
+    const readAll = (dir: string): string[] => readdirSync(path.join(dir, "activity")).flatMap((f) => lines(path.join(dir, "activity", f)));
+    expect(posted.dataDir && existsSync(path.join(posted.dataDir, "activity"))).toBe(false);
+    const viaServer = readAll(serverData).map(strip);
+    const viaFile = readAll(filed.dataDir).map(strip);
+    expect(viaServer).toHaveLength(2);
+    expect(viaServer).toEqual(viaFile);
+    expect(viaServer[0]).toMatchObject({ tool: "Write", path: "/work/a.ts" });
+    expect(viaServer[1]).toMatchObject({ event: "Stop", truncated: true });
+    expect(Buffer.byteLength(JSON.stringify(viaServer[1]) + "\n", "utf8")).toBeLessThanOrEqual(MAX_LINE_BYTES + 64);
   });
 });

@@ -93,8 +93,8 @@ export function specHookPath(hookPath: string, spec: HookSpec): string {
 }
 
 /** exec の形（args に 1 要素ずつ渡す。引用符は要らず、空白を含むパスでも壊れない）。spec を渡さなければ記録用 hook の形 */
-export function buildHandler(nodePath: string, hookPath: string, spec?: HookSpec): Handler {
-  const handler: Handler = { type: "command", command: nodePath, args: [hookPath] };
+export function buildHandler(nodePath: string, hookPath: string, spec?: HookSpec, extraArgs?: string[]): Handler {
+  const handler: Handler = { type: "command", command: nodePath, args: [hookPath, ...(extraArgs ?? [])] };
   if (spec?.async !== false) handler.async = true;
   if (spec?.timeout !== undefined) handler.timeout = spec.timeout;
   if (spec?.if !== undefined) handler.if = spec.if;
@@ -115,8 +115,16 @@ function isHandlerOf(handler: unknown, spec: HookSpec): boolean {
   return typeof first === "string" && first.endsWith(`/hooks/${specFile(spec)}`) && (handler as Json).if === spec.if;
 }
 
-function sameHandler(handler: unknown, nodePath: string, hookPath: string, spec: HookSpec): boolean {
-  return JSON.stringify(handler) === JSON.stringify(buildHandler(nodePath, specHookPath(hookPath, spec), spec));
+function sameHandler(handler: unknown, nodePath: string, hookPath: string, spec: HookSpec, extraArgs?: string[]): boolean {
+  return JSON.stringify(handler) === JSON.stringify(buildHandler(nodePath, specHookPath(hookPath, spec), spec, extraArgs));
+}
+
+/** addHandlers の任意の4つ目の引数 */
+export interface AddHandlersOptions {
+  /** spec.file と完全一致する spec を除く（件の設定が board-guard を外すために使う） */
+  skip?: string[];
+  /** spec.file が無い spec（activity-hook.mjs を呼ぶ物）の handler の引数の後ろにだけ足す */
+  activityArgs?: string[];
 }
 
 /** settings の hooks をたどる。形が想定外なら理由つきで例外（何も書かない） */
@@ -161,10 +169,12 @@ function withMatcher(group: Json, spec: HookSpec): Json {
  * その spec の handler（isHandlerOf）がある group の matcher が spec と違う時（file-viewer 設計 §3-2・§16。判定は spec ごと。他の spec の handler、たとえば guard の group には触れない）:
  * 自分の handler だけの group は matcher を書き換え、他の handler と同居する group からはその spec の分だけ抜いて、spec の matcher の新しい group を末尾に足す。
  */
-export function addHandlers(settings: Json, nodePath: string, hookPath: string): EditResult {
+export function addHandlers(settings: Json, nodePath: string, hookPath: string, opts?: AddHandlersOptions): EditResult {
   let next = settings;
   let changed = false;
   for (const spec of HOOK_SPECS) {
+    if (spec.file !== undefined && opts?.skip?.includes(spec.file) === true) continue;
+    const extra = spec.file === undefined ? opts?.activityArgs : undefined;
     const groups = eventGroups(next, spec.event);
     let found = false;
     let touched = false;
@@ -179,9 +189,9 @@ export function addHandlers(settings: Json, nodePath: string, hookPath: string):
         found = true;
         let stale = false;
         const updated = handlers.map((h) => {
-          if (!isHandlerOf(h, spec) || sameHandler(h, nodePath, hookPath, spec)) return h;
+          if (!isHandlerOf(h, spec) || sameHandler(h, nodePath, hookPath, spec, extra)) return h;
           stale = true;
-          return buildHandler(nodePath, specHookPath(hookPath, spec), spec);
+          return buildHandler(nodePath, specHookPath(hookPath, spec), spec, extra);
         });
         if (stale) touched = true;
         rewritten.push(stale ? { ...(group as Json), hooks: updated } : group);
@@ -191,7 +201,7 @@ export function addHandlers(settings: Json, nodePath: string, hookPath: string):
       touched = true;
       if (handlers.every((h) => isHandlerOf(h, spec))) {
         found = true;
-        rewritten.push({ ...withMatcher(group as Json, spec), hooks: handlers.map((h) => (sameHandler(h, nodePath, hookPath, spec) ? h : buildHandler(nodePath, specHookPath(hookPath, spec), spec))) });
+        rewritten.push({ ...withMatcher(group as Json, spec), hooks: handlers.map((h) => (sameHandler(h, nodePath, hookPath, spec, extra) ? h : buildHandler(nodePath, specHookPath(hookPath, spec), spec, extra))) });
         continue;
       }
       const rest = handlers.filter((h) => !isHandlerOf(h, spec));
@@ -199,7 +209,7 @@ export function addHandlers(settings: Json, nodePath: string, hookPath: string):
     }
     if (found && !touched) continue;
     changed = true;
-    const handler = buildHandler(nodePath, specHookPath(hookPath, spec), spec);
+    const handler = buildHandler(nodePath, specHookPath(hookPath, spec), spec, extra);
     const out = found ? rewritten : [...rewritten, spec.matcher === undefined ? { hooks: [handler] } : { matcher: spec.matcher, hooks: [handler] }];
     next = withEvent(next, spec.event, out);
   }

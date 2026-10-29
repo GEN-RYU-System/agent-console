@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GUARD_IFS, HOOK_SPECS, SERVER_KILL_GUARD_IFS, checkHooks, installHooks, isOwnHandler, uninstallHooks } from "../../server/activity-hooks.ts";
+import { BOARD_GUARD_HOOK_FILE, GUARD_IFS, HOOK_SPECS, SERVER_KILL_GUARD_IFS, addHandlers, checkHooks, installHooks, isOwnHandler, uninstallHooks } from "../../server/activity-hooks.ts";
 
 vi.setConfig({ testTimeout: 60000 });
 
@@ -455,5 +455,56 @@ describe("K6: コマンド（scripts/ac-hooks.mjs を一時の HOME で）", () 
     expect(r.status).toBe(1);
     expect(readFileSync(e.settings, "utf8")).toBe("{broken");
     expect(cli(e, "bogus").status).toBe(2);
+  });
+});
+
+describe("addHandlers の任意の4つ目の引数（便2b-3c。件の設定が使う）", () => {
+  const node = "/usr/local/bin/node";
+  const hook = "/data/hooks/activity-hook.mjs";
+  const URL_ARGS = ["--post", "http://127.0.0.1:4319/api/agent/case-activity"];
+  type Group = { matcher?: string; hooks: Array<{ args: string[]; if?: string }> };
+  const handlersOf = (settings: object): Array<{ event: string; args: string[] }> =>
+    Object.entries((settings as { hooks: Record<string, Group[]> }).hooks).flatMap(([event, groups]) => groups.flatMap((g) => g.hooks.map((h) => ({ event, args: h.args }))));
+
+  it("opts が無いとき（undefined・空）の出力は、今と1文字も変わらない", () => {
+    const plain = JSON.stringify(addHandlers({}, node, hook));
+    expect(JSON.stringify(addHandlers({}, node, hook, undefined))).toBe(plain);
+    expect(JSON.stringify(addHandlers({}, node, hook, {}))).toBe(plain);
+    expect(handlersOf(addHandlers({}, node, hook).settings)).toHaveLength(OWN_HANDLER_COUNT);
+  });
+
+  it("skip は spec.file と完全一致する spec を除く（board-guard の Stop だけが消える）", () => {
+    const r = addHandlers({}, node, hook, { skip: [BOARD_GUARD_HOOK_FILE] });
+    const all = handlersOf(r.settings);
+    expect(all).toHaveLength(OWN_HANDLER_COUNT - 1);
+    expect(all.some((h) => h.args[0].endsWith(`/${BOARD_GUARD_HOOK_FILE}`))).toBe(false);
+    // 記録用の Stop は残る
+    expect(all.filter((h) => h.event === "Stop")).toHaveLength(1);
+    // "activity-hook.mjs" のような別の名前は、spec.file が無い spec には効かない
+    expect(handlersOf(addHandlers({}, node, hook, { skip: ["activity-hook.mjs"] }).settings)).toHaveLength(OWN_HANDLER_COUNT);
+  });
+
+  it("activityArgs は spec.file が無い spec（記録用）の引数の後ろにだけ足す。guard の引数は変えない", () => {
+    const all = handlersOf(addHandlers({}, node, hook, { activityArgs: URL_ARGS }).settings);
+    const activity = all.filter((h) => h.args[0] === hook);
+    expect(activity).toHaveLength(EVENTS.length);
+    for (const h of activity) expect(h.args).toEqual([hook, ...URL_ARGS]);
+    for (const h of all.filter((x) => x.args[0] !== hook)) expect(h.args).toHaveLength(1);
+  });
+
+  it("同じ opts で2回足しても増えず（changed が偽）、引数が違う既存の設定はその場で直す（増やさない）", () => {
+    const opts = { skip: [BOARD_GUARD_HOOK_FILE], activityArgs: URL_ARGS };
+    const first = addHandlers({}, node, hook, opts);
+    const second = addHandlers(first.settings, node, hook, opts);
+    expect(second.changed).toBe(false);
+    expect(JSON.stringify(second.settings)).toBe(JSON.stringify(first.settings));
+    const other = addHandlers(first.settings, node, hook, { skip: [BOARD_GUARD_HOOK_FILE], activityArgs: ["--post", "http://127.0.0.1:1/x"] });
+    expect(other.changed).toBe(true);
+    expect(handlersOf(other.settings)).toHaveLength(OWN_HANDLER_COUNT - 1);
+    expect(handlersOf(other.settings).filter((h) => h.args[0] === hook).every((h) => h.args[2] === "http://127.0.0.1:1/x")).toBe(true);
+  });
+
+  it("scripts/ac-hooks.mjs（ユーザー設定に入れる道）は opts を渡さない: 引数は hook のパス1つのまま", () => {
+    expect(readFileSync(CLI, "utf8")).not.toMatch(/activityArgs|skip:/);
   });
 });
