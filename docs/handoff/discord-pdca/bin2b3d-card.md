@@ -8,8 +8,9 @@
 
 ## 調べた実物（行番号は origin/main ca414ad = v0.48.0）
 
-- `server/case-sandbox.ts`: `casePaths` :52-66（`CH` :66）・`reesc` :230・`CASE_PROTECTED_WRITE` :235-240・`CH_RECORD_DIRS` :243・`CH_RECORD_FILES` :244・`chSettingNames` :246-249・`q` :260-263・`rx` :266-269・`buildCaseRoomProfile` :287 から（順 2 の作成・削除の開け直し :316-318、順 3 の書き込みの許可 :326、順 3 の拒否 :328、順 4 :332-338）・`rewriteCaseClaudeJson` :394
-- `server/hub.ts`: `detectBreaks` :569-585（取得失敗で戻る :570、子孫の pid :574、`setClaudeSessionId` :577）・定期の取得 :149
+- `server/case-sandbox.ts`: `casePaths` :52-66（`CH` :66）・`reesc` :230・`CASE_PROTECTED_WRITE` :235-240・`CH_RECORD_DIRS` :243・`CH_RECORD_FILES` :244・`chSettingNames` :246-249・`q` :260-263・`rx` :266-269・`buildCaseRoomProfile` :288 から（順 2 の作成・削除の開け直し :316-318、順 3 の書き込みの許可 :326、順 3 の拒否 :328、順 4 :332-338）・`rewriteCaseClaudeJson` :394
+- `server/hub.ts`: `detectBreaks` :569-584（取得失敗で戻る :570、子孫の pid :574、`setClaudeSessionId` :577）・定期の取得 :149・`onPollError` :164-171（agents の失敗で `this.agents = null`）
+- `claudeSessionId` を鍵に使う所（取り違えの塞ぎの理由。変えない）: `server/http.ts:511-517`（呼び出し元の照合）・`:378-386`（画面の承認）・`server/held-merge.ts:29`（保存の一覧の合わせ）
 - `server/sessions.ts`: `casePaths` を呼ぶ所 :353・:436・:471（`this.caseHomeDir`・`this.config.dataDir`・`this.caseTmpRoot`）・`caseMainProcesses` :270-272・`restore` :540-551・`setClaudeSessionId` :554-559・新しい tmux の起動のときだけ `beforeNew` を呼ぶ :676-700
 - `server/process-tree.ts`: `descendantPids` :40・`readProcessTable` :62
 - `ops/shell/ccdiscord.zsh`: `CLAUDE_CONFIG_DIR` :61・`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` :62・`exec` :74
@@ -20,35 +21,41 @@
 ### A. 部屋の書き込み（`server/case-sandbox.ts`）
 
 - `CH_RECORD_FILES`（:244）に `history.jsonl` を足す（(A)。`[".last-cleanup", ".claude.json", "history.jsonl"]`）
-- 新しい定数 `CH_CLAUDE_JSON_COMPANIONS = [".claude.json.lock"]`（(C) の仲間の literal）と、関数 `chClaudeJsonTmp = (CH: string): string => \`^${reesc(CH)}/\\.claude\\.json\\.tmp\\.[0-9]+\\.[0-9a-f]{12}$\``（正規表現 1つ）を :244 の下に置く
+- 新しい定数 `CH_CLAUDE_JSON_COMPANIONS = [".claude.json.lock"]`（(C) の仲間の literal）と、関数 `chClaudeJsonTmp = (CH: string): string => \`^${reesc(CH)}/\\.claude\\.json\\.tmp\\.[0-9]+\\.${"[0-9a-f]".repeat(12)}$\``（正規表現 1つ）を :244 の下に置く。Seatbelt の正規表現は回数の `{12}` を受けない（`{12}` では正しい名前も拒否される。room-design §4-2a の 1）ので、`[0-9a-f]` を12回並べた形にする。`{n}` の形はどこにも使わない
 - 順 2 の作成・削除の開け直し（:318 の塊）と、順 3 の書き込みの許可（:326 の塊）の両方に、`CH_CLAUDE_JSON_COMPANIONS` の literal（`path.join(CH, n)` を `q` で）と `rx(chClaudeJsonTmp(CH))` を足す。`history.jsonl` は `CH_RECORD_FILES` に入るので、今の `chRecordLit` で両方に入る
 - 順 3 の拒否（:328）と順 4（:332-338）は変えない
 - テスト（`case-sandbox.test.ts` の :420-431・:465-481 の並びに足す）:
   - 出力の順 2 の開け直しと順 3 の許可の両方に、`<CH>/history.jsonl` と `<CH>/.claude.json.lock` の literal と、上の正規表現の `(regex #"…")` があること
   - その正規表現が `.claude.json.tmp.20273.0c36f211e77d` に当たり、`.claude.json.tmp.20273.0c36f211e77` （11桁）・`.claude.json.tmp.x.0c36f211e77d`・`.claude.json.tmp.20273.0c36f211e77d/x`・`.claude.json.evil`・`.claude.json.backup.1`・`backups/.claude.json.tmp.1.0c36f211e77d` に当たらないこと（JS の `new RegExp` で確かめる）
+  - `buildCaseRoomProfile` の出力の `(regex #"…")` のどれにも `{` が無いこと（JS では当たっても Seatbelt では当たらない形を止めるため）
   - `backup` を含む literal・`subpath "<CH>"`（根の丸ごと）が許可に入らないこと（今のテストがあればそのまま通る）
 
 ### B. 会話の番号の拾い方（新しい `server/case-agents.ts`・`server/hub.ts`・`server/sessions.ts`）
 
 - `server/case-agents.ts` に純粋に近い同期の関数を1つ置く: `readCaseClaudeSessionId(caseHome: string, pids: ReadonlySet<number>): string | undefined`
-  - `fs.readdirSync(path.join(caseHome, "sessions"))` の名前のうち `/^[0-9]+\.json$/` に当たる物だけを見る（`.key` などほかの名前は開かない）。名前の数字が `pids` に無い物は開かない
-  - 開く前に `fs.lstatSync` で普通のファイル（`isFile()` が真、シンボリックリンクでない）かつ大きさ 64KiB（`CASE_SESSION_FILE_MAX = 64 * 1024`）以下を確かめる。開くのは `fs.openSync(p, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)` → `fs.fstatSync` で同じ確かめをもう一度 → 読む → 閉じる
+  - まず `fs.lstatSync(path.join(caseHome, "sessions"))` で本当のディレクトリ（`isDirectory()` が真。シンボリックリンクは偽になる）を確かめる。違えば undefined
+  - `fs.readdirSync` の名前のうち `/^[0-9]+\.json$/` に当たる物だけを見る（`.key` などほかの名前は開かない）。名前の数字が `pids` に無い物は開かない
+  - 開く前に `fs.lstatSync` で普通のファイル（`isFile()` が真、シンボリックリンクでない）かつ大きさ 64KiB（`CASE_SESSION_FILE_MAX = 64 * 1024`）以下を確かめる。開くのは `fs.openSync(p, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK)`（名前付きパイプにすり替えられても止まらないため）→ `fs.fstatSync` で、普通のファイル・`nlink === 1`・64KiB 以下をもう一度確かめる → `CASE_SESSION_FILE_MAX + 1` バイトの入れ物に `fs.readSync` で読み、読めた長さが上限を超えたら捨てる → `finally` で閉じる
   - JSON として読み、`pid` が数で名前の数字と同じ、かつ `pids` にあり、`sessionId` が文字列で UUID の形（`sessions.ts` の `isClaudeSessionId` と同じ判定を使う。正規表現を写さず import する。import できない形なら止めて報告）の物の `sessionId` を返す。ほかのキーは使わない
   - どの失敗（置き場が無い・読めない・壊れている）でも投げず、undefined。見つかった物が2つ以上で `sessionId` が違うときも undefined（どれかを選ばない）
-- `server/sessions.ts` に `caseHomeOf(id: string): string | undefined` を足す。生きている件の役割（`caseSandbox: true`）のセッションのときだけ、今の `casePaths({ id, H: this.caseHomeDir, D: this.config.dataDir, tmpRoot: this.caseTmpRoot }).CH`（:436 と同じ式）を返す。ほかは undefined。道の組み立てをほかの所に書かない
+- `server/sessions.ts` に `caseHomeOf(id: string): string | undefined` を足す。件の役割かは `this.config.roles.find((r) => r.id === session.roleId)?.caseSandbox === true` で見る（`findRole` は見つからないと投げるので使わない）。生きている件の役割のセッションのときだけ、今の `casePaths({ id, H: this.caseHomeDir, D: this.config.dataDir, tmpRoot: this.caseTmpRoot }).CH`（:436 と同じ式）を返す。ほかは undefined。道の組み立てをほかの所に書かない
 - `server/hub.ts` の `detectBreaks`（:569）の最初（:570 の取得失敗で戻る行の前）で、件の番号を付ける:
   - 件のセッションが1つも無ければ何もしない（`readProcessTable` も呼ばない）
-  - あれば `readProcessTable().catch(() => null)` を1回呼び（null なら何もしない）、件ごとに `readCaseClaudeSessionId(CH, descendantPids(s.term.pid, table))` の結果が undefined でなければ `this.sessions.setClaudeSessionId(s.id, 結果)`
-  - :574-577 の今の付け方はそのまま（件の本体は `claude agents --json` に出ないので、件については何も起きない）。通知・状態の判定は変えない
+  - `this.agents === null`（直前の `claude agents --json` が失敗）なら何もしない（照合できないので付けない）
+  - あれば `readProcessTable().catch(() => null)` を1回呼び（null なら何もしない）、件ごとに `readCaseClaudeSessionId(CH, descendantPids(s.term.pid, table))` の結果を得る
+  - 取り違えの塞ぎ: 結果が、その件以外のセッション（`this.sessions.list()` の全部。止まった物も）の `claudeSessionId` か、`this.agents` のどれかの行の `sessionId` と同じなら付けない。違えば `this.sessions.setClaudeSessionId(s.id, 結果)`
+  - 件の処理の全体を try/catch で包み、例外は `console.error` に1行出して捨てる（外へ出すと `onPollError` で `this.agents = null` になり、全部のセッションの状態が不明になるため）
+  - :574-577 の今の付け方はそのまま（件の本体は `claude agents --json` に出ないので、件については何も起きない）。ただし :577 で件でないセッションに番号を付けるとき、同じ番号を持つ件のセッションがあれば、その件の番号を外す。外すのは `server/sessions.ts` に足す `clearCaseClaudeSessionId(id: string): void`（件の役割のセッションのときだけ `claudeSessionId` を消して `this.notify()`。ほかの役割では何もしない）。通知・状態の判定は変えない
 - テスト（新しい `tests/unit/case-agents.test.ts`。一時の置き場に case-home を作る）:
   - `sessions/<pid>.json`（pid が pids にある・sessionId が UUID）→ その sessionId
   - pid が pids に無い → undefined／名前の数字とファイルの中の `pid` が違う → undefined
-  - シンボリックリンクの `<pid>.json`（中身が正しい物を指す）→ undefined
+  - シンボリックリンクの `<pid>.json`（中身が正しい物を指す）→ undefined／`sessions` そのものが正しい置き場へのシンボリックリンク → undefined
+  - `<pid>.json` が名前付きパイプ（`mkfifo`）→ すぐ undefined が返る（止まらない）／固いリンク（`nlink` が2）→ undefined
   - 64KiB を超える → undefined／JSON でない → undefined／sessionId が UUID の形でない → undefined
   - `<pid>.<16進>.key` だけがある → undefined（開かないことは、中身を壊れた JSON にしても例外が出ないことで確かめる）
   - `sessions/` が無い → undefined
   - 2つの正しいファイルで sessionId が違う → undefined
-- テスト（hub か sessions の今の試験の下支えで書ける所）: 件のセッションに対し、case-home の `sessions/<子孫の pid>.json` を置くと `claudeSessionId` が付く。件でないセッションの case-home の道は `caseHomeOf` が undefined。書けない形なら、`case-agents.test.ts` と `caseHomeOf` の単体のテストだけにして、そのことを PR 本文に書く
+- テスト（hub か sessions の今の試験の下支えで書ける所）: 件のセッションに対し、case-home の `sessions/<子孫の pid>.json` を置くと `claudeSessionId` が付く。件でないセッションの case-home の道は `caseHomeOf` が undefined。ほかのセッションの `claudeSessionId` か `claude agents --json` の行と同じ番号のときは付かない。`claude agents --json` が失敗している間は付かない。件に付いた番号を、後から件でないセッションが正しく知ると、件から外れる。`readCaseClaudeSessionId` が投げるように差し替えても、件でないセッションの状態が不明にならない。書けない形なら、`case-agents.test.ts` と `caseHomeOf` の単体のテストだけにして、そのことを PR 本文に書く
 
 ### C. 起動関数（`ops/shell/ccdiscord.zsh`）
 
