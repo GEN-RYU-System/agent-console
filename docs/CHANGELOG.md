@@ -2,6 +2,7 @@
 
 版を出すたびに 1 行追記する（版の正本は git タグ `vX.Y.Z`）。
 
+- 0.48.1 部屋の受入で落ちた3つを直した（case-home の `.claude.json.lock`・`.claude.json.tmp.<pid>.<16進12桁>`・`history.jsonl` を書けるようにした・件の会話の番号を case-home の `sessions/<pid>.json` から付ける・起動関数で `DISABLE_AUTOUPDATER=1`）。戻し方 `bash scripts/ac-update.sh v0.48.0`
 - 0.48.0 件のセッション（discord-case）の claude 本体・見張りのフック・Bash の子を、件ごとの部屋（`sandbox-exec -f <dataDir>/cases/<id>/room.sb`）の中で動かし、外への通信をサーバーの中の受付（127.0.0.1:18124）1か所に絞った（`api.anthropic.com` は本体の pid にだけ通す。claude の状態は件ごとの case-home、ログインは専用の鍵）。件の活動の記録は、件のフックからサーバーの `POST /api/agent/case-activity` へ送らせ、サーバーが今と同じファイルに書く。部屋・受付・case-home・macOS の版・claude の道・tmux のどれかが欠けたら件を開かない（503）。**初めて入れたあと、設計者が測りのあとで `node scripts/ac-case-macos.mjs accept` を打ってサーバーを起き直すまで、件は開かない**。戻し方 `bash scripts/ac-update.sh v0.47.2`（戻す前に件を全部閉じ、`<dataDir>/cases/*`・`case-gh/*`・`case-home/*` を消す。room-design §6）
 - 0.47.2 件の役割 discord-case を足した（件ごとに本店から切り離した写しと、囲い・Claude の道具の見張りの設定を作り、`--restricted` で開く。作れないときは 503 で開かない）。秘密の登録の台本を、端末で打つ読み取りに変更。git の繋がりの確かめの直し（リンクの commondir・gitdir・本店の確かめを先に）。戻し方 `bash scripts/ac-update.sh v0.47.1`
 - 0.47.1 同梱の設定の同時に開ける窓の数を、いったん 16 にした（窓が 11 本開いた状態で 6 の版を入れると、更新のときに 5 本が開き直されないため）。6 に下げるのは窓が減ってから。ほかの動きは 0.47.0 と同じ。戻し方は `bash scripts/ac-update.sh v0.47.0`（窓が 6 本以下のとき）または `v0.46.3`。設計は docs/handoff/window-limit/design.md §10 便1b。

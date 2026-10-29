@@ -209,6 +209,7 @@ describe.skipIf(!hasZsh && process.env.CI === undefined)("ccdiscordcase", () => 
     expect(e.CLAUDE_CODE_TMPDIR).toBe(caseTmp);
     expect(e.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS).toBe("1");
     expect(e.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC).toBe("1");
+    expect(e.DISABLE_AUTOUPDATER).toBe("1");
     expect(e.CLAUDE_CODE_OAUTH_TOKEN).toBe(FAKE_LOGIN);
     expect(e.TMUX).toBeUndefined();
     expect(e.TMUX_PANE).toBeUndefined();

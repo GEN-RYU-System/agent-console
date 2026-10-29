@@ -241,7 +241,10 @@ export const CASE_PROTECTED_WRITE = (p: Pick<CaseParams, "W" | "R" | "CH">): str
 
 /** case-home の中で本体が書く記録（§4-2 (A)）。置き場6つ（subpath）と、ファイル2つ（literal） */
 const CH_RECORD_DIRS = ["projects", "sessions", "session-env", "shell-snapshots", "tasks", "teams"];
-const CH_RECORD_FILES = [".last-cleanup", ".claude.json"];
+const CH_RECORD_FILES = [".last-cleanup", ".claude.json", "history.jsonl"];
+/** `.claude.json` の書き直しの仲間（(C)）。ロックの literal と、一時の名前 `.claude.json.tmp.<pid>.<16進12桁>` の正規表現。Seatbelt の正規表現は `{n}` を受けないので 12 桁は並べて書く */
+const CH_CLAUDE_JSON_COMPANIONS = [".claude.json.lock"];
+const chClaudeJsonTmp = (CH: string): string => `^${reesc(CH)}/\\.claude\\.json\\.tmp\\.[0-9]+\\.${"[0-9a-f]".repeat(12)}$`;
 /** case-home の中の設定として読み戻される名前（§4-2 (B)）。書き込みの拒否と作成・削除の塞ぎに入れる */
 const chSettingNames = (CH: string): string[] => [
   `^${reesc(CH)}/(remote-settings\\.json|remote-settings\\.json\\.synced-at|plugins|backups|settings\\.json|agents|hooks|commands|skills|CLAUDE\\.md)(/.*)?$`,
@@ -314,8 +317,9 @@ export function buildCaseRoomProfile(p: CaseParams, opts: CaseRoomOptions): stri
   // 移動の塞ぎ: 読み取りを拒否した道そのものと、その祖先のディレクトリ全部（srt の moveBlockingFilters と同じ形）
   block("(deny file-write-unlink file-write-create", uniq(denyRead.flatMap((d) => [`(subpath ${q(d)})`, ...ancestorsOf(d).map((a) => `(literal ${q(a)})`)])));
   const chRecordSub = CH_RECORD_DIRS.map((n) => path.join(CH, n));
-  const chRecordLit = CH_RECORD_FILES.map((n) => path.join(CH, n));
-  block("(allow file-write-unlink file-write-create", [...[W, R, T, ...chRecordSub].map((x) => `(subpath ${q(x)})`), ...chRecordLit.map((x) => `(literal ${q(x)})`)]);
+  const chRecordLit = [...CH_RECORD_FILES, ...CH_CLAUDE_JSON_COMPANIONS].map((n) => path.join(CH, n));
+  const chTmpRx = chClaudeJsonTmp(CH);
+  block("(allow file-write-unlink file-write-create", [...[W, R, T, ...chRecordSub].map((x) => `(subpath ${q(x)})`), ...chRecordLit.map((x) => `(literal ${q(x)})`), rx(chTmpRx)]);
   // 書ける場所 W・R・T・CH の中にある読み取りの拒否の道は、上の開け直しのあとに、動かせない形へ戻す（srt :1009-1020 の形。開け直しのあとに置く）
   const writeRoots = [W, R, T, CH];
   const under = (x: string): boolean => writeRoots.some((w) => isStrictlyUnder(x, w));
@@ -323,7 +327,7 @@ export function buildCaseRoomProfile(p: CaseParams, opts: CaseRoomOptions): stri
 
   // 3. 書き込み
   add("; ===== 3. 書き込み =====");
-  block("(allow file-write*", [...[W, R, T, ...chRecordSub].map((x) => `(subpath ${q(x)})`), ...chRecordLit.map((x) => `(literal ${q(x)})`), '(literal "/dev/null")', '(literal (param "TTY"))']);
+  block("(allow file-write*", [...[W, R, T, ...chRecordSub].map((x) => `(subpath ${q(x)})`), ...chRecordLit.map((x) => `(literal ${q(x)})`), rx(chTmpRx), '(literal "/dev/null")', '(literal (param "TTY"))']);
   add('(allow file-ioctl (literal (param "TTY")))');
   block("(deny file-write*", [...CASE_DENY_WRITE(p).map((d) => `(subpath ${q(d)})`), ...protectedWrite.map(rx), ...chNames.map(rx)]);
 

@@ -266,6 +266,23 @@ export class SessionManager {
     ];
   }
 
+  /** 生きている件のセッションの case-home の道。件でない・止まった・無いときは undefined */
+  caseHomeOf(id: string): string | undefined {
+    const session = this.sessions.get(id);
+    if (!session || session.exited) return undefined;
+    if (this.config.roles.find((r) => r.id === session.roleId)?.caseSandbox !== true) return undefined;
+    return casePaths({ id, H: this.caseHomeDir, D: this.config.dataDir, tmpRoot: this.caseTmpRoot }).CH;
+  }
+
+  /** 件のセッションに付いた会話の番号を外す。件の役割でないとき・番号が無いときは何もしない（止まった件にも掛ける） */
+  clearCaseClaudeSessionId(id: string): void {
+    const session = this.sessions.get(id);
+    if (!session || session.claudeSessionId === undefined) return;
+    if (this.config.roles.find((r) => r.id === session.roleId)?.caseSandbox !== true) return;
+    session.claudeSessionId = undefined;
+    this.notify();
+  }
+
   /** 件のセッションの本体の記録の写し（受付と活動の入口が、pid から件を逆引きするために回す） */
   caseMainProcesses(): ReadonlyMap<string, MainProcess> {
     return new Map(this.caseMain);
