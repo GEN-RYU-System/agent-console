@@ -9,7 +9,7 @@
 ## 調べた実物（行番号は origin/main ca414ad = v0.48.0）
 
 - `server/case-sandbox.ts`: `casePaths` :52-66（`CH` :66）・`reesc` :230・`CASE_PROTECTED_WRITE` :235-240・`CH_RECORD_DIRS` :243・`CH_RECORD_FILES` :244・`chSettingNames` :246-249・`q` :260-263・`rx` :266-269・`buildCaseRoomProfile` :287 から（順 2 の作成・削除の開け直し :316-318、順 3 の書き込みの許可 :326、順 3 の拒否 :328、順 4 :332-338）・`rewriteCaseClaudeJson` :394
-- `server/hub.ts`: `detectBreaks` :568-584（取得失敗で戻る :569、子孫の pid :574、`setClaudeSessionId` :577）・定期の取得 :149
+- `server/hub.ts`: `detectBreaks` :569-585（取得失敗で戻る :570、子孫の pid :574、`setClaudeSessionId` :577）・定期の取得 :149
 - `server/sessions.ts`: `casePaths` を呼ぶ所 :353・:436・:471（`this.caseHomeDir`・`this.config.dataDir`・`this.caseTmpRoot`）・`caseMainProcesses` :270-272・`restore` :540-551・`setClaudeSessionId` :554-559・新しい tmux の起動のときだけ `beforeNew` を呼ぶ :676-700
 - `server/process-tree.ts`: `descendantPids` :40・`readProcessTable` :62
 - `ops/shell/ccdiscord.zsh`: `CLAUDE_CONFIG_DIR` :61・`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` :62・`exec` :74
@@ -36,7 +36,7 @@
   - JSON として読み、`pid` が数で名前の数字と同じ、かつ `pids` にあり、`sessionId` が文字列で UUID の形（`sessions.ts` の `isClaudeSessionId` と同じ判定を使う。正規表現を写さず import する。import できない形なら止めて報告）の物の `sessionId` を返す。ほかのキーは使わない
   - どの失敗（置き場が無い・読めない・壊れている）でも投げず、undefined。見つかった物が2つ以上で `sessionId` が違うときも undefined（どれかを選ばない）
 - `server/sessions.ts` に `caseHomeOf(id: string): string | undefined` を足す。生きている件の役割（`caseSandbox: true`）のセッションのときだけ、今の `casePaths({ id, H: this.caseHomeDir, D: this.config.dataDir, tmpRoot: this.caseTmpRoot }).CH`（:436 と同じ式）を返す。ほかは undefined。道の組み立てをほかの所に書かない
-- `server/hub.ts` の `detectBreaks`（:568）の最初（:569 の取得失敗で戻る行の前）で、件の番号を付ける:
+- `server/hub.ts` の `detectBreaks`（:569）の最初（:570 の取得失敗で戻る行の前）で、件の番号を付ける:
   - 件のセッションが1つも無ければ何もしない（`readProcessTable` も呼ばない）
   - あれば `readProcessTable().catch(() => null)` を1回呼び（null なら何もしない）、件ごとに `readCaseClaudeSessionId(CH, descendantPids(s.term.pid, table))` の結果が undefined でなければ `this.sessions.setClaudeSessionId(s.id, 結果)`
   - :574-577 の今の付け方はそのまま（件の本体は `claude agents --json` に出ないので、件については何も起きない）。通知・状態の判定は変えない
