@@ -6,6 +6,7 @@ import { loadLedger, type LedgerSnapshot } from "./ledger.ts";
 import { ciOfResponse, fetchPr, isSettled, resolveTarget, type CiState, type PrResponse, type PrTarget } from "./pr-status.ts";
 import { BreakTracker, breakBody, osascriptSender, type NotificationSender } from "./notify.ts";
 import { startPolling } from "./poll.ts";
+import { readCaseClaudeSessionId } from "./case-agents.ts";
 import { descendantPids, readProcessTable } from "./process-tree.ts";
 import type { RelayView } from "./relay.ts";
 import type { RestoreNotice } from "./restore.ts";
@@ -567,6 +568,7 @@ export class Hub {
 
   /** 前回の status と比べ、区切りがあれば未読を増やして macOS 通知を出す。取得失敗の間は何も判定しない。 */
   private async detectBreaks(): Promise<void> {
+    await this.attachCaseSessionIds();
     if (this.agents === null) { this.emitSample(null); return; }
     const table = await readProcessTable().catch(() => []);
     const states = new Map<string, SessionState>();
@@ -574,13 +576,42 @@ export class Hub {
       const agent = agentForSession({ exited: s.exited, pids: descendantPids(s.term.pid, table) }, this.agents);
       states.set(s.id, stateForSession({ exited: s.exited, pids: descendantPids(s.term.pid, table) }, this.agents));
       // Claude の sessionId を知ったら控える（再起動のあとに同じ会話を開き直すため。UUID の形でなければ無視される）
-      if (agent?.sessionId !== undefined) this.sessions.setClaudeSessionId(s.id, agent.sessionId);
+      if (agent?.sessionId !== undefined) {
+        // 件の番号は件の処理（attachCaseSessionIds）だけが付ける。件には付けず、同じ番号を持つ件があれば毎回外す
+        if (this.sessions.caseHomeOf(s.id) === undefined) this.sessions.setClaudeSessionId(s.id, agent.sessionId);
+        for (const other of this.sessions.list()) if (other.id !== s.id && other.claudeSessionId === agent.sessionId) this.sessions.clearCaseClaudeSessionId(other.id);
+      }
       const isBreak = this.tracker.observe(s.id, agent?.status ?? null);
       if (isBreak && agent && (agent.status === "waiting" || agent.status === "idle")) {
         this.sendNotification?.(breakBody(agent.name ?? s.name, agent.status));
       }
     }
     this.emitSample(states);
+  }
+
+  /**
+   * 件のセッションに会話の番号を付ける（case-home の sessions/<pid>.json を部屋の外で読む）。
+   * 件が無い回・直前の claude agents --json が失敗した回は何もしない。例外は外へ出さない（出すと全部のセッションの状態が不明になる）。
+   */
+  private async attachCaseSessionIds(): Promise<void> {
+    try {
+      const cases = this.sessions.list().filter((s) => !s.exited && this.sessions.caseHomeOf(s.id) !== undefined);
+      if (cases.length === 0 || this.agents === null) return;
+      const table = await readProcessTable().catch(() => null);
+      if (table === null) return;
+      const agentIds = new Set(this.agents.flatMap((a) => (a.sessionId !== undefined ? [a.sessionId] : [])));
+      for (const s of cases) {
+        const ch = this.sessions.caseHomeOf(s.id);
+        if (ch === undefined) continue;
+        const taken = new Set(agentIds);
+        for (const o of this.sessions.list()) if (o.id !== s.id && o.claudeSessionId !== undefined) taken.add(o.claudeSessionId);
+        if (s.claudeSessionId !== undefined && taken.has(s.claudeSessionId)) this.sessions.clearCaseClaudeSessionId(s.id);
+        const found = readCaseClaudeSessionId(ch, descendantPids(s.term.pid, table));
+        if (found !== undefined && !taken.has(found)) this.sessions.setClaudeSessionId(s.id, found);
+      }
+    } catch (err) {
+      console.error("case session id: failed", err instanceof Error ? err.message : String(err));
+    }
   }
 
   /** 行を選んだとき。変化があれば購読者へ配信する。 */

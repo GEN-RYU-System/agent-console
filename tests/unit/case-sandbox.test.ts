@@ -332,6 +332,7 @@ function splitForms(text: string): string[] {
 const CLAUDE_REAL = "/opt/claude/versions/2.1.311";
 const roomOpts = (): CaseRoomOptions => ({ proxyPort: CASE_PROXY_PORT, consolePort: CONSOLE_PORT, claudeReal: CLAUDE_REAL, guardScript: "/repo/ops/case/case-guard.mjs" });
 const quoted = (x: string): string => JSON.stringify(x);
+const chClaudeJsonTmpForTest = (CH: string): string => `^${CH.replace(/[.^$*+?()[\]{}|\\]/g, "\\$&")}/\\.claude\\.json\\.tmp\\.[0-9]+\\.${"[0-9a-f]".repeat(12)}$`;
 const formsStarting = (profile: string, head: string): string[] => splitForms(profile).filter((f) => f.startsWith(head + "\n") || f.startsWith(head + " ") || f === head);
 const subpathsOf = (form: string): string[] => [...form.matchAll(/\(subpath ("(?:[^"\\]|\\.)*")\)/g)].map((m) => JSON.parse(m[1]) as string);
 const literalsOf = (form: string): string[] => [...form.matchAll(/\(literal ("(?:[^"\\]|\\.)*")\)/g)].map((m) => JSON.parse(m[1]) as string);
@@ -428,6 +429,28 @@ describe("buildCaseRoomProfile", () => {
     expect(literalsOf(write)).toEqual(expect.arrayContaining([path.join(p.CH, ".last-cleanup"), path.join(p.CH, ".claude.json"), "/dev/null"]));
     // 開け直しは移動の塞ぎのあと
     expect(text.indexOf("(allow file-write-unlink file-write-create")).toBeGreaterThan(text.indexOf("(deny file-write-unlink file-write-create"));
+  });
+
+  it("opens the case-home companions (.claude.json.lock, history.jsonl, .claude.json.tmp.<pid>.<12 hex>) in both the create re-open and the write allow", () => {
+    const { p, text } = prof();
+    const reopen = formsStarting(text, "(allow file-write-unlink file-write-create")[0];
+    const write = formsStarting(text, "(allow file-write*")[0];
+    const tmpRe = chClaudeJsonTmpForTest(p.CH);
+    for (const form of [reopen, write]) {
+      expect(literalsOf(form)).toEqual(expect.arrayContaining([path.join(p.CH, "history.jsonl"), path.join(p.CH, ".claude.json.lock")]));
+      expect(regexesOf(form)).toContain(tmpRe);
+      expect(covered(form, `${p.CH}/.claude.json.tmp.20273.0c36f211e77d`)).toBe(true);
+      for (const bad of [".claude.json.tmp.20273.0c36f211e77", ".claude.json.tmp.x.0c36f211e77d", ".claude.json.tmp.20273.0c36f211e77d/x", ".claude.json.evil", ".claude.json.backup.1", "backups/.claude.json.tmp.1.0c36f211e77d"]) expect(covered(form, `${p.CH}/${bad}`), bad).toBe(false);
+      expect(subpathsOf(form)).not.toContain(p.CH);
+      expect(literalsOf(form).some((l) => l.includes("backup"))).toBe(false);
+    }
+  });
+
+  it("uses no {n} repetition in any regex of the room profile (Seatbelt does not accept it)", () => {
+    const { text } = prof();
+    const all = regexesOf(text);
+    expect(all.length).toBeGreaterThan(0);
+    for (const r of all) expect(r.includes("{"), r).toBe(false);
   });
 
   it("blocks moving a denied path and every ancestor directory of it (literal)", () => {
