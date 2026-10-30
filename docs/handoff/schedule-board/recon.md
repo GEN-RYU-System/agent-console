@@ -20,13 +20,13 @@
 ## 今の動き（事実）
 ### 画面のタブ
 - 中央タブは src/pages/ConsolePage.tsx:58 の `CenterTab`（chat / terminal / changes / files / pr / picks / routines / reservations の8種）。状態 :182、描画 :532-547（金型 `@sa/components/Tabs`、:9）。文言 src/locales/ja.json:244-253。
-- 各ペインは常に置き `active` で出し分け（ConsolePage.tsx:607-608）。手本 src/components/Reservations/ReservationsPane.tsx（active の間だけ 10 秒ごとに取得 :34-39）。
+- 各ペインは常に置き `active` で出し分け（ConsolePage.tsx:607-608）。手本 src/components/Reservations/ReservationsPane.tsx（active の間だけ 10 秒ごとに取得 :39-45）。
 - 入れ子のタブは右欄だけ（src/components/RightPane/RightPane.tsx:10, :32）。
 
 ### 保存・API・認証
-- dataDir = ~/Library/Application Support/agent-console（server/config.ts:41）。JSON 保存の共通部品 server/json-store.ts（0600/0700、直列化 :10、原子的書き込み :30-36）。手本 server/reservations.ts（version 1、件数上限 :20-22）。
-- 画面用 API の手本 server/http.ts:226-229（/api/reservations）。認証 http.ts:716-727（セッショントークンか Bearer、変更系は Origin 必須）。
-- AI 用の口の手本 http.ts:459 handleAgentReservations（認証より前の分岐 :703、合言葉 dataDir/reserve-token、hooks/ac-reserve.mjs は 127.0.0.1 だけへ fetch・入力 64KiB 上限 :11）。
+- dataDir = ~/Library/Application Support/agent-console（server/config.ts:41）。JSON 保存の共通部品 server/json-store.ts（0600/0700、直列化 :10、原子的書き込み :30-36）。手本 server/reservations.ts（version 1、件数上限 :24-25 MAX_PENDING 50 / MAX_AGENT_PENDING 20）。
+- 画面用 API の手本 server/http.ts:226, :229-231（/api/reservations。:227 は定期実行の /api/schedule/preview、:228 は discord-intake）。認証 http.ts:716-727（セッショントークンか Bearer、変更系は Origin 必須）。
+- AI 用の口の手本 http.ts:459 handleAgentReservations（認証より前の分岐 :703、合言葉 dataDir/reserve-token、hooks/ac-reserve.mjs は 127.0.0.1 だけへ fetch・入力 64KiB 上限 :10）。
 
 ### AI がデータを書く既存の経路
 - 作戦ボード（hooks/ac-board.mjs、dataDir/boards/<会話番号>.json、README.md:142-190）。会話ごとのデータで、会話をまたぐ予定には使えない（server/boards.ts:9-10）。サーバーは読むだけ（server/board-routes.ts:11-13）。
@@ -38,9 +38,9 @@
 - 新しいセッションを開いて送る部品 server/launch.ts の launchAndSend（予約・定期実行が使用）。
 
 ### 外への通信・秘密・通知
-- サーバーの外向き HTTP は Discord（server/discord-api.ts:33）だけ。CSP（http.ts:676）の connect-src は 'self' と ws://127.0.0.1 のみ。Google 関連の実装は無い。
+- サーバーの外向き HTTP は Discord だけ（行き先の固定は server/discord-api.ts:75 `host !== DISCORD_HOST` と discord-credentials.ts）。CSP（http.ts:676）の connect-src は 'self' と ws://127.0.0.1 のみ。Google 関連の実装は無い。
 - 秘密は macOS Keychain（service "agent-console"、server/keychain.ts:6-39）。
-- macOS 通知 server/notify.ts:21-37。Discord 通知 server/discord-notifier.ts（再送 30秒/2分/10分、最後は macOS 通知）。時計は 1 秒 tick（reservations.ts:168）、日本時間固定（reservations.ts:15）。
+- macOS 通知 server/notify.ts:21-37。Discord 通知 server/discord-notifier.ts（再送 30秒/2分/10分、最後は macOS 通知）。時計は 1 秒 tick（reservations.ts:168）、日本時間固定（reservations.ts:16 TIME_ZONE）。
 - 重なり検出 server/schedule-gate.ts は予約と定期実行同士だけ（GAP 60分 :11）。カレンダー予定との重なりは無い。
 
 ### スマホ
