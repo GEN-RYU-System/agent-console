@@ -53,7 +53,7 @@
   - 週: 同じ時間割で月曜〜日曜の7列（日本時間）。今日の列の見出しを強調。前の週・次の週へ送るボタン。
   - 月: 月曜始まりのカレンダーの升目（5〜6行×7列）。各日に「時刻 題名」の小札を2件まで、それ以上は「ほか N 件」。重なりのある予定は赤の小札。日を押すとその日の「日」表示へ移る。前の月・次の月へ送るボタン。
   - Google から読む範囲は表示に合わせる（§4-4）。
-- 時間割（秘書・開発とも同じ形）: 左に時刻の目盛り（既定 8:00〜20:00、1時間 = 60px、この範囲外の予定があれば目盛りをその時刻まで広げる）、その右に日の列。予定は開始〜終了の長さのブロックで置く。今日の列に「いま HH:MM」の横線。
+- 時間割（秘書・開発とも同じ形）: 左に時刻の目盛り（既定 8:00〜20:00、1時間の高さは金型のトークン `--schedule-row-height`（salesanchor frontend/src の tokens.css、「1時間の高さ（標準）」48px）、この範囲外の予定があれば目盛りをその時刻まで広げる）、その右に日の列。予定は開始〜終了の長さのブロックで置く。今日の列に「いま HH:MM」の横線。
 - 重なる予定は同じ列の中で横に分けて並べ、両方を赤枠＋「重なり」の札にする（§4-6）。右脇に「時間が重なっています」の説明欄。
 - 終日の予定は列の見出しのすぐ下に帯で出す。時刻の無いやること・返事待ちは右脇の「時刻の決まっていないこと」欄に出す（終わった・消すボタン付き）。
 - ブロックの中身: 時刻・題名・カレンダー由来は「Google」の札。色は種類（予定／やること／締め切り）で分ける。ブロックを押すと詳細（終わった・消す・メモ）の小窓。
@@ -65,7 +65,7 @@
 
 ### 4-2 開発／秘書の振り分け
 - やること: 作るときに side（"dev" | "secretary"）を必ず選ぶ。
-- Google カレンダーの予定: 既定は「秘書」。設定 `schedule.devCalendarIds`（カレンダー ID の配列、既定 []）に入るカレンダーの予定と、題名が「[開発]」で始まる予定は「開発」。
+- Google カレンダーの予定: 既定は「秘書」。設定 `schedule.devCalendarIds`（置き場は §15-3）（カレンダー ID の配列、既定 []）に入るカレンダーの予定と、題名が「[開発]」で始まる予定は「開発」。
 - 開発の列には自動で次も出す（読むだけ・編集不可）: (a) 開いているセッションの作戦ボードの tasks のうち status "doing"（セッション名つき、server/boards.ts の読み取りを使う） (b) 許可待ちのセッション（既存の waitingFor 状態）を「待っている確認」として。日付の無い行なので「時刻の決まっていないこと」の欄に出す。
 
 ### 4-3 やることの保存（正本は1か所）
@@ -242,7 +242,7 @@ interface EstimateTask {
 - 締め切りまでに終わった割合: due のある作業だけを分母にし、doneAt ≤ due（等しいときは間に合った）の件数 ÷ due のある件数。due のある作業が0件の週は「—」。
 - 真ん中の値: その週の r（実際の分 ÷ firstMinutes）を並べた真ん中。件数が奇数なら真ん中の1つ、偶数なら真ん中の2つの平均。表示は小数2桁の四捨五入。0件の週は「—」。
 - 割合の表示は整数の % に四捨五入。0件の週は「—」（0% と出さない）。
-- 過去8週の棒: 今週を含む直近8週ぶん、必ず8本。棒の高さは ±25% 以内の割合。0件の週は高さ0の空の棒に「—」。目標の線は 70%（見本どおり。値は設定で変えられる）。
+- 過去8週の棒: 今週を含む直近8週ぶん、必ず8本。棒の高さは ±25% 以内の割合。0件の週は高さ0の空の棒に「—」。目標の線は 70%（見本どおり。値は設定 `schedule.accuracyTarget` で変えられる。置き場は §15-3）。
 
 CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 - 文字コードは UTF-8（先頭に BOM。Excel で文字化けさせないため）、改行は CRLF、値は必要に応じて "" で囲む。
@@ -253,13 +253,13 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 打ち忘れの補完（作戦ボードから）:
 - ac-board.mjs には手を入れない（§3）。サーバーが dataDir/boards/*.json を読み直して気付く。
 - 何で気付くか: 30 秒ごとに dataDir/boards/ のファイルの更新時刻（mtime）を見て、変わったファイルだけ読む（fs.watch は使わない。取りこぼしが起きにくく、試験しやすいため）。
-- 前回の写し: `dataDir/estimates/board-seen.json`（0600）に「ファイル名 → { mtime, tasks: { 作業名: status } }」を持つ。再起動しても前回と比べられる。書き込みは writeJsonAtomic。
-  - board-seen.json が無い最初の1回: すべてのボードを「前回の写しに無い」として扱わず、今の中身を写しに入れるだけにする（補わない）。入れる前から done だった作業を、入れた時刻で終わったことにしないため。
-  - 読めないボード（readBoard が invalid を返す。ac-board.mjs:176-179）: 補わず、そのファイルの前の写しを残す（mtime も更新しない）。次に読めたとき、前の写しと比べる。
-  - 消えたボード: dataDir/boards に無くなったファイルは、写しからも消す。
+- ボードの写しはファイルに持たない（第11回で変更。PO 指示「データを分散させることは禁止」と、ボードの正本は boards/<番号>.json だけという事実 server/boards.ts:2 による）。前に何だったかは比べない。見積もりの記録 log.jsonl を「まだ終わっていない」の正本とし、そこから判定する。
+  - メモリに持つのは「ファイル名 → 最後に読んだ mtime」だけ（読み直しを減らすため。再起動で消えたら全部を1回読み直す。中身は持たない）。
+  - 読めないボード（readBoard が invalid を返す。ac-board.mjs:176-179）: 補わず、mtime も覚えない。次の30秒でまた読む。
+  - 消えたボード: メモリの mtime からも消す。
   - 一時ファイル（`<番号>.json.<pid>.<時刻>.tmp`）は `*.json` に当たらないので読まない。
 - 補う条件（すべて満たすときだけ）:
-  - (a) あるボードで、作業名 T の status が前回の写しでは "done" 以外（または前回の写しに無い）で、今回 "done"。
+  - (a) あるボードで、作業名 T の status が今 "done"。
   - (b) そのボードの会話番号（ファイル名の claudeSessionId）と、作業名 T（前後の空白を除いて完全一致）が同じ見積もりが、ちょうど1件ある。
   - (c) その見積もりが started で、done・cancelled がまだ無い。
 - 補う中身: `{ type: "done", id, at: ボードのファイルの mtime, source: "board" }` を1行追記する。
@@ -271,7 +271,7 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
   - ボードのファイルの mtime が見積もりの startedAt より前（実際の時間がマイナスになる）。
   - これらは補わず、見積もりは「始まったまま」で残す。画面では、始まってから 24 時間たっても終わっていない見積もりに「終わりの記録がありません」の札を出す。
 - 始めた記録が無い見積もり: plannedStart を過ぎても started が無い見積もりには「始めた記録がありません」の札を出す。plannedStart が無いものは、打ってから 24 時間たっても started が無ければ同じ札。数（終わった件数など）には入らないが、当たり具合の画面に「始めた記録の無い見積もり N 件」「終わりの記録の無い見積もり N 件」を出す（黙って数から消さない）。
-- 一度 done が入った作業は、次に気付いたときも (c) に当たらないので増えない。
+- 一度 done が入った作業は、次に気付いたときも (c) に当たらないので増えない。再起動しても log.jsonl に done があるので増えない。始める前から done だったボードの作業は、mtime が startedAt より前なので補わない（上の「補わないとき」）。
 - 補った件は表と CSV（done_source=board）で分かる。
 - 【未確認】作業名の揺れでどれだけ結び付けられるか → 便2 の第0段で実データ（dataDir/boards）を数える。
 
@@ -334,8 +334,8 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 | K10（８）（９）見積もりを打つと時間割に点線の枠、終わりを打つと実線の枠と結果札が出る | e2e: 試験の前に、試験用の dataDir の estimates/log.jsonl へ時刻を決めた行（今日 10:00 始める予定・60分の estimated、10:00 の started、11:35 の done）を書き込んでおく（サーバーは読むたびにファイル全体を読むので、書いた行がそのまま画面に出る。Playwright の偽の時計はサーバーの時刻に効かないので使わない）→ 点線の枠の上端が 10:00・高さ 60 分ぶん（±2px）→ 実線の枠が右隣に出て「1.6倍かかった」。AI 用の口（/api/agent/schedule）を通す確かめは単体（ac-schedule の試験）で行い、e2e では使わない（生きている opus-designer のセッションが要るため）。単体: 結果札の文言（60→75 は「見積もりどおり」、60→76 は「1.3倍かかった」、60→44 は「0.7倍で終わった」、60→45 は「見積もりどおり」、95/60 の丸めは 1.6） |
 | K11（１０）週の数字が記録どおりに出る | 単体: summarizeEstimates — (a) ±25%: 60→75 は以内・76 は外・45 は以内・44 は外 (b) 直した見積もり（60→revise 120→実際 75）は最初の 60 で判定して以内 (c) 締め切り: doneAt=due は間に合った、due+1分は遅れ、due の無い作業は分母に入らない、全部 due 無しは「—」 (d) 真ん中の値: r が [1.0, 1.5, 2.0] で 1.50、[1.0, 1.2, 1.4, 2.0] で 1.30 (e) 週の境目: 日曜 23:59 の done はその週、月曜 00:00（日本時間）の done は次の週 (f) 8週の棒は常に8本、0件の週は「—」 (g) cancelled と終わっていない作業は数えない |
 | K12（１１）（１２）記録が消えず CSV で出る・直した回数が出る | 単体: log.jsonl への追記だけ（既存の行のバイト列が変わらない）・壊れた行を飛ばして残りを読み、飛ばした数を返す・順番違反（started 前の done 等）は 409。単体: CSV の1行目が §4-8 の17列の見出しと一致、行数＝作業の数＋1、BOM 付き。e2e: K10 と同じく、log.jsonl に estimated → revised → revised → started → done の5行を先に書き込み、時間割の枠と当たり具合の表に「直した 2回」、CSV の revisions 列が 2 |
-| K13 打ち忘れの補完 | 単体: (a) started 済みの見積もりと同じ会話番号・同じ作業名のボードが doing→done になると、done(source: board) が1行だけ追記される (b) もう一度読み直しても増えない (c) サーバーを再起動して board-seen.json から読み直しても増えない (d) 同じ作業名が2つ・会話番号違い・started 無しでは追記されない |
-| K8 秘密が画面・ログ・ファイル・子プロセスの引数に出ない | 単体: ログ出力と API 応答に鍵の値（試験用の偽の値）が含まれない。dataDir 下の新しいファイル（schedule.json・estimates/log.jsonl・estimates/board-seen.json）に偽の値が含まれない。writeKeychainItem が spawn に渡す引数の配列が `["-i"]` だけで、偽の値は標準入力にだけ書かれる |
+| K13 打ち忘れの補完 | 単体: (a) started 済みの見積もりと同じ会話番号・同じ作業名のボードが doing→done になると、done(source: board) が1行だけ追記される (b) もう一度読み直しても増えない (c) サーバーを再起動して全部を読み直しても増えない (c2) start より前の mtime で done のボードは補わない (c3) dataDir/estimates/ に board-seen.json など log.jsonl 以外のファイルができない (d) 同じ作業名が2つ・会話番号違い・started 無しでは追記されない |
+| K8 秘密が画面・ログ・ファイル・子プロセスの引数に出ない | 単体: ログ出力と API 応答に鍵の値（試験用の偽の値）が含まれない。dataDir 下の新しいファイル（schedule.json・estimates/log.jsonl）に偽の値が含まれない。writeKeychainItem が spawn に渡す引数の配列が `["-i"]` だけで、偽の値は標準入力にだけ書かれる |
 | K9 既存の試験と CI が緑 | CI check（ubuntu / macos）。`/api/schedule/preview` と予約・定期実行・復元の既存試験が変わらず緑。tests/e2e/console.spec.ts:769 の dataDir 直下の一覧（起動時に必ずできるものだけ）に schedule-assistant を足し、起動時にはできない schedule.json・estimates を除外（今の activity・boards と同じ扱い）に足して緑。playwright.config.ts の app の testMatch に schedule を足し、tests/e2e/schedule.spec.ts が CI で実際に動いた（結果に schedule.spec.ts の行がある）ことを確かめる |
 
 ## 10 戻し方
@@ -344,7 +344,7 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 ## 11 維持の仕組み
 - 正本: やることは schedule.json（書き手はサーバーだけ）、予定は Google カレンダー（アプリは写しだけ）、見積もりと実際は estimates/log.jsonl（追記だけ・書き手はサーバーだけ）。
 - 試験: tests/unit（schedule-store / google-calendar / google-oauth-callback / keychain-write / find-overlaps / layout-day / estimate-log / summarize-estimates / board-complement / estimates-csv / ac-schedule / launch-extra-cwd / restore-assistant / assistant-session）と tests/e2e/schedule.spec.ts を CI が毎回回す。
-- e2e を CI で動かすために: playwright.config.ts の app の testMatch（今は console|activity|chat|reservations|relay|terminal-wheel|pc-meter|file-link だけ）に schedule を足す。dataDir 直下の一覧を完全一致で比べている tests/e2e/console.spec.ts:769 には、起動時に必ずできる schedule-assistant だけを足す。schedule.json（最初にやることを書いたときに作る）と estimates/（最初に見積もりを書いたとき、またはボードの確認が最初に写しを書いたときに作る）は起動時に作らないので、除外の側（activity・boards と同じ）に足す。
+- e2e を CI で動かすために: playwright.config.ts の app の testMatch（今は console|activity|chat|reservations|relay|terminal-wheel|pc-meter|file-link だけ）に schedule を足す。dataDir 直下の一覧を完全一致で比べている tests/e2e/console.spec.ts:769 には、起動時に必ずできる schedule-assistant だけを足す。schedule.json（最初にやることを書いたときに作る）と estimates/（最初に見積もりか補完の行を書いたときに作る）は起動時に作らないので、除外の側（activity・boards と同じ）に足す。
 - 決まりの置き場: README に「予定」節（使い方・AI の命令・鍵の登録・つなぎ直し・見積もりの打ち方と数え方）。予定係の決まりはアプリが写す CLAUDE.md（正本はリポジトリの hooks/ 横に置く）。
 
 ## 12 外部事例
@@ -364,6 +364,7 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 - 第8回（同日、第2回の反映）: N-M1→§4-5 再起動では予定係を戻さず知らせも出さない（restore.ts で飛ばす）・試験 (e)。N-M2→§4-5 予定係の見分け方（番号をメモリに1つ・slotKey）・試験 (f)。N-M3→§4-8 見積もりの完了は done-estimate、ScheduleItem.id は sch_＋12文字。N-M4→K10・K12 の e2e は log.jsonl に行を先に書いて確かめる。N-M5→§11・K9 に console.spec.ts:769 と testMatch。N-L1→§4-4 拒否する文字・securityBin・出力を捨てる。N-L2→§4-8 最初の1回・読めないボード・消えたボード・mtime が開始より前。N-L3→§4-5・§4-8 番号が無ければ 403・sessionName の出どころ・監査の記録・reserveRoles の共用。N-L4→§4-4 写しの鮮度 60 秒。N-L5→§4-1 金型 Tabs。N-L6→§4-8 始めた記録が無い見積もりの札と件数。再審査は reviewer（Opus 新規起動）に、中5件と低6件に絞って頼む。
 - 独立審査 第3回（同日、全文 /tmp/CC報告ファイル/schedule-board/review-pr92-r3.md）: REVISE（中4・低2）。第2回の11件中8件は直っていた。
 - 第9回（同日、第3回の反映）: R3-M1→§4-5 再起動では予定係も戻し番号を覚え直す（飛ばすと tmux に残るため）。R3-M2→slotKey は jstSlot(new Date()).key。R3-M3→§4-5 開いている途中の待ち行列・失敗時の画面・202 と assistant.state・試験 (g)。R3-M4→console.spec.ts:769 は schedule-assistant だけ一覧へ、schedule.json・estimates は除外へ。R3-L1→§4-5 監査の名前2つ・欄・拒否も書く。R3-L2→K5 を (a)〜(g) に。
+- 第11回（同日、実装前の実物照合 §15）: ボードの写し board-seen.json を取りやめ（二重持ちのため）・1時間の高さをトークン --schedule-row-height に・設定の置き場を config.json の schedule に・金型に無い部品を D4 として PO に聞く。
 - 独立審査 第4回（同日、全文 /tmp/CC報告ファイル/schedule-board/review-pr92-r4.md）: APPROVE。6件すべて〇・重大な新しい指摘なし。合否に関係しない気付き3つ（開けなかったときのセッションを閉じる・復元が2つのとき createdAt で選ぶ・§4-7 に 202/429/409 と assistant を書く）と行番号1か所を第10回で反映。
 
 ## 14 PO の決定
@@ -377,4 +378,26 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
   - 同時の PO 指示（2026-10-30 原文）:「推測は禁止して事実確認を怠らずに確実性を重視して最も効果があり、現状把握の粒度が細く、精度が高いエビデンスを確立して安全に進めてくれ。また配線とDBのSSOTは遵守してデータを分散させることは禁止。フロントエンドのパーツもデザイントークンとデザインシステム を遵守して、金型登録のないハードコードを禁止する。推測で自身で判断したり不透明無まま進めることは禁止、分からないことは聞いてくれ。確立したなら進める。」
   - これを受け、実装カードを出す前に、金型・トークン・データの置き場を origin/main の実物で照合する（結果は §15 に書く）。照合が済むまで実装には渡さない。
 - D2: 見積もりの成功条件（８）〜（１２）→ 承認（2026-10-30 PO「1」）。
+- D4: 金型に無い部品（時間割・月の升目・棒の図・点線の決まり）の扱い（§15-1）→ 返事待ち（2026-10-30）。返事まで画面の部分は実装に渡さない。
 - 後で聞く: 実際の時間から PO の確認待ちの時間を差し引くか（未決の間は差し引かない）／やることに社外の相手の名前を入れてよいか／最初に入れる秘書側のやること（引き継ぎ §4）／当たり具合の目標の線（最初の8週の後）。
+
+## 15 実装前の実物照合（2026-10-30、PO 指示「推測禁止・SSOT・金型」を受けて）
+照合の版: agent-console origin/main de28ba7、salesanchor origin/main ad5edd0。生の結果 /tmp/CC報告ファイル/schedule-board/ssot-facts.md（担当 Sonnet が読み取り、Opus が要点を照合）。
+
+### 15-1 金型とトークン（事実）
+- `@sa` は salesanchor frontend/src の写し（agent-console vite.config.ts:4,8、tsconfig.json:15、scripts/sa-sync.mjs:36）。金型の正本は salesanchor 側。
+- §4-1 の Tabs・Badge・Button・Callout・EmptyState・Modal は全部ある（salesanchor frontend/src/components/Tabs.tsx:52、Badge.tsx:36、Button.tsx:43、Callout.tsx:25、EmptyState.tsx:33、Modal.tsx:36）。
+- 時間割（日・週）・月の升目・縦の棒の図の金型は無い。salesanchor の予定ページに時間割と月の升目の実装はあるが、ページの中だけで外に出していない（pages/schedule/SchedulePageImpl.tsx:568 ScheduleWeekGrid・:732 ScheduleMonthGrid、export は :826 の SchedulePage だけ）。
+- 時間割のトークンはある（tokens.css:365-390。--schedule-row-height 48px「1時間の高さ」、--schedule-time-gutter-width、--schedule-now-line、--schedule-month-cell-min-h、--schedule-day-min-w ほか）。種類の色 --cal-*（:393-399）と図の色 --chart-series-*（:409-415）もある。
+- 点線（dashed）の線と線の太さのトークンは無い。agent-console の検査（scripts/check-design-governance.mjs、CI の npm run lint）は border の 1px 以外の長さの直書きを止める。
+- 金型の登録の決まり（salesanchor docs/CC_UI_GOVERNANCE.md:9, :14-15）: 金型に無い部品は、PO の許可を得て components/ に Xxx.tsx・Xxx.css（var() のみ）・Xxx.stories.tsx で登録してから使う。agent-console には ui-allow の例外の仕組みが無い。
+- → 時間割・月の升目・棒の図・点線の決まりは、金型に無いまま作ると「金型登録のないハードコード」になる。登録するかを PO に聞く（D4）。返事まで便1（画面）は渡さない。
+
+### 15-2 データの置き場（事実と決定）
+- やること schedule.json、見積もり estimates/log.jsonl、Google の予定はメモリの写しだけ（ファイルに残さない）。それぞれ書き手はサーバーだけ。
+- ボードの写し board-seen.json は、ボード正本 boards/<番号>.json の tasks の title・status と同じ値を持つ二重持ちだった（ac-board.mjs:121-142）。第11回で取りやめ、log.jsonl から判定する形に変えた（§4-8）。
+- 画面の localStorage は「日／週／月」の選択だけ（データではなく表示の好み。既存の theme.ts:16・ledgerFilter.ts:79 と同じ使い方）。
+
+### 15-3 設定の置き場（決定）
+- agent-console に画面から書ける設定の置き場は無い。設定は agent-console.config.json だけで、型は server/config.ts:84 の Config、読むのは parseConfig（:293）・loadConfig（:425）、書くのは人の手だけ。
+- §4 の `schedule.calendarIds`・`schedule.devCalendarIds`・`schedule.assistantCwd`・`schedule.accuracyTarget` は、すべて Config に `schedule` の項目として足し、parseConfig で検査する（reserveRoles と同じ置き場。config.ts:377）。ほかの場所（dataDir のファイル・画面の localStorage）には持たない。
