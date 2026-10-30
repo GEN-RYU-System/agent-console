@@ -1,6 +1,6 @@
 # 予定画面（開発／秘書）— design
 
-状態: 設計案（Opus 作成 2026-10-30）・独立審査 第1回 REVISE（高4・中6・低4）を第7回で反映・第2回 REVISE（中5・低6）を本版（第8回）で反映・再審査待ち・PO 決定待ち1件（§14）・実装未着手。
+状態: 設計案（Opus 作成 2026-10-30）・独立審査 第1回 REVISE（高4・中6・低4）を第7回で反映・第2回 REVISE（中5・低6）を第8回で反映・第3回 REVISE（中4・低2）を本版（第9回）で反映・再審査待ち・PO 決定待ち1件（§14）・実装未着手。
 調査は recon.md（同じフォルダ）。成功条件（１）〜（７）と（８）〜（１２）は PO 承認済み（2026-10-30「1」）で、ここでは変えない。
 
 ## 1 目的（PO の言葉）
@@ -126,20 +126,29 @@ interface ScheduleItem {
   - サーバーは、予定係として開いたセッションの番号をメモリに1つだけ持つ（`assistantSessionId`）。名前の前方一致では探さない。
   - 送るとき、その番号のセッションが SessionManager にあり、終わっていない（exited でない）なら、そのセッションの既存の送信待ち（chat/queue）に積む。
   - 番号が無い・セッションが無い・終わっている（PO が閉じた場合を含む）なら、launchAndSend で新しく開き、その番号で `assistantSessionId` を置き換える。
+  - 開いている途中の扱い: launchAndSend は番号を返すまで最長 約4分15秒かかる（launch.ts:99-118）。サーバーは「開いている途中」の印（`assistantLaunching`）をメモリに持ち、その間は新しく開かない。途中に届いた文はメモリの待ち行列（最大 10 通。超えたら 429「予定係を開いている途中です。少し待ってから送ってください」）に入れ、launchAndSend の結果が sent になったら、そのセッションの送信待ち（chat/queue）へ順に積む。
+  - 結果が sent 以外（not_ready・cwd_invalid など）のときは、`assistantSessionId` を置き換えず、待ち行列の文を捨て、画面に「予定係を開けませんでした（理由）。送った N 通は届いていません」と Callout で出す。
+  - 画面への返事: `POST /api/schedule/assistant/send` は開くのを待たずにすぐ返す（202 { state: "launching" | "queued", pending: N }）。開けたか・失敗したかは `GET /api/schedule` の `assistant: { state: "none" | "launching" | "ready" | "failed", pending, error? }` で画面が知る（60 秒ごとの取得に加え、launching の間は 5 秒ごと）。
   - 名前が「予定係」で始まる別のセッションがあっても、番号が違えば使わない（予定係が2つになっても、送るのは覚えている1つだけ）。
-  - launchAndSend に渡す slotKey は "schedule-assistant"。stillWanted は常に true（話しかけ欄から送った文は取り消しの口が無いため）。
-- 再起動したとき: 予定係は戻さない。server/restore.ts は :164 で classifyCwd を呼び、本店・worktree 以外を「作業フォルダが無い」の知らせ（:165-167 missingCwd）にして飛ばす。予定係のフォルダでこの知らせを出さないよう、restore.ts で classifyCwd の前に「realpath(item.cwd) が設定の assistantCwd の realpath と同じなら、知らせを出さずに飛ばす」を足す。次に話しかけたとき、上の見分け方で新しく開く（再起動でメモリの番号は消えている）。
+  - launchAndSend に渡す slotKey は、予約・定期実行と同じく開く時刻の分の key `jstSlot(new Date()).key`（"YYYY-MM-DDTHH:mm+09:00"。launch.ts:24-26 と :64 で名前の末尾の日時に使われる。routines.ts:60 と同じ渡し方）。独自の文字列は渡さない（名前が壊れるため）。stillWanted は常に true（話しかけ欄から送った文は取り消しの口が無いため。launch.ts:30-31）。
+- 再起動したとき: 予定係も、ほかのセッションと同じく戻す（つなぎ直す）。
+  - 理由: 本体は tmux の中で動き、アプリを止めても動き続ける（README.md:196）。戻さずに飛ばすと known に入らず（restore.ts:175）、一覧に無い tmux のセッションは消されない（sessions.ts:299-306）。更新のたびに前の予定係が裏に残り、次に話しかけるともう1つ開いてしまう。
+  - やり方: server/restore.ts の :164 の classifyCwd の判定に、launchAndSend と同じ例外を足す。classifyCwd が "outside" を返し、かつ realpath(item.cwd) が設定の assistantCwd の realpath と同じなら、通して（block を null として）今どおり戻す。missingCwd の知らせは出ない。
+  - 戻したあと、そのセッションの番号で `assistantSessionId` を覚え直す（予定係のフォルダのセッションが2つ以上戻ったときは、最後に動いたもの1つ）。
 - 作業フォルダ: `dataDir/schedule-assistant/`（設定 `schedule.assistantCwd` で変えられる）。
   - 事実: launchAndSend は classifyCwd（server/resume-targets.ts:46-54）で、作業フォルダが本店（salesanchorRoot）かその worktree でなければ `cwd_invalid` で拒む（launch.ts:102-104）。このままでは予定係を開けない。
   - 選んだ方法: launchAndSend の要求に省略可能な `extraAllowedCwd`（絶対パス1つ）を足す。classifyCwd が "outside" を返したときだけ、`realpath(req.cwd) === realpath(extraAllowedCwd)` なら通す。この値を渡すのは予定係の呼び出しだけ。予約・定期実行の呼び出しは渡さないので、開ける作業フォルダは今と変わらない。
   - 本店を作業フォルダにする案は取らない。理由: 本店の CLAUDE.md・決まりが読み込まれ、予定係の決まりと混ざる。
-  - 試験: (a) extraAllowedCwd 付きで予定係のフォルダを開ける (b) extraAllowedCwd 無しでは同じフォルダが今どおり cwd_invalid (c) extraAllowedCwd と違うフォルダ（親・シンボリックリンク経由の別の場所）は cwd_invalid (d) 予約・定期実行の既存試験が緑のまま (e) 復元: 予定係のフォルダのセッションは戻らず、missingCwd の知らせも出ない。ほかのフォルダの外のセッションは今どおり missingCwd (f) 見分け方: 覚えた番号が生きていれば新しく開かない・終わっていれば開き直して番号を置き換える。
+  - 試験: (a) extraAllowedCwd 付きで予定係のフォルダを開ける (b) extraAllowedCwd 無しでは同じフォルダが今どおり cwd_invalid (c) extraAllowedCwd と違うフォルダ（親・シンボリックリンク経由の別の場所）は cwd_invalid (d) 予約・定期実行の既存試験が緑のまま (e) 復元: 予定係のフォルダのセッションは戻り、missingCwd の知らせが出ず、assistantSessionId がその番号になる。ほかのフォルダの外のセッションは今どおり missingCwd (f) 見分け方: 覚えた番号が生きていれば新しく開かない・終わっていれば開き直して番号を置き換える (g) 開いている途中に2通目を送っても launchAndSend は1回だけ呼ばれ、sent のあと2通とも送信待ちに積まれる。not_ready のときは2通とも捨てられ、assistant.state が failed になる。
   - 変更・PR タブ（workplace.ts:30）も classifyCwd を使う。予定係のフォルダでは今どおり 409 を返すだけで、変えない。
 - AI がすること:
   - やることの追加・完了・削除 → 命令 `node "<dataDir>/bin/ac-schedule.mjs" add|list|done|remove`（ac-reserve.mjs と同じ型: 127.0.0.1 だけ、合言葉ファイル、入力 64KiB 上限、Origin があれば拒否）。
   - 合言葉と呼べる役割は、新しく作らず既存のものを使う（出どころを1つにするため）: 合言葉は dataDir/reserve-token（http.ts:81、ac-reserve.mjs:9）、役割は設定 `reserveRoles`（config.ts:377、既定 ["opus-designer","shell"]）。新しい秘密のファイルを作らないので、case-sandbox.ts:90 の隔離の一覧と guard の拒否文字列は変えなくてよい。reserveRoles を変えると、予約と予定・見積もりの両方の呼べる役割が一緒に変わる（README の「予定」節に書く）。
   - 呼び出し元の確認は予約と同じ checkCaller（http.ts:512-520）。会話番号（CLAUDE_CODE_SESSION_ID）が無い・生きているセッションに無い・役割が違うときは 403 で、何も書かない。
-  - 監査の記録: 予約と同じく writeAudit（http.ts:474-475）を、書き込み系の op（add・done・remove・estimate・revise・start・done-estimate・cancel）で書く。中身は op・番号・呼び出し元の会話番号だけで、題名は書かない。
+  - 監査の記録: 予約と同じく writeAudit（http.ts:474-475）で dataDir/routine-audit.jsonl に書く。
+    - 名前（RoutineAuditAction、server/routine-audit.ts:11 に足す）は2つ: "scheduleWrite"（やることの add・done・remove）と "estimateWrite"（見積もりの estimate・revise・start・done-estimate・cancel）。既存の "add" とはぶつからない。
+    - RoutineAuditEntry に足す欄: `op`（上の op の名前）・`scheduleItemId`（やることの番号）・`estimateId`（見積もりの番号）。対象が決まらない（estimate・add の拒否）ときは番号の欄を入れない。
+    - 予約と同じく、通したとき（outcome "ok"）も拒否したとき（"denied"、403・409 とも）も1行書く。題名・メモなど本文の中身は書かない。
   - Google カレンダーへの予定の追加（「この面接を来週火曜に入れて」）→ AI のセッションが持つ Google カレンダーの接続で入れる。サーバーは書き込み権限を持たない（最小権限）。入った予定は次の読み取り（最長 60 秒、または「読み直す」）で画面に出る。
   - 予定係が最初に読む決まり（頼み方・日付の解き方「来週火曜」＝日本時間で次の週の火曜・開発／秘書の決め方・入れる前に重なりを確かめて返事に書く）は、予定係の作業フォルダに CLAUDE.md として置く（アプリの起動時に bin と同じ方法で写す）。
 - 担当（サブエージェント）からは ac-schedule を打てない（hooks/ac-routine-guard.mjs:3, :20-21 が "Application Support/agent-console" を含む担当の Bash を拒む。activity-hooks.ts:12-19）。これは今のままにする。予定係も見積もりも、会話の本体（Opus）が打つ。
@@ -317,7 +326,7 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 | K3（２）読めないとき空にせず理由と前回時刻を出す | 単体: 取得失敗・invalid_grant で写しが残り error が返る |
 | K3b 戻り先が安全に動く | 単体: state 無し・不一致・11分後・2回目の使用で、鍵の交換が呼ばれず Keychain に書かれない。応答の HTML に渡した code・state・error の文字列が含まれない。ログの出力に code が含まれない。正しい state では交換が1回呼ばれ、writeKeychainItem が1回呼ばれる。Authorization ヘッダー無しで serveStatic に落ちず分岐に入る |
 | K4（３）足す・終わった印・消すが画面ででき、再起動後も残る | e2e: 足す→終わった→消す。単体: ScheduleStore の保存・壊れたファイルを上書きしない |
-| K5（４）話しかけ欄に「11/6 に〇〇のやることを秘書に足して」→画面に出る | PO 目視（便4の後）。単体: ac-schedule の検査（役割・Origin・上限）。単体: extraAllowedCwd の試験4つ（§4-5 (a)〜(d)） |
+| K5（４）話しかけ欄に「11/6 に〇〇のやることを秘書に足して」→画面に出る | PO 目視（便4の後）。単体: ac-schedule の検査（役割・Origin・上限）。単体: §4-5 の試験 (a)〜(g)（作業フォルダの例外・復元・見分け方・開いている途中） |
 | K6（４）「この面接を来週火曜に入れて」→ Google に入り、画面に出る | PO 目視（便4の後、S0-1 が ○ のとき） |
 | K7（５）重なる2行の両方に赤印、重ならない行には出ない | 単体: findOverlaps（端が接するだけは重なりでない・終日除外・end 無しは30分） |
 | K7b（５）重なる予定が時間割で左右に並び、互いに隠れない | 単体: layoutDay（13:00〜14:15 と 14:00〜15:00 が左右に分かれる・重ならない予定は全幅）。e2e: 2つのブロックの横の範囲が重ならない |
@@ -326,7 +335,7 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 | K12（１１）（１２）記録が消えず CSV で出る・直した回数が出る | 単体: log.jsonl への追記だけ（既存の行のバイト列が変わらない）・壊れた行を飛ばして残りを読み、飛ばした数を返す・順番違反（started 前の done 等）は 409。単体: CSV の1行目が §4-8 の17列の見出しと一致、行数＝作業の数＋1、BOM 付き。e2e: K10 と同じく、log.jsonl に estimated → revised → revised → started → done の5行を先に書き込み、時間割の枠と当たり具合の表に「直した 2回」、CSV の revisions 列が 2 |
 | K13 打ち忘れの補完 | 単体: (a) started 済みの見積もりと同じ会話番号・同じ作業名のボードが doing→done になると、done(source: board) が1行だけ追記される (b) もう一度読み直しても増えない (c) サーバーを再起動して board-seen.json から読み直しても増えない (d) 同じ作業名が2つ・会話番号違い・started 無しでは追記されない |
 | K8 秘密が画面・ログ・ファイル・子プロセスの引数に出ない | 単体: ログ出力と API 応答に鍵の値（試験用の偽の値）が含まれない。dataDir 下の新しいファイル（schedule.json・estimates/log.jsonl・estimates/board-seen.json）に偽の値が含まれない。writeKeychainItem が spawn に渡す引数の配列が `["-i"]` だけで、偽の値は標準入力にだけ書かれる |
-| K9 既存の試験と CI が緑 | CI check（ubuntu / macos）。`/api/schedule/preview` と予約・定期実行・復元の既存試験が変わらず緑。tests/e2e/console.spec.ts:769 の dataDir 直下の一覧に、新しくできる schedule.json・schedule-assistant・estimates を足して緑。playwright.config.ts の app の testMatch に schedule を足し、tests/e2e/schedule.spec.ts が CI で実際に動いた（結果に schedule.spec.ts の行がある）ことを確かめる |
+| K9 既存の試験と CI が緑 | CI check（ubuntu / macos）。`/api/schedule/preview` と予約・定期実行・復元の既存試験が変わらず緑。tests/e2e/console.spec.ts:769 の dataDir 直下の一覧（起動時に必ずできるものだけ）に schedule-assistant を足し、起動時にはできない schedule.json・estimates を除外（今の activity・boards と同じ扱い）に足して緑。playwright.config.ts の app の testMatch に schedule を足し、tests/e2e/schedule.spec.ts が CI で実際に動いた（結果に schedule.spec.ts の行がある）ことを確かめる |
 
 ## 10 戻し方
 - 1つ前の版へ `bash scripts/ac-update.sh v<前の版>`（切り戻し手順は README の PO 向け節）。schedule.json・estimates/ は旧版が読まないだけで残る。Google との接続は Keychain の3項目を消し、Google のアカウント設定で接続を取り消す。
@@ -334,7 +343,7 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 ## 11 維持の仕組み
 - 正本: やることは schedule.json（書き手はサーバーだけ）、予定は Google カレンダー（アプリは写しだけ）、見積もりと実際は estimates/log.jsonl（追記だけ・書き手はサーバーだけ）。
 - 試験: tests/unit（schedule-store / google-calendar / google-oauth-callback / keychain-write / find-overlaps / layout-day / estimate-log / summarize-estimates / board-complement / estimates-csv / ac-schedule / launch-extra-cwd / restore-skip-assistant / assistant-session）と tests/e2e/schedule.spec.ts を CI が毎回回す。
-- e2e を CI で動かすために: playwright.config.ts の app の testMatch（今は console|activity|chat|reservations|relay|terminal-wheel|pc-meter|file-link だけ）に schedule を足す。dataDir 直下の一覧を完全一致で比べている tests/e2e/console.spec.ts:769 に、schedule.json・schedule-assistant・estimates を足す。
+- e2e を CI で動かすために: playwright.config.ts の app の testMatch（今は console|activity|chat|reservations|relay|terminal-wheel|pc-meter|file-link だけ）に schedule を足す。dataDir 直下の一覧を完全一致で比べている tests/e2e/console.spec.ts:769 には、起動時に必ずできる schedule-assistant だけを足す。schedule.json（最初にやることを書いたときに作る）と estimates/（最初に見積もりを書いたとき、またはボードの確認が最初に写しを書いたときに作る）は起動時に作らないので、除外の側（activity・boards と同じ）に足す。
 - 決まりの置き場: README に「予定」節（使い方・AI の命令・鍵の登録・つなぎ直し・見積もりの打ち方と数え方）。予定係の決まりはアプリが写す CLAUDE.md（正本はリポジトリの hooks/ 横に置く）。
 
 ## 12 外部事例
@@ -352,6 +361,8 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 - 第7回（同日、独立審査の反映）: H1→§4-5 extraAllowedCwd・S0-4。H2→§4-4 戻り先を認証の前の分岐に・state/PKCE/反射/ログ/ポート・K3b。H3→§4-8 打ち忘れの補完（30秒ごとの mtime・board-seen.json・条件と補わないとき）・K13。H4→§4-8 型・番号・順番・命令 revise/cancel・§4-7 API。M1→K10・K11・K12 を数で決まる形に・CSV の列。M2→§4-4 読む範囲・ページ送り・呼び出し数・§6。M3→§4-4 writeKeychainItem（security -i の標準入力）・account 3つ・K8。M4→§4-5 担当は打てない・合言葉と役割は既存の reserve-token と reserveRoles。M5→§4-1 確定。M6→§3 対象・対象外、§8 を実行順（見積もりを便2、ac-schedule の土台も便2）。L1→§4-3 deps のキー名・§4-7 preview との並び。L2→recon.md の行番号。L3→節を番号順に。L4→§4-8 未決の間は差し引かない。
 - 独立審査 第2回（reviewer・Opus 新規起動 2026-10-30、全文 /tmp/CC報告ファイル/schedule-board/review-pr92-r2.md）: REVISE（中5・低6）。前回の14件はすべて直っていた。
 - 第8回（同日、第2回の反映）: N-M1→§4-5 再起動では予定係を戻さず知らせも出さない（restore.ts で飛ばす）・試験 (e)。N-M2→§4-5 予定係の見分け方（番号をメモリに1つ・slotKey）・試験 (f)。N-M3→§4-8 見積もりの完了は done-estimate、ScheduleItem.id は sch_＋12文字。N-M4→K10・K12 の e2e は log.jsonl に行を先に書いて確かめる。N-M5→§11・K9 に console.spec.ts:769 と testMatch。N-L1→§4-4 拒否する文字・securityBin・出力を捨てる。N-L2→§4-8 最初の1回・読めないボード・消えたボード・mtime が開始より前。N-L3→§4-5・§4-8 番号が無ければ 403・sessionName の出どころ・監査の記録・reserveRoles の共用。N-L4→§4-4 写しの鮮度 60 秒。N-L5→§4-1 金型 Tabs。N-L6→§4-8 始めた記録が無い見積もりの札と件数。再審査は reviewer（Opus 新規起動）に、中5件と低6件に絞って頼む。
+- 独立審査 第3回（同日、全文 /tmp/CC報告ファイル/schedule-board/review-pr92-r3.md）: REVISE（中4・低2）。第2回の11件中8件は直っていた。
+- 第9回（同日、第3回の反映）: R3-M1→§4-5 再起動では予定係も戻し番号を覚え直す（飛ばすと tmux に残るため）。R3-M2→slotKey は jstSlot(new Date()).key。R3-M3→§4-5 開いている途中の待ち行列・失敗時の画面・202 と assistant.state・試験 (g)。R3-M4→console.spec.ts:769 は schedule-assistant だけ一覧へ、schedule.json・estimates は除外へ。R3-L1→§4-5 監査の名前2つ・欄・拒否も書く。R3-L2→K5 を (a)〜(g) に。
 
 ## 14 PO の決定
 - D1: Google カレンダーをアプリに読ませるための、Google 側の初回設定（PO の手作業・約15分・Google の管理画面での操作）を行うか。→ 返事待ち（2026-10-30）。便1・便2 はこれに依存しないので先に作れる。
