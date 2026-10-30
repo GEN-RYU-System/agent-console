@@ -1,0 +1,146 @@
+# 予定画面（開発／秘書）— design
+
+状態: 設計案（Opus 作成 2026-10-30）・自己審査 REVISE→本版で APPROVE（§13。同一 AI の自己審査であり独立審査ではない）・PO 決定待ち1件（§14）・実装未着手。
+調査は recon.md（同じフォルダ）。成功条件は PO 承認済み（2026-10-30「1」）で、ここでは変えない。
+
+## 1 目的（PO の言葉）
+「毎日それを見れば全てキャッチアップできるようにしたい」。予定の取りこぼし（10/30 面接の遅刻）を繰り返さない。
+
+## 2 成功条件（PO 承認済み・○×）
+（１）朝に画面を開くと、今日と明日の予定が、開発と秘書に分かれて出る
+（２）Google カレンダーの予定が、開いた時点の中身で出る
+（３）やることを足す・終わった印を付ける・消すが、画面からできる
+（４）画面の中で AI に話しかけると、「この面接を来週火曜に入れて」などが予定に入る
+（５）時間が重なる予定には、赤い印が出る
+（６）始まる1時間前と15分前に、画面とスマホに知らせが届く
+（７）スマホで同じ画面が見られる
+本設計の実装対象は（１）〜（５）。（６）（７）は §8 に道筋だけ書き、別の設計で詰める。
+
+## 3 対象と対象外
+- 対象: 中央タブ「予定」、やることの保存（dataDir/schedule.json）、Google カレンダーの読み取り（サーバー経由）、画面用 API、AI 用の口と命令 ac-schedule.mjs、予定画面の中の話しかけ欄、重なりの赤印、文言、試験、README・CHANGELOG・版。
+- 対象外: Google カレンダーへの書き込みをサーバーが行うこと（§4-5 で AI 側に任せる）、知らせ（６）、スマホ（７）、作戦ボード・予約・定期実行の動きの変更、Sales Anchor 側の変更。
+
+## 4 変更の前後と詳しい動き
+| | 前 | 後 |
+|---|---|---|
+| 中央タブ | チャット…定期実行・予約 | 加えて「予定」 |
+| Google カレンダー | アプリは読まない | 予定タブを開いた時点で今日・明日分を読む |
+| やること | 会話ごとの作戦ボードだけ | 会話をまたぐ一覧（開発／秘書） |
+| 重なり | 予約と定期実行の間だけ | 予定・時刻つきのやることの間にも赤印 |
+
+### 4-1 画面
+- 中央タブ `schedule`（ConsolePage.tsx:58 の型と :532-547 の items に1つ足す、ラベル t("ac.tabs.schedule")＝「予定」）。ペイン src/components/Schedule/SchedulePane.tsx を ReservationsPane と同じ型（`active` prop、`hidden={!active}`）で ConsolePage.tsx:608 の下に置く。
+- 中は2列（左「開発」・右「秘書」）。各列に「今日」「明日」の見出し、その下に時刻順の行。時刻の無いやることは各日の末尾、期日の無いやることは列の最後の「いつでも」にまとめる。入れ子タブにしない理由: 両方を一度に見るのが目的（（１））。
+- 1行の中身: 時刻（終日は「終日」）・題名・種類の札（予定／やること／返事待ち／締め切り）・カレンダー由来は「Google」の札。終わった印の付いたやることは薄く表示し、翌日から出さない。
+- 上部に「最後に読んだ時刻 HH:MM」と「読み直す」ボタン。読めなかったときは Callout（金型）で「Google カレンダーを読めませんでした（理由）」と出し、前回の中身を「HH:MM 時点」と明記して残す。
+- 部品は金型（Tabs/Badge/Button/Callout/EmptyState/Modal）。色・寸法はトークン。文言は全部 t()（ja.json）。
+- 取得: active の間、開いた瞬間に1回、その後 60 秒ごと。
+
+### 4-2 開発／秘書の振り分け
+- やること: 作るときに side（"dev" | "secretary"）を必ず選ぶ。
+- Google カレンダーの予定: 既定は「秘書」。設定 `schedule.devCalendarIds`（カレンダー ID の配列、既定 []）に入るカレンダーの予定と、題名が「[開発]」で始まる予定は「開発」。
+- 開発の列には自動で次も出す（読むだけ・編集不可）: (a) 開いているセッションの作戦ボードの tasks のうち status "doing"（セッション名つき、server/boards.ts の読み取りを使う） (b) 許可待ちのセッション（既存の waitingFor 状態）を「待っている確認」として。日付の無い行なので「いつでも」の欄に出す。
+
+### 4-3 やることの保存（正本は1か所）
+- 正本 dataDir/schedule.json。書き手はサーバーの `ScheduleStore` だけ（画面も AI 用命令も HTTP で頼む）。json-store.ts の writeJsonAtomic・createSerial を使う。壊れた内容は上書きしない（reservations.ts と同じ）。
+```ts
+type ScheduleSide = "dev" | "secretary";
+type ScheduleKind = "todo" | "waiting" | "deadline";
+interface ScheduleItem {
+  id: string; side: ScheduleSide; kind: ScheduleKind;
+  title: string;              // 1〜200字、制御文字禁止
+  date?: string;              // "YYYY-MM-DD"（日本時間）。無ければ「いつでも」
+  start?: string; end?: string; // "HH:mm"。end は start があるときだけ、start より後
+  waitingOn?: string;         // 返事待ちの相手（kind "waiting" のとき、100字まで）
+  note?: string;              // 1000字まで
+  status: "open" | "done";
+  createdBy: "ui" | "agent"; createdAt: number; updatedAt: number; doneAt?: number;
+}
+// ファイル: { "version": 1, "items": ScheduleItem[] }
+```
+- 上限: open は 300 件。全体 1000 件、超えたら doneAt が古いものから消す。
+- 日付の検査は reservations.ts の方式（存在しない日付は 400）を共通関数で使う。
+
+### 4-4 Google カレンダーの読み取り
+- サーバーが Google の公式 API（Calendar API v3 events.list）を直接呼ぶ。権限は calendar.events.readonly だけ（読むだけ）。
+- つなぎ方: デスクトップ用 OAuth＋PKCE（S256）。戻り先は `http://127.0.0.1:4319/oauth/google/callback`（本番ポート）。画面の「Google とつなぐ」ボタン → システムのブラウザで Google の同意画面 → 戻り先でサーバーが鍵を受け取る。state は1回限り・10分で失効。
+- 鍵の置き場: クライアント ID・クライアント秘密・更新用の鍵を Keychain（service "agent-console"、account "google-oauth-client" / "google-calendar-refresh"）。ファイル・ログ・画面に値を出さない。登録は台本 scripts/ac-google-secret.sh（PO が `!` で実行、既存 ac-discord-secret.sh と同じ型）。
+- 読む範囲: 日本時間の今日 00:00 〜 明後日 00:00。対象カレンダーは `schedule.calendarIds`（既定 ["primary"]）。`singleEvents=true&orderBy=startTime&timeZone=Asia/Tokyo&maxResults=250`。状態 cancelled は出さない。
+- サーバーの外向き通信は行き先をコード定数（oauth2.googleapis.com / accounts.google.com / www.googleapis.com）に固定（discord-api.ts と同じ考え）。CSP は変えない（ブラウザは Google に直接つながない。同意画面はシステムのブラウザで開く）。
+- 写しはメモリだけに持つ（ファイルに残さない）。取得はタブを開いた時と 60 秒ごと。失敗は写しを残し、理由（鍵切れ・通信失敗・上限）を返す。鍵切れ（invalid_grant）は「Google ともう一度つないでください」と表示。
+
+### 4-5 画面の中で AI に話しかける（（４））
+- 予定タブの下に話しかけ欄（1行入力＋送る）。送り先は「予定係」セッション1つ: 役割 opus-designer・作業フォルダは設定 `schedule.assistantCwd`（既定 dataDir の下の schedule-assistant/）・名前「予定係」。無ければ launch.ts の launchAndSend で開き、あればそのセッションの既存の送信待ち（chat/queue）に積む。返事は既存のチャットタブで読める（行の右に「チャットを開く」）。
+- AI がすること:
+  - やることの追加・完了・削除 → 命令 `node "<dataDir>/bin/ac-schedule.mjs" add|list|done|remove`（ac-reserve.mjs と同じ型: 127.0.0.1 だけ、合言葉ファイル、入力 64KiB 上限、Origin があれば拒否、呼べる役割は opus-designer と shell）。
+  - Google カレンダーへの予定の追加（「この面接を来週火曜に入れて」）→ AI のセッションが持つ Google カレンダーの接続で入れる。サーバーは書き込み権限を持たない（最小権限）。入った予定は次の読み取り（最長 60 秒、または「読み直す」）で画面に出る。
+  - 予定係が最初に読む決まり（頼み方・日付の解き方「来週火曜」＝日本時間で次の週の火曜・開発／秘書の決め方・入れる前に重なりを確かめて返事に書く）は、予定係の作業フォルダに CLAUDE.md として置く（アプリの起動時に bin と同じ方法で写す）。
+- 前提 U2（アプリ内セッションに Google カレンダーの接続があるか）は第0段で確かめる。無かった場合は §5 の案 B（サーバーに calendar.events.owned を足し ac-schedule に event-add を足す）に切り替え、PO に知らせる。
+
+### 4-6 重なりの赤印（（５））
+- 同じ日の「時刻のある行」（Google の予定＋start/end のあるやること。開発・秘書の両方を合わせて）で、区間 [start, end) が少しでも重なる2行の両方に赤い印（危険色のトークン）と「重なり: 〇〇」の説明を付ける。end の無いやることは 30 分とみなす。終日の予定・終わったやることは数えない。
+- 計算は画面側の純粋な関数 `findOverlaps(rows)`（単体試験しやすくするため）。
+
+### 4-7 API
+- 画面用（認証あり・変更系は Origin 必須）: `GET /api/schedule`（{ items, calendar: { events, fetchedAt, error? , connected }, dev: { boards, waiting } }）、`POST /api/schedule/items`、`PATCH /api/schedule/items/:id`（status / title 等）、`DELETE /api/schedule/items/:id`、`POST /api/schedule/calendar/refresh`、`GET /api/schedule/google/connect`（同意画面の URL を返す）、`GET /oauth/google/callback`（state 照合のうえ鍵を Keychain へ）、`POST /api/schedule/assistant/send`（{ text } 32KiB まで）。
+- AI 用: `/api/agent/schedule`（http.ts:459 と同じ順の検査）。
+
+## 5 代替案と選んだ理由
+| 案 | 中身 | 判断 |
+|---|---|---|
+| A（採用） | サーバーが Google 公式 API を読むだけの権限で読む。書くのは AI の接続 | （２）の「開いた時点」を AI 無しで毎回守れる。サーバーは読むだけ |
+| B | サーバーに書く権限も持たせ、ac-schedule で予定も入れる | U2 が × のときの代わり。権限が広がる |
+| C | カレンダーの「非公開の iCal アドレス」を読む | Google 側の設定が要らない。ただしアドレス1つで全予定が読める秘密になり、繰り返し予定の解釈に新しい部品が要り、中身の新しさが【未確認】 |
+| D | 画面を開くたびに AI に接続で読ませる | 毎回 AI の時間と使用量がかかる。開くたびに AI を自動で動かす形は過去に避けた（定期実行の議論）。不採用 |
+
+## 6 リスクと対処
+- 鍵が7日で切れる（外部ユーザー型・テスト公開のとき）→ U1 が Workspace なら同意画面を「内部」にする。個人アカウントなら公開状態を「本番」にする手順を PO 手順書に書く（その際の Google の警告画面の扱いは第0段で実物確認）。切れたら画面に「もう一度つないで」を出す（黙って空にしない）。
+- 鍵の漏れ → Keychain だけに置く。ログ・画面・ファイルに出さない試験を入れる。権限は読むだけ。
+- Google が止まる・通信失敗 → 前回の写しを時刻つきで残し、赤字ではなく注意の Callout で知らせる。
+- カレンダーに入っていない予定は出ない（10/30 の原因そのもの）→ 予定係に「今日の予定を確認して」と頼むと、空き時間に入っていない用事が無いかを聞き返す決まりを予定係の CLAUDE.md に書く。仕組みで完全には防げないことを PO に伝える。
+- 日付の取り違え（来週火曜）→ AI は入れる前に「11/3（火）14:00〜15:00 で入れます」と日付を書いてから入れる決まり。
+- Mac のメモリ（8GB）→ 写しは2日分・250件までをメモリに持つだけ。
+- 社外の相手の名前 → カレンダーの題名をそのまま出す（PO の Mac の中だけ・ログに出さない）。やることに名前を入れるかは PO が決める（§14 の後で聞く）。
+
+## 7 第0段（実装前に確かめること）
+- S0-1: アプリ内で開いた opus-designer セッションの道具一覧に Google カレンダーの作成・一覧があるか（U2）。
+- S0-2: PO の予定が入っている Google アカウントの種類（U1）。PO の手作業（§14）の中で分かる。
+- S0-3: 127.0.0.1 の固定ポートの戻り先がデスクトップ用クライアントで通るか（公式は任意の空きポートを例示）。
+
+## 8 便の分け方（1回に1つ変える）
+- 便1: やることの保存・画面用 API・予定タブ（2列・今日/明日/いつでも）・足す/終わった/消す・重なりの赤印。→（１）の半分・（３）・（５）
+- 便2: Google カレンダーの読み取り（つなぐボタン・鍵・取得・表示）。→（１）（２）
+- 便3: 予定係と話しかけ欄・ac-schedule 命令・予定係の決まり。開発の列の自動表示。→（４）・（１）の残り
+- 後の設計: （６）知らせ＝既存の Discord 通知（スマホに届く）と macOS 通知を、1秒の時計で「1時間前・15分前」に1回ずつ送る。予約（ac-reserve）は使わない。（７）スマホ＝mobile-pwa の続き（Tailscale 待ち）。
+
+## 9 受入（基準と検証のしかた）
+| 基準 | 検証方法 |
+|---|---|
+| K1（１）予定タブを開くと、開発と秘書の2列に今日・明日の見出しで行が出る | e2e: やること（dev/今日・secretary/明日）を作り、2列それぞれの見出しの下に出ることを確認。PO 目視（朝に開く） |
+| K2（２）Google で予定を足してから予定タブを開くと、その予定が出る | 単体: 偽の Google 応答で events.list の引数（timeMin/timeMax/singleEvents/timeZone）と変換を確認。PO 目視: Google で予定を足す→タブを開く→出る（60秒以内、または「読み直す」で即時） |
+| K3（２）読めないとき空にせず理由と前回時刻を出す | 単体: 取得失敗・invalid_grant で写しが残り error が返る |
+| K4（３）足す・終わった印・消すが画面ででき、再起動後も残る | e2e: 足す→終わった→消す。単体: ScheduleStore の保存・壊れたファイルを上書きしない |
+| K5（４）話しかけ欄に「11/6 に〇〇のやることを秘書に足して」→画面に出る | PO 目視（便3の後）。単体: ac-schedule の検査（役割・Origin・上限） |
+| K6（４）「この面接を来週火曜に入れて」→ Google に入り、画面に出る | PO 目視（便3の後、S0-1 が ○ のとき） |
+| K7（５）重なる2行の両方に赤印、重ならない行には出ない | 単体: findOverlaps（端が接するだけは重なりでない・終日除外・end 無しは30分） |
+| K8 秘密が画面・ログ・ファイルに出ない | 単体: ログ出力と API 応答に鍵の値が含まれない |
+| K9 既存の試験と CI が緑 | CI check（ubuntu / macos） |
+
+## 10 戻し方
+- 1つ前の版へ `bash scripts/ac-update.sh v<前の版>`（切り戻し手順は README の PO 向け節）。schedule.json は旧版が読まないだけで残る。Google との接続は Keychain の2項目を消し、Google のアカウント設定で接続を取り消す。
+
+## 11 維持の仕組み
+- 正本: やることは schedule.json（書き手はサーバーだけ）、予定は Google カレンダー（アプリは写しだけ）。
+- 試験: tests/unit（schedule-store / google-calendar / find-overlaps / ac-schedule）と tests/e2e/schedule.spec.ts を CI が毎回回す。
+- 決まりの置き場: README に「予定」節（使い方・AI の命令・鍵の登録・つなぎ直し）。予定係の決まりはアプリが写す CLAUDE.md（正本はリポジトリの hooks/ 横に置く）。
+
+## 12 外部事例
+- 使った根拠は Google の公式資料のみ（recon.md「Google 公式資料」）。予定の取りこぼしが画面でどれだけ減るかの、数値つきの直接の事例は見つけていない。効果は事例でなく、導入後の PO の毎朝の目視（K1・K2）と、遅刻・取りこぼしが起きたかの記録で測る。
+
+## 13 審査の履歴（同一 AI の自己審査）
+- 第1回（Opus 2026-10-30）: REVISE。(a) U2 が × のときの代わりが無い→§4-5 末尾と案 B を追加 (b) 7日切れの対処が無い→§6 に追加 (c) カレンダーに無い予定は仕組みで拾えない点が成功条件の外にあることを明記→§6 に追加。
+- 第2回（同日）: APPROVE（設計として）。未解決: U1・S0-3 は PO の手作業の中で確かめる。便1 はこれらに依存しないので先に作れる。独立した審査は PR の時に reviewer（Opus 新規起動）で受ける。
+
+## 14 PO に決めてもらうこと（1回に1件）
+- D1: Google カレンダーをアプリに読ませるための、Google 側の初回設定（PO の手作業・約15分・Google の管理画面での操作）を行うか。→ 返事待ち（2026-10-30）。
+- 後で聞く: やることに社外の相手の名前を入れてよいか／最初に入れる秘書側のやること（引き継ぎ §4）。
