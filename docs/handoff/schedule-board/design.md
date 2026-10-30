@@ -127,14 +127,14 @@ interface ScheduleItem {
   - 送るとき、その番号のセッションが SessionManager にあり、終わっていない（exited でない）なら、そのセッションの既存の送信待ち（chat/queue）に積む。
   - 番号が無い・セッションが無い・終わっている（PO が閉じた場合を含む）なら、launchAndSend で新しく開き、その番号で `assistantSessionId` を置き換える。
   - 開いている途中の扱い: launchAndSend は番号を返すまで最長 約4分15秒かかる（launch.ts:99-118）。サーバーは「開いている途中」の印（`assistantLaunching`）をメモリに持ち、その間は新しく開かない。途中に届いた文はメモリの待ち行列（最大 10 通。超えたら 429「予定係を開いている途中です。少し待ってから送ってください」）に入れ、launchAndSend の結果が sent になったら、そのセッションの送信待ち（chat/queue）へ順に積む。
-  - 結果が sent 以外（not_ready・cwd_invalid など）のときは、`assistantSessionId` を置き換えず、待ち行列の文を捨て、画面に「予定係を開けませんでした（理由）。送った N 通は届いていません」と Callout で出す。
+  - 結果が sent 以外（not_ready・cwd_invalid など）のときは、`assistantSessionId` を置き換えず、待ち行列の文を捨て、launchAndSend が番号を返していればそのセッションを閉じ（not_ready は開いたまま返すため。launch.ts:109・:112）、画面に「予定係を開けませんでした（理由）。送った N 通は届いていません」と Callout で出す。
   - 画面への返事: `POST /api/schedule/assistant/send` は開くのを待たずにすぐ返す（202 { state: "launching" | "queued", pending: N }）。開けたか・失敗したかは `GET /api/schedule` の `assistant: { state: "none" | "launching" | "ready" | "failed", pending, error? }` で画面が知る（60 秒ごとの取得に加え、launching の間は 5 秒ごと）。
   - 名前が「予定係」で始まる別のセッションがあっても、番号が違えば使わない（予定係が2つになっても、送るのは覚えている1つだけ）。
-  - launchAndSend に渡す slotKey は、予約・定期実行と同じく開く時刻の分の key `jstSlot(new Date()).key`（"YYYY-MM-DDTHH:mm+09:00"。launch.ts:24-26 と :64 で名前の末尾の日時に使われる。routines.ts:60 と同じ渡し方）。独自の文字列は渡さない（名前が壊れるため）。stillWanted は常に true（話しかけ欄から送った文は取り消しの口が無いため。launch.ts:30-31）。
+  - launchAndSend に渡す slotKey は、予約・定期実行と同じく開く時刻の分の key `jstSlot(new Date()).key`（"YYYY-MM-DDTHH:mm+09:00"。launch.ts:24-26 と :64 で名前の末尾の日時に使われる。jstSlot の定義は routines.ts:60、渡し方は routines.ts:133・reservations.ts:109 と同じ）。独自の文字列は渡さない（名前が壊れるため）。stillWanted は常に true（話しかけ欄から送った文は取り消しの口が無いため。launch.ts:30-31）。
 - 再起動したとき: 予定係も、ほかのセッションと同じく戻す（つなぎ直す）。
   - 理由: 本体は tmux の中で動き、アプリを止めても動き続ける（README.md:196）。戻さずに飛ばすと known に入らず（restore.ts:175）、一覧に無い tmux のセッションは消されない（sessions.ts:299-306）。更新のたびに前の予定係が裏に残り、次に話しかけるともう1つ開いてしまう。
   - やり方: server/restore.ts の :164 の classifyCwd の判定に、launchAndSend と同じ例外を足す。classifyCwd が "outside" を返し、かつ realpath(item.cwd) が設定の assistantCwd の realpath と同じなら、通して（block を null として）今どおり戻す。missingCwd の知らせは出ない。
-  - 戻したあと、そのセッションの番号で `assistantSessionId` を覚え直す（予定係のフォルダのセッションが2つ以上戻ったときは、最後に動いたもの1つ）。
+  - 戻したあと、そのセッションの番号で `assistantSessionId` を覚え直す（予定係のフォルダのセッションが2つ以上戻ったときは、createdAt が最も新しい1つを覚え、残りは閉じる。最後に動いた時刻は実物に無いため。session-store.ts:15-23）。
 - 作業フォルダ: `dataDir/schedule-assistant/`（設定 `schedule.assistantCwd` で変えられる）。
   - 事実: launchAndSend は classifyCwd（server/resume-targets.ts:46-54）で、作業フォルダが本店（salesanchorRoot）かその worktree でなければ `cwd_invalid` で拒む（launch.ts:102-104）。このままでは予定係を開けない。
   - 選んだ方法: launchAndSend の要求に省略可能な `extraAllowedCwd`（絶対パス1つ）を足す。classifyCwd が "outside" を返したときだけ、`realpath(req.cwd) === realpath(extraAllowedCwd)` なら通す。この値を渡すのは予定係の呼び出しだけ。予約・定期実行の呼び出しは渡さないので、開ける作業フォルダは今と変わらない。
@@ -165,7 +165,8 @@ interface ScheduleItem {
   - `POST /api/schedule/items`、`PATCH /api/schedule/items/:id`（status / title 等）、`DELETE /api/schedule/items/:id`
   - `POST /api/schedule/calendar/refresh`
   - `POST /api/schedule/google/connect`（同意画面の URL を返す。state と code_verifier をここで作る）
-  - `POST /api/schedule/assistant/send`（{ text } 32KiB まで）
+  - `POST /api/schedule/assistant/send`（{ text } 32KiB まで）→ 予定係が生きていれば今の送信の口と同じく 200。開いている途中・開き始めなら 202 { state, pending }。開いている途中の待ち行列が満杯なら 429。予定係の送信待ちが満杯・止まっているときは今の 409（hub.ts:405・:407）をそのまま返し、画面は Callout で理由を出す。
+  - GET /api/schedule の返り値に `assistant: { state, pending, error? }` を足す（§4-5）。
   - `GET /api/schedule/estimates?from=&to=` → 時間割に出す見積もりの一覧（§4-8 の EstimateTask の配列）
   - `GET /api/schedule/estimates/summary?weeks=8` → 週ごとの数字（§4-8）と、読めなかった行の数
   - `GET /api/schedule/estimates.csv` → CSV（§4-8）
@@ -342,7 +343,7 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 
 ## 11 維持の仕組み
 - 正本: やることは schedule.json（書き手はサーバーだけ）、予定は Google カレンダー（アプリは写しだけ）、見積もりと実際は estimates/log.jsonl（追記だけ・書き手はサーバーだけ）。
-- 試験: tests/unit（schedule-store / google-calendar / google-oauth-callback / keychain-write / find-overlaps / layout-day / estimate-log / summarize-estimates / board-complement / estimates-csv / ac-schedule / launch-extra-cwd / restore-skip-assistant / assistant-session）と tests/e2e/schedule.spec.ts を CI が毎回回す。
+- 試験: tests/unit（schedule-store / google-calendar / google-oauth-callback / keychain-write / find-overlaps / layout-day / estimate-log / summarize-estimates / board-complement / estimates-csv / ac-schedule / launch-extra-cwd / restore-assistant / assistant-session）と tests/e2e/schedule.spec.ts を CI が毎回回す。
 - e2e を CI で動かすために: playwright.config.ts の app の testMatch（今は console|activity|chat|reservations|relay|terminal-wheel|pc-meter|file-link だけ）に schedule を足す。dataDir 直下の一覧を完全一致で比べている tests/e2e/console.spec.ts:769 には、起動時に必ずできる schedule-assistant だけを足す。schedule.json（最初にやることを書いたときに作る）と estimates/（最初に見積もりを書いたとき、またはボードの確認が最初に写しを書いたときに作る）は起動時に作らないので、除外の側（activity・boards と同じ）に足す。
 - 決まりの置き場: README に「予定」節（使い方・AI の命令・鍵の登録・つなぎ直し・見積もりの打ち方と数え方）。予定係の決まりはアプリが写す CLAUDE.md（正本はリポジトリの hooks/ 横に置く）。
 
@@ -363,6 +364,7 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 - 第8回（同日、第2回の反映）: N-M1→§4-5 再起動では予定係を戻さず知らせも出さない（restore.ts で飛ばす）・試験 (e)。N-M2→§4-5 予定係の見分け方（番号をメモリに1つ・slotKey）・試験 (f)。N-M3→§4-8 見積もりの完了は done-estimate、ScheduleItem.id は sch_＋12文字。N-M4→K10・K12 の e2e は log.jsonl に行を先に書いて確かめる。N-M5→§11・K9 に console.spec.ts:769 と testMatch。N-L1→§4-4 拒否する文字・securityBin・出力を捨てる。N-L2→§4-8 最初の1回・読めないボード・消えたボード・mtime が開始より前。N-L3→§4-5・§4-8 番号が無ければ 403・sessionName の出どころ・監査の記録・reserveRoles の共用。N-L4→§4-4 写しの鮮度 60 秒。N-L5→§4-1 金型 Tabs。N-L6→§4-8 始めた記録が無い見積もりの札と件数。再審査は reviewer（Opus 新規起動）に、中5件と低6件に絞って頼む。
 - 独立審査 第3回（同日、全文 /tmp/CC報告ファイル/schedule-board/review-pr92-r3.md）: REVISE（中4・低2）。第2回の11件中8件は直っていた。
 - 第9回（同日、第3回の反映）: R3-M1→§4-5 再起動では予定係も戻し番号を覚え直す（飛ばすと tmux に残るため）。R3-M2→slotKey は jstSlot(new Date()).key。R3-M3→§4-5 開いている途中の待ち行列・失敗時の画面・202 と assistant.state・試験 (g)。R3-M4→console.spec.ts:769 は schedule-assistant だけ一覧へ、schedule.json・estimates は除外へ。R3-L1→§4-5 監査の名前2つ・欄・拒否も書く。R3-L2→K5 を (a)〜(g) に。
+- 独立審査 第4回（同日、全文 /tmp/CC報告ファイル/schedule-board/review-pr92-r4.md）: APPROVE。6件すべて〇・重大な新しい指摘なし。合否に関係しない気付き3つ（開けなかったときのセッションを閉じる・復元が2つのとき createdAt で選ぶ・§4-7 に 202/429/409 と assistant を書く）と行番号1か所を第10回で反映。
 
 ## 14 PO の決定
 - D1: Google カレンダーをアプリに読ませるための、Google 側の初回設定（PO の手作業・約15分・Google の管理画面での操作）を行うか。→ 返事待ち（2026-10-30）。便1・便2 はこれに依存しないので先に作れる。
