@@ -370,6 +370,7 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 - D1: Google カレンダーをアプリに読ませるための、Google 側の初回設定（PO の手作業・約15分・Google の管理画面での操作）を行うか。→ 行う（2026-10-30 PO「1」）。手順は Opus が画面ごとに案内する。
   - U1 の答え（2026-10-30 PO）: 予定が入っているのは会社の独自ドメインのアカウント。Google Workspace かどうかは、同意画面で「Internal」を選べるかで確かめる（まだ確かめていない）。
   - 案内する手順（公式頁 configure-oauth-consent・enable-apis 2026-09-03 更新、create-credentials 2026-10-12 更新を確認）: ①そのアカウントで Google Cloud console を開き、プロジェクトを作る ②Calendar API を Enable ③Google Auth platform > Branding > Get Started で App name・User support email → Audience で Internal → Contact Information → 規約に同意して Create。Internal の場合、Data Access でのスコープの登録は要らない（同頁）。
+  - 結果（2026-10-30 PO「終わった」）: ①〜③を PO が実施。止めの連絡は無く、Internal で作れたと PO の報告で受けた（Opus は画面を見ていない）。
   - 「Internal」が選べなければそこで止め、Opus に知らせてもらう（個人向けの手順に切り替える）。
   - Desktop app のクライアントを作る段（Clients > Create Client）は、アプリ側に鍵を受け取る入れ物ができる便3の直前に行う。秘密の値をチャットに貼らせないため。後から値を見られるかは公式頁に記載がなく、まだ確かめていない。便1・便2 はこれに依存しないので先に作れる。
 - D2: 見積もりの成功条件（８）〜（１２）→ 承認（2026-10-30 PO「1」）。
