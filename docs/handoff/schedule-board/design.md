@@ -367,6 +367,10 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 - 独立審査 第4回（同日、全文 /tmp/CC報告ファイル/schedule-board/review-pr92-r4.md）: APPROVE。6件すべて〇・重大な新しい指摘なし。合否に関係しない気付き3つ（開けなかったときのセッションを閉じる・復元が2つのとき createdAt で選ぶ・§4-7 に 202/429/409 と assistant を書く）と行番号1か所を第10回で反映。
 
 ## 14 PO の決定
-- D1: Google カレンダーをアプリに読ませるための、Google 側の初回設定（PO の手作業・約15分・Google の管理画面での操作）を行うか。→ 行う（2026-10-30 PO「1」）。手順は Opus が画面ごとに案内する。先に U1（アカウントの種類）を PO に聞く。便1・便2 はこれに依存しないので先に作れる。
+- D1: Google カレンダーをアプリに読ませるための、Google 側の初回設定（PO の手作業・約15分・Google の管理画面での操作）を行うか。→ 行う（2026-10-30 PO「1」）。手順は Opus が画面ごとに案内する。
+  - U1 の答え（2026-10-30 PO）: 予定が入っているのは会社の独自ドメインのアカウント。Google Workspace かどうかは、同意画面で「Internal」を選べるかで確かめる（まだ確かめていない）。
+  - 案内する手順（公式頁 configure-oauth-consent・enable-apis 2026-09-03 更新、create-credentials 2026-10-12 更新を確認）: ①そのアカウントで Google Cloud console を開き、プロジェクトを作る ②Calendar API を Enable ③Google Auth platform > Branding > Get Started で App name・User support email → Audience で Internal → Contact Information → 規約に同意して Create。Internal の場合、Data Access でのスコープの登録は要らない（同頁）。
+  - 「Internal」が選べなければそこで止め、Opus に知らせてもらう（個人向けの手順に切り替える）。
+  - Desktop app のクライアントを作る段（Clients > Create Client）は、アプリ側に鍵を受け取る入れ物ができる便3の直前に行う。秘密の値をチャットに貼らせないため。後から値を見られるかは公式頁に記載がなく、まだ確かめていない。便1・便2 はこれに依存しないので先に作れる。
 - D2: 見積もりの成功条件（８）〜（１２）→ 承認（2026-10-30 PO「1」）。
 - 後で聞く: 実際の時間から PO の確認待ちの時間を差し引くか（未決の間は差し引かない）／やることに社外の相手の名前を入れてよいか／最初に入れる秘書側のやること（引き継ぎ §4）／当たり具合の目標の線（最初の8週の後）。
