@@ -391,7 +391,13 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 - 時間割のトークンはある（tokens.css:365-390。--schedule-row-height 48px「1時間の高さ」、--schedule-time-gutter-width、--schedule-now-line、--schedule-month-cell-min-h、--schedule-day-min-w ほか）。種類の色 --cal-*（:393-399）と図の色 --chart-series-*（:409-415）もある。
 - 点線（dashed）の線と線の太さのトークンは無い。agent-console の検査（scripts/check-design-governance.mjs、CI の npm run lint）は border の 1px 以外の長さの直書きを止める。
 - 金型の登録の決まり（salesanchor docs/CC_UI_GOVERNANCE.md:9, :14-15）: 金型に無い部品は、PO の許可を得て components/ に Xxx.tsx・Xxx.css（var() のみ）・Xxx.stories.tsx で登録してから使う。agent-console には ui-allow の例外の仕組みが無い。
-- → 時間割・月の升目・棒の図・点線の決まりは、金型に無いまま作ると「金型登録のないハードコード」になる。登録するかを PO に聞く（D4）。返事まで便1（画面）は渡さない。
+- 使い回せるかの照合（salesanchor origin/main a742879、生の結果 /tmp/CC報告ファイル/schedule-board/sa-calendar-facts.md）。PO 質問「すでに salesanchor にカレンダーの金型があるがそれを今回のイメージに横展開できる？」への事実:
+  - 登録済みの金型（components/）ではない。予定ページの中の部品（SchedulePageImpl.tsx:568 週・:732 月。外に出していない。部品の .stories も無い。Schedule.stories.tsx は CSS の見本だけ）。
+  - そのまま使える所: 列の数は渡す日の数で決まる（:568-587 days）、重なりの横並び（schedule-utils.ts:207-235 layoutDay）、いまの線、終日の帯、押したときの動き、月の升目の「+N」。
+  - 足りない所: 予定ごとの見た目を変えられない（点線・赤枠・札。schedule.css:549 の shift だけ）、中身を差し替えられない、時刻の範囲が 24 時間固定（:86 ほか）、色が担当者の色に固定、月の升目の件数が3で固定。
+  - Sales Anchor だけの物に頼っている（担当者 schedule-owner、カレンダーの設定 features/schedule/calendars.config、日本語の直書きの "ja-JP"）。
+  - 棒の図の金型は無い（recharts をページで直接使用。DashboardPage.tsx:26、LlmUsageSection.tsx:14）。点線のトークンも無い（pages-layout.css:698 の直書きだけ）。
+「金型登録のないハードコード」になる。登録するかを PO に聞く（D4）。返事まで便1（画面）は渡さない。
 
 ### 15-2 データの置き場（事実と決定）
 - やること schedule.json、見積もり estimates/log.jsonl、Google の予定はメモリの写しだけ（ファイルに残さない）。それぞれ書き手はサーバーだけ。
