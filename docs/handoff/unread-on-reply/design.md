@@ -1,6 +1,6 @@
 # 返事が来たら未読を付け、PO が送るまで消さない 設計
 
-状態: 設計案 第3版（Opus 作成・2026-11-01）。第1版の設計審査は REVISE・12 件（対応は §10）。第2版の設計審査（クラウド Opus）も REVISE・8 件。第3版で全件を直した（対応は §11）。PO 決定 2026-11-01「1」（その窓で PO が何か送ったら消す）。設計審査の APPROVE と PO の実装承認の後に実装へ進む。
+状態: 設計案 第4版（Opus 作成・2026-11-01）。第1版の設計審査は REVISE・12 件（対応は §10）。第2版は REVISE・8 件（対応は §11）。第3版（bcb25ae）も REVISE・直す点 5 件と推奨 3 件。第4版で全件を直した（対応は §12）。PO 決定 2026-11-01「1」（その窓で PO が何か送ったら消す）。設計審査の APPROVE と PO の実装承認の後に実装へ進む。
 
 ## 1. 目的（PO に見える変化）
 - PO の願い（2026-11-01 原文）:「agent consoleのあなたが私の返答街をしているときも未読を表示させるようにして、殆どの場合で未読バッジがなくて気づかないことが多い」
@@ -30,7 +30,9 @@
 - ws の中: `attachTerminal`（server/ws.ts:22）は hub を持っていない。hub は `attachWebSockets` の deps にある（:53）。
 - `markRead` の呼び出し元（git grep）: 製品では src/pages/ConsolePage.tsx:222・:232 だけ（src/api.ts:55 → server/http.ts:327-328 → server/hub.ts:618-620）。extension/ には無い。試験は tests/unit/daily-use.integration.test.ts:127（無い窓への POST が 404）と tests/unit/notify.test.ts:53-60。
 - hub の時計: `Hub` の constructor（server/hub.ts:129-134）は options に時計を持たず、時刻は `Date.now()` を直接呼ぶ（:192・:408 など）。一覧から外した窓は `sessions.onRemoved` で `tracker.forget(id)` する（:139-140、server/notify.ts:71-74）。
-- 会話ごとの記録の状態: `SessionState`（server/activity.ts:133-150）は会話番号ごとに持ち、`dropOldSessions`（:352）で古い会話ごと捨てる。重なり防止の鍵 `chatKeys`（:148）も同じ所にある。
+- 待ちの理由: `claude agents --json` の `waitingFor` は status に関係なく、空でない文字なら残す（server/agents.ts:47。:12 の注釈は「waiting のときだけ付く」）。製品は idle＋waitingFor（server/agents.ts:86）と busy＋waitingFor（:101）を「確認待ち」として扱う。実機で waiting になったのは許可の確認だけで、選択肢・質問の画面が何を返すかは未確認（docs/handoff/chat/recon.md:218・:220）。
+- 観測の呼び出し: `detectBreaks` は `this.tracker.observe(s.id, agent?.status ?? null)`（server/hub.ts:584）の 1 か所。agents の取得に失敗した回は :572 で早く戻り、観測しない。
+- 会話ごとの記録の状態: `SessionState`（server/activity.ts:133-153）は会話番号ごとに持ち、`dropOldSessions`（:352）で古い会話ごと捨てる。重なり防止の鍵 `chatKeys`（:148）も同じ所にある。
 - 試験の作り: 結合試験の harness は本物の `ActivityStore` を作って `hub.watchActivity(activity)` に渡す（tests/unit/helpers/harness.ts:268-269）。偽の store は無い。記録の単体試験は tests/unit/activity.test.ts。
 - 既存の設計の定義: docs/handoff/stage2/design.md:14（K1「行を選ぶと未読が消える」）・:32。今回これを変える。
 
@@ -38,7 +40,7 @@
 - 対象（直すファイル）:
   - server/notify.ts（未読の足し方 4 本の決まり・窓ごとの状態・消し方）
   - server/activity.ts（返事の終わりを知らせる口・起動時刻・二重の防止の組を `SessionState` に持つ）
-  - server/hub.ts（返事の終わりで足す・結べない記録の保留・PO の送信で消す・`watchActivity` の型 :215・時計の注入 :133）
+  - server/hub.ts（返事の終わりで足す・結べない記録の保留・PO の送信で消す口 `clearUnread`・`watchActivity` の型 :215・時計の注入 :133・`observe` に waitingFor を渡す :584・取得失敗の回の保留の捨て方 :572）
   - server/ws.ts（端末の入力に Enter があれば消す合図）
   - src/pages/ConsolePage.tsx（自動の既読 :219-223 と行を選んだときの既読 :232 を外す）
   - 試験: tests/unit/notify.test.ts:42-60、tests/unit/activity.test.ts（`onTurnEnd` の単体）、hub の結合試験（harness は本物の `ActivityStore` を使うので、型が変わっても harness の直しは要らない。tests/unit/helpers/harness.ts:268-269）、src/pages/ConsolePage.test.tsx:339-344、tests/e2e/console.spec.ts:612-650、新しい単体試験（§7）
@@ -56,19 +58,22 @@
   - `lastClearAt`（最後に PO の送信で消した時刻。初めは 0）
   - `hookSeen`（この窓で返事の終わりの記録を 1 度でも受けたか）
   - `open`（いま数えている待ち。`none`／`stop`（記録で数えた）／`obs`（観測で数えた））
-  - `prevObs`（未読用の前回の観測。通知用の `last` とは別に持つ）
+  - `prevObs`（未読用の前回の観測の種類。通知用の `last` とは別に持つ）
+  - `lastTurnEndTs`（この窓に結んだ返事の終わりの記録のうち、最後の ts。受けなかった記録も含む）
+- 観測の種類: `observe(windowId, status, waitingFor)` で、status が "waiting" か waitingFor があれば「待ち」、それ以外は status そのもの（busy／idle／unknown）とする。busy＋waitingFor・idle＋waitingFor も「待ち」。
 - 時計: hub の constructor の options に `now?: () => number`（既定 `Date.now`）を足し、`lastClearAt` と保留の時刻はこれで取る。`BreakTracker` には hub から時刻を渡す。
 - 決まり（上から順に当てる）:
   - R1 返事の終わりの記録（道A）: 記録に Stop か StopFailure が届き、次の全部に当てはまるとき「受けた」とする。
-    1. `stop_hook_active` が true でない（別の Stop hook に止められて続けた後の終わりは、同じ 1 回の返事なので受けない）。
+    1. `stop_hook_active` が true でない（別の Stop hook に止められて続けた後の終わりは、同じ 1 回の返事なので受けない）。ただし true でも、その窓の `lastClearAt` が `lastTurnEndTs`（前の Stop）より後なら受ける（見張りの続きの間に PO が送って消した場合、続きの終わりを漏らさない）。この判定は窓の値が要るので `BreakTracker` で行い、`ActivityStore` は `stop_hook_active` を事件に載せて渡す。
     2. ts が `startedAt` 以上（`startedAt` は `ActivityStore` を作ったときに注入の `now()` で取る。起動時に読み直す昔の記録で足さない）。
-    3. （会話番号, ts）の組がまだ受けていない組。組はその会話の `SessionState` に持ち、`dropOldSessions` で会話ごと捨てる（ファイルを先頭から読み直したときに 2 度受けない）。
+    3. （会話番号, ts）の組がまだ受けていない組。組はその会話の `SessionState` に持ち、`dropOldSessions` で会話ごと捨てる（ファイルを先頭から読み直したときに 2 度受けない）。組は会話ごとに新しい 500 個までにし、超えたら ts の古い順に捨てる（`chatKeys` の刈り方 server/activity.ts:409-413 と同じ形。1 日の Stop は全会話で 503 行なので、1 会話で 500 を超える前に読み直しの範囲（今日・昨日）を外れる）。
     4. 窓に結んだ後で、ts がその窓の `lastClearAt` より後（PO が Enter を押した後に、押す前の Stop を読み込んだ場合に付け直さない）。
+    - 結んだ記録は、受けても受けなくても `lastTurnEndTs = max(lastTurnEndTs, ts)` にする（1 の判定の後で更新する）。
     - 受けたら: `hookSeen = true`。`open` が `none` なら 1 足して `open = stop`。`open` が `stop` か `obs` なら足さず `open = stop`（同じ待ちを観測か前の記録が既に数えている）。
-  - R2 待ちに入った観測（道W）: 観測で `next === "waiting"` かつ `prevObs !== "waiting"` のとき。`open` が `none` なら 1 足して `open = obs`。それ以外は足さない。busy を観測していなくても足す（idle→waiting を 10 秒以内に通った場合・PO が答えた後に次の確認が出た場合）。
+  - R2 待ちに入った観測（道W）: 観測の種類が「待ち」かつ `prevObs` が「待ち」でないとき。`open` が `none` なら 1 足して `open = obs`。それ以外は足さない。busy を観測していなくても足す（idle→waiting を 10 秒以内に通った場合・PO が答えた後に次の確認が出た場合）。
   - R3 返事の終わりの観測（道B、hook の無い窓の予備）: 観測で `prevObs === "busy"` かつ `next === "idle"`、かつ `hookSeen` が false のとき。`open` が `none` なら 1 足して `open = obs`。`hookSeen` が true の窓では使わない（返事の終わりは R1 が数える。Stop の後に遅れて busy を見ても 2 度数えない）。
-  - R4 仕事の観測: 観測で `next === "busy"` のとき `open = none`（次の待ちを別に数えられるようにする）。
-  - R5 毎回の観測の最後に `prevObs = next`。Claude が見つからない（status が null）ときは `prevObs` を消す（今の `observe` :51-53 と同じ）。
+  - R4 仕事の観測: 観測の種類が busy（waitingFor なし）のとき `open = none`（次の待ちを別に数えられるようにする）。
+  - R5 毎回の観測の最後に `prevObs` = 今回の観測の種類。Claude が見つからない（status が null）ときは `prevObs` を消す（今の `observe` :51-53 と同じ）。
 - 1 つの窓で起きる順番と数（K7・K10・K11・K13 で固定する）:
 
 | 起きた順 | 未読 |
@@ -84,26 +89,31 @@
 | StopFailure と Stop が同じ返事で両方来た場合 | 1 |
 | Enter の後に、押す前に書かれた Stop を読み込んだ | 0 |
 | hook の無い窓: 観測 busy → 観測 idle | 1 |
+| 選択肢の画面が idle＋waitingFor で返る: 観測 busy → 観測 idle＋waitingFor（Stop を受けたことのある窓） | 1 |
+| 選択肢の画面が busy＋waitingFor で返る: 観測 busy → 観測 busy＋waitingFor | 1 |
+| 見張りの続きの間に PO が送る: 観測 busy → Stop(false) → Enter → Stop(true) → 観測 idle | 1 → 0 → 1 |
 
 - 結べない記録の保留: R1 の 1〜3 を満たしたが、その会話番号を `claudeSessionId` に持つ窓がまだ無いとき（新しく開いた窓の最初の返事など）は保留する。
-  - 保留の時刻は hub が受けた時刻（注入の `now()`）。30 秒（agents の取得 3 回分）結べなかったものは捨て、捨てた件数をサーバーのログに 1 行出す。
-  - `detectBreaks()` の最後（番号を付けた後）に保留を見直し、結べたら R1 の 4 と「受けたら」を当てる。
+  - 保留の時刻は hub が受けた時刻（注入の `now()`）。
+  - 見直しは `detectBreaks()` の最後（番号を付けた後）。順は「結べるものを結ぶ（R1 の 1 の後半・4・「受けたら」を当てる）→ 残りのうち受けてから 30 秒を超えたものを捨てる」。捨てた件数をサーバーのログに 1 行出す。
+  - agents の取得に失敗した回（server/hub.ts:572 で早く戻る）は、早く戻る前に「30 秒を超えたものを捨てる」だけを行う（番号が付かないので結ぶ見直しはしない）。
   - 窓を一覧から外したとき（`forget`）は、その窓の状態を捨てる。保留はまだ窓に結んでいないので、30 秒で捨てる決まりのまま。
   - 同じ会話番号を持つ窓が 2 つあるとき（server/hub.ts:582 で起こりうる）は、両方の窓に R1 を当てる（漏らさない方を選ぶ）。
 - 形:
-  - `ActivityStore` に `onTurnEnd(listener: (e: { claudeSessionId: string; ts: number; failed: boolean }) => void)` を足す。`apply()` の `case "Stop"`・`case "StopFailure"` から、R1 の 1〜3 を満たすときだけ呼ぶ。`loadFileHistory`（server/activity.ts:301）は通らない。
+  - `ActivityStore` に `onTurnEnd(listener: (e: { claudeSessionId: string; ts: number; failed: boolean; stopHookActive: boolean }) => void)` を足す。`apply()` の `case "Stop"`・`case "StopFailure"` から、R1 の 2・3 を満たすときに呼ぶ（1 は窓の値が要るので `BreakTracker` が見る）。`loadFileHistory`（server/activity.ts:301）は通らない。
   - hub の `watchActivity` の型（server/hub.ts:215）に `onTurnEnd` を足す。受けたら窓を探して `BreakTracker.addTurnEnd(windowId, ts)` を呼ぶ（結べなければ保留）。配信は既存の `onChange`（server/activity.ts:280-283）に任せる。
-  - `BreakTracker.observe()` は今までどおり `isBreak` で true/false を返す（通知用）。同じ呼び出しの中で R2〜R5 を当てる。
+  - `BreakTracker.observe(windowId, status, waitingFor)` は今までどおり `isBreak(prev, status)` で true/false を返す（通知用。waitingFor は通知の判定に使わない）。同じ呼び出しの中で R2〜R5 を当てる。hub は server/hub.ts:584 で `agent?.waitingFor` も渡す。
 
 ### 4-2. 未読を消すとき（PO 決定「1」）
 - 前: 行を選んだとき、選んでいる行に未読が来たとき（窓が見えていれば）に消える。
 - 後: 次の 2 つのときだけ消す。消すと `unread = 0`、`lastClearAt = now()`、`open = none`、`prevObs` を消す。
-  1. 端末への入力に Enter の文字（`\r`）が含まれるとき。`attachWebSockets` が deps の hub から `onSubmit` を作って `attachTerminal` に渡し、server/ws.ts:36 で `sessions.write` の後に呼ぶ。端末の入力を `sessions.write` に流す製品の場所はここ 1 か所。
+- 消す口: hub に `clearUnread(windowId)` を足す。`BreakTracker.clear(windowId, now())` を呼び、数が 0 でなかったら配信する（`publish`。今の `markRead` の配信 server/hub.ts:618-619 と同じ）。`markRead` もこれを呼ぶ。
+  1. 端末への入力に Enter の文字（`\r`）が含まれるとき。`attachWebSockets` が deps の hub から `onSubmit`（= `hub.clearUnread`）を作って `attachTerminal` に渡し、server/ws.ts:36 で `sessions.write` の前に呼ぶ（`lastClearAt` が Claude の受け取りより必ず前になるように）。端末の入力を `sessions.write` に流す製品の場所はここ 1 か所。
      - 消える: 普通に送る・選択肢を Enter で選ぶ・許可に Enter で答える・よく使う指示／差分のコメント／選んだ物の送信（`pasteSubmitAfter`）。
      - 消えない: クリックやフォーカスで端末が出す文字（`\x1b[I`・`\x1b[O`）、矢印、マウスの報告、端末の自動の応答。どれも `\r` を含まない。
      - 確認の画面で数字キーだけで答えた場合、`\r` が送られるかは未確認。送られなければ消えない（印が残る。§6・K17）。
      - 送っていないのに消える（受け入れる。§6）: 改行を含む文の貼り付け（TerminalPane.tsx:32-33・:97・:104）、「挿入だけ」のよく使う指示で複数行を入れたとき、Alt+Enter。
-  2. チャット欄から送り、予約に積めた時点。`enqueueChat`（server/hub.ts:402）の中で、窓が無い・止まっている・予約が満杯の確かめ（:403-407）を通り、予約に積んだ後（:409 の後）に消す。確かめで断ったときは消さない。端末へ書く :533 では消さない（予約があとで書かれたとき、その前に付いた未読を消さないため）。製品の呼び出し元は server/chat-routes.ts:71 だけ。
+  2. チャット欄から送り、予約に積めた時点。`enqueueChat`（server/hub.ts:402）の中で、窓が無い・止まっている・予約が満杯の確かめ（:403-407）を通り、予約に積んだ後（:409 の後、:410 `bumpChat` の前）に `BreakTracker.clear` を呼ぶ（配信は :410 の `bumpChat` に任せる。server/hub.ts:440-443）。確かめで断ったときは消さない。端末へ書く :533 では消さない（予約があとで書かれたとき、その前に付いた未読を消さないため）。製品の呼び出し元は server/chat-routes.ts:71 だけ。
   - 消さない: 定期実行・引き継ぎの `submitText`（server/launch.ts:114、server/relay.ts:232・:272）、名前の変更の `/rename`（server/hub.ts:300・:369・:386）。どれも ws と `enqueueChat` を通らない。
 - 画面: src/pages/ConsolePage.tsx:219-223 の自動の既読を削る。:232 の `handleSelect` の既読も削る。
 - `markRead` の API（src/api.ts:55、server/http.ts:327-328、server/hub.ts:618-620）は残す。画面からは呼ばない。中身は上の消し方（`lastClearAt` などもそろえる）にする。理由: 試験 tests/unit/daily-use.integration.test.ts:127 が受け口の 404 を確かめている。
@@ -124,7 +134,7 @@
 ## 6. リスクと対処
 - 記録用 hook が入っていない環境: R1 が来ないので `hookSeen` が false のまま。R2・R3 が今の判定と同じかそれ以上に拾うので、今より悪くはならない。この Mac では入っている（~/.claude/settings.json の Stop に activity-hook.mjs）。
 - `hookSeen` が true になった窓で、後から記録が届かなくなった場合: 返事の終わりで idle になる待ちを数えない（R3 を使わないため）。件の窓の記録が捨てられる道（401・409・時間切れ。§2）がこれに当たる。件の部屋は今使えない状態なので、今は起きない。件の部屋を使えるように戻す便の受入に次を写す。(1) D/cases/<id>/session-id の番号と、その件の窓の今の会話番号を比べ、違えば 409 で捨てられている。(2) その件の窓で短い質問を送り、5 秒以内に印が付くかを見る。
-- 1 回の入力に Stop が何度か来る（hooks/activity-hook.mjs:174 の注釈）: `stop_hook_active` が true の Stop は受けない。件でない窓には同期の作戦ボードの見張りの Stop hook がある（server/activity-hooks.ts:70-71）。見張りが止めた 1 回目の Stop（false）で印が付く（Claude はまだ書いている）。続きの間に busy を観測しても、終わりの Stop(true) は受けず、終わりの idle は R3 を使わないので、数は 1 のまま（§4-1 の表）。印が早く付くことは受け入れる。
+- 1 回の入力に Stop が何度か来る（hooks/activity-hook.mjs:174 の注釈）: `stop_hook_active` が true の Stop は受けない。件でない窓には同期の作戦ボードの見張りの Stop hook がある（server/activity-hooks.ts:70-71）。見張りが止めた 1 回目の Stop（false）で印が付く（Claude はまだ書いている）。続きの間に busy を観測しても、終わりの Stop(true) は受けない。終わりの観測が idle なら R3 を使わないので、数は 1 のまま（§4-1 の表）。終わりの観測が「待ち」なら、busy で `open` が `none` に戻っているので R2 で 1 足し、2 になる。印が早く付くことと、この場合に 2 と数えることは受け入れる。続きの間に PO が送って消した場合は、Stop(true) も受けるので漏れない（§4-1 R1 の 1・K7）。
 - 返事の終わりの状態が waiting になるかは未確認（notify.ts:24 の言葉では waiting は「回答待ち」、idle は「指示待ち」）。waiting になる場合、「Stop → 遅れた観測 busy → 観測 waiting」で 2 と数える（busy で `open` が `none` に戻るため）。印は付くので PO の願いには影響しない。実機の確かめ K17 で状態を記録し、2 と数える場面が実際に出たら、直すかを PO に聞く。
 - StopFailure と Stop が同じ返事で両方来るかは未確認（Claude Code の hooks の文書は書いていない。この Mac の記録で StopFailure は 0 行）。来ても R1 の `open = stop` で 2 つ目は足さない（§4-1 の表）。
 - PO が確認に Enter で答えた直後、次の観測（10 秒以内）でまだ waiting と出る場合: `prevObs` を消しているので R2 で 1 足す（答えたのに印が戻る）。答えた後に状態が何秒で変わるかは未確認。実機の確かめ K17 で見る。戻る場合は直すかを PO に聞く。
@@ -140,20 +150,20 @@
 | K1 Claude が 3 秒で終わる短い返事をしたとき、5 秒以内にその窓の行に「未読 1 件」が付く | 単体（窓に `claudeSessionId` を付けた状態で、Stop の記録を 1 行足して refresh → unread 1）＋PO の目視 |
 | K2 その窓を開いて見ている間も、印は消えない（30 秒見続けても残る） | 単体（ConsolePage で選んでいる行に unread 1 が来ても markRead が呼ばれない）＋PO の目視 |
 | K3 行を選んだだけでは消えない | 単体（handleSelect で markRead が呼ばれない） |
-| K4 その窓の端末で Enter を押す（選択肢を選ぶを含む）と消える。矢印キー・クリックだけでは消えない | 単体（ws に "\r" を含む input → unread 0。"\x1b[A"・"\x1b[I"・"\x1b[O" → 残る）＋PO の目視 |
+| K4 その窓の端末で Enter を押す（選択肢を選ぶを含む）と消える。矢印キー・クリックだけでは消えない。消えたことがすぐ画面に届く | 単体（ws に "\r" を含む input → unread 0。"\x1b[A"・"\x1b[I"・"\x1b[O" → 残る。`clearUnread` で数が 1→0 のとき publish が 1 回呼ばれる・0→0 では呼ばれない。`onSubmit` は `sessions.write` より前に呼ばれる）＋PO の目視 |
 | K5 チャット欄から送って予約に積めた時点で消える。予約があとで端末に書かれても、その後に付いた未読は消えない | 単体（enqueueChat の後 unread 0。その後 Stop で unread 1 → 予約を flush しても 1 のまま） |
 | K6 定期実行・引き継ぎ・名前の変更の送信では消えない | 単体（submitText の後と /rename の後も unread が残る） |
-| K7 見張りに止められて続けた返事は 1 回と数える | 単体（Stop(false) → 観測 busy → Stop(true) → 観測 idle で 1） |
+| K7 見張りに止められて続けた返事は 1 回と数える。続きの間に PO が送って消したら、続きの終わりで付く | 単体（Stop(false) → 観測 busy → Stop(true) → 観測 idle で 1。Stop(false) → 観測 busy → Enter（0）→ Stop(true) → 観測 idle で 1。Enter が無ければ Stop(true) は受けない） |
 | K8 サーバーを入れ替えて起動した直後、昔の返事で未読が付かない。記録ファイルを先頭から読み直しても 2 度足さない | 単体（now を固定し、startedAt より前の ts の Stop → 0。同じ Stop の行を持つファイルを縮めて読み直す → 1 のまま）。`onTurnEnd` の単体は tests/unit/activity.test.ts |
 | K9 macOS の通知は今までどおり出る | 既存の通知の試験と、書き換えた e2e の通知の部分が通る |
-| K10 返事の途中で許可・選択肢の画面を出して止まったとき、busy を観測していなくても未読が付く | 単体（観測 busy→waiting で 1。観測 idle→waiting で 1。観測 waiting → Enter → 観測 waiting で 1→0→1） |
+| K10 返事の途中で許可・選択肢の画面を出して止まったとき、busy を観測していなくても未読が付く。選択肢の画面が idle・busy に waitingFor を添えて返っても付く | 単体（tests/unit/notify.test.ts。観測 busy→waiting で 1。観測 idle→waiting で 1。観測 waiting → Enter → 観測 waiting で 1→0→1。Stop を受けたことのある窓で busy → idle＋waitingFor で 1。busy → busy＋waitingFor で 1。e2e の偽の claude は waitingFor を返さないので単体で見る） |
 | K11 Stop と観測の両方が来ても、同じ待ちは 1 回と数える | 単体（Stop → idle で 1。busy → waiting → Stop で 1。Stop → busy → idle で 1。Stop → waiting で 1） |
-| K12 窓と会話番号が結ばれる前に終わった返事は、結ばれた後に付く | 単体（時計を注入。番号の無い窓で Stop → 0 → 番号を付けて detectBreaks → 1。受けてから 31 秒後の見直しでは捨ててログ 1 行。結ぶ前に Enter で消していたら、結んでも Stop の ts が `lastClearAt` 以前なら 0。同じ番号の窓 2 つ → 両方 1。窓を外した後 `forget` で状態が消える） |
+| K12 窓と会話番号が結ばれる前に終わった返事は、結ばれた後に付く | 単体（時計を注入。番号の無い窓で Stop → 0 → 番号を付けて detectBreaks → 1。受けてから 31 秒後の見直しでは捨ててログ 1 行。同じ見直しで結べるものは捨てる前に結ぶ（31 秒目に番号が付いた窓 → 1）。agents の取得が失敗し続けても、31 秒後の回で保留は捨てられる。結ぶ前に Enter で消していたら、結んでも Stop の ts が `lastClearAt` 以前なら 0。同じ番号の窓 2 つ → 両方 1。窓を外した後 `forget` で状態が消える） |
 | K13 API の失敗で返事が止まったとき（StopFailure）も付く。StopFailure と Stop が両方来ても 1 | 単体（StopFailure → 1。StopFailure → Stop → 1） |
 | K14 既存の試験・型検査・lint がすべて通る | CI |
 | K15 PO が Enter を押す前に書かれた Stop を、押した後に読み込んでも付かない | 単体（Stop の ts = 100、Enter で `lastClearAt` = 150、その後に Stop を読み込む → 0） |
 | K16 チャット欄の送信を断ったとき（窓が止まっている・予約が満杯）は消えない | 単体（予約満杯で enqueueChat が投げる → unread 1 のまま） |
-| K17 実機の確かめ（結果を記録に残す。合否でなく事実を取る）: (a) 返事の終わりの状態が idle か waiting か (b) 確認の画面で数字キーだけで答えたとき印が消えるか (c) 確認に Enter で答えた後 20 秒の間に印が戻らないか | Opus が実機の窓で行い、server のログか画面で記録する。(b)・(c) が × なら、直すかを PO に聞く |
+| K17 実機の確かめ（結果を記録に残す。合否でなく事実を取る）: (a) 返事の終わりの状態が idle か waiting か (b) 確認の画面で数字キーだけで答えたとき印が消えるか (c) 確認に Enter で答えた後 20 秒の間に印が戻らないか (d) 選択肢・質問の画面での status と waitingFor (e) 見張りに止められて続けた返事で、続きの間に送ったとき終わりで印が付くか | Opus が実機の窓で行い、server のログか画面で記録する。(b)・(c)・(e) が × なら、直すかを PO に聞く |
 
 ## 8. 維持の仕組み
 - 未読の正本は hub のメモリ（BreakTracker）1 か所のまま。足す決まりは R1〜R5、消す道は PO の送信 2 本に固定し、試験 K3〜K8・K10〜K13・K15・K16 で固定する。
@@ -191,3 +201,16 @@
 | 7 | StopFailure と Stop の両方が来ると 2 | 来るかは未確認と書き、来ても `open = stop` で 1 にした。K13 |
 | 8 | チャットの消す場所 | 確かめ（:403-407）を通って予約に積んだ後（:409 の後）に消す。断ったら消さない。K16 |
 | 推奨 | 二重防止の組の置き場・単体の場所 | 組は `SessionState` に持つ。単体は tests/unit/activity.test.ts（§4-1・§7） |
+
+## 12. 第3版の審査（REVISE・直す点 5 件・推奨 3 件）への対応
+
+| # | 指摘 | 対応（第4版の場所） |
+|---|---|---|
+| 1 | R2 が status "waiting" だけを見る。選択肢の画面が idle・busy＋waitingFor で返ると、Stop を受けた窓で 0 になる | 観測の種類「待ち」を status "waiting" か waitingFor ありと決め、R2・R4・R5 をこの種類で判定（§4-1）。`observe` に waitingFor を渡す（server/hub.ts:584・§3）。§2 に server/agents.ts:47・86・101 を追加。K10 に 2 つの単体、K17 に (d) |
+| 2 | 見張りの続きの間に PO が Enter を押すと、終わりの Stop(true) を受けず漏れる | R1 の 1 に「`lastClearAt` が前の Stop より後なら true でも受ける」を追加。窓ごとに `lastTurnEndTs` を持つ。判定は `BreakTracker`、`onTurnEnd` は `stopHookActive` を渡す（§4-1）。表に 1 行、K7 に追加、K17 に (e) |
+| 3 | §6 の「数は 1 のまま」は終わりが idle のときだけ | §6 に終わりが「待ち」なら 2 と数えることを明記 |
+| 4 | agents の取得が失敗した回（hub.ts:572）は保留の見直しも 30 秒の捨てるも動かない。結ぶと捨てるの順が無い | 順を「結ぶ → 30 秒超を捨てる」と決め、失敗の回は早く戻る前に捨てるだけ行う（§4-1）。K12 に追加 |
+| 5 | ws の消す道が配信しない | hub に `clearUnread(windowId)` を足し、数が変わったら publish。`markRead` も同じ口を使う（§4-2）。K4 に追加 |
+| 推1 | （会話番号, ts）の組に上限が無い | 会話ごとに新しい 500 個まで、古い順に捨てる（§4-1 R1 の 3） |
+| 推2 | SessionState の行 | server/activity.ts:133-153 に直した（§2） |
+| 推3 | `lastClearAt` を write より前に取る | `onSubmit` を `sessions.write` の前に呼ぶ（§4-2・K4） |
