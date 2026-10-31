@@ -19,7 +19,7 @@ function reject(socket: Duplex, status: number, text: string): void {
   socket.destroy();
 }
 
-function attachTerminal(sessions: SessionManager, session: Session, ws: WebSocket): void {
+function attachTerminal(sessions: SessionManager, session: Session, ws: WebSocket, onSubmit: (sessionId: string) => void): void {
   // 接続時に蓄積済みの出力を全量先に送る（再読込・再接続で復元）
   const backlog = session.ring.snapshot();
   if (backlog !== "") ws.send(backlog);
@@ -33,8 +33,11 @@ function attachTerminal(sessions: SessionManager, session: Session, ws: WebSocke
     } catch {
       return;
     }
-    if (msg.type === "input" && typeof msg.data === "string") sessions.write(session, msg.data);
-    else if (msg.type === "resize") sessions.resize(session, msg.cols, msg.rows);
+    if (msg.type === "input" && typeof msg.data === "string") {
+      // Enter（\r）を含む入力は PO が送った印。Claude の受け取りより前に未読を消す（sessions.write の前）
+      if (msg.data.includes("\r")) onSubmit(session.id);
+      sessions.write(session, msg.data);
+    } else if (msg.type === "resize") sessions.resize(session, msg.cols, msg.rows);
   });
   ws.on("close", () => session.clients.delete(ws));
 }
@@ -99,7 +102,7 @@ export function attachWebSockets(
       if (!session) return reject(socket, 404, "Not Found");
       wss.handleUpgrade(req, socket, head, (ws) => {
         track(sessionToken, ws);
-        attachTerminal(deps.sessions, session, ws);
+        attachTerminal(deps.sessions, session, ws, (id) => void deps.hub.clearUnread(id).catch(() => undefined));
       });
       return;
     }

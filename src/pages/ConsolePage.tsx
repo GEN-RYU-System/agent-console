@@ -20,7 +20,6 @@ import {
   clearSessionToken,
   fetchState,
   getSessionToken,
-  markRead,
   openSocket,
   refreshLedger,
   removeSession,
@@ -216,11 +215,6 @@ export function ConsolePage() {
     document.title = totalUnread > 0 ? `(${totalUnread}) ${t("ac.title")}` : t("ac.title");
   }, [totalUnread, t]);
 
-  // 選択中の行は見えているので、区切りが来ても既読にする（窓が見えているときだけ）
-  const selectedUnread = state?.sessions.find((s) => s.id === selectedId)?.unread ?? 0;
-  useEffect(() => {
-    if (selectedId !== null && selectedUnread > 0 && document.visibilityState === "visible") void markRead(selectedId).catch(() => undefined);
-  }, [selectedId, selectedUnread]);
   // 送信の警告は、別のセッションを選んだとき、または今のセッションが送れる状態に戻ったときに消す
   const selectedCanChat = state?.sessions.find((s) => s.id === selectedId)?.canChat;
   useEffect(() => {
@@ -228,8 +222,8 @@ export function ConsolePage() {
   }, [selectedId, selectedCanChat]);
 
   const handleSelect = (id: string): void => {
+    // 未読は選んでも消えない。その窓で PO が何か送ったとき（サーバー側）だけ消える
     setSelectedId(id);
-    if ((sessionsRef.current.find((s) => s.id === id)?.unread ?? 0) > 0) void markRead(id).catch(() => undefined);
   };
 
   useEffect(() => {
