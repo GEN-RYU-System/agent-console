@@ -85,6 +85,8 @@ describe("K1 送信の予約と /rename", () => {
     await h.hub.pollAgents();
     await fetch(`${h.base}/api/sessions/${id}/chat/queue`, { method: "POST", headers, body: JSON.stringify({ text: "待ち" }) });
     expect(h.hub.tryBeginWrite(id)).toBe(true);
+    // POST の予約でも送る処理が 1 回走る（server/hub.ts:454）。それが終わるまで待ち、下の定期取得が必ず印の下で動くようにする（recon R2）
+    await until(() => !(h.hub as unknown as { chatFlushing: Set<string> }).chatFlushing.has(id));
     await h.hub.pollAgents();
     expect(written(id)).toEqual([]);
     expect(h.hub.chatQueueOf(id).map((i) => i.state)).toEqual(["queued"]);

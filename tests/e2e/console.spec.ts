@@ -69,6 +69,13 @@ const claudeJsonHashBefore = sha256OrNull(path.join(os.homedir(), ".claude.json"
 
 test.describe.configure({ mode: "serial" });
 
+// 連続実行で途中が落ちると後ろの試験が動かず、窓が上限（16）のまま残って、同じサーバーで次に動くファイルの窓作りが 400 になる（recon R5）。ファイル直下の afterAll は失敗しても走る（Playwright 公式 test.afterAll）
+test.afterAll(async () => {
+  // 窓は 1 つずつ閉じる。1 つで最大 5 秒待ち（server/sessions.ts:26）、終わらなければ強制終了してさらに 2 秒待つ（:28・:784-792）。16 ×（5 + 2）秒 = 112 秒なので 120 秒とる
+  test.setTimeout(120000);
+  await closeAllSessionsViaApi();
+});
+
 test("K2: 新しいセッション -> ワークツリー作成 -> 役割コマンドが端末に出て入力できる", async ({ page }) => {
   // 新しく作ったセッションには最初の入力待ちで /rename が 1 回書かれ、打鍵に割り込む（initialName）。stub の Claude 側の名前を同じにして書かせない
   writeFileSync(NAME_FILE, "wt-session");

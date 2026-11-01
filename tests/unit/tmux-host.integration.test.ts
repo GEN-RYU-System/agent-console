@@ -409,57 +409,81 @@ suite("tmux host (real tmux, dedicated socket)", () => {
   });
 
   it("10MB of output arrives intact (sha256); time is judged only with AC_TMUX_TIMING=1 (design target 1s when run alone)", async () => {
-    const socket = testSocket();
-    const h = await start(socket);
-    const id = await mk(h, "big", "big");
-    await sleep(300);
-    const s = h.sessions.get(id)!;
-    const chunks: string[] = [];
-    let total = 0;
-    s.term.onData((d) => {
-      chunks.push(d);
-      total += Buffer.byteLength(d);
-    });
-    const line = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789\n";
-    const N = 10485760;
-    const expected = line.repeat(Math.ceil(N / line.length)).slice(0, N);
-    const t0 = performance.now();
-    h.sessions.write(s, "\n");
-    expect(await waitFor(() => chunks.join("").includes("BIGDONE"), 60000, 5)).toBe(true);
-    const ms = performance.now() - t0;
-    const got = chunks.join("");
-    const body = got.slice(0, got.indexOf("BIGDONE") - 1);
-    console.log(`[10MB] ${ms.toFixed(0)}ms, received ${total} bytes (timing check ${TIMING ? "on" : "off"})`);
-    expect(createHash("sha256").update(body).digest("hex")).toBe(createHash("sha256").update(expected).digest("hex"));
-    if (TIMING) expect(ms).toBeLessThanOrEqual(BIG_OUTPUT_MAX_MS);
-    await h.sessions.close(id);
+    // 共有の機械の 1 回の値は時々跳ねる（ci-flake-fix recon R4）ので、AC_TMUX_TIMING=1 のときは 3 回測り中央値で判定する。上限の値は変えない
+    const rounds = TIMING ? 3 : 1;
+    const once = async (): Promise<number> => {
+      const socket = testSocket();
+      const h = await start(socket);
+      const id = await mk(h, "big", "big");
+      await sleep(300);
+      const s = h.sessions.get(id)!;
+      const chunks: string[] = [];
+      let total = 0;
+      s.term.onData((d) => {
+        chunks.push(d);
+        total += Buffer.byteLength(d);
+      });
+      const line = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789\n";
+      const N = 10485760;
+      const expected = line.repeat(Math.ceil(N / line.length)).slice(0, N);
+      const t0 = performance.now();
+      h.sessions.write(s, "\n");
+      expect(await waitFor(() => chunks.join("").includes("BIGDONE"), 60000, 5)).toBe(true);
+      const ms = performance.now() - t0;
+      const got = chunks.join("");
+      const body = got.slice(0, got.indexOf("BIGDONE") - 1);
+      console.log(`[10MB] ${ms.toFixed(0)}ms, received ${total} bytes (timing check ${TIMING ? "on" : "off"})`);
+      expect(createHash("sha256").update(body).digest("hex")).toBe(createHash("sha256").update(expected).digest("hex"));
+      await h.sessions.close(id);
+      await h.close();
+      return ms;
+    };
+    const times: number[] = [];
+    for (let i = 0; i < rounds; i++) times.push(await once());
+    if (TIMING) {
+      const med = [...times].sort((a, b) => a - b)[Math.floor(times.length / 2)];
+      console.log(`[10MB] median ${med.toFixed(0)}ms of ${times.map((t) => t.toFixed(0)).join("/")}`);
+      expect(med).toBeLessThanOrEqual(BIG_OUTPUT_MAX_MS);
+    }
   }, 90000);
 
   it("12 reattaches: the time is judged only with AC_TMUX_TIMING=1 (design target 1s when run alone)", async () => {
-    const socket = testSocket();
-    const h1 = await start(socket);
-    const ids: string[] = [];
-    for (let i = 0; i < 12; i++) ids.push(await mk(h1, "cat", `n${i}`));
-    await sleep(500);
-    const dir = h1.dir;
-    await stopServer(h1);
-    const h2 = await start(socket, { dir });
-    const role = h2.config.roles.find((r) => r.id === "cat")!;
-    // 同期の問い合わせ（display -p）12 本だけの時間と、restore 12 件全体（control client の起動を含む）の時間
-    const env = { PATH: process.env.PATH ?? "", LANG: "ja_JP.UTF-8" };
-    const p0 = performance.now();
-    for (const id of ids) probeSession({ tmux: TMUX as string, socket, conf: CONF }, sessionName(id), env);
-    const probeMs = performance.now() - p0;
-    const t0 = performance.now();
-    for (const id of ids) h2.sessions.restore({ role, name: id, cwd: h2.config.salesanchorRoot, branch: null, id });
-    const ms = performance.now() - t0;
-    console.log(`[reattach x12] probe(spawnSync) ${probeMs.toFixed(0)}ms, restore total ${ms.toFixed(0)}ms (timing check ${TIMING ? "on" : "off"})`);
+    // 3 回の中央値で判定する（10MB と同じ理由。ci-flake-fix recon R4）。上限の値は変えない
+    const rounds = TIMING ? 3 : 1;
+    const once = async (): Promise<{ probeMs: number; ms: number }> => {
+      const socket = testSocket();
+      const h1 = await start(socket);
+      const ids: string[] = [];
+      for (let i = 0; i < 12; i++) ids.push(await mk(h1, "cat", `n${i}`));
+      await sleep(500);
+      const dir = h1.dir;
+      await stopServer(h1);
+      const h2 = await start(socket, { dir });
+      const role = h2.config.roles.find((r) => r.id === "cat")!;
+      // 同期の問い合わせ（display -p）12 本だけの時間と、restore 12 件全体（control client の起動を含む）の時間
+      const env = { PATH: process.env.PATH ?? "", LANG: "ja_JP.UTF-8" };
+      const p0 = performance.now();
+      for (const id of ids) probeSession({ tmux: TMUX as string, socket, conf: CONF }, sessionName(id), env);
+      const probeMs = performance.now() - p0;
+      const t0 = performance.now();
+      for (const id of ids) h2.sessions.restore({ role, name: id, cwd: h2.config.salesanchorRoot, branch: null, id });
+      const ms = performance.now() - t0;
+      console.log(`[reattach x12] probe(spawnSync) ${probeMs.toFixed(0)}ms, restore total ${ms.toFixed(0)}ms (timing check ${TIMING ? "on" : "off"})`);
+      for (const id of ids) await h2.sessions.close(id);
+      await h2.close();
+      return { probeMs, ms };
+    };
+    const results: { probeMs: number; ms: number }[] = [];
+    for (let i = 0; i < rounds; i++) results.push(await once());
     if (TIMING) {
-      expect(probeMs).toBeLessThanOrEqual(REATTACH_X12_MAX_MS);
-      expect(ms).toBeLessThanOrEqual(REATTACH_X12_MAX_MS);
+      const median = (xs: number[]): number => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+      const probe = median(results.map((r) => r.probeMs));
+      const restore = median(results.map((r) => r.ms));
+      console.log(`[reattach x12] median probe ${probe.toFixed(0)}ms restore ${restore.toFixed(0)}ms`);
+      expect(probe).toBeLessThanOrEqual(REATTACH_X12_MAX_MS);
+      expect(restore).toBeLessThanOrEqual(REATTACH_X12_MAX_MS);
     }
-    for (const id of ids) await h2.sessions.close(id);
-  });
+  }, 120000);
 });
 
 describe("tmux host: node SIGKILL leaves the pane alive (§7)", () => {
