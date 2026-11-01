@@ -57,7 +57,8 @@ describe("SessionList", () => {
     render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
     const badges = screen.getAllByTestId("unread-badge");
     expect(badges).toHaveLength(1);
-    expect(badges[0].textContent).toContain("2");
+    expect(badges[0].textContent).toContain("未読");
+    expect(badges[0].textContent).not.toMatch(/\d/);
     expect(screen.getAllByTestId("session-row")[1].getAttribute("data-unread")).toBe("2");
   });
 
