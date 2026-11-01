@@ -1,4 +1,4 @@
-# ci-flake-fix design（第3版、2026-11-01 JST）
+# ci-flake-fix design（第4版、2026-11-01 JST）
 
 参照: docs/handoff/ci-flake-fix/recon.md（R1〜R7・数の表）、docs/handoff/v0.3.9-test-flake/design.md（試験だけの直しの前例）、docs/handoff/pc-meter/design.md:80（K4）、docs/handoff/keep-sessions/design.md:395・420（tmux の所要時間の判定と CI 段）。行番号はすべて origin/main ff5997594 の実物。
 
@@ -13,8 +13,8 @@
 |---|---|
 |S1 この PR の CI を 10 回走らせ（初回＋やり直し 9 回）、macOS・ubuntu の 20 ジョブすべて緑。10 回全部を数える（緑になるまでやり直した回だけを数えない）|`gh api repos/GEN-RYU-System/agent-console/actions/runs/<id>/attempts/<n>/jobs` の conclusion を 10 回分ファイルに保存。緑 20/20|
 |S2 hub-write-lock.test.ts と routines.test.ts を、負荷（busy loop 8 本）の下で各 20 回、直す前と後に実行。直した後の失敗 0/20。直す前の回数も記録する（0 なら「再現せず」と書く）|scratchpad の load.sh。毎回の rc を出力|
-|S3 揺れの再現（直す前に必ず落ちる形で確かめる）: (a) hub-write-lock の 2 つ目の試験で、`h.hub.checkChat` を 3 秒待ってから元を呼ぶ形に試験の中だけで一時的に包む。直す前は :93 が落ちる（3 回中 3 回）、直した後は 3 回中 3 回合格し、:89 は `[]`・:90 は `["queued"]` のまま。(b) routines の :44 の nameTimeoutMs を一時的に 2（namePollMs 5 より短い）にし、:154 の試験だけを `-t` の完全な名前で 3 回回す。直す前は 3 回中 3 回、:163 で呼び出しが 1 回になって落ちる。直した後は :44 を同じく 2 にしても試験ごとの 2000 が勝ち、3 回中 3 回合格|下の「一時の変更の戻し方」の確かめ rc=0。生出力を保存|
-|S4 偽の Claude の読み順: tests/fixtures/claude-stub.sh を一時的に書き換え、名前の読みと ps の間に `sleep 2` を入れる。console.spec.ts:1004 を 3 回。旧の順（名前→ps）では 3 回中 1 回以上、端末の先頭が /rename になる（0 回なら「再現せず」と書いて止まる）。新の順（ps→名前）では 3 回中 3 回合格新の順で落ちたときは、落ちた行を保存し、sleep による時間切れ（page の 15000・試験の 90000）でないかを確かめてから × とする|下の「一時の変更の戻し方」の確かめ rc=0。生出力を保存|
+|S3 揺れの再現（直す前に必ず落ちる形で確かめる）: (a) hub-write-lock の 2 つ目の試験で、`h.hub.checkChat` を 3 秒待ってから元を呼ぶ形に試験の中だけで一時的に包む。直す前は :93 が落ちる（3 回中 3 回）、直した後は 3 回中 3 回合格し、:89 は `[]`・:90 は `["queued"]` のまま。(b) routines の :44 の nameTimeoutMs を一時的に 2（namePollMs 5 より短い）にし、:154 の試験だけを `npx vitest run tests/unit/routines.test.ts -t "sends the name first, waits for the matching display name"` で 3 回回す（`-t` は正規表現なので、かっこを含む末尾 `(v0.29.0)` は入れない）。毎回、実行された試験が 1 件であることを出力で確かめる（0 件や 2 件以上なら止まる）。直す前は 3 回中 3 回、:163 で呼び出しが 1 回になって落ちる。直した後は :44 を同じく 2 にしても試験ごとの 2000 が勝ち、3 回中 3 回合格|下の「一時の変更の戻し方」の確かめ rc=0。生出力を保存|
+|S4 偽の Claude の読み順: tests/fixtures/claude-stub.sh を一時的に書き換え、名前の読みと ps の間に `sleep 2` を入れる。console.spec.ts:1004 を 3 回。旧の順（名前→ps）では 3 回中 1 回以上、端末の先頭が /rename になる（0 回なら「再現せず」と書いて止まる）。新の順（ps→名前）では 3 回中 3 回合格。新の順で落ちたときは、落ちた行を保存し、sleep による時間切れ（page の 15000・試験の 90000）でないかを確かめてから × とする|下の「一時の変更の戻し方」の確かめ rc=0。生出力を保存|
 |S5 後片付け: console.spec.ts:1010 の apiCreate の直後に一時的な `throw` を入れる。窓の数を読むため、tests/e2e/file-link.spec.ts の先頭に一時的な試験を 1 つ足し、`${BASE}/api/state` の sessions の数を `console.log("[S5] sessions=<n>")` で出す。`npx playwright test --project app tests/e2e/console.spec.ts tests/e2e/file-link.spec.ts tests/e2e/relay.spec.ts` を回す。直す前は 16 で file-link・relay が 400、直した後は 0 で file-link・relay が合格。直す前が 16 未満なら、その値を書いて止まる|下の「一時の変更の戻し方」の確かめ rc=0。窓の数と生出力を保存|
 |S6 CI の段: npm test が赤でも build と画面の試験が走る（skipped にならない）。ジョブ全体は赤のまま|使い捨てのブランチで単体の試験を 1 つ落とした下書き PR を作り、その回の各段の conclusion とジョブの conclusion を保存。確かめた後に PR を閉じブランチを消す|
 |S7 pc-meter K4: PO の Mac（CI 以外）では ±15 の比べを今まで通り行い、CI では行わない|手元の半分: PO の Mac で、CI を入れずに `npm run build` の後 `npx playwright test tests/e2e/pc-meter.spec.ts` rc=0 と保存された k2-k3-k4.json（K4 は Mac だけで動く。pc-meter.spec.ts:100）。取るのは PO の Mac で動く評価役（実装役がクラウドで動く場合も）。CI の半分: S1 の 10 回の macOS ジョブで pc-meter の試験が合格。macOS ジョブのログの `[K4] CI: ±15 check skipped` の行は補足とする（list の出力に試験の console.log が出るかは未確認。出なければその事実を書く）|
@@ -146,11 +146,11 @@
 - 測り方: §1 の S1〜S10。合流後は本線の push ごとの CI を数え、§7 の見張りの段で使う。
 
 ## 5. 検証の手順（実装役が行う）
+一時の変更の戻し方（手順 1 と手順 3 の両方で守る。S3・S4・S5）: 一時の変更は 1 つずつ入れて回し、回し終えたらすぐ `git checkout -- <file>` で戻す。戻したら、その作業場所で `git diff --exit-code -- tests/unit/hub-write-lock.test.ts tests/unit/routines.test.ts tests/fixtures/claude-stub.sh tests/e2e/console.spec.ts tests/e2e/file-link.spec.ts` が rc=0 であることを確かめる。直す前の写しでも同じ確かめを行う。push の前に `git status --porcelain` が空であることを確かめる。
+
 1. 直す前の写し（origin/main から切った別の作業場所）で、S2・S3・S4（旧の順）・S5（直す前）を取り、tmux の 2 つの試験の所要時間（D4）を記録する。生出力を保存。
 2. D1〜D7 を入れて commit する（一時の変更を入れる前に必ず commit する）。
 3. S2・S3・S4（新の順）・S5（直した後）・S7・S8・S9・S10 を取る。
-
-一時の変更の戻し方（S3・S4・S5）: 一時の変更は 1 つずつ入れて回し、回し終えたらすぐ `git checkout -- <file>` で戻す。戻したら、その作業場所で `git diff --exit-code -- tests/unit/hub-write-lock.test.ts tests/unit/routines.test.ts tests/fixtures/claude-stub.sh tests/e2e/console.spec.ts tests/e2e/file-link.spec.ts` が rc=0 であることを確かめる。直す前の写しでも同じ確かめを行う。push の前に `git status --porcelain` が空であることを確かめる。
 4. PR を作り、S1（10 回）と S6（使い捨ての下書き PR）を取る。
 5. 生出力のパスを PR 本文に書く。数が §1 と合わないときは止まって報告する（推測で書かない）。
 
@@ -174,4 +174,6 @@
 - 第2版での対応: 行番号を実物で確かめて直した（recon §6 にも訂正を記録）。D2 を「待つ」から「先の処理を終わらせて印を確かめる」に変えた。D4 に回ごとの harness の close、D5 に hook の時間、D6 に使う所の正しい記述、D7 に変更前後の YAML を足した。D1 に CI の記録の行、D3 の値を 2000 に変えた。成功条件に必ず落ちる再現（S3）、throw の位置と窓の数（S5）、許すファイルの一覧（S10）を足した。keep-sessions R5 の修正を §4 に記録した。
 - 第2版（2026-11-01）: REVISE。blocker 0・should-fix 3（S3(b) の値が必ず落ちる値でない・一時の変更の戻しの確かめが commit 前だと成り立たない・S5 の窓の数の読み方が無い）・nit 5。審査記録は手元の scratchpad（acrecon/review_v2.md）。D1〜D7 は実物と合うと確かめられた。
 - 第3版での対応: S3(b) を :44 を 2 にする形に変えた。§5 に commit してから一時の変更を入れる手順と戻しの確かめの命令を書いた。S5 に窓の数を読む一時の試験と命令を書いた。D5 に 112 秒の計算、D2 に :87 で落ちる残りの競り合い、D4 に所要時間の記録、S4 に時間切れとの見分け、S7 に macOS だけ・取る人・ログの行が未確認であることを足した。
-- 第3版: 未審査。
+- 第3版（2026-11-01）: REVISE。blocker 0・should-fix 1（S3(b) の `-t` に完全な名前を入れると、末尾のかっこが正規表現として読まれて試験が選ばれない）・nit 2。審査記録は手元の scratchpad（acrecon/review_v3.md）。第2版の指摘はすべて解消と確かめられた。
+- 第4版での対応: `-t` を正規表現の記号を含まない一部分にし、実行された試験が 1 件であることの確かめを足した。句点の抜けを直した。戻し方の段落を手順の前に移し、手順 1 と 3 の両方にかかると書いた。
+- 第4版: 未審査。
