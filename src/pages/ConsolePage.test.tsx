@@ -349,8 +349,9 @@ describe("ConsolePage daily use", () => {
     render(<ConsolePage />);
     fireEvent.click(await screen.findByText("dead"));
     await waitFor(() => expect(document.title).toBe("Agent Console"));
-    fetchState.mockResolvedValue({ ...state, sessions: [live] });
-    await waitFor(() => expect(document.title).toBe("(2) Agent Console"), { timeout: 8000 });
+    const onmessage = lastSocket?.onmessage as (e: { data: string }) => void;
+    act(() => onmessage({ data: JSON.stringify({ sessions: [live], agentsAvailable: true }) }));
+    await waitFor(() => expect(document.title).toBe("(2) Agent Console"));
     expect(markRead).not.toHaveBeenCalled();
   });
 
