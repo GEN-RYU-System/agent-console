@@ -254,3 +254,184 @@ describe("BreakTracker unread (design §4-1 table)", () => {
     expect(n(t)).toBe(1);
   });
 });
+
+// design.md §4-5 の表 n1〜n25（ball-with-PO）
+describe("BreakTracker unread: ball with PO (design §4-5 n1-n25)", () => {
+  const MIN30 = 30 * 60 * 1000;
+  const stop = (t: BreakTracker, ts: number, pending: boolean | null | undefined, over: { stopHookActive?: boolean; now?: number } = {}): void => {
+    t.addTurnEnd("w", { ts, stopHookActive: over.stopHookActive ?? false, failed: false, ...(pending === undefined ? {} : { pendingSelfResume: pending }) }, over.now ?? ts);
+  };
+  const fail = (t: BreakTracker, ts: number): void => {
+    t.addTurnEnd("w", { ts, stopHookActive: false, failed: true }, ts);
+  };
+  const resume = (t: BreakTracker, ts: number): void => {
+    t.addSelfResume("w", ts);
+  };
+  const n = (t: BreakTracker): number => t.unreadOf("w");
+  const cause = (t: BreakTracker): string => (t as unknown as { windows: Map<string, { cause: string }> }).windows.get("w")?.cause ?? "none";
+  const expectState = (t: BreakTracker, unread: number, c: string): void => {
+    expect(n(t)).toBe(unread);
+    expect(cause(t)).toBe(c);
+  };
+
+  it("n1: Stop(no plan) -> 1 stop", () => {
+    const t = new BreakTracker();
+    stop(t, 100, false);
+    expectState(t, 1, "stop");
+  });
+  it("n2: repeated Stop(no plan) with busy between -> still 1 stop", () => {
+    const t = new BreakTracker();
+    stop(t, 100, false);
+    t.observe("w", "busy", undefined, 101);
+    stop(t, 200, false);
+    t.observe("w", "busy", undefined, 201);
+    stop(t, 300, false);
+    expectState(t, 1, "stop");
+  });
+  it("n3: Stop(plan) -> 0", () => {
+    const t = new BreakTracker();
+    stop(t, 100, true);
+    expectState(t, 0, "none");
+  });
+  it("n4: Stop(null) -> 1 stop", () => {
+    const t = new BreakTracker();
+    stop(t, 100, null);
+    expectState(t, 1, "stop");
+  });
+  it("n5: Stop(no plan) -> self resume -> 0", () => {
+    const t = new BreakTracker();
+    stop(t, 100, false);
+    resume(t, 110);
+    expectState(t, 0, "none");
+  });
+  it("n6: StopFailure -> self resume -> 1 failure", () => {
+    const t = new BreakTracker();
+    fail(t, 100);
+    resume(t, 110);
+    expectState(t, 1, "failure");
+  });
+  it("n7: StopFailure -> Stop(no plan) -> 1 failure", () => {
+    const t = new BreakTracker();
+    fail(t, 100);
+    stop(t, 110, false);
+    expectState(t, 1, "failure");
+  });
+  it("n8: StopFailure -> PO sends -> 0", () => {
+    const t = new BreakTracker();
+    fail(t, 100);
+    t.clear("w", 120);
+    expectState(t, 0, "none");
+  });
+  it("n9: Stop(plan) -> 30 minutes -> 1 stale", () => {
+    const t = new BreakTracker();
+    stop(t, 100, true, { now: 0 });
+    t.sweepStale(MIN30 + 1);
+    expectState(t, 1, "stale");
+  });
+  it("n10: Stop(plan) -> self resume at 29 min -> 30 min -> 0", () => {
+    const t = new BreakTracker();
+    stop(t, 100, true, { now: 0 });
+    resume(t, 110);
+    t.sweepStale(MIN30 + 1);
+    expectState(t, 0, "none");
+  });
+  it("n11: Stop -> self resume -> Stop(true, no plan) -> 1 stop", () => {
+    const t = new BreakTracker();
+    stop(t, 100, false);
+    resume(t, 110);
+    stop(t, 120, false, { stopHookActive: true });
+    expectState(t, 1, "stop");
+  });
+  it("n12: waiting observed -> self resume -> 0", () => {
+    const t = new BreakTracker();
+    t.observe("w", "waiting", undefined, 100);
+    resume(t, 110);
+    expectState(t, 0, "none");
+  });
+  it("n13: Stop(no plan) -> late busy -> idle -> 1 stop", () => {
+    const t = new BreakTracker();
+    stop(t, 100, false);
+    t.observe("w", "busy", undefined, 101);
+    t.observe("w", "idle", undefined, 102);
+    expectState(t, 1, "stop");
+  });
+  it("n14: Stop(no plan, 100) -> self resume (ts 90, bound late) -> 1 stop", () => {
+    const t = new BreakTracker();
+    stop(t, 100, false);
+    resume(t, 90);
+    expectState(t, 1, "stop");
+  });
+  it("n15: self resume (110) -> Stop(no plan, 100, bound late) -> 0", () => {
+    const t = new BreakTracker();
+    resume(t, 110);
+    stop(t, 100, false);
+    expectState(t, 0, "none");
+  });
+  it("n16: Stop(plan, 100) -> Stop(true, no plan, 110) -> 1 stop", () => {
+    const t = new BreakTracker();
+    stop(t, 100, true);
+    stop(t, 110, false, { stopHookActive: true });
+    expectState(t, 1, "stop");
+  });
+  it("n17: waiting observed -> Stop(plan, 110) -> 0", () => {
+    const t = new BreakTracker();
+    t.observe("w", "waiting", undefined, 100);
+    stop(t, 110, true);
+    expectState(t, 0, "none");
+  });
+  it("n18: StopFailure -> Stop(plan) -> 1 failure", () => {
+    const t = new BreakTracker();
+    fail(t, 100);
+    stop(t, 110, true);
+    expectState(t, 1, "failure");
+  });
+  it("n19: Stop(plan) -> 30 minutes, with agents fetch failing in the same round -> 1 stale", () => {
+    const t = new BreakTracker();
+    stop(t, 100, true, { now: 0 });
+    // sweepStale does not depend on observe being called
+    t.sweepStale(MIN30);
+    expectState(t, 1, "stale");
+  });
+  it("n20: Stop(no plan) -> self resume -> waiting observed -> 1 wait", () => {
+    const t = new BreakTracker();
+    stop(t, 100, false);
+    resume(t, 110);
+    t.observe("w", "waiting", undefined, 120);
+    expectState(t, 1, "wait");
+  });
+  it("n21: waiting(100) -> Stop(plan, 110) -> waiting(120) -> 1 wait", () => {
+    const t = new BreakTracker();
+    t.observe("w", "waiting", undefined, 100);
+    stop(t, 110, true);
+    t.observe("w", "waiting", undefined, 120);
+    expectState(t, 1, "wait");
+  });
+  it("n22: waiting(100) -> Stop(plan, 110) -> Stop(true, no plan, 120) -> 1 stop", () => {
+    const t = new BreakTracker();
+    t.observe("w", "waiting", undefined, 100);
+    stop(t, 110, true);
+    stop(t, 120, false, { stopHookActive: true });
+    expectState(t, 1, "stop");
+  });
+  it("n23: waiting(100) -> Stop(no plan, 110) -> 1 stop", () => {
+    const t = new BreakTracker();
+    t.observe("w", "waiting", undefined, 100);
+    stop(t, 110, false);
+    expectState(t, 1, "stop");
+  });
+  it("n24: Stop(plan, now=0) -> exactly 30 minutes -> 1 stale", () => {
+    const t = new BreakTracker();
+    stop(t, 100, true, { now: 0 });
+    t.sweepStale(MIN30 - 1);
+    expectState(t, 0, "none");
+    t.sweepStale(MIN30);
+    expectState(t, 1, "stale");
+  });
+  it("n25: Stop(no plan, repeat-plan hash) -> self resume matched by promptKey -> 0", () => {
+    // promptKey との突き合わせは ActivityStore が行い、ここには「AI の再開」として届く
+    const t = new BreakTracker();
+    stop(t, 100, false);
+    resume(t, 110);
+    expectState(t, 0, "none");
+  });
+});

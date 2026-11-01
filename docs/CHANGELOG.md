@@ -2,6 +2,7 @@
 
 版を出すたびに 1 行追記する（版の正本は git タグ `vX.Y.Z`）。
 
+- 0.50.0 未読の印を「PO の番で止まっている窓」だけに付けるようにした（AI が自分で続きを始める予定が無い返事の終わり・許可や選択の画面・失敗で付き、AI が自分で再開したら消える。失敗の印は PO が送るまで残る。予定があって付けなかった窓は 30 分で付く）。印は付く・付かないの1つで、行の言葉は「未読」だけ、タブの題の (N) は印の付いた窓の数。Stop の記録に `bg_tasks`・`bg_types`・`crons_once`・`crons_repeat`・予定の文のハッシュを足した（説明文・コマンド・prompt は残さない）。測る台本 `scripts/measure-unread.mjs`。戻し方 `bash scripts/ac-update.sh v0.49.0`（記録の欄が増えても古い版は読まないだけ）。設計は docs/handoff/unread-ball-with-po/design.md
 - 0.49.0 返事が来たら未読を付け、PO がその窓で送る（端末の Enter・チャット欄）まで消さないようにした（Claude の Stop の記録と待ちの観測で数える。行を選んでも窓を開いたままでも消えない。macOS の通知は従来どおり）。戻し方 `bash scripts/ac-update.sh v0.48.1`。設計は docs/handoff/unread-on-reply/design.md
 - 0.48.1 部屋の受入で落ちた3つを直した（case-home の `.claude.json.lock`・`.claude.json.tmp.<pid>.<16進12桁>`・`history.jsonl` を書けるようにした・件の会話の番号を case-home の `sessions/<pid>.json` から付ける・起動関数で `DISABLE_AUTOUPDATER=1`）。戻し方 `bash scripts/ac-update.sh v0.48.0`
 - 0.48.0 件のセッション（discord-case）の claude 本体・見張りのフック・Bash の子を、件ごとの部屋（`sandbox-exec -f <dataDir>/cases/<id>/room.sb`）の中で動かし、外への通信をサーバーの中の受付（127.0.0.1:18124）1か所に絞った（`api.anthropic.com` は本体の pid にだけ通す。claude の状態は件ごとの case-home、ログインは専用の鍵）。件の活動の記録は、件のフックからサーバーの `POST /api/agent/case-activity` へ送らせ、サーバーが今と同じファイルに書く。部屋・受付・case-home・macOS の版・claude の道・tmux のどれかが欠けたら件を開かない（503）。**初めて入れたあと、設計者が測りのあとで `node scripts/ac-case-macos.mjs accept` を打ってサーバーを起き直すまで、件は開かない**。戻し方 `bash scripts/ac-update.sh v0.47.2`（戻す前に件を全部閉じ、`<dataDir>/cases/*`・`case-gh/*`・`case-home/*` を消す。room-design §6）

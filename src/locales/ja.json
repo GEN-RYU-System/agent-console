@@ -177,7 +177,7 @@
       "notReflectedTitle": "名前がまだ反映されていません",
       "notReflectedBody": "/rename を送りましたが、Claude 側の名前が 10 秒たっても変わっていません。端末を確認してください。"
     },
-    "unread": "未読 {{count}} 件",
+    "unread": "未読",
     "quick": {
       "title": "よく使う指示",
       "use": "使う",

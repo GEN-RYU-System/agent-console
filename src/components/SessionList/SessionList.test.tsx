@@ -57,7 +57,8 @@ describe("SessionList", () => {
     render(<SessionList sessions={sessions} roles={roles} selectedId={null} onSelect={() => {}} onRemove={() => {}} onRename={() => {}} onClose={() => {}} onMove={() => {}} />);
     const badges = screen.getAllByTestId("unread-badge");
     expect(badges).toHaveLength(1);
-    expect(badges[0].textContent).toContain("2");
+    expect(badges[0].textContent).toContain("未読");
+    expect(badges[0].textContent).not.toMatch(/\d/);
     expect(screen.getAllByTestId("session-row")[1].getAttribute("data-unread")).toBe("2");
   });
 
@@ -120,7 +121,8 @@ describe("SessionList", () => {
     const role = within(line2).getByText("シェル");
     const state = within(line2).getByTestId("state-badge");
     const unread = within(line2).getByTestId("unread-badge");
-    expect(unread.textContent).toContain("3");
+    expect(unread.textContent).toContain("未読");
+    expect(unread.textContent).not.toMatch(/\d/);
     const ci = within(line2).getByTestId("ci-badge");
     const pending = within(line2).getByTestId("pending-name");
     expect(state.textContent).toBe("作業中");

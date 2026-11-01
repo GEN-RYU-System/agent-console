@@ -5,7 +5,7 @@ import type { Config } from "./config.ts";
 import { loadLedger, type LedgerSnapshot } from "./ledger.ts";
 import { ciOfResponse, fetchPr, isSettled, resolveTarget, type CiState, type PrResponse, type PrTarget } from "./pr-status.ts";
 import { BreakTracker, breakBody, osascriptSender, type NotificationSender } from "./notify.ts";
-import type { TurnEndEvent } from "./activity.ts";
+import type { SelfResumeEvent, TurnEndEvent } from "./activity.ts";
 import { startPolling } from "./poll.ts";
 import { readCaseClaudeSessionId } from "./case-agents.ts";
 import { descendantPids, readProcessTable } from "./process-tree.ts";
@@ -132,7 +132,15 @@ export class Hub {
   /** 未読の時刻（lastClearAt と保留）に使う時計。試験で注入する */
   private readonly now: () => number;
   /** 窓に結べなかった返事の終わりの記録（まだその会話番号を持つ窓が無い）。agents の取得 3 回分（最短 30 秒）で捨てる */
-  private pendingTurnEnds: Array<{ claudeSessionId: string; ts: number; failed: boolean; stopHookActive: boolean; receivedAt: number }> = [];
+  private pendingTurnEnds: Array<{
+    kind: "turnEnd" | "selfResume";
+    claudeSessionId: string;
+    ts: number;
+    failed: boolean;
+    stopHookActive: boolean;
+    pendingSelfResume: boolean | null;
+    receivedAt: number;
+  }> = [];
 
   constructor(
     private readonly config: Config,
@@ -222,11 +230,12 @@ export class Hub {
 
   /** セッションの様子の記録の版を配信に載せる。記録が増えるたびに版が進み、画面が右の欄を取り直す。 */
   watchActivity(
-    store: { onChange: (listener: (rev: number) => void) => unknown; onTurnEnd: (listener: (e: TurnEndEvent) => void) => unknown; rev: number } & ChatSource,
+    store: { onChange: (listener: (rev: number) => void) => unknown; onTurnEnd: (listener: (e: TurnEndEvent) => void) => unknown; onSelfResume: (listener: (e: SelfResumeEvent) => void) => unknown; rev: number } & ChatSource,
   ): void {
     this.chatSource = store;
     this.activityRev = store.rev;
     store.onTurnEnd((e) => this.onTurnEnd(e));
+    store.onSelfResume((e) => this.onSelfResume(e));
     store.onChange((rev) => {
       this.activityRev = rev;
       this.reconcileChatQueues();
@@ -236,13 +245,26 @@ export class Hub {
 
   /** 返事の終わりの記録を、その会話番号を持つ窓に当てる。窓がまだ無ければ保留する（配信は onChange に任せる） */
   private onTurnEnd(e: TurnEndEvent): void {
-    if (!this.applyTurnEnd(e)) this.pendingTurnEnds.push({ ...e, receivedAt: this.now() });
+    if (!this.applyTurnEnd(e)) this.pendingTurnEnds.push({ ...e, kind: "turnEnd", receivedAt: this.now() });
+  }
+
+  /** AI が自分で再開した記録を窓に当てる。窓がまだ無ければ返事の終わりと同じ保留に入れる */
+  private onSelfResume(e: SelfResumeEvent): void {
+    if (!this.applySelfResume(e)) {
+      this.pendingTurnEnds.push({ kind: "selfResume", claudeSessionId: e.claudeSessionId, ts: e.ts, failed: false, stopHookActive: false, pendingSelfResume: null, receivedAt: this.now() });
+    }
+  }
+
+  private applySelfResume(e: SelfResumeEvent): boolean {
+    const windows = this.sessions.list().filter((s) => s.claudeSessionId === e.claudeSessionId);
+    for (const w of windows) this.tracker.addSelfResume(w.id, e.ts);
+    return windows.length > 0;
   }
 
   /** 会話番号を持つ全部の窓に当てる（同じ番号の窓が 2 つあれば両方）。結べる窓が無ければ false */
   private applyTurnEnd(e: TurnEndEvent): boolean {
     const windows = this.sessions.list().filter((s) => s.claudeSessionId === e.claudeSessionId);
-    for (const w of windows) this.tracker.addTurnEnd(w.id, { ts: e.ts, stopHookActive: e.stopHookActive, failed: e.failed }, this.now());
+    for (const w of windows) this.tracker.addTurnEnd(w.id, { ts: e.ts, stopHookActive: e.stopHookActive, failed: e.failed, pendingSelfResume: e.pendingSelfResume }, this.now());
     return windows.length > 0;
   }
 
@@ -254,7 +276,7 @@ export class Hub {
     let dropped = 0;
     const waitMs = Math.max(PENDING_TURN_END_MIN_MS, PENDING_TURN_END_POLLS * this.config.agentsPollMs);
     for (const p of [...this.pendingTurnEnds].sort((a, b) => a.ts - b.ts)) {
-      if (bind && this.applyTurnEnd(p)) bound += 1;
+      if (bind && (p.kind === "selfResume" ? this.applySelfResume(p) : this.applyTurnEnd(p))) bound += 1;
       else if (now - p.receivedAt > waitMs) dropped += 1;
       else keep.push(p);
     }
@@ -612,6 +634,7 @@ export class Hub {
   /** 前回の status と比べ、区切りがあれば未読を増やして macOS 通知を出す。取得失敗の間は何も判定しない。 */
   private async detectBreaks(): Promise<void> {
     await this.attachCaseSessionIds();
+    this.tracker.sweepStale(this.now());
     if (this.agents === null) { this.reviewPendingTurnEnds(false); this.emitSample(null); return; }
     const table = await readProcessTable().catch(() => []);
     const states = new Map<string, SessionState>();
@@ -624,7 +647,7 @@ export class Hub {
         if (this.sessions.caseHomeOf(s.id) === undefined) this.sessions.setClaudeSessionId(s.id, agent.sessionId);
         for (const other of this.sessions.list()) if (other.id !== s.id && other.claudeSessionId === agent.sessionId) this.sessions.clearCaseClaudeSessionId(other.id);
       }
-      const isBreak = this.tracker.observe(s.id, agent?.status ?? null, agent?.waitingFor);
+      const isBreak = this.tracker.observe(s.id, agent?.status ?? null, agent?.waitingFor, this.now());
       if (isBreak && agent && (agent.status === "waiting" || agent.status === "idle")) {
         this.sendNotification?.(breakBody(agent.name ?? s.name, agent.status));
       }
