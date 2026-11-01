@@ -1,6 +1,6 @@
 # 未読の印は「PO の番で止まっている窓」だけに付ける 設計
 
-状態: 設計案 第4版（Opus 作成・2026-11-01）。第1版〜第3版の設計審査はどれも REVISE（対応は §11・§12・§13）。
+状態: 設計案 第5版（Opus 作成・2026-11-01）。第1版〜第4版の設計審査はどれも REVISE（対応は §11・§12・§13・§14）。
 
 ## 1. 目的（PO に見える変化）
 - PO の願い（2026-11-01 原文）:「未読が出すぎて見づらいので調整して、人間の返答街で停まっているものだけ未読を表示するようにしてくれ」
@@ -46,10 +46,10 @@
   - hooks/activity-hook.mjs: Stop の 1 件に次を足す。欄が無い・配列でないときは何も足さない。説明文・コマンド・prompt の文字は残さない。足す場所は `withFullText`（:65-78）に渡す前の `base`（後から足すと 1 行の上限 64KiB を超えるおそれがあるため）。
     - `bg_tasks`（`background_tasks` の件数）と `bg_types`（type ごとの件数。shell・subagent・monitor・workflow・teammate・cloud session・MCP task 以外は `other`）。
     - `crons_once`（`session_crons` で recurring が false の件数）・`crons_repeat`（true の件数）。
-    - `cron_prompt_hashes`（§4-6 の `promptKey` を recurring が false の prompt に当てたもの。最大 10 個）。
+    - `cron_prompt_hashes`（§4-6 の `promptKey` を `session_crons` の prompt に当てたもの。recurring が false と true の両方。最大 20 個）。C2 の突き合わせにだけ使う。`pendingSelfResume` は数（`crons_once`）で決め、この欄は使わない。
   - server/activity.ts:
     - `TurnEndEvent` に `pendingSelfResume: boolean | null` を足す（null = 欄が無かった）。true は `bg_tasks ≥ 1` か `crons_once ≥ 1`。StopFailure は null。
-    - `SessionState` に `cronPromptKeys: string[]`（同じ会話の最後の Stop の `cron_prompt_hashes`。その Stop に欄が無ければ `[]` にする）と `resumeTs: Set<number>`（AI の再開の重なりを見る。`turnEndTs` とは別。上限は TURN_ENDS_KEEP と同じ）を足す。
+    - `SessionState` に `cronPromptKeys: string[]`（同じ会話の最後の Stop の `cron_prompt_hashes`。その Stop に欄が無ければ `[]` にする。StopFailure では変えない）と `resumeTs: Set<number>`（AI の再開の重なりを見る。`turnEndTs` とは別。上限は TURN_ENDS_KEEP と同じ）を足す。
     - `applyPrompt`（:506）の最初、:509 の早い return より前で、記録が §4-3 C2 の「AI の再開」なら `onSelfResume({ claudeSessionId, ts })` を出す。受ける条件は Stop と同じ（`ts < startedAt` は捨てる・`resumeTs` で同じ ts は 1 回）。その後の処理（右の欄・チャット）は今のまま。
     - `onSelfResume(listener)` の口を `onTurnEnd` と同じ形で足す。
   - server/hub.ts:
@@ -57,7 +57,7 @@
     - `onSelfResume` を窓に結ぶ。結べないときは返事の終わりと同じ保留（`pendingTurnEnds`）に種類を付けて入れる。`reviewPendingTurnEnds`（:251）は種類を問わず ts の順に結ぶ（今の並べ替えのまま）。
     - `detectBreaks`（:613）の最初、:615 の早い return より前で `tracker.sweepStale(this.now())` を呼ぶ（§4-2 S5）。
     - :627 の `this.tracker.observe(...)` に 4 つ目の引数として `this.now()` を渡す。
-    - `watchActivity`（:224-226）の store の型に `onSelfResume` を足し、`store.onSelfResume((e) => this.onSelfResume(e))` を結ぶ。試験の偽の store（tests/unit の `watchActivity` に渡す物）にも `onSelfResume` を足す。
+    - `watchActivity`（:224-226）の store の型に `onSelfResume` を足し、`store.onSelfResume((e) => this.onSelfResume(e))` を結ぶ。試験は tests/unit/helpers/harness.ts:269 で本物の `ActivityStore` を渡しているので、`ActivityStore` に `onSelfResume` を足せば足りる（偽の store は無い）。
     - 画面に届く道は足さない。`sweepStale` の変化は、同じ回の pollAgents の最後の `publish`（:190）で届く。返事の終わりと AI の再開の変化は、活動の記録の `onChange`（:229-233）の `publish` で届く。
   - server/notify.ts: `BreakTracker` を §4 に変える。足す口は `addSelfResume(sessionId, ts)` と `sweepStale(now)`。変える口は次の 2 つ。
     - `observe(sessionId, status, waitingFor?, now?)`: `now` を省略できる 4 つ目の引数にする。省略したときは `Date.now()`。今の試験は呼び出しの形を変えずに通る。新しい試験は `now` を必ず渡す。
@@ -106,7 +106,7 @@
 - C2 AI が自分で再開: `addSelfResume(sessionId, ts)` を受けたとき。AI の再開とは、UserPromptSubmit の記録が次のどれかのもの。
   - 本文が正規表現 `/^\s*(<agent-message\b|<task-notification\b|<cross-session-message\b|# Autonomous loop\b)/` に当たる（先頭の空白を許すのは今の `AGENT_MESSAGE_PREFIX`・server/activity.ts:30 と同じ）。順に、担当の報告の戻り、裏の作業の終わりの知らせ、別の会話からの知らせ、loop の定期の回。
   - 記録に `source: "agent"` が付いている（hooks/activity-hook.mjs:167-171 が担当の報告の戻りに付ける）。
-  - `promptKey(本文)` が、同じ会話の `cronPromptKeys` にある（ScheduleWakeup などの一度きりの予定の文）。
+  - `promptKey(本文)` が、同じ会話の `cronPromptKeys` にある（ScheduleWakeup などの一度きりの予定の文と、CronCreate などの繰り返しの予定の文）。
 - 受ける条件: `ts > lastTurnEndTs` かつ `ts > lastClearAt`。満たさないものは何もしない（古い再開で新しい印を消さない）。
 - 受けたら:
   - `lastResumeAt = max(lastResumeAt, ts)`・`deferred = undefined`。
@@ -115,7 +115,9 @@
 - 消すきっかけは記録の順（ts）で決める。10 秒ごとの観測（busy）では消さない（§8 C）。
 
 ### 4-4. 分かりにくい点の決め
-- 繰り返しの予定（`recurring` が true。固定の間隔の /loop・CronCreate の繰り返し）は「AI の番」に数えない。何日も先の予定で印が出ないことを防ぐ。loop の定期の回が始まったら C2 で消える。
+- 繰り返しの予定（`recurring` が true。固定の間隔の /loop・CronCreate の繰り返し）は「AI の番」に数えない。何日も先の予定で印が出ないことを防ぐ。
+  - その回が始まったときに印を消す道は 2 つ。`# Autonomous loop` で始まる本文は先頭の形で当たる。CronCreate の繰り返しの回は、公式の道具の説明（CronCreate の prompt「The prompt to enqueue at each fire time」・2026-11-01 にこの Mac の Claude Code で確認）のとおり保存した文がそのまま本文になるので、`cronPromptKeys`（繰り返しの予定の文も入れる・§3）で当たる。n25。
+  - 間隔を決めた /loop が CronCreate を使うかは【未確認】。段0（K1 の「繰り返しの予定の文の一致件数」）で確かめる。当たらない場合、その回は PO の送信まで印が残り、K5 では「PO」に数えられる（R6）。
 - 裏の作業は type を問わず全部「AI の番」に数える。`tail -f` のような終わらない作業・monitor で付け漏れが続く場合は、S5（30 分）で付く。
 - 30 分は、§2 の「AI が再開した」止まりの上位 1 割（941 秒 ≒ 16 分）の約 2 倍。
 - 担当（subagent）を裏で動かして止まった Stop が `background_tasks` に入るかは段0 で確かめる（`bg_types` の subagent の数で見る）。
@@ -150,6 +152,7 @@
 | n22 | 待ちの観測(now=100) → Stop(予定あり, ts=110) → Stop(true, 予定なし, ts=120) | 1 | stop |
 | n23 | 待ちの観測(now=100) → Stop(予定なし, ts=110) | 1 | stop |
 | n24 | Stop(予定あり, now=0) → 30 分ちょうど（now=1,800,000） | 1 | stale |
+| n25 | Stop(予定なし・繰り返しの予定の文のハッシュ H を持つ, ts=100) → AI の再開（本文の promptKey が H, ts=110） | 0 | none |
 
 - 表の決め: 「待ちの観測」は `observe("w", "waiting", undefined, now)`。「Stop(予定なし)」は `pendingSelfResume: false`、「欄なし」は null。v0.49.0 の row1〜row14 は欄を省略した Stop で流す（null と同じ）。
 
@@ -167,8 +170,8 @@
 ## 6. 受入条件
 | 基準 | 検証方法 |
 |---|---|
-| K1 段0: 導入後の Stop 10 件以上で `bg_tasks`・`bg_types`・`crons_once`・`crons_repeat` が数で残る。`bg_types` の subagent が 1 以上の Stop が 1 件以上ある。ScheduleWakeup を使った回があれば、その再開の本文の `promptKey` が直前の Stop の `cron_prompt_hashes` と 1 件以上一致する（使った回が無ければ「該当なし」と書く） | `node scripts/measure-unread.mjs --since <導入時刻>` の「欄あり件数」「type ごとの件数」「予定の文の一致件数」 |
-| K2 §4-5 の表 n1〜n24 と、v0.49.0 の row1〜row14（期待を変えた行は該当なし）が全部通る | `npm test`（tests/unit/notify.test.ts） |
+| K1 段0: 導入後の Stop 10 件以上で `bg_tasks`・`bg_types`・`crons_once`・`crons_repeat` が数で残る。担当（subagent）を裏で動かした回があれば、`bg_types` の subagent が 1 以上の Stop が 1 件以上ある（使った回が無ければ「該当なし」と書く）。ScheduleWakeup を使った回があれば、その再開の本文の `promptKey` が直前の Stop の `cron_prompt_hashes` と 1 件以上一致する（同上）。繰り返しの予定（CronCreate・間隔を決めた /loop）を使った回があれば、その回の本文の `promptKey` が 1 件以上一致する（同上） | `node scripts/measure-unread.mjs --since <導入時刻>` の「欄あり件数」「type ごとの件数」「一度きりの予定の文の一致件数」「繰り返しの予定の文の一致件数」 |
+| K2 §4-5 の表 n1〜n25 と、v0.49.0 の row1〜row14（期待を変えた行は該当なし）が全部通る | `npm test`（tests/unit/notify.test.ts） |
 | K3 hook が Stop に数とハッシュだけを書き、説明文・コマンド・prompt を書かない | tests/unit/activity-hook.test.ts（欄あり・欄なし・配列でない の 3 本） |
 | K4 行の言葉が「未読」だけで数字が出ない | SessionList.test.tsx（「未読」を含み、数字を含まない） |
 | K5 付けすぎ率が 1 割以下（今の数え方で約 6 割） | `measure-unread.mjs` の「付けすぎ率」（式は §9） |
@@ -183,7 +186,7 @@
 - R3 担当の報告の戻りが `background_tasks` に入らない版だと付けすぎが残る → C2 で再開時に消えるので、残る時間は再開までの間（中央値 193 秒）。K5 で測る。
 - R4 記録に余計な文字が残る → 数とハッシュだけ。
 - R5 AI の再開の見分けを本文の先頭の形に頼る → Claude Code の版で形が変わると C2 が働かず、PO の送信まで残る（v0.49.0 と同じ動き）。K5 で気づける。
-- R6 記録から見た「PO の送信」は、C2 に当たらない入力すべて（ScheduleWakeup の文が一致しない回を含む）。K6 は多めに出る側に寄る（付け漏れを見逃さない側）。
+- R6 記録から見た「PO の送信」は、C2 に当たらない入力すべて（ScheduleWakeup の文や繰り返しの予定の文が一致しない回を含む）。K6 は多めに出る側に寄る（付け漏れを見逃さない側）。一致しない回は K5 の分子に入らないので、K1 の一致件数とあわせて読む。
 
 ## 8. 代替案と選んだ理由
 - A 次の入力が来るまで待ってから付ける: 印が遅れ、PO の番かは結局分からない。採らない。
@@ -239,3 +242,7 @@
 - (4) `observe` の `now` → 省略できる 4 つ目の引数。hub.ts:627 で `this.now()` を渡す（§3）。
 - (5) `TurnEnd.pendingSelfResume` → 省略できる欄。省略は null と同じ。row1〜row14 は欄を省略して流す（§3・§4-5 の表の決め）。
 - 推奨: C2 の正規表現と `source: "agent"`（§4-3）、`promptKey` はコードポイントで 200 文字（§4-6）、hook の欄は `withFullText` の前の `base`・欄の無い Stop の後は `cronPromptKeys = []`（§3）、画面に届く道（§3 hub.ts）、30 分ちょうどを含む（S5・n24）、`watchActivity` の型と偽の store（§3）、K5 が 1 割を超えたとき（§5）、applyPrompt の行を :506 に直した（§3）。
+
+## 14. 第4版の審査（REVISE・1feffb9）への対応
+- (1) 繰り返しの予定の回が C2 に当たらず印が残る → `cron_prompt_hashes` に繰り返しの予定の文も入れ（最大 20 個・§3）、C2 の突き合わせに使う（§4-3）。`pendingSelfResume` は数で決めるので変わらない。§4-4 を事実に合わせて書き直し、/loop の間隔指定は【未確認】として K1 で確かめる。n25 を足した。R6 に書き足した。
+- 推奨 a → harness.ts:269 は本物の `ActivityStore` を渡すと直した（§3）。b → K1 の subagent も「該当なし」を書けるようにした。c → `cronPromptKeys` は StopFailure では変えないと書いた（§3）。
