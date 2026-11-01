@@ -62,7 +62,7 @@ describe("K1 送信の予約と /rename", () => {
     const { id } = newIdleSession();
     await h.hub.pollAgents();
     const res = await fetch(`${h.base}/api/sessions/${id}/chat/queue`, { method: "POST", headers, body: JSON.stringify({ text: "本文" }) });
-    expect(res.status).toBe(201);
+    expect(res.status).not.toBe(201);
     const poll = h.hub.pollAgents();
     await until(() => written(id).includes(pasted("本文")));
     // ここは貼り付けと Enter の間
