@@ -482,6 +482,33 @@ describe("unread on reply", () => {
     expect(await unreadOf(id)).toBe(1);
   });
 
+  const promptAt = async (claudeId: string, ts: number, prompt: string): Promise<void> => {
+    const dir = path.join(h.config.dataDir, "activity");
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(path.join(dir, dayFile(ts)), `${JSON.stringify({ ts, session_id: claudeId, event: "UserPromptSubmit", prompt })}\n`);
+    await h.activity.refresh();
+  };
+
+  it("ball-with-PO: a Stop with a plan does not mark; a Stop without a plan marks and a task-notification resume clears", async () => {
+    const { id, claudeId } = await fresh();
+    await stopAt(claudeId, T.now + 10, { bg_tasks: 1, crons_once: 0 });
+    expect(await unreadOf(id)).toBe(0);
+    await stopAt(claudeId, T.now + 20, { bg_tasks: 0, crons_once: 0 });
+    expect(await unreadOf(id)).toBe(1);
+    await promptAt(claudeId, T.now + 30, "<task-notification>done");
+    expect(await unreadOf(id)).toBe(0);
+  });
+
+  it("ball-with-PO: a Stop with a plan gets the mark after 30 minutes with no further record (sweepStale on a poll)", async () => {
+    const { id, claudeId } = await fresh();
+    await stopAt(claudeId, T.now + 10, { bg_tasks: 2 });
+    expect(await unreadOf(id)).toBe(0);
+    T.now += 31 * 60 * 1000;
+    await h.hub.pollAgents();
+    await settle();
+    expect(await unreadOf(id)).toBe(1);
+  });
+
   it("K3/K4: markRead / clearUnread publishes once when 1 -> 0 and not when 0 -> 0; a 0 -> 0 clear leaves later Stops counting", async () => {
     const { id, claudeId } = await fresh();
     await stopAt(claudeId, T.now + 20);

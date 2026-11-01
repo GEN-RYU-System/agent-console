@@ -120,7 +120,8 @@ describe("SessionList", () => {
     const role = within(line2).getByText("シェル");
     const state = within(line2).getByTestId("state-badge");
     const unread = within(line2).getByTestId("unread-badge");
-    expect(unread.textContent).toContain("3");
+    expect(unread.textContent).toContain("未読");
+    expect(unread.textContent).not.toMatch(/\d/);
     const ci = within(line2).getByTestId("ci-badge");
     const pending = within(line2).getByTestId("pending-name");
     expect(state.textContent).toBe("作業中");
