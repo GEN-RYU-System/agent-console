@@ -1,6 +1,6 @@
 # 未読の印は「PO の番で止まっている窓」だけに付ける 設計
 
-状態: 設計案 第5版（Opus 作成・2026-11-01）。第1版〜第4版の設計審査はどれも REVISE（対応は §11・§12・§13・§14）。
+状態: 設計案 第6版（Opus 作成・2026-11-01）。第1版〜第5版の設計審査はどれも REVISE（対応は §11・§12・§13・§14・§15）。
 
 ## 1. 目的（PO に見える変化）
 - PO の願い（2026-11-01 原文）:「未読が出すぎて見づらいので調整して、人間の返答街で停まっているものだけ未読を表示するようにしてくれ」
@@ -43,18 +43,18 @@
 
 ## 3. 対象と対象外
 - 対象:
-  - hooks/activity-hook.mjs: Stop の 1 件に次を足す。欄が無い・配列でないときは何も足さない。説明文・コマンド・prompt の文字は残さない。足す場所は `withFullText`（:65-78）に渡す前の `base`（後から足すと 1 行の上限 64KiB を超えるおそれがあるため）。
+  - hooks/activity-hook.mjs: Stop の 1 件に次を足す。欄が無い・配列でないときは何も足さない。説明文・コマンド・prompt の文字は残さない。足す場所は `withFullText`（:66-79）に渡す前の `base`（後から足すと 1 行の上限 64KiB を超えるおそれがあるため）。
     - `bg_tasks`（`background_tasks` の件数）と `bg_types`（type ごとの件数。shell・subagent・monitor・workflow・teammate・cloud session・MCP task 以外は `other`）。
     - `crons_once`（`session_crons` で recurring が false の件数）・`crons_repeat`（true の件数）。
-    - `cron_prompt_hashes`（§4-6 の `promptKey` を `session_crons` の prompt に当てたもの。recurring が false と true の両方。最大 20 個）。C2 の突き合わせにだけ使う。`pendingSelfResume` は数（`crons_once`）で決め、この欄は使わない。
+    - `cron_once_hashes`（§4-6 の `promptKey` を `session_crons` の recurring が false の prompt に当てたもの）と `cron_repeat_hashes`（recurring が true の prompt に当てたもの）。2 つの欄に分けて、K1 でどちらの一致かを数えられるようにする。合わせて最大 20 個。超えたときは `cron_repeat_hashes` を先に残し（繰り返しの回は PO の送信まで印が残る側なので）、残りの枠を `cron_once_hashes` に `session_crons` の並び順で使う。C2 の突き合わせにだけ使う。`pendingSelfResume` は数（`crons_once`）で決め、この欄は使わない。
   - server/activity.ts:
     - `TurnEndEvent` に `pendingSelfResume: boolean | null` を足す（null = 欄が無かった）。true は `bg_tasks ≥ 1` か `crons_once ≥ 1`。StopFailure は null。
-    - `SessionState` に `cronPromptKeys: string[]`（同じ会話の最後の Stop の `cron_prompt_hashes`。その Stop に欄が無ければ `[]` にする。StopFailure では変えない）と `resumeTs: Set<number>`（AI の再開の重なりを見る。`turnEndTs` とは別。上限は TURN_ENDS_KEEP と同じ）を足す。
+    - `SessionState` に `cronPromptKeys: string[]`（同じ会話の最後の Stop の `cron_once_hashes` と `cron_repeat_hashes` を合わせたもの。その Stop に欄が無ければ `[]` にする。StopFailure では変えない）と `resumeTs: Set<number>`（AI の再開の重なりを見る。`turnEndTs` とは別。上限は TURN_ENDS_KEEP と同じ）を足す。
     - `applyPrompt`（:506）の最初、:509 の早い return より前で、記録が §4-3 C2 の「AI の再開」なら `onSelfResume({ claudeSessionId, ts })` を出す。受ける条件は Stop と同じ（`ts < startedAt` は捨てる・`resumeTs` で同じ ts は 1 回）。その後の処理（右の欄・チャット）は今のまま。
     - `onSelfResume(listener)` の口を `onTurnEnd` と同じ形で足す。
   - server/hub.ts:
     - :245 で `pendingSelfResume` を渡す。
-    - `onSelfResume` を窓に結ぶ。結べないときは返事の終わりと同じ保留（`pendingTurnEnds`）に種類を付けて入れる。`reviewPendingTurnEnds`（:251）は種類を問わず ts の順に結ぶ（今の並べ替えのまま）。
+    - `onSelfResume` を窓に結ぶ。結べないときは返事の終わりと同じ保留（`pendingTurnEnds`）に種類を付けて入れる。`reviewPendingTurnEnds`（:250）は種類を問わず ts の順に結ぶ（今の並べ替えのまま）。
     - `detectBreaks`（:613）の最初、:615 の早い return より前で `tracker.sweepStale(this.now())` を呼ぶ（§4-2 S5）。
     - :627 の `this.tracker.observe(...)` に 4 つ目の引数として `this.now()` を渡す。
     - `watchActivity`（:224-226）の store の型に `onSelfResume` を足し、`store.onSelfResume((e) => this.onSelfResume(e))` を結ぶ。試験は tests/unit/helpers/harness.ts:269 で本物の `ActivityStore` を渡しているので、`ActivityStore` に `onSelfResume` を足せば足りる（偽の store は無い）。
@@ -159,7 +159,7 @@
 ### 4-6. 予定の文と再開の文の突き合わせ（`promptKey`）
 - 公式資料では `session_crons` の prompt は 1000 文字で切られ、「… [+N chars]」の印が付く（§2）。再開の本文は全文が残る（hooks/activity-hook.mjs:167-171）。
 - 両方を同じ形にする: `promptKey(s)` = `fullText(s)` の後、末尾の `… [+数字 chars]` を外し、先頭 200 文字（コードポイントで数える。`Array.from(s).slice(0, 200).join("")`）の UTF-8 の sha256 の 16 進の先頭 16 文字。200 文字は 1000 文字の切りより短いので、切られた予定の文と全文の再開の文で同じ値になる。
-- 予定側は hook が計算する（prompt の文字を記録に残さないため）。再開側は server が記録の本文から計算する。同じ式を hooks/activity-hook.mjs と server/activity.ts の 2 か所に置き、同じ文を両方に通して同じ値になる試験を 1 本足す（tests/unit/activity.test.ts）。
+- 予定側は hook が計算する（prompt の文字を記録に残さないため）。再開側は server が記録の本文から計算する。同じ式を hooks/activity-hook.mjs と server/activity.ts の 2 か所に置き（server/activity.ts には今 `fullText` が無いので、hooks/activity-hook.mjs:37 の `TEXT_CONTROL_CHARS` と :40-42 の `fullText` も同じ形で写す）、同じ文を両方に通して同じ値になる試験を 1 本足す（tests/unit/activity.test.ts）。
 - ScheduleWakeup の予定の文が、そのまま再開の本文になるかは【未確認】。段0（K1）で確かめる。ならない場合は C2 の後半が働かず、その回は PO の送信か S5 で決まる（K6 に出る）。
 
 ## 5. 進め方
@@ -170,7 +170,7 @@
 ## 6. 受入条件
 | 基準 | 検証方法 |
 |---|---|
-| K1 段0: 導入後の Stop 10 件以上で `bg_tasks`・`bg_types`・`crons_once`・`crons_repeat` が数で残る。担当（subagent）を裏で動かした回があれば、`bg_types` の subagent が 1 以上の Stop が 1 件以上ある（使った回が無ければ「該当なし」と書く）。ScheduleWakeup を使った回があれば、その再開の本文の `promptKey` が直前の Stop の `cron_prompt_hashes` と 1 件以上一致する（同上）。繰り返しの予定（CronCreate・間隔を決めた /loop）を使った回があれば、その回の本文の `promptKey` が 1 件以上一致する（同上） | `node scripts/measure-unread.mjs --since <導入時刻>` の「欄あり件数」「type ごとの件数」「一度きりの予定の文の一致件数」「繰り返しの予定の文の一致件数」 |
+| K1 段0: 導入後の Stop 10 件以上で `bg_tasks`・`bg_types`・`crons_once`・`crons_repeat` が数で残る。担当（subagent）を裏で動かした回があれば、`bg_types` の subagent が 1 以上の Stop が 1 件以上ある（使った回が無ければ「該当なし」と書く）。ScheduleWakeup を使った回があれば、その再開の本文の `promptKey` が直前の Stop の `cron_once_hashes` と 1 件以上一致する（同上）。繰り返しの予定（CronCreate・間隔を決めた /loop）を使った回があれば、その回の本文の `promptKey` が直前の Stop の `cron_repeat_hashes` と 1 件以上一致する（同上） | `node scripts/measure-unread.mjs --since <導入時刻>` の「欄あり件数」「type ごとの件数」「一度きりの予定の文の一致件数」（`cron_once_hashes` との一致）「繰り返しの予定の文の一致件数」（`cron_repeat_hashes` との一致） |
 | K2 §4-5 の表 n1〜n25 と、v0.49.0 の row1〜row14（期待を変えた行は該当なし）が全部通る | `npm test`（tests/unit/notify.test.ts） |
 | K3 hook が Stop に数とハッシュだけを書き、説明文・コマンド・prompt を書かない | tests/unit/activity-hook.test.ts（欄あり・欄なし・配列でない の 3 本） |
 | K4 行の言葉が「未読」だけで数字が出ない | SessionList.test.tsx（「未読」を含み、数字を含まない） |
@@ -246,3 +246,7 @@
 ## 14. 第4版の審査（REVISE・1feffb9）への対応
 - (1) 繰り返しの予定の回が C2 に当たらず印が残る → `cron_prompt_hashes` に繰り返しの予定の文も入れ（最大 20 個・§3）、C2 の突き合わせに使う（§4-3）。`pendingSelfResume` は数で決めるので変わらない。§4-4 を事実に合わせて書き直し、/loop の間隔指定は【未確認】として K1 で確かめる。n25 を足した。R6 に書き足した。
 - 推奨 a → harness.ts:269 は本物の `ActivityStore` を渡すと直した（§3）。b → K1 の subagent も「該当なし」を書けるようにした。c → `cronPromptKeys` は StopFailure では変えないと書いた（§3）。
+
+## 15. 第5版の審査（REVISE・4ccae04）への対応
+- (1) 一度きりと繰り返しの予定の文が 1 本の欄に混ざり K1 を分けて数えられない → 欄を `cron_once_hashes` と `cron_repeat_hashes` の 2 つに分けた（§3）。`cronPromptKeys` は両方を合わせたもの（§3）。K1 の 2 つの一致件数は、それぞれの欄との一致で数える（§6）。C2 の決まり（§4-3）は変わらない。
+- 推奨 a → server/activity.ts へ `TEXT_CONTROL_CHARS` と `fullText` も写すと書いた（§4-6）。b → 20 個を超えたら繰り返しの側を先に残すと決めた（§3）。c → 行番号を hub.ts:250、`withFullText` :66-79 に直した。d → 指摘なし。
