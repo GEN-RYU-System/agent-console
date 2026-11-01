@@ -622,7 +622,8 @@ test("段階2 K1: busy→idle で未読の印・窓タイトル・macOS 通知�
 
   writeFileSync(STATUS_FILE, "idle");
   await expect(row.getByTestId("unread-badge")).toBeVisible({ timeout: 6000 });
-  await expect(row.getByTestId("unread-badge")).toContainText("未読 1 件");
+  await expect(row.getByTestId("unread-badge")).toHaveText("未読");
+  await expect(row.getByTestId("unread-badge")).not.toContainText(/\d/);
   await expect(page).toHaveTitle(/^\(\d+\) Agent Console$/);
   await expect
     .poll(() => readFileSync(OSASCRIPT_LOG, "utf8").split("\n").filter((l) => l.includes("notify-target")).length, { timeout: 6000 })
