@@ -336,11 +336,23 @@ describe("ConsolePage daily use", () => {
     await waitFor(() => expect(document.title).toBe("(3) Agent Console"));
   });
 
-  it("marks a row as read when it is selected", async () => {
+  it("K3: selecting a row does not mark it as read", async () => {
     fetchState.mockResolvedValue({ ...state, sessions: [live] });
     render(<ConsolePage />);
     fireEvent.click(await screen.findByText("dead"));
-    await waitFor(() => expect(markRead).toHaveBeenCalledWith("s1"));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(markRead).not.toHaveBeenCalled();
+  });
+
+  it("K2: unread arriving on the selected, visible row does not mark it as read", async () => {
+    fetchState.mockResolvedValue({ ...state, sessions: [{ ...live, unread: 0 }] });
+    render(<ConsolePage />);
+    fireEvent.click(await screen.findByText("dead"));
+    await waitFor(() => expect(document.title).toBe("Agent Console"));
+    const onmessage = lastSocket?.onmessage as (e: { data: string }) => void;
+    act(() => onmessage({ data: JSON.stringify({ sessions: [live], agentsAvailable: true }) }));
+    await waitFor(() => expect(document.title).toBe("(2) Agent Console"));
+    expect(markRead).not.toHaveBeenCalled();
   });
 
   it("asks the server first and pastes the returned text into the terminal only when a button is pressed", async () => {

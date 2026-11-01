@@ -130,6 +130,17 @@ interface Task {
   completedAt: number | null;
   seq: number;
 }
+/** 返事の終わりの記録（未読用）。stopHookActive は別の Stop hook に止められて続けた後の終わりのとき true */
+export interface TurnEndEvent {
+  claudeSessionId: string;
+  ts: number;
+  failed: boolean;
+  stopHookActive: boolean;
+}
+
+/** 1 会話で覚える返事の終わりの ts の上限 */
+const TURN_ENDS_KEEP = 500;
+
 interface SessionState {
   starts: Map<string, Start>;
   posts: Map<string, Post>;
@@ -147,6 +158,8 @@ interface SessionState {
   /** chat に入っている会話の重なり防止の鍵（同じ記録を読み直しても二重に出さない） */
   chatKeys: Set<string>;
   chatSeq: number;
+  /** 返事の終わり（Stop / StopFailure）として通知済みの ts。読み直しても 2 度通知しない。新しい 500 個まで */
+  turnEndTs: Set<number>;
   /** path → 最後に書いた記録（当て方は順序に依存しない） */
   files: Map<string, Omit<FileItem, "path">>;
   lastEventAt: number;
@@ -164,6 +177,7 @@ const newSession = (): SessionState => ({
   chat: [],
   chatKeys: new Set(),
   chatSeq: 0,
+  turnEndTs: new Set(),
   files: new Map(),
   lastEventAt: 0,
 });
@@ -241,6 +255,9 @@ export class ActivityStore {
   private historyLoaded = false;
   private readonly keepDays: number;
   private readonly now: () => number;
+  /** このストアを作った時刻（注入の now）。これより前の返事の終わりでは未読を足さない */
+  private readonly startedAt: number;
+  private readonly turnEndListeners = new Set<(e: TurnEndEvent) => void>();
 
   constructor(
     private readonly dataDir: string,
@@ -248,6 +265,23 @@ export class ActivityStore {
   ) {
     this.keepDays = options.keepDays ?? 7;
     this.now = options.now ?? Date.now;
+    this.startedAt = this.now();
+  }
+
+  /** 返事の終わり（Stop / StopFailure）を読んだとき。起動前の昔の記録・同じ（会話, ts）の読み直しでは呼ばない */
+  onTurnEnd(listener: (e: TurnEndEvent) => void): () => void {
+    this.turnEndListeners.add(listener);
+    return () => this.turnEndListeners.delete(listener);
+  }
+
+  private emitTurnEnd(state: SessionState, sessionId: string, rec: Raw, ts: number, failed: boolean): void {
+    if (ts < this.startedAt || state.turnEndTs.has(ts)) return;
+    state.turnEndTs.add(ts);
+    if (state.turnEndTs.size > TURN_ENDS_KEEP) {
+      const oldestFirst = [...state.turnEndTs].sort((a, b) => a - b);
+      for (const old of oldestFirst.slice(0, state.turnEndTs.size - TURN_ENDS_KEEP)) state.turnEndTs.delete(old);
+    }
+    for (const listener of this.turnEndListeners) listener({ claudeSessionId: sessionId, ts, failed, stopHookActive: rec.stop_hook_active === true });
   }
 
   get activityDir(): string {
@@ -392,9 +426,11 @@ export class ActivityStore {
         break;
       case "Stop":
         if (text(rec.last_assistant_message) !== "") this.addChat(state, { ts, role: "assistant", text: text(rec.last_assistant_message), ...(rec.truncated === true ? { truncated: true } : {}) });
+        this.emitTurnEnd(state, sessionId, rec, ts, false);
         break;
       case "StopFailure":
         this.addChat(state, { ts, role: "error", text: "", error: text(rec.error) || "unknown" });
+        this.emitTurnEnd(state, sessionId, rec, ts, true);
         break;
     }
   }

@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { WebSocket } from "ws";
 import { startHarness, TOKEN, type Harness } from "./helpers/harness.ts";
 
 const ID_A = "11111111-1111-4111-8111-111111111111";
@@ -442,5 +443,239 @@ describe("memory (K6)", () => {
     expect(res.json.serverRssMb as number).toBeGreaterThan(0);
     const system = res.json.system as { totalMb: number; freePercent: number; usedPercent: number } | null;
     if (system !== null) expect(system.freePercent + system.usedPercent).toBe(100);
+  });
+});
+
+// 返事が来たら未読を付け、PO が送るまで消さない（unread-on-reply design §7 K1/K4/K5/K6/K12/K16）
+describe("unread on reply", () => {
+  let counter = 0;
+  const T = { now: Date.now() + 1_000_000 };
+  const hubInternals = (): { now: () => number; chatQueue: Map<string, unknown[]> } => h.hub as unknown as { now: () => number; chatQueue: Map<string, unknown[]> };
+  let realNow: () => number = Date.now;
+  beforeAll(() => {
+    realNow = hubInternals().now;
+    hubInternals().now = () => T.now;
+  });
+  afterAll(() => {
+    hubInternals().now = realNow;
+  });
+  const unreadOf = async (id: string): Promise<unknown> => (await viewOf(id)).unread;
+  const dayFile = (ts: number): string => `events-${new Date(ts).toISOString().slice(0, 10).replace(/-/g, "")}.jsonl`;
+  const stopAt = async (claudeId: string, ts: number, over: Record<string, unknown> = {}): Promise<void> => {
+    const dir = path.join(h.config.dataDir, "activity");
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(path.join(dir, dayFile(ts)), `${JSON.stringify({ ts, session_id: claudeId, event: "Stop", last_assistant_message: `m${ts}`, ...over })}\n`);
+    await h.activity.refresh();
+  };
+  const fresh = async (roleId = "echo", withClaude = true): Promise<{ id: string; claudeId: string }> => {
+    counter += 1;
+    const claudeId = `abababab-0000-4000-8000-${String(counter).padStart(12, "0")}`;
+    const id = await newSession(roleId, `unread-${counter}`);
+    if (withClaude) h.sessions.setClaudeSessionId(id, claudeId);
+    setAgents([]);
+    return { id, claudeId };
+  };
+
+  it("K1: a Stop record makes the row unread 1 without any polling of status", async () => {
+    const { id, claudeId } = await fresh();
+    await stopAt(claudeId, T.now + 10);
+    expect(await unreadOf(id)).toBe(1);
+  });
+
+  it("K3/K4: markRead / clearUnread publishes once when 1 -> 0 and not when 0 -> 0; a 0 -> 0 clear leaves later Stops counting", async () => {
+    const { id, claudeId } = await fresh();
+    await stopAt(claudeId, T.now + 20);
+    const publish = vi.spyOn(h.hub as unknown as { publish: () => Promise<void> }, "publish");
+    T.now += 100;
+    await h.hub.clearUnread(id);
+    expect(publish).toHaveBeenCalledTimes(1);
+    await h.hub.clearUnread(id);
+    expect(publish).toHaveBeenCalledTimes(1);
+    publish.mockRestore();
+    expect(await unreadOf(id)).toBe(0);
+  });
+
+  it("K4: a websocket input with \\r clears and calls onSubmit before the write; arrows and focus reports do not", async () => {
+    const { id, claudeId } = await fresh();
+    await stopAt(claudeId, T.now + 30);
+    expect(await unreadOf(id)).toBe(1);
+    const order: string[] = [];
+    const clear = vi.spyOn(h.hub, "clearUnread").mockImplementation(() => {
+      order.push("clear");
+      return Promise.resolve();
+    });
+    const write = vi.spyOn(h.sessions, "write").mockImplementation(() => void order.push("write"));
+    const ws = new WebSocket(`ws://127.0.0.1:${h.port}/ws/term?session=${id}`, { headers: { Origin: h.base, Authorization: `Bearer ${TOKEN}` } });
+    await new Promise<void>((resolve, reject) => {
+      ws.on("open", () => resolve());
+      ws.on("error", reject);
+    });
+    for (const data of ["\u001b[A", "\u001b[I", "\u001b[O"]) ws.send(JSON.stringify({ type: "input", data }));
+    await settle();
+    expect(order.filter((o) => o === "clear")).toEqual([]);
+    ws.send(JSON.stringify({ type: "input", data: "ok\r" }));
+    await vi.waitFor(() => expect(order.slice(-2)).toEqual(["clear", "write"]));
+    ws.close();
+    clear.mockRestore();
+    write.mockRestore();
+    // 本物の経路でも消える
+    const ws2 = new WebSocket(`ws://127.0.0.1:${h.port}/ws/term?session=${id}`, { headers: { Origin: h.base, Authorization: `Bearer ${TOKEN}` } });
+    await new Promise<void>((resolve) => ws2.on("open", () => resolve()));
+    T.now += 100;
+    ws2.send(JSON.stringify({ type: "input", data: "\r" }));
+    await vi.waitFor(async () => expect(await unreadOf(id)).toBe(0));
+    ws2.close();
+  });
+
+  it("K5: enqueueChat clears; a later Stop makes it 1 and a later flush does not clear it", async () => {
+    const { id, claudeId } = await fresh();
+    await stopAt(claudeId, T.now + 40);
+    expect(await unreadOf(id)).toBe(1);
+    T.now += 100;
+    expect((await api("POST", `/api/sessions/${id}/chat/queue`, { text: "hi" })).status).toBe(201);
+    expect(await unreadOf(id)).toBe(0);
+    await stopAt(claudeId, T.now + 50);
+    expect(await unreadOf(id)).toBe(1);
+    await h.hub.pollAgents();
+    await settle();
+    expect(await unreadOf(id)).toBe(1);
+  });
+
+  it("K16: a refused enqueueChat (stopped window / full queue) does not clear", async () => {
+    const { id, claudeId } = await fresh();
+    await stopAt(claudeId, T.now + 60);
+    hubInternals().chatQueue.set(id, Array.from({ length: 10 }, (_, i) => ({ id: `q${i}`, text: "x", createdAt: 0, state: "queued" })));
+    expect(() => h.hub.enqueueChat(id, "more")).toThrow();
+    hubInternals().chatQueue.delete(id);
+    expect(await unreadOf(id)).toBe(1);
+    const stopped = await fresh("short");
+    await vi.waitFor(async () => expect((await viewOf(stopped.id)).state).toBe("stopped"));
+    expect((await api("POST", `/api/sessions/${stopped.id}/chat/queue`, { text: "x" })).status).toBe(409);
+  });
+
+  it("K6: submitText (routine / relay) and /rename do not clear", async () => {
+    const { id, claudeId } = await fresh();
+    await stopAt(claudeId, T.now + 70);
+    expect(await h.hub.submitText(id, "routine text")).toBe(true);
+    expect(await unreadOf(id)).toBe(1);
+    setAgents([row(pidOf(id), "idle", { sessionId: claudeId })]);
+    expect((await api("POST", `/api/sessions/${id}/rename`, { name: "renamed" })).json).toEqual({ mode: "claude" });
+    expect(await unreadOf(id)).toBe(1);
+    setAgents([]);
+  });
+
+  it("K10: an idle row with waitingFor after busy counts 1 (polling path)", async () => {
+    const { id, claudeId } = await fresh();
+    setAgents([row(pidOf(id), "busy", { sessionId: claudeId })]);
+    await h.hub.pollAgents();
+    expect(await unreadOf(id)).toBe(0);
+    setAgents([row(pidOf(id), "idle", { sessionId: claudeId, waitingFor: "choose one" })]);
+    await h.hub.pollAgents();
+    expect(await unreadOf(id)).toBe(1);
+    setAgents([]);
+  });
+
+  describe("K12: records that cannot be bound yet", () => {
+    const poll = (): Promise<void> => h.hub.pollAgents();
+    const pollCfg = (): { agentsPollMs: number } => h.config as { agentsPollMs: number };
+    let savedPollMs = 0;
+    beforeAll(() => {
+      savedPollMs = pollCfg().agentsPollMs;
+      pollCfg().agentsPollMs = 10_000;
+    });
+    afterAll(() => {
+      pollCfg().agentsPollMs = savedPollMs;
+    });
+    it("binds at the next detectBreaks once the window has a conversation id; two records bind as 1, or 0 -> 1 with an Enter between", async () => {
+      const a = await fresh("echo", false);
+      await stopAt(a.claudeId, T.now + 100);
+      await stopAt(a.claudeId, T.now + 200, { stop_hook_active: true });
+      expect(await unreadOf(a.id)).toBe(0);
+      h.sessions.setClaudeSessionId(a.id, a.claudeId);
+      await poll();
+      expect(await unreadOf(a.id)).toBe(1);
+
+      const b = await fresh("echo", false);
+      await stopAt(b.claudeId, T.now + 300);
+      await stopAt(b.claudeId, T.now + 500, { stop_hook_active: true });
+      T.now += 400;
+      await h.hub.clearUnread(b.id);
+      h.sessions.setClaudeSessionId(b.id, b.claudeId);
+      await poll();
+      expect(await unreadOf(b.id)).toBe(1);
+    });
+
+    it("a record whose ts is not after the Enter is not bound", async () => {
+      const c = await fresh("echo", false);
+      await stopAt(c.claudeId, T.now + 10);
+      T.now += 1000;
+      await h.hub.clearUnread(c.id);
+      h.sessions.setClaudeSessionId(c.id, c.claudeId);
+      await poll();
+      expect(await unreadOf(c.id)).toBe(0);
+    });
+
+    it("binds before dropping at 31 s; drops with one log line at 31 s when unbound; agentsPollMs 20000 waits 60 s", async () => {
+      const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const d = await fresh("echo", false);
+      await stopAt(d.claudeId, T.now + 10);
+      T.now += 31_000;
+      h.sessions.setClaudeSessionId(d.id, d.claudeId);
+      await poll();
+      expect(await unreadOf(d.id)).toBe(1);
+
+      const e = await fresh("echo", false);
+      await stopAt(e.claudeId, T.now + 10);
+      T.now += 31_000;
+      await poll();
+      expect(log.mock.calls.filter((c) => String(c[0]).startsWith("unread: dropped"))).toHaveLength(1);
+      h.sessions.setClaudeSessionId(e.id, e.claudeId);
+      await poll();
+      expect(await unreadOf(e.id)).toBe(0);
+
+      const cfg = pollCfg();
+      cfg.agentsPollMs = 20_000;
+      const f = await fresh("echo", false);
+      await stopAt(f.claudeId, T.now + 10);
+      T.now += 31_000;
+      await poll();
+      h.sessions.setClaudeSessionId(f.id, f.claudeId);
+      await poll();
+      expect(await unreadOf(f.id)).toBe(1);
+      const g = await fresh("echo", false);
+      await stopAt(g.claudeId, T.now + 10);
+      T.now += 61_000;
+      await poll();
+      h.sessions.setClaudeSessionId(g.id, g.claudeId);
+      await poll();
+      expect(await unreadOf(g.id)).toBe(0);
+      cfg.agentsPollMs = 10_000;
+      log.mockRestore();
+    });
+
+    it("drops on a failed agents fetch after 31 s", async () => {
+      const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const k = await fresh("echo", false);
+      await stopAt(k.claudeId, T.now + 10);
+      T.now += 31_000;
+      writeFileSync(rowsFile, "not json");
+      await poll();
+      expect(log.mock.calls.filter((c) => String(c[0]).startsWith("unread: dropped"))).toHaveLength(1);
+      setAgents([]);
+      h.sessions.setClaudeSessionId(k.id, k.claudeId);
+      await poll();
+      expect(await unreadOf(k.id)).toBe(0);
+      log.mockRestore();
+    });
+
+    it("two windows with the same conversation id both get it", async () => {
+      const p = await fresh("echo", false);
+      const q = await fresh("echo", false);
+      await stopAt(p.claudeId, T.now + 10);
+      h.sessions.setClaudeSessionId(p.id, p.claudeId);
+      h.sessions.setClaudeSessionId(q.id, p.claudeId);
+      await poll();
+      expect([await unreadOf(p.id), await unreadOf(q.id)]).toEqual([1, 1]);
+    });
   });
 });

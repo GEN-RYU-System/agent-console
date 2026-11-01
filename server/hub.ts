@@ -5,6 +5,7 @@ import type { Config } from "./config.ts";
 import { loadLedger, type LedgerSnapshot } from "./ledger.ts";
 import { ciOfResponse, fetchPr, isSettled, resolveTarget, type CiState, type PrResponse, type PrTarget } from "./pr-status.ts";
 import { BreakTracker, breakBody, osascriptSender, type NotificationSender } from "./notify.ts";
+import type { TurnEndEvent } from "./activity.ts";
 import { startPolling } from "./poll.ts";
 import { readCaseClaudeSessionId } from "./case-agents.ts";
 import { descendantPids, readProcessTable } from "./process-tree.ts";
@@ -49,6 +50,9 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 /** チャットの送信の予約の上限（1 セッションあたり。送信済みで受け取り待ちのものも数える） */
 export const CHAT_QUEUE_MAX = 10;
+/** 結べない返事の終わりの記録を保留する長さ: max(30 秒, agents の取得 3 回分) */
+const PENDING_TURN_END_MIN_MS = 30_000;
+const PENDING_TURN_END_POLLS = 3;
 const BRACKETED_PASTE_START = "\u001b[200~";
 const BRACKETED_PASTE_END = "\u001b[201~";
 
@@ -125,14 +129,19 @@ export class Hub {
   private readonly prKeyOfSession = new Map<string, string | null>();
   private readonly prInFlight = new Map<string, Promise<PrResponse>>();
   private readonly ghTimeoutMs: number | undefined;
+  /** 未読の時刻（lastClearAt と保留）に使う時計。試験で注入する */
+  private readonly now: () => number;
+  /** 窓に結べなかった返事の終わりの記録（まだその会話番号を持つ窓が無い）。agents の取得 3 回分（最短 30 秒）で捨てる */
+  private pendingTurnEnds: Array<{ claudeSessionId: string; ts: number; failed: boolean; stopHookActive: boolean; receivedAt: number }> = [];
 
   constructor(
     private readonly config: Config,
     private readonly sessions: SessionManager,
     sendNotification?: NotificationSender | null,
-    options: { ghTimeoutMs?: number } = {},
+    options: { ghTimeoutMs?: number; now?: () => number } = {},
   ) {
     this.ghTimeoutMs = options.ghTimeoutMs;
+    this.now = options.now ?? Date.now;
     this.sendNotification = sendNotification !== undefined ? sendNotification : config.notify.macos ? osascriptSender(config.notify.osascriptBin) : null;
     sessions.onChange(() => void this.publish().catch((err) => this.onPollError("publish", err)));
     // 一覧から外したセッションの前回の status・未読は持ち続けない
@@ -212,14 +221,46 @@ export class Hub {
   }
 
   /** セッションの様子の記録の版を配信に載せる。記録が増えるたびに版が進み、画面が右の欄を取り直す。 */
-  watchActivity(store: { onChange: (listener: (rev: number) => void) => unknown; rev: number } & ChatSource): void {
+  watchActivity(
+    store: { onChange: (listener: (rev: number) => void) => unknown; onTurnEnd: (listener: (e: TurnEndEvent) => void) => unknown; rev: number } & ChatSource,
+  ): void {
     this.chatSource = store;
     this.activityRev = store.rev;
+    store.onTurnEnd((e) => this.onTurnEnd(e));
     store.onChange((rev) => {
       this.activityRev = rev;
       this.reconcileChatQueues();
       void this.publish().catch((err) => this.onPollError("publish", err));
     });
+  }
+
+  /** 返事の終わりの記録を、その会話番号を持つ窓に当てる。窓がまだ無ければ保留する（配信は onChange に任せる） */
+  private onTurnEnd(e: TurnEndEvent): void {
+    if (!this.applyTurnEnd(e)) this.pendingTurnEnds.push({ ...e, receivedAt: this.now() });
+  }
+
+  /** 会話番号を持つ全部の窓に当てる（同じ番号の窓が 2 つあれば両方）。結べる窓が無ければ false */
+  private applyTurnEnd(e: TurnEndEvent): boolean {
+    const windows = this.sessions.list().filter((s) => s.claudeSessionId === e.claudeSessionId);
+    for (const w of windows) this.tracker.addTurnEnd(w.id, { ts: e.ts, stopHookActive: e.stopHookActive, failed: e.failed }, this.now());
+    return windows.length > 0;
+  }
+
+  /** 保留を見直す。結べるものを ts の順に結び、残りのうち待つ長さを超えたものを捨てる（捨てた件数をログに 1 行）。結んだ件数を返す */
+  private reviewPendingTurnEnds(bind: boolean): number {
+    const now = this.now();
+    const keep: typeof this.pendingTurnEnds = [];
+    let bound = 0;
+    let dropped = 0;
+    const waitMs = Math.max(PENDING_TURN_END_MIN_MS, PENDING_TURN_END_POLLS * this.config.agentsPollMs);
+    for (const p of [...this.pendingTurnEnds].sort((a, b) => a.ts - b.ts)) {
+      if (bind && this.applyTurnEnd(p)) bound += 1;
+      else if (now - p.receivedAt > waitMs) dropped += 1;
+      else keep.push(p);
+    }
+    this.pendingTurnEnds = keep;
+    if (dropped > 0) console.error(`unread: dropped ${dropped} unbound turn-end record(s)`);
+    return bound;
   }
 
   /** 起動時の復元の結果（開き直せなかった項目）を画面の案内として載せる。 */
@@ -407,6 +448,8 @@ export class Hub {
     if (items.length >= CHAT_QUEUE_MAX) throw new SessionConflictError(`chat queue is full (max ${CHAT_QUEUE_MAX})`);
     const item: ChatQueueItem = { id: randomUUID(), text, createdAt: Date.now(), state: "queued" };
     this.chatQueue.set(sessionId, [...items, item]);
+    // 予約に積めた時点で、PO が送ったものとして未読を消す（配信は bumpChat に任せる）
+    this.tracker.clear(sessionId, this.now());
     this.bumpChat();
     void this.flushChatQueue(sessionId).catch((err) => this.onPollError("chat", err));
     return item;
@@ -569,7 +612,7 @@ export class Hub {
   /** 前回の status と比べ、区切りがあれば未読を増やして macOS 通知を出す。取得失敗の間は何も判定しない。 */
   private async detectBreaks(): Promise<void> {
     await this.attachCaseSessionIds();
-    if (this.agents === null) { this.emitSample(null); return; }
+    if (this.agents === null) { this.reviewPendingTurnEnds(false); this.emitSample(null); return; }
     const table = await readProcessTable().catch(() => []);
     const states = new Map<string, SessionState>();
     for (const s of this.sessions.list()) {
@@ -581,11 +624,12 @@ export class Hub {
         if (this.sessions.caseHomeOf(s.id) === undefined) this.sessions.setClaudeSessionId(s.id, agent.sessionId);
         for (const other of this.sessions.list()) if (other.id !== s.id && other.claudeSessionId === agent.sessionId) this.sessions.clearCaseClaudeSessionId(other.id);
       }
-      const isBreak = this.tracker.observe(s.id, agent?.status ?? null);
+      const isBreak = this.tracker.observe(s.id, agent?.status ?? null, agent?.waitingFor);
       if (isBreak && agent && (agent.status === "waiting" || agent.status === "idle")) {
         this.sendNotification?.(breakBody(agent.name ?? s.name, agent.status));
       }
     }
+    this.reviewPendingTurnEnds(true);
     this.emitSample(states);
   }
 
@@ -616,7 +660,12 @@ export class Hub {
 
   /** 行を選んだとき。変化があれば購読者へ配信する。 */
   markRead(sessionId: string): Promise<void> {
-    return this.tracker.markRead(sessionId) ? this.publish() : Promise.resolve();
+    return this.clearUnread(sessionId);
+  }
+
+  /** PO がその窓へ送ったとき（端末の Enter・チャット欄）。未読を消し、数が変わったら配信する。 */
+  clearUnread(sessionId: string): Promise<void> {
+    return this.tracker.clear(sessionId, this.now()) ? this.publish() : Promise.resolve();
   }
 
   /**

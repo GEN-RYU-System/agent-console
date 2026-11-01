@@ -629,3 +629,60 @@ describe("file-viewer §3-3: セッションが書いたファイル", () => {
     });
   });
 });
+
+describe("onTurnEnd (unread-on-reply K8/K13)", () => {
+  const stopRec = (ts: number, over: Rec = {}): Rec => rec({ event: "Stop", ts, last_assistant_message: "done", ...over });
+  const collect = (s: ActivityStore): Array<{ claudeSessionId: string; ts: number; failed: boolean; stopHookActive: boolean }> => {
+    const got: Array<{ claudeSessionId: string; ts: number; failed: boolean; stopHookActive: boolean }> = [];
+    s.onTurnEnd((e) => got.push(e));
+    return got;
+  };
+
+  it("fires for Stop after the store started, carrying the Claude session id and stop_hook_active", async () => {
+    const got = collect(store);
+    write([stopRec(nowMs + 1000), stopRec(nowMs + 2000, { stop_hook_active: true })]);
+    await store.refresh();
+    expect(got).toEqual([
+      { claudeSessionId: SID, ts: nowMs + 1000, failed: false, stopHookActive: false },
+      { claudeSessionId: SID, ts: nowMs + 2000, failed: false, stopHookActive: true },
+    ]);
+  });
+
+  it("fires for StopFailure with failed = true", async () => {
+    const got = collect(store);
+    write([rec({ event: "StopFailure", ts: nowMs + 1000, error: "rate_limit" })]);
+    await store.refresh();
+    expect(got).toEqual([{ claudeSessionId: SID, ts: nowMs + 1000, failed: true, stopHookActive: false }]);
+  });
+
+  it("K8: does not fire for a Stop older than the store's start", async () => {
+    const got = collect(store);
+    write([stopRec(nowMs - 1000)]);
+    await store.refresh();
+    expect(got).toEqual([]);
+  });
+
+  it("K8: re-reading the same Stop line after the file shrinks fires only once", async () => {
+    const got = collect(store);
+    const file = path.join(actDir, dayName(T0));
+    write([stopRec(nowMs + 1000)]);
+    await store.refresh();
+    expect(got).toHaveLength(1);
+    truncateSync(file, 0);
+    write([stopRec(nowMs + 1000)]);
+    await store.refresh();
+    expect(got).toHaveLength(1);
+  });
+
+  it("keeps at most 500 timestamps per conversation, dropping the oldest", async () => {
+    const got = collect(store);
+    write(Array.from({ length: 501 }, (_, i) => stopRec(nowMs + 1000 + i)));
+    await store.refresh();
+    expect(got).toHaveLength(501);
+    // the oldest (nowMs + 1000) was forgotten, so it fires again; the newest is still remembered
+    write([stopRec(nowMs + 1000), stopRec(nowMs + 1500)]);
+    await store.refresh();
+    expect(got).toHaveLength(502);
+    expect(got[501]?.ts).toBe(nowMs + 1000);
+  });
+});

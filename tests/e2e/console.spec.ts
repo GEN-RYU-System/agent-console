@@ -609,7 +609,7 @@ async function expectLargeCenterTabs(page: Page): Promise<void> {
   expect(m.rightFont).toBe(small.fontSize);
 }
 
-test("段階2 K1: busy→idle で未読の印・窓タイトル・macOS 通知が出て、行を選ぶと未読が消える", async ({ page }) => {
+test("段階2 K1: busy→idle で未読の印・窓タイトル・macOS 通知が出て、行を選んでも消えず、その窓の端末で Enter を押すと消える", async ({ page }) => {
   const id = await apiCreate("notify-target", "e2e-plain");
   await openPaired(page);
   const row = rowOf(page, id);
@@ -645,10 +645,18 @@ test("段階2 K1: busy→idle で未読の印・窓タイトル・macOS 通知�
     expect(selectedPaint.bg).not.toBe(otherPaint.bg);
     expect(selectedPaint.border).not.toBe(otherPaint.border);
   }
-  await expect(row.getByTestId("unread-badge")).toHaveCount(0);
-  // 他のセッションの未読も読んで、後続の試験に残さない
-  for (const other of await page.getByTestId("session-row").all()) await other.click();
-  await expect(page.getByTestId("unread-badge")).toHaveCount(0);
+  // 選んでも・見続けても未読は消えない（K2/K3）
+  await page.waitForTimeout(1500);
+  await expect(row.getByTestId("unread-badge")).toBeVisible();
+  // その窓の端末で Enter を押すと消える（K4）
+  await page.locator(".xterm-helper-textarea").first().focus();
+  await page.keyboard.press("Enter");
+  await expect(row.getByTestId("unread-badge")).toHaveCount(0, { timeout: 6000 });
+  // 他のセッションの未読も既読にして、後続の試験に残さない（markRead の受け口は残してある）
+  for (const sid of await page.locator('[data-testid="session-row"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-session-id") ?? ""))) {
+    if (sid !== "") await fetch(`${BASE}/api/sessions/${sid}/read`, { method: "POST", headers: { Authorization: `Bearer ${E2E_TOKEN}` } });
+  }
+  await expect(page.getByTestId("unread-badge")).toHaveCount(0, { timeout: 6000 });
   await expect(page).toHaveTitle("Agent Console");
 });
 
