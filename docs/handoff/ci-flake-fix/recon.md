@@ -13,7 +13,7 @@
 |試験|回数|機械|誤り|
 |---|---|---|---|
 |tests/e2e/pc-meter.spec.ts:99 K4（CPU を top と比べる）|14|macOS|差の上限 15（:125）。実測の差 40.57 / 19.96 / 21.72 / 16.10 / 28.06 / 35.43 / 15.35 / 18.84 / 35.22 / 16.73 / 29.85 / 21.36 / 17.71 / 17.03|
-|tests/unit/hub-write-lock.test.ts:83（印が他に取られている間の…）|3|macOS 2・ubuntu 1|`[pasted("待ち"), "\r"]` の想定に対し、貼り付けだけで `"\r"` が無い（:121）|
+|tests/unit/hub-write-lock.test.ts:83（印が他に取られている間の…）|3|macOS 2・ubuntu 1|`[pasted("待ち"), "\r"]` の想定に対し、貼り付けだけで `"\r"` が無い（:93）|
 |tests/unit/tmux-host.integration.test.ts の所要時間（AC_TMUX_TIMING=1 の段）|2|macOS|12 件のつなぎ直し 1131ms（上限 1000、:44）／10MB 1834ms（上限 1500、:43）|
 |tests/unit/routines.test.ts:154（v0.29.0）|1|macOS|names の呼び出しが 2 回の想定で 1 回（:163）|
 |tests/e2e/console.spec.ts:1004（v0.4.0 K1〜K6）|1|ubuntu|端末の先頭が貼り付けでなく `/rename diff-target\r`（:1073 の `ALL:"\u001b[200~` が合わない）|
@@ -29,7 +29,7 @@
 
 ### R2 hub-write-lock :83
 - 予約を足すと、送る処理を待たずに 1 回始める（server/hub.ts:454 の `void this.flushChatQueue(...)`）。送る処理が動いている間の 2 回目はすぐ戻る（:529）。
-- 試験は印を外したあと `pollAgents()` を 1 回待ち、すぐ `[貼り付け, "\r"]` を確かめる（test:119-121）。先に始まった送る処理が「貼り付け→待つ→Enter」の途中だと、試験の poll はすぐ戻り、Enter の前に確かめる。観測（貼り付けだけ）と一致。
+- 試験は印を外したあと `pollAgents()` を 1 回待ち、すぐ `[貼り付け, "\r"]` を確かめる（test:91-93）。先に始まった送る処理が「貼り付け→待つ→Enter」の途中だと、試験の poll はすぐ戻り、Enter の前に確かめる。観測（貼り付けだけ）と一致。
 - 同じファイルの 1 つ目の試験は、同じ理由で `await until(() => written(id).includes("\r"))` を入れている（:73-74、コメント「予約の登録でも送信が走るため、Enter が書かれるまで待つ」）。2 つ目には無い。
 
 ### R3 routines :154
@@ -38,7 +38,7 @@
 - setup の既定の displayNames は空の Map（:51）＝一致しない。setup を使う試験は全部 waitName を時間いっぱい待つ。nameTimeoutMs を全体で延ばすと、その分だけ全試験が遅くなる。
 
 ### R4 tmux の所要時間
-- CI の段（.github/workflows/ci.yml:290-294）は AC_TMUX_TIMING=1 で 1 回だけ測り、1 回の値で合否を決める。経緯: docs/handoff/keep-sessions/design.md:395（R5）で「CI で単独・AC_TMUX_TIMING=1 で判定する」と決め、macOS CI の 10MB だけ 1.5 秒にした。
+- CI の段（.github/workflows/ci.yml:69-73）は AC_TMUX_TIMING=1 で 1 回だけ測り、1 回の値で合否を決める。経緯: docs/handoff/keep-sessions/design.md:395（R5）で「CI で単独・AC_TMUX_TIMING=1 で判定する」と決め、macOS CI の 10MB だけ 1.5 秒にした。
 - 本線 30 回の CI ログの値（`[10MB]`・`[reattach x12]` の行、timing check on の段）:
 
 |機械|項目|上限|最小|中央値|90%|最大|上限超え|
@@ -66,13 +66,16 @@
 - 端末の文字の先頭に同じ文字が 32 個並ぶのは、@xterm/xterm 6.0.0 の文字幅を測る部品（WidthCache.ts:16 `REPEAT = 32`、:164 `el.textContent = c.repeat(...)`）を試験が端末の文字として一緒に読んでいるため。失敗の原因ではない（表示の読みにくさだけ）。
 
 ### R7 隠れる仕組み
-- CI で前の段が落ちると、build と画面の試験は走らない（ci.yml:295-297 に if が無い）。本線 30 回のうち macOS で画面の試験が走らなかった回 5。その回の画面の試験の結果は分からない。
+- CI で前の段が落ちると、build と画面の試験は走らない（ci.yml:74-76 に if が無い）。本線 30 回のうち macOS で画面の試験が走らなかった回 5。その回の画面の試験の結果は分からない。
 - 連続実行のファイルで 1 つ落ちると後ろは動かない（ubuntu の回は 80 試験中 23 が未実行）。
 
 ## 4. 未確認
 - ubuntu の 400 の応答本文（ログに無い）。
 - PR の赤の割合（33/113）が本線（19/30）より低い理由。
 - R2・R3・R6 は手元で再現していない（design の検証で再現を作る）。
+
+## 6. 訂正（2026-11-01、設計審査第1回の指摘）
+- hub-write-lock の行番号（:121・test:119-121）と ci.yml の行番号（:290-294・:295-297）を、HEAD の実物（hub-write-lock.test.ts 114 行・ci.yml 76 行）に合わせて :93・:91-93・:69-73・:74-76 に直した。
 
 ## 5. 既存 ADR・設計の検索
 - このリポジトリに docs/adr は無い。設計の正本は docs/handoff/*。関係するもの: pc-meter/design.md（K4）、keep-sessions/design.md:395・420-422（tmux の所要時間の判定と CI 段）、v0.3.9-test-flake/design.md（試験だけの直しの前例。版を上げない）、ci-badge/design.md。
