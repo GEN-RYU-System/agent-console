@@ -1,4 +1,4 @@
-# ci-flake-fix design（第2版、2026-11-01 JST）
+# ci-flake-fix design（第3版、2026-11-01 JST）
 
 参照: docs/handoff/ci-flake-fix/recon.md（R1〜R7・数の表）、docs/handoff/v0.3.9-test-flake/design.md（試験だけの直しの前例）、docs/handoff/pc-meter/design.md:80（K4）、docs/handoff/keep-sessions/design.md:395・420（tmux の所要時間の判定と CI 段）。行番号はすべて origin/main ff5997594 の実物。
 
@@ -13,11 +13,11 @@
 |---|---|
 |S1 この PR の CI を 10 回走らせ（初回＋やり直し 9 回）、macOS・ubuntu の 20 ジョブすべて緑。10 回全部を数える（緑になるまでやり直した回だけを数えない）|`gh api repos/GEN-RYU-System/agent-console/actions/runs/<id>/attempts/<n>/jobs` の conclusion を 10 回分ファイルに保存。緑 20/20|
 |S2 hub-write-lock.test.ts と routines.test.ts を、負荷（busy loop 8 本）の下で各 20 回、直す前と後に実行。直した後の失敗 0/20。直す前の回数も記録する（0 なら「再現せず」と書く）|scratchpad の load.sh。毎回の rc を出力|
-|S3 揺れの再現（直す前に必ず落ちる形で確かめる）: (a) hub-write-lock の 2 つ目の試験で、`h.hub.checkChat` を 3 秒待ってから元を呼ぶ形に試験の中だけで一時的に包む。直す前は :93 が落ちる（3 回中 3 回）、直した後は 3 回中 3 回合格し、:89 は `[]`・:90 は `["queued"]` のまま。(b) routines の :154 の試験を `nameTimeoutMs: 8` で回す。直す前の setup では落ち、直した後（試験ごとの値 2000）は合格|一時の変更は検証の後に戻し、`git diff --exit-code` で戻ったことを確かめる。生出力を保存|
-|S4 偽の Claude の読み順: tests/fixtures/claude-stub.sh を一時的に書き換え、名前の読みと ps の間に `sleep 2` を入れる。console.spec.ts:1004 を 3 回。旧の順（名前→ps）では 3 回中 1 回以上、端末の先頭が /rename になる（0 回なら「再現せず」と書いて止まる）。新の順（ps→名前）では 3 回中 3 回合格|検証の後に `git diff --exit-code tests/fixtures/claude-stub.sh` が「直した後の中身」と一致（sleep が残っていない）。生出力を保存|
-|S5 後片付け: console.spec.ts:1010 の apiCreate の直後に一時的な `throw` を入れて app プロジェクトを実行。console.spec の実行の直後に /api/state の窓の数を保存する。直す前は 16 のままで file-link・relay が 400、直した後は 0 で file-link・relay が合格|一時の変更は戻し、`git diff --exit-code tests/e2e/console.spec.ts` が「直した後の中身」と一致。窓の数と生出力を保存|
+|S3 揺れの再現（直す前に必ず落ちる形で確かめる）: (a) hub-write-lock の 2 つ目の試験で、`h.hub.checkChat` を 3 秒待ってから元を呼ぶ形に試験の中だけで一時的に包む。直す前は :93 が落ちる（3 回中 3 回）、直した後は 3 回中 3 回合格し、:89 は `[]`・:90 は `["queued"]` のまま。(b) routines の :44 の nameTimeoutMs を一時的に 2（namePollMs 5 より短い）にし、:154 の試験だけを `-t` の完全な名前で 3 回回す。直す前は 3 回中 3 回、:163 で呼び出しが 1 回になって落ちる。直した後は :44 を同じく 2 にしても試験ごとの 2000 が勝ち、3 回中 3 回合格|下の「一時の変更の戻し方」の確かめ rc=0。生出力を保存|
+|S4 偽の Claude の読み順: tests/fixtures/claude-stub.sh を一時的に書き換え、名前の読みと ps の間に `sleep 2` を入れる。console.spec.ts:1004 を 3 回。旧の順（名前→ps）では 3 回中 1 回以上、端末の先頭が /rename になる（0 回なら「再現せず」と書いて止まる）。新の順（ps→名前）では 3 回中 3 回合格新の順で落ちたときは、落ちた行を保存し、sleep による時間切れ（page の 15000・試験の 90000）でないかを確かめてから × とする|下の「一時の変更の戻し方」の確かめ rc=0。生出力を保存|
+|S5 後片付け: console.spec.ts:1010 の apiCreate の直後に一時的な `throw` を入れる。窓の数を読むため、tests/e2e/file-link.spec.ts の先頭に一時的な試験を 1 つ足し、`${BASE}/api/state` の sessions の数を `console.log("[S5] sessions=<n>")` で出す。`npx playwright test --project app tests/e2e/console.spec.ts tests/e2e/file-link.spec.ts tests/e2e/relay.spec.ts` を回す。直す前は 16 で file-link・relay が 400、直した後は 0 で file-link・relay が合格。直す前が 16 未満なら、その値を書いて止まる|下の「一時の変更の戻し方」の確かめ rc=0。窓の数と生出力を保存|
 |S6 CI の段: npm test が赤でも build と画面の試験が走る（skipped にならない）。ジョブ全体は赤のまま|使い捨てのブランチで単体の試験を 1 つ落とした下書き PR を作り、その回の各段の conclusion とジョブの conclusion を保存。確かめた後に PR を閉じブランチを消す|
-|S7 pc-meter K4: PO の Mac（CI 以外）では ±15 の比べを今まで通り行い、CI では行わない|手元で `npx playwright test tests/e2e/pc-meter.spec.ts` rc=0 と保存された k2-k3-k4.json。CI のログに `[K4] CI: ±15 check skipped` の行が 1 行|
+|S7 pc-meter K4: PO の Mac（CI 以外）では ±15 の比べを今まで通り行い、CI では行わない|手元の半分: PO の Mac で、CI を入れずに `npm run build` の後 `npx playwright test tests/e2e/pc-meter.spec.ts` rc=0 と保存された k2-k3-k4.json（K4 は Mac だけで動く。pc-meter.spec.ts:100）。取るのは PO の Mac で動く評価役（実装役がクラウドで動く場合も）。CI の半分: S1 の 10 回の macOS ジョブで pc-meter の試験が合格。macOS ジョブのログの `[K4] CI: ±15 check skipped` の行は補足とする（list の出力に試験の console.log が出るかは未確認。出なければその事実を書く）|
 |S8 tmux の所要時間: 上限の値は変えない。AC_TMUX_TIMING=1 のときだけ 3 回測り中央値で判定。AC_TMUX_TIMING が無いとき（npm test）は今まで通り 1 回|git diff で上限の定数（tmux-host.integration.test.ts:41-45）が不変。npm test のログで `[10MB]`・`[reattach x12]` が各 1 行、timing の段で各 3 行と中央値の行|
 |S9 typecheck・lint・npm test・build・test:e2e が手元で全部 rc=0|生出力|
 |S10 本番のコード（server/・src/・extension/）を変えない|`git diff --name-only origin/main...HEAD` が次の 9 つだけ: docs/handoff/ci-flake-fix/recon.md・design.md、tests/e2e/pc-meter.spec.ts、tests/unit/hub-write-lock.test.ts、tests/unit/routines.test.ts、tests/unit/tmux-host.integration.test.ts、tests/e2e/console.spec.ts、tests/fixtures/claude-stub.sh、.github/workflows/ci.yml|
@@ -45,6 +45,7 @@
   await until(() => !(h.hub as unknown as { chatFlushing: Set<string> }).chatFlushing.has(id));
   ```
 - これで先の処理は印に当たって予約のまま戻り、:88 の定期取得は印の下で動き（:89 `[]`・:90 `queued` は本当に印を確かめる）、:92 の定期取得が貼り付け→待つ→Enter を全部待つので :93 は待ちなしで成り立つ。:93 の前に `until` は足さない（足すと、印の下で何も動かなかった回も緑になり、印を確かめない試験になるため）。
+- 残る競り合いが 1 つある: POST が始めた処理が、試験の fetch が戻る前に印の確かめ（hub.ts:566）まで進むと、:87 の tryBeginWrite が false になって :87 で落ちる。ps を 2 回動かし終えるまでにループバックの応答が返らない場合だけで、本線 30 回では出ていない。黙って緑になるのでなく目に見えて落ちるので残す。将来 :87 で落ちたら、新しい不具合と取り違えずにこれを疑う。
 - chatFlushing は hub.ts:122 の private。型を外して読むのは試験の中だけで、本体は変えない。
 - 確かめる中身（:89・:90・:93 の値）は変えない。
 
@@ -58,7 +59,7 @@
 - 役割 "big"（:25）は 1 つの窓で 1 回しか出力しない。そのため毎回 testSocket()・start・mk から作り直す。回の終わりに窓を close し、その回の harness も `await h.close()`（10MB）・`await h2.close()`（つなぎ直し）で閉じる。前の回のサーバーが残って次の回の負荷にならないようにする。afterAll（:79-82）の close は `.catch` 付きなので、2 回閉じても害はない。
 - 毎回の値を今の行の形のまま出す（`[10MB] ...`・`[reattach x12] ...`）。TIMING のときは最後に `[10MB] median ...ms`・`[reattach x12] median probe ...ms restore ...ms` の行を出し、中央値を上限と比べる。sha256 の確かめは毎回行う。
 - 上限の定数（:41-45）は変えない。ESC（:248）は既に中央値なので変えない。
-- 試験の時間の上限: 10MB は 90000 のまま（中央値 819ms・最大 1834ms の 3 回で足りる）。12 件は 120000 を足す（今は vi.setConfig の 40000）。
+- 試験の時間の上限: 10MB は 90000 のまま（中央値 819ms・最大 1834ms の 3 回で足りる）。12 件は 120000 を足す（今は vi.setConfig の 40000）。§5 の手順 1 で、直す前の 2 つの試験の 1 回分の所要時間（vitest の試験ごとの時間）を記録し、3 倍が 90000・120000 に収まることを確かめる。収まらなければ止まって報告する。
 - 理由: 本線 30 回の値（recon R4 の表）で中央値は上限の半分程度で、1 回の値だけが時々跳ねる。上限を上げず、判定を 1 回の値から 3 回の中央値に変える。
 - 過去の決定の修正: keep-sessions/design.md:395（R5）の「1 回の値で判定」を「3 回の中央値で判定」に改める（§4 に記録）。
 
@@ -67,7 +68,7 @@
   ```ts
   // 連続実行で途中が落ちると後ろの試験が動かず、窓が上限（16）のまま残って、同じサーバーで次に動くファイルの窓作りが 400 になる（recon R5）。ファイル直下の afterAll は失敗しても走る（Playwright 公式 test.afterAll）
   test.afterAll(async () => {
-    // 窓は 1 つずつ閉じ、1 つで最大数秒かかる（server/sessions.ts:757 closeGraceMs）。16 個分の時間をとる
+    // 窓は 1 つずつ閉じる。1 つで最大 5 秒待ち（server/sessions.ts:26）、終わらなければ強制終了してさらに 2 秒待つ（:28・:784-792）。16 ×（5 + 2）秒 = 112 秒なので 120 秒とる
     test.setTimeout(120000);
     await closeAllSessionsViaApi();
   });
@@ -145,9 +146,11 @@
 - 測り方: §1 の S1〜S10。合流後は本線の push ごとの CI を数え、§7 の見張りの段で使う。
 
 ## 5. 検証の手順（実装役が行う）
-1. 直す前の写し（origin/main）で S2・S3・S4（旧の順）・S5（直す前）を取り、生出力を保存。
-2. D1〜D7 を入れる。
-3. S2・S3・S4（新の順）・S5（直した後）・S7・S8・S9・S10 を取る。一時の変更が残っていないことを `git diff` で確かめる。
+1. 直す前の写し（origin/main から切った別の作業場所）で、S2・S3・S4（旧の順）・S5（直す前）を取り、tmux の 2 つの試験の所要時間（D4）を記録する。生出力を保存。
+2. D1〜D7 を入れて commit する（一時の変更を入れる前に必ず commit する）。
+3. S2・S3・S4（新の順）・S5（直した後）・S7・S8・S9・S10 を取る。
+
+一時の変更の戻し方（S3・S4・S5）: 一時の変更は 1 つずつ入れて回し、回し終えたらすぐ `git checkout -- <file>` で戻す。戻したら、その作業場所で `git diff --exit-code -- tests/unit/hub-write-lock.test.ts tests/unit/routines.test.ts tests/fixtures/claude-stub.sh tests/e2e/console.spec.ts tests/e2e/file-link.spec.ts` が rc=0 であることを確かめる。直す前の写しでも同じ確かめを行う。push の前に `git status --porcelain` が空であることを確かめる。
 4. PR を作り、S1（10 回）と S6（使い捨ての下書き PR）を取る。
 5. 生出力のパスを PR 本文に書く。数が §1 と合わないときは止まって報告する（推測で書かない）。
 
@@ -169,4 +172,6 @@
 ## 審査の記録
 - 第1版（2026-11-01）: REVISE。blocker 2（hub-write-lock と ci.yml の行番号が実物に無い）・should-fix 7・nit 6。審査記録は手元の scratchpad（acrecon/review_v1.md）。
 - 第2版での対応: 行番号を実物で確かめて直した（recon §6 にも訂正を記録）。D2 を「待つ」から「先の処理を終わらせて印を確かめる」に変えた。D4 に回ごとの harness の close、D5 に hook の時間、D6 に使う所の正しい記述、D7 に変更前後の YAML を足した。D1 に CI の記録の行、D3 の値を 2000 に変えた。成功条件に必ず落ちる再現（S3）、throw の位置と窓の数（S5）、許すファイルの一覧（S10）を足した。keep-sessions R5 の修正を §4 に記録した。
-- 第2版: 未審査。
+- 第2版（2026-11-01）: REVISE。blocker 0・should-fix 3（S3(b) の値が必ず落ちる値でない・一時の変更の戻しの確かめが commit 前だと成り立たない・S5 の窓の数の読み方が無い）・nit 5。審査記録は手元の scratchpad（acrecon/review_v2.md）。D1〜D7 は実物と合うと確かめられた。
+- 第3版での対応: S3(b) を :44 を 2 にする形に変えた。§5 に commit してから一時の変更を入れる手順と戻しの確かめの命令を書いた。S5 に窓の数を読む一時の試験と命令を書いた。D5 に 112 秒の計算、D2 に :87 で落ちる残りの競り合い、D4 に所要時間の記録、S4 に時間切れとの見分け、S7 に macOS だけ・取る人・ログの行が未確認であることを足した。
+- 第3版: 未審査。
