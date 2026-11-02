@@ -1,15 +1,16 @@
 ---
 mode: handoff
 ---
-# 実装カード: アプリの不具合でないのに CI が赤くなる 7 つの原因を直す（試験と CI だけ）
+# 実装カード: アプリの不具合でないのに CI が赤くなる 9 つの原因を直す（試験と CI だけ）
 
-親: [design.md](./design.md)（第4版 069a048・審査の記録は 82d2f90。§1 成功条件 S1〜S10・§2 対象 D1〜D7・§5 検証の手順）
+親: [design.md](./design.md)（第5版。§1 成功条件 S1〜S12・§2 対象 D1〜D9・§5 検証の手順）
 
-この文書は何か: agent-console の試験と CI の段の 7 か所（D1〜D7）を直し、直す前と後の確かめを取る作業指示です。アプリの本体（server/・src/・extension/）は変えません。
+この文書は何か: agent-console の試験と CI の段の 9 か所（D1〜D9）を直し、直す前と後の確かめを取る作業指示です。アプリの本体（server/・src/・extension/）は変えません。
 
 - 状態: 設計 第4版 審査 APPROVE（2026-11-01・手元の審査役 opus）・PO 実装承認 済（2026-11-01、選択肢「1 直しを始める」）・クラウドの Sonnet へ実装依頼
 - 担当: 下の §5 の表のとおり 3 つに分ける。直し（D1〜D7）と、クラウドで動く確かめは Sonnet（クラウド）。Mac でしか動かない確かめは評価役（evaluator・opus・この Mac）。PR・CI の 10 回・使い捨て PR・審査・マージは Opus。
 - 土台: origin/main ff5997594。設計の行番号はこの版のもの（第4版の審査で照合済み）。
+- 第5版の追加（2026-11-02）: D1〜D7 は 022433e で push 済み。S1 の 10 回で新しく 2 つの原因（D8 日付の境目・D9 macOS の CI のつなぎ直し）が見つかり、PO の決定「1」で設計に足した。D8・D9 は 022433e の上に足す。下の §2-B が第5版の進め方。状態: 第5版の審査待ち。審査合格の後に Sonnet へ依頼する。
 
 ## 読んだ節と照合（Opus、2026-11-01）
 
@@ -25,13 +26,14 @@ mode: handoff
 1. `tests/e2e/pc-meter.spec.ts`（D1）
 2. `tests/unit/hub-write-lock.test.ts`（D2）
 3. `tests/unit/routines.test.ts`（D3）
-4. `tests/unit/tmux-host.integration.test.ts`（D4）
+4. `tests/unit/tmux-host.integration.test.ts`（D4・第5版の D9）
 5. `tests/e2e/console.spec.ts`（D5）
 6. `tests/fixtures/claude-stub.sh`（D6）
 7. `.github/workflows/ci.yml`（D7）
 8. 文書: `docs/handoff/ci-flake-fix/` の中だけ（recon.md・design.md・この card.md）
+9. `tests/unit/daily-use.integration.test.ts`（D8。第5版）
 
-S10 の「9 つだけ」は、このカード（同じフォルダの文書）を足して読む。アプリの本体を変えないという S10 の意図は変わらない。
+S10 の「10 個」は、このカード（同じフォルダの文書）を足して読む。アプリの本体を変えないという S10 の意図は変わらない。
 
 触らない: `server/`・`src/`・`extension/`・`hooks/`・`scripts/`・`package.json`・`package-lock.json`・`playwright.config.ts`・`vitest.config.ts`・ほかのすべて。版は上げない。確かめのための一時の変更（S3・S4・S5、`tests/e2e/file-link.spec.ts` を含む）は commit しない。
 
@@ -42,10 +44,18 @@ S10 の「9 つだけ」は、このカード（同じフォルダの文書）�
 3. 作業の枝 `release/ci-flake-fix` で D1〜D7 を design.md §2 のとおりに入れ、commit する（一時の変更を入れる前に必ず commit）。設計に書いていない変更を足さない。決まっていないことに当たったら `NEEDS_DECISION:` に続けて、どこの何が決まっていないか。
 4. S2（直した後）・S3（直した後の (a)(b)）を取る。
 5. `npm run typecheck`・`npm run lint`・`npm test` を直す前の写しと直した後の両方で流し、落ちる試験の名前の一覧を比べる。直した後に増えた失敗が 0 であること。今回触った単体の試験ファイル（hub-write-lock・routines）は、直した後に全部合格であること。tmux-host.integration は環境の都合で落ちてよいが、落ちた試験の名前が直す前と同じであること。build・test:e2e が環境の都合で動かないときは、理由の生の文面の最後の行を書いて進む。
-6. S10: `git diff --name-only origin/main...HEAD` が §1 の 1〜8 だけ。`git status --porcelain` が空。
+6. S10: `git diff --name-only origin/main...HEAD` が §1 の 1〜9 だけ。`git status --porcelain` が空。
 7. `git push origin release/ci-flake-fix`。PR は作らない。
 
 git の操作は1命令ずつ流す。commit の文は Write でファイルに書いて `git commit -F` で流す。
+
+## 2-B. 第5版の進め方: Sonnet（クラウド）
+
+1. `git log -1 origin/release/ci-flake-fix` が 022433e か、それを含むことを確かめる。design.md D8・D9 の行番号が5行以上ずれていたら `BLOCKED:`。
+2. 直す前の写し（022433e から別の作業場所）で S11 を取る（design.md §5 の5の時刻ずらしの道具。4 つの時刻 × 3 回）。
+3. 作業の枝で D8・D9 を design.md §2 のとおりに入れ、commit する。
+4. 直した後で S11（12 回すべて合格）・S9 の typecheck・lint・npm test の比べ・S10 を取る。macOS の CI の値（S12）はクラウドでは取れないので、git diff だけを確かめる。
+5. `git push origin release/ci-flake-fix`。PR は作らない。
 
 ## 3. 進め方: 評価役（この Mac。Sonnet の push の後）
 
@@ -72,6 +82,8 @@ git の操作は1命令ずつ流す。commit の文は Write でファイルに�
 |S4・S5・S7 の手元の半分・S8||○（直す前と後）||
 |S9|typecheck・lint・npm test の比べ|全部 rc=0||
 |S10|○|○（再確認）||
+|S11（第5版）|○（直す前と後）|||
+|S12（第5版）|git diff||S1 の 10 回の macOS の中央値|
 |S1（CI 10 回）・S6（使い捨ての下書き PR）・S7 の CI の半分|||○|
 |PR の起票・審査役（opus）の審査・マージ|||○|
 
