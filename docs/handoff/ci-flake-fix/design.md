@@ -1,4 +1,4 @@
-# ci-flake-fix design（第5.2版、2026-11-02 JST）
+# ci-flake-fix design（第5.3版、2026-11-02 JST）
 
 参照: docs/handoff/ci-flake-fix/recon.md（R1〜R7・数の表）、docs/handoff/v0.3.9-test-flake/design.md（試験だけの直しの前例）、docs/handoff/pc-meter/design.md:80（K4）、docs/handoff/keep-sessions/design.md:395・420（tmux の所要時間の判定と CI 段）。行番号は D1〜D7 が origin/main ff5997594、D8・D9 が release/ci-flake-fix 022433e（D1〜D7 を入れた後）の実物。
 
@@ -19,7 +19,7 @@
 |S6 CI の段: npm test が赤でも build と画面の試験が走る（skipped にならない）。ジョブ全体は赤のまま|使い捨てのブランチで単体の試験を 1 つ落とした下書き PR を作り、その回の各段の conclusion とジョブの conclusion を保存。確かめた後に PR を閉じブランチを消す|
 |S7 pc-meter K4: PO の Mac（CI 以外）では ±15 の比べを今まで通り行い、CI では行わない|手元の半分: PO の Mac で、CI を入れずに `npm run build` の後 `npx playwright test tests/e2e/pc-meter.spec.ts` rc=0 と保存された k2-k3-k4.json（K4 は Mac だけで動く。pc-meter.spec.ts:100）。取るのは PO の Mac で動く評価役（実装役がクラウドで動く場合も）。CI の半分: S1 の 10 回の macOS ジョブで pc-meter の試験が合格。macOS ジョブのログの `[K4] CI: ±15 check skipped` の行は補足とする（list の出力に試験の console.log が出るかは未確認。出なければその事実を書く）|
 |S8 tmux の所要時間: 上限の値は変えない（D9 の macOS の CI の restore だけを除く）。AC_TMUX_TIMING=1 のときだけ 3 回測り中央値で判定。AC_TMUX_TIMING が無いとき（npm test）は今まで通り 1 回|git diff で上限の定数（tmux-host.integration.test.ts:41-45）は D9 の 2 行（注釈と定数）の追加だけ。npm test のログで `[10MB]`・`[reattach x12]` が各 1 行、timing の段で各 3 行と中央値の行|
-|S11 日付の境目（D8）: 下の §5 の時刻ずらしの道具で、tests/unit/daily-use.integration.test.ts のファイル全体を、開始時刻 4 つ（ずらさず・2026-11-01T23:43:00Z・23:55:00Z・23:59:58Z）で各 3 回回す。23:59:58Z の回は、ファイルの途中で本物の日付が変わる回。D8 の後は「unread on reply」の中の時計がすべて T なので、日付が変わる位置はこの describe の合否に関係しない。この回で確かめるのは「ファイルのほかの試験も、途中で本物の日付が変わっても落ちない」こと。shift.cjs の記録（§5 の5）で、daily-use を動かした worker の始まりが 2026-11-02T00:00:00Z より前、終わりが後であることを ○ / × で読む。× の回（日付が変わらなかった・終わりの行が無い）があれば、値を書いて止まる。直す前は 23:55 で 3 回中 3 回落ちる（2026-11-02 のクラウドの再現では K12 の 4 件。ファイル全体では数が変わってよいので、落ちた試験の名前を記録する）。直す前に 23:55 で 3 回中 3 回落ちなければ、値を書いて止まる（直しの効き目を確かめられないため）。直した後は 4 つ × 3 回の 12 回すべて合格|毎回の rc と、vitest の試験の数・落ちた名前の生出力を保存|
+|S11 日付の境目（D8）: 下の §5 の時刻ずらしの道具で、tests/unit/daily-use.integration.test.ts のファイル全体を、開始時刻 4 つ（ずらさず・2026-11-01T23:43:00Z・23:55:00Z・23:59:30Z）で各 3 回回す。23:59:30Z は 0:00 の直前の回（クラウドの再現では 23:59 開始でも K12 が 4 件落ちた）。ファイルの途中で本物の日付が変わる回は、試験の外から日付が変わる位置を決められないので作らない（第5.2版の審査: vitest 5.0.3 の forks の worker は SIGTERM で止まり、終わりの時刻を確かに残せない）。代わりに、ファイルの中で本物の日付からファイル名を作るのが :463 の dayFile と server/activity.ts の this.now()（:304）だけで、D8 の後はどちらも T で動くことを、`grep -n "Date.now\|new Date\|toISOString" tests/unit/daily-use.integration.test.ts` の結果が、直す前は :452・:454・:463 の 3 行、直した後は D8 で足す `let realActivityNow: () => number = Date.now;` の 1 行を加えた 4 行だけであることで確かめる（それより多ければ止まる。2026-11-02 に 022433e で 3 行を確かめた）。直す前は 23:55 で 3 回中 3 回落ちる（2026-11-02 のクラウドの再現では K12 の 4 件。ファイル全体では数が変わってよいので、落ちた試験の名前を記録する）。直す前に 23:55 で 3 回中 3 回落ちなければ、値を書いて止まる（直しの効き目を確かめられないため）。直した後は 4 つ × 3 回の 12 回すべて合格|毎回の rc と、vitest の試験の数・落ちた名前の生出力を保存|
 |S12 つなぎ直しの上限（D9）: macOS の CI だけ restore の上限が 1500、それ以外（手元・ubuntu）は 1000 のまま。probe の上限は全部 1000 のまま|git diff。S1 の 10 回の macOS ジョブの `[reattach x12] median` の行の restore が 1500 以下|
 |S9 typecheck・lint・npm test・build・test:e2e が手元で全部 rc=0|生出力|
 |S10 本番のコード（server/・src/・extension/）を変えない|`git diff --name-only origin/main...HEAD` が次の 10 個とこのフォルダの card.md だけ: docs/handoff/ci-flake-fix/recon.md・design.md、tests/e2e/pc-meter.spec.ts、tests/unit/daily-use.integration.test.ts、tests/unit/hub-write-lock.test.ts、tests/unit/routines.test.ts、tests/unit/tmux-host.integration.test.ts、tests/e2e/console.spec.ts、tests/fixtures/claude-stub.sh、.github/workflows/ci.yml|
@@ -221,7 +221,7 @@
 3. S2・S3・S4（新の順）・S5（直した後）・S7・S8・S9・S10 を取る。
 4. PR を作り、S1（10 回）と S6（使い捨ての下書き PR）を取る。
 5. 第5版（D8・D9）: D1〜D7 は 022433e で入っている。D8・D9 は 022433e の上に足す。直す前（022433e）の写しで S11 を取る。D8・D9 を入れて commit し、直した後で S11・S12・S9（この Mac の評価役が build・test:e2e を含めて全部 rc=0 をもう一度取る）・S10 を取る。S1 の 10 回は D8・D9 を push した後に初めから数え直す。
-   - 時刻ずらしの道具（S11。commit しない。scratchpad に置く）: 次の中身の shift.cjs を `NODE_OPTIONS=--require <shift.cjs のフルパス> AC_SHIFT_TO=<開始時刻> AC_SHIFT_LOG=<記録のファイルのフルパス> TZ=UTC npx vitest run tests/unit/daily-use.integration.test.ts` で読み込ませる。2026-11-02 のクラウドの再現では、この形で vitest の中の時刻がずれた（cause_recon_20261102.md の表）。
+   - 時刻ずらしの道具（S11。commit しない。scratchpad に置く）: 次の中身の shift.cjs を `NODE_OPTIONS=--require <shift.cjs のフルパス> AC_SHIFT_TO=<開始時刻> TZ=UTC npx vitest run tests/unit/daily-use.integration.test.ts` で読み込ませる。2026-11-02 のクラウドの再現では、この形で vitest の中の時刻がずれた（cause_recon_20261102.md の表）。
      ```js
      // AC_SHIFT_TO の時刻から始まったことにする（試験の確かめだけに使う一時の道具）
      const RealDate = Date;
@@ -232,14 +232,9 @@
        static now() { return RealDate.now() + off; }
      }
      globalThis.Date = ShiftDate;
-     // 確かめの記録: プロセスごとの始まりと終わりの時刻（ずらした時計）を AC_SHIFT_LOG のファイルへ足す
-     const fs = require("node:fs");
-     const log = (k) => fs.appendFileSync(process.env.AC_SHIFT_LOG, `${process.pid} ${k} ${new Date().toISOString()}\n`);
-     log("start");
-     process.on("exit", () => log("end"));
      ```
-     ずれの量は、プロセス（vitest の親と各 worker）ごとに、そのプロセスが shift.cjs を読み込んだ時に計算し直す。そのため、どのプロセスの時計も、読み込んだ時にちょうど AC_SHIFT_TO になる。AC_SHIFT_LOG には回ごとに新しいファイルを渡す（例: scratchpad の s11/<時刻>-<回>.log）。daily-use を動かした worker は、start と end の 2 行があり、親でない pid の方。S11 の 23:59:58Z の回は、この worker の start が 00:00:00Z より前、end が後なら ○。end の行が無ければ、worker が exit の処理を通らずに終わったので、値を書いて止まる（推測で ○ にしない）。
-     ずらさない回は NODE_OPTIONS・AC_SHIFT_TO・AC_SHIFT_LOG を付けない。毎回、vitest の出力の試験の数が直す前と後で同じことを確かめる（数が違えば止まる）。
+     ずれの量は、プロセス（npx・vitest の親・worker）ごとに、そのプロセスが shift.cjs を読み込んだ時に計算し直す。どのプロセスの時計も、読み込んだ時にちょうど AC_SHIFT_TO になる。試験は worker の読み込みの後の import・collect の後に始まるので、試験の中の時刻は AC_SHIFT_TO より少し後になる（23:59:30Z の回でも、ファイルの所要時間 7〜12 秒では 0:00 に届かない）。
+     ずらさない回は NODE_OPTIONS と AC_SHIFT_TO を付けない。毎回、vitest の出力の試験の数が直す前と後で同じことを確かめる（数が違えば止まる）。
 6. 生出力のパスを PR 本文に書く。数が §1 と合わないときは止まって報告する（推測で書かない）。
 
 ## 外部・過去事例
@@ -272,3 +267,5 @@
 - 第5.1版での対応: 5 件と nit 7 件をすべて直した。
 - 第5.1版（2026-11-02）: REVISE。blocker 0・should-fix 2（S11 の M が「unread on reply」より前で日付を変え、確かめる値も無い・shift.cjs の時刻の説明が計算と逆で、記録の行もコードに無い）・nit 5。審査記録は acrecon/review_v51.md。
 - 第5.2版での対応: 4 つ目の時刻を 23:59:58Z に固定した（D8 の後は describe の中の時計がすべて T なので、日付が変わる位置は合否に関係しない。確かめるのはファイルの途中で日付が変わっても落ちないこと）。shift.cjs に始まりと終わりの記録を足し、日付が変わったかを ○ / × で読めるようにした。nit 5 件を直した。
+- 第5.2版（2026-11-02）: REVISE。blocker 1（forks の worker は SIGTERM で止まり、exit の終わりの行がほぼ書かれない。実測 10 回中 9 回）・should-fix 2（npx で node が 3 つになり親を worker と取り違える・start は必ず AC_SHIFT_TO なので日付が試験の途中で変わったかは分からない）・nit 2。審査記録は acrecon/review_v52.md、実測は scratchpad/vt52/。
+- 第5.3版での対応: ファイルの途中で日付を変える回と記録の道具をやめた（試験の外から位置を決められないため）。4 つ目の時刻を 23:59:30Z にし、本物の日付を読む所が直す前 3 行・直した後 4 行だけであることを grep で確かめる形にした（審査記録の 2-1 で、ほかの describe が本物の日付を読まないことはソースの上で確かめられている）。
