@@ -57,13 +57,18 @@ jobs:
       - name: Point config at the clone
         run: node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync("agent-console.config.json","utf8"));c.salesanchorRoot=process.env.RUNNER_TEMP+"/salesanchor";fs.writeFileSync(process.env.RUNNER_TEMP+"/ci-config.json",JSON.stringify(c))'
       - name: sa-sync
+        id: sasync
         run: node scripts/sa-sync.mjs
         env:
           AGENT_CONSOLE_CONFIG: ${{ runner.temp }}/ci-config.json
 
+      # 前の段が落ちても後ろの段の結果を出す（recon R7）。sa-sync が通っていないと何も確かめられないので、それだけを条件にする
       - run: npm run typecheck
+        if: ${{ !cancelled() && steps.sasync.outcome == 'success' }}
       - run: npm run lint
+        if: ${{ !cancelled() && steps.sasync.outcome == 'success' }}
       - run: npm test
+        if: ${{ !cancelled() && steps.sasync.outcome == 'success' }}
       # 所要時間の閾値（設計 §7）は並列実行だと揺れるので、tmux の統合試験だけをファイル並列なしで 1 回、AC_TMUX_TIMING=1 で判定する
       # npm test が赤でも走らせる（並列の負荷が原因か tmux の版が原因かを切り分けるため）
       - name: tmux timing check (single file, no file parallelism)
@@ -72,5 +77,10 @@ jobs:
           AC_TMUX_TIMING: "1"
         run: npx vitest run tests/unit/tmux-host.integration.test.ts --no-file-parallelism
       - run: npm run build
+        id: build
+        if: ${{ !cancelled() && steps.sasync.outcome == 'success' }}
       - run: npx playwright install --with-deps chromium
+        id: pwinstall
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
       - run: npm run test:e2e
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.pwinstall.outcome == 'success' }}

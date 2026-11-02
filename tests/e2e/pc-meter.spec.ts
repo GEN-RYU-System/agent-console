@@ -122,8 +122,10 @@ test("MacMeter: K2 Disk は statfs と ±0.5 / K3 RAM は memory_pressure と ±
     k4.push({ api, top_100_minus_idle: 100 - idle });
     expect(api).toBeGreaterThanOrEqual(0);
     expect(api).toBeLessThanOrEqual(100);
-    expect(Math.abs(api - (100 - idle))).toBeLessThanOrEqual(15);
+    // K4 の ±15 は PO の Mac での受入の基準（docs/handoff/pc-meter/design.md K4）。CI の共有の機械では、測る 2 秒の窓のずれで差が 40 を超える（docs/handoff/ci-flake-fix/recon.md R1）ので、CI では範囲（0〜100）だけを確かめる
+    if (process.env.CI !== "true") expect(Math.abs(api - (100 - idle))).toBeLessThanOrEqual(15);
   }
   out.K4 = k4;
   save("k2-k3-k4.json", out);
+  if (process.env.CI === "true") console.log("[K4] CI: ±15 check skipped (recon R1); range 0-100 checked");
 });
