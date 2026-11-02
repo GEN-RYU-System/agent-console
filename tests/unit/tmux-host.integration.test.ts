@@ -42,6 +42,8 @@ const ESC_MEDIAN_MAX_MS = 20;
 /** 10MB の上限。手元（単独）は設計目標の 1 秒。macOS の CI だけ 1.5 秒（CI の macOS 実測 1031〜1078ms、ubuntu は 337〜404ms。2026-10-14〜15） */
 const BIG_OUTPUT_MAX_MS = process.platform === "darwin" && process.env.CI === "true" ? 1500 : 1000;
 const REATTACH_X12_MAX_MS = 1000;
+/** 12 件のつなぎ直しの restore の上限。手元（単独）は設計目標の 1 秒。macOS の CI だけ 1.5 秒（CI の macOS 1 回ごとの実測 155〜1099ms、ubuntu は 171〜307ms。2026-11-01 の 10 回。ci-flake-fix design D9） */
+const REATTACH_X12_RESTORE_MAX_MS = process.platform === "darwin" && process.env.CI === "true" ? 1500 : 1000;
 const REATTACH_K12_MAX_MS = 1500;
 
 const tmuxAvailable = TMUX !== null;
@@ -448,7 +450,7 @@ suite("tmux host (real tmux, dedicated socket)", () => {
   }, 90000);
 
   it("12 reattaches: the time is judged only with AC_TMUX_TIMING=1 (design target 1s when run alone)", async () => {
-    // 3 回の中央値で判定する（10MB と同じ理由。ci-flake-fix recon R4）。上限の値は変えない
+    // 3 回の中央値で判定する（10MB と同じ理由。ci-flake-fix recon R4）。上限の値は変えない（macOS の CI の restore だけ 1.5 秒。ci-flake-fix design D9）
     const rounds = TIMING ? 3 : 1;
     const once = async (): Promise<{ probeMs: number; ms: number }> => {
       const socket = testSocket();
@@ -481,7 +483,7 @@ suite("tmux host (real tmux, dedicated socket)", () => {
       const restore = median(results.map((r) => r.ms));
       console.log(`[reattach x12] median probe ${probe.toFixed(0)}ms restore ${restore.toFixed(0)}ms`);
       expect(probe).toBeLessThanOrEqual(REATTACH_X12_MAX_MS);
-      expect(restore).toBeLessThanOrEqual(REATTACH_X12_MAX_MS);
+      expect(restore).toBeLessThanOrEqual(REATTACH_X12_RESTORE_MAX_MS);
     }
   }, 120000);
 });

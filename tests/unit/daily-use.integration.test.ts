@@ -451,13 +451,19 @@ describe("unread on reply", () => {
   let counter = 0;
   const T = { now: Date.now() + 1_000_000 };
   const hubInternals = (): { now: () => number; chatQueue: Map<string, unknown[]> } => h.hub as unknown as { now: () => number; chatQueue: Map<string, unknown[]> };
+  // 活動記録も同じ T で読む。本物の時計のままだと、T が翌日になる UTC 23:43 以降に、T の日付で書いたファイルを読まない（server/activity.ts:304-305。ci-flake-fix design D8）
+  const activityInternals = (): { now: () => number } => h.activity as unknown as { now: () => number };
   let realNow: () => number = Date.now;
+  let realActivityNow: () => number = Date.now;
   beforeAll(() => {
     realNow = hubInternals().now;
     hubInternals().now = () => T.now;
+    realActivityNow = activityInternals().now;
+    activityInternals().now = () => T.now;
   });
   afterAll(() => {
     hubInternals().now = realNow;
+    activityInternals().now = realActivityNow;
   });
   const unreadOf = async (id: string): Promise<unknown> => (await viewOf(id)).unread;
   const dayFile = (ts: number): string => `events-${new Date(ts).toISOString().slice(0, 10).replace(/-/g, "")}.jsonl`;
