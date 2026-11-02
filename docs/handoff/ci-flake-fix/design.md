@@ -252,6 +252,7 @@
 - Sales Anchor の見張り ADR-1029 の STRICT_CHECK_REPOS に GEN-RYU-System/agent-console を足す。S1 の結果と、合流後の本線 10 回の赤の数を前提の根拠にする。
 - やり直して緑で合流した 8 件（recon §1）は、見張りの設計で「やり直しの扱い」を決める材料にする。
 - console.spec の連続実行で後ろの試験が動かない件は、見張りを入れた後の赤の数で直すかを決める。
+- この Mac の npm test が混んでいるときに時間切れで落ちる件（今回触っていない試験。diff.integration の L-common の ECONNRESET は 4 回中 3 回、daily-use の M1/L1 K5 の /rename の 5000ms の時間切れなど。落ちる試験は回ごとに変わり、直す前の写しでも落ちる）は、別の件として扱う。生出力は /tmp/CC報告ファイル/ci-flake-fix/eval_d8d9/ と eval_d8d9_rerun/。
 
 ## 審査の記録
 - 第1版（2026-11-01）: REVISE。blocker 2（hub-write-lock と ci.yml の行番号が実物に無い）・should-fix 7・nit 6。審査記録は手元の scratchpad（acrecon/review_v1.md）。
@@ -270,3 +271,4 @@
 - 第5.2版（2026-11-02）: REVISE。blocker 1（forks の worker は SIGTERM で止まり、exit の終わりの行がほぼ書かれない。実測 10 回中 9 回）・should-fix 2（npx で node が 3 つになり親を worker と取り違える・start は必ず AC_SHIFT_TO なので日付が試験の途中で変わったかは分からない）・nit 2。審査記録は acrecon/review_v52.md、実測は scratchpad/vt52/。
 - 第5.3版での対応: ファイルの途中で日付を変える回と記録の道具をやめた（試験の外から位置を決められないため）。4 つ目の時刻を 23:59:30Z にし、本物の日付を読む所が直す前 3 行・直した後 4 行だけであることを grep で確かめる形にした（審査記録の 2-1 で、ほかの describe が本物の日付を読まないことはソースの上で確かめられている）。
 - 第5.3版（2026-11-02）: APPROVE。blocker 0・should-fix 0・nit 3（grep の範囲の注記・D8 の後の「少ない」場合の止まる条件・23:59:30Z の言い方）。nit はこの版の中で直した。審査記録は acrecon/review_v53.md、grep の実測は scratchpad/vt53/grep_after.txt（直す前 3 行・D8 の後 4 行）。
+- S1〜S12 の判定（2026-11-02、cbb4113）: S1 ○（run 41388894194 の 10 回、20/20 ジョブ緑、/tmp/CC報告ファイル/ci-flake-fix/s1b/progress.txt）。S12 ○（macOS の restore の中央値 261〜842ms、すべて 1500 以下、probe の中央値は 288ms 以下、同 medians.txt）。S10・S11 ○（クラウドの Sonnet の記録と Mac の評価役の再確認）。S9 ×（この Mac の評価役。test:e2e は 2 回目に rc=0 で 79 passed。npm test は 1 回目 16 件・2 回目 2 件落ち、すべて今回触っていない試験の時間切れ・接続切れ。直す前の写しでも落ちる）。PO の決定（2026-11-02「1」）: S9 の Mac の落ちは今回の直しのせいではないとして合格扱いにし、§7 の申し送りに別の件として残す。
