@@ -1,4 +1,4 @@
-# ci-flake-fix design（第5版、2026-11-02 JST）
+# ci-flake-fix design（第5.1版、2026-11-02 JST）
 
 参照: docs/handoff/ci-flake-fix/recon.md（R1〜R7・数の表）、docs/handoff/v0.3.9-test-flake/design.md（試験だけの直しの前例）、docs/handoff/pc-meter/design.md:80（K4）、docs/handoff/keep-sessions/design.md:395・420（tmux の所要時間の判定と CI 段）。行番号は D1〜D7 が origin/main ff5997594、D8・D9 が release/ci-flake-fix 022433e（D1〜D7 を入れた後）の実物。
 
@@ -19,7 +19,7 @@
 |S6 CI の段: npm test が赤でも build と画面の試験が走る（skipped にならない）。ジョブ全体は赤のまま|使い捨てのブランチで単体の試験を 1 つ落とした下書き PR を作り、その回の各段の conclusion とジョブの conclusion を保存。確かめた後に PR を閉じブランチを消す|
 |S7 pc-meter K4: PO の Mac（CI 以外）では ±15 の比べを今まで通り行い、CI では行わない|手元の半分: PO の Mac で、CI を入れずに `npm run build` の後 `npx playwright test tests/e2e/pc-meter.spec.ts` rc=0 と保存された k2-k3-k4.json（K4 は Mac だけで動く。pc-meter.spec.ts:100）。取るのは PO の Mac で動く評価役（実装役がクラウドで動く場合も）。CI の半分: S1 の 10 回の macOS ジョブで pc-meter の試験が合格。macOS ジョブのログの `[K4] CI: ±15 check skipped` の行は補足とする（list の出力に試験の console.log が出るかは未確認。出なければその事実を書く）|
 |S8 tmux の所要時間: 上限の値は変えない（D9 の macOS の CI の restore だけを除く）。AC_TMUX_TIMING=1 のときだけ 3 回測り中央値で判定。AC_TMUX_TIMING が無いとき（npm test）は今まで通り 1 回|git diff で上限の定数（tmux-host.integration.test.ts:41-45）は D9 の 1 行の追加だけ。npm test のログで `[10MB]`・`[reattach x12]` が各 1 行、timing の段で各 3 行と中央値の行|
-|S11 日付の境目（D8）: 下の §5 の時刻ずらしの道具で、tests/unit/daily-use.integration.test.ts のファイル全体を、開始時刻 4 つ（ずらさず・2026-11-01T23:43:00Z・23:55:00Z・23:59:30Z）で各 3 回回す。直す前は 23:55 で 3 回中 3 回落ちる（2026-11-02 のクラウドの再現では K12 の 4 件。ファイル全体では数が変わってよいので、落ちた試験の名前を記録する）。直した後は 4 つ × 3 回の 12 回すべて合格|毎回の rc と、vitest の試験の数・落ちた名前の生出力を保存|
+|S11 日付の境目（D8）: 下の §5 の時刻ずらしの道具で、tests/unit/daily-use.integration.test.ts のファイル全体を、開始時刻 4 つ（ずらさず・2026-11-01T23:43:00Z・23:55:00Z・M）で各 3 回回す。M は、ずらさない回のファイルの所要時間（vitest の Duration）の半分だけ 2026-11-02T00:00:00Z より前の時刻（秒で切り捨て。ファイルの途中で日付が変わる回）。M の値と元の所要時間を記録する。直す前は 23:55 で 3 回中 3 回落ちる（2026-11-02 のクラウドの再現では K12 の 4 件。ファイル全体では数が変わってよいので、落ちた試験の名前を記録する）。直す前に 23:55 で 3 回中 3 回落ちなければ、値を書いて止まる（直しの効き目を確かめられないため）。直した後は 4 つ × 3 回の 12 回すべて合格|毎回の rc と、vitest の試験の数・落ちた名前の生出力を保存|
 |S12 つなぎ直しの上限（D9）: macOS の CI だけ restore の上限が 1500、それ以外（手元・ubuntu）は 1000 のまま。probe の上限は全部 1000 のまま|git diff。S1 の 10 回の macOS ジョブの `[reattach x12] median` の行の restore が 1500 以下|
 |S9 typecheck・lint・npm test・build・test:e2e が手元で全部 rc=0|生出力|
 |S10 本番のコード（server/・src/・extension/）を変えない|`git diff --name-only origin/main...HEAD` が次の 10 個とこのフォルダの card.md だけ: docs/handoff/ci-flake-fix/recon.md・design.md、tests/e2e/pc-meter.spec.ts、tests/unit/daily-use.integration.test.ts、tests/unit/hub-write-lock.test.ts、tests/unit/routines.test.ts、tests/unit/tmux-host.integration.test.ts、tests/e2e/console.spec.ts、tests/fixtures/claude-stub.sh、.github/workflows/ci.yml|
@@ -128,10 +128,10 @@
 #### D8 tests/unit/daily-use.integration.test.ts:455-461（「unread on reply」の時計）
 - 原因（2026-11-02 の調べ。生の記録は /tmp/CC報告ファイル/ci-flake-fix/s1/cause_recon_20261102.md）:
   - :452 で試験の時計 T を本物の時刻の 1,000,000ms（約 16.7 分）先から始め、:457 で hub の時計だけを T に替える。
-  - 記録の書き込み（:463 dayFile・:466 stopAt）は T の UTC の日付のファイル名（events-YYYYMMDD.jsonl）に書く。
+  - 記録の書き込み（:463 dayFile、:464 で定義する stopAt の :467 の appendFileSync）は T の UTC の日付のファイル名（events-YYYYMMDD.jsonl）に書く。
   - 記録を読む側（server/activity.ts:267 の now）は本物の時計のまま。:304-305 で「本物の今日と昨日」のファイルしか読まない。
-  - そのため、本物の時刻が UTC 23:43 前後（日本時間 8:43 前後）から 0:00 までの間は、T が翌日になり、書いたファイルが読まれない。未読が 1 にならず 0 のまま落ちる。
-- 実物の失敗: S1 の 10 回のうち 6 回目（2026-11-01T23:40 UTC 開始・K12 の 2 件）と 7 回目（23:50 UTC 開始・K1 から K12 まで 8 件以上）で、macOS と ubuntu の両方が落ちた（/tmp/CC報告ファイル/ci-flake-fix/d9/fails.txt）。
+  - そのため、本物の時刻が UTC 23:43 ごろ（日本時間 8:43 ごろ）から 0:00 までの間は、T が翌日になり、書いたファイルが読まれない。未読が 1 にならず 0 のまま落ちる。T は試験の中でさらに進む（K12 で合わせて約 186.7 秒）ので、後ろの試験ほど早い時刻から落ちる（クラウドの K12 だけの再現では 23:42 開始から、CI のファイル全体では 23:40 開始の回で落ちた）。
+- 実物の失敗: S1 の 10 回のうち 6 回目（2026-11-01T23:40 UTC 開始・K12 の 2 件）と 7 回目（23:50 UTC 開始・K1 から K12 まで 10 件）で、macOS と ubuntu の両方が落ちた（/tmp/CC報告ファイル/ci-flake-fix/d9/fails.txt）。
 - 再現（クラウド、時刻ずらし、K12 だけ）: 23:40 は 3 回中 3 回合格、23:42 から落ち始め、23:55・23:59 は 3 回中 3 回落ちる、0:00:30 と 0:10 は 3 回中 3 回合格。fake timers は使っていない。
 - 変更: :455-461 の beforeAll・afterAll で、hub と同じく活動記録（h.activity）の時計も T に替え、終わったら戻す。
   - 変更前:
@@ -162,13 +162,13 @@
       activityInternals().now = realActivityNow;
     });
     ```
-- now は server/activity.ts:259 の private readonly。:457 の hub と同じく、型を外して替えるのは試験の中だけで、本体は変えない。
+- now は server/activity.ts:257 の private readonly。:457 の hub と同じく、型を外して替えるのは試験の中だけで、本体は変えない。
 - 替えた時計が効く所（server/activity.ts の this.now() は :268・:304・:543・:573 の 4 か所）:
   - :268 の startedAt は作った時（:452 より前）に決まり、替えても変わらない。T は本物より先なので、:278 の「startedAt より前の記録は数えない」に当たらない。
   - :304 読むファイルの日付。これを T に合わせるのが今回の直し。
-  - :543 動いている担当の 24 時間の判定（RUNNING_MAX_AGE_MS、:9）と :387 の 7 日の削除は、16.7 分先と数十秒の進みでは境目に届かない。
+  - :543 動いている担当の 24 時間の判定（RUNNING_MAX_AGE_MS、:9）と :387 の 7 日の削除は、16.7 分先と約 3.1 分の進みでは境目に届かない。
   - :573 pruneOldFiles は本番のポートのサーバーだけが呼ぶ（:571 の注記）。
-- 戻した後の影響: 戻すと、読むファイルの組が本物の日付に戻る。T が翌日だった回では「本物の昨日」の読み位置が :306 で消えており、昨日のファイルがあれば頭から読み直す。この試験の dataDir は harness を起動するたびに新しく作る（tests/unit/helpers/harness.ts:173 の mkdtempSync・:202）。ファイルが入るのはこの回に書いた分だけなので、本物の昨日のファイルが入るのは、この試験ファイルの実行中に本物の日付が変わった回だけ。S11 で、ファイル全体（:681 より後の試験を含む）を 23:59:30 開始を含む 4 つの時刻で回して確かめる。
+- 戻した後の影響: 戻すと、読むファイルの組が本物の日付に戻る。T が翌日だった回では「本物の昨日」の読み位置が :306 で消えており、昨日のファイルがあれば頭から読み直す。この試験の dataDir は harness を起動するたびに新しく作る（tests/unit/helpers/harness.ts:173 の mkdtempSync・:202）。ファイルが入るのはこの回に書いた分だけなので、本物の昨日のファイルが入るのは、この試験ファイルの実行中に本物の日付が変わった回だけ。この describe（:450〜:681）はファイルの最後なので、戻した後に動く試験はこのファイルには無い。活動記録を書くのもこの describe だけ。害は無いが、S11 の M（ファイルの途中で本物の日付が変わる回）で確かめる。
 - 選ばなかった案: (a) dayFile（:463）を本物の日付にする。記録の ts（T）と入れるファイルの日付が食い違い、本物では起きない形の記録になる。(b) T を本物の日の中に収める。境目の時刻が変わるだけで、なくならない。
 
 #### D9 tests/unit/tmux-host.integration.test.ts:44 と :484（12 件のつなぎ直しの restore の上限）
@@ -177,7 +177,7 @@
   - 1 回ごとの restore の値（40 個 = 10 回 × npm test の 1 回と timing の段の 3 回）: macOS は 155〜1099ms で、1000 を超えたのは 1029・1038・1099 の 3 個（mac_rounds_sorted.txt）。ubuntu は 171〜307ms（同じ 40 個）。
   - 中央値（timing の段 10 回）: macOS は 159〜1029ms（mac_medians.txt）。
   - probe の中央値は macOS でも 108〜283ms で、上限 1000 に遠い。
-- 既にある同じ形の決まり: 10MB の上限は「macOS の CI だけ 1.5 秒」（:42-43。CI の macOS 1031〜1078ms・ubuntu 337〜404ms の実測で決めた）。restore も同じく、macOS の CI の共有の機械では ubuntu の 2〜5 倍かかる。
+- 既にある同じ形の決まり: 10MB の上限は「macOS の CI だけ 1.5 秒」（:42-43。CI の macOS 1031〜1078ms・ubuntu 337〜404ms の実測で決めた）。restore の macOS の値は、当たった CI の機械で大きく変わる（同じコードで 6 回目は 155〜162ms、3 回目は 611〜1099ms）。中央値の macOS / ubuntu の比は 0.56〜4.5 倍で、10 回中 4 回は 2 倍未満、6 回目と 10 回目は macOS の方が速い。遅い機械に当たった回だけ 1000 を超える。ubuntu と手元は 1000 のままなので、本当に遅くなればそこで落ちる。
 - 変更:
   - :44 の後ろに 1 行足す。
     ```ts
@@ -185,6 +185,7 @@
     const REATTACH_X12_RESTORE_MAX_MS = process.platform === "darwin" && process.env.CI === "true" ? 1500 : 1000;
     ```
   - :484 `expect(restore).toBeLessThanOrEqual(REATTACH_X12_MAX_MS);` を `expect(restore).toBeLessThanOrEqual(REATTACH_X12_RESTORE_MAX_MS);` にする。
+  - :451 の注記「上限の値は変えない」を「上限の値は変えない（macOS の CI の restore だけ 1.5 秒。ci-flake-fix design D9）」にする。
   - :483 の probe と、:44 の REATTACH_X12_MAX_MS（1000）は変えない。手元と ubuntu の restore の上限も 1000 のまま。
 - 1500 にした根拠: 10MB と同じ値にそろえる（同じ機械の同じ理由）。macOS の CI の 1 回ごとの最大 1099ms に対して 36% の余裕。中央値で判定するので、1 回だけの跳ねでは落ちない。
 - 選ばなかった案: (a) 回数を 3 から 5 に増やす。中央値 1029 の回があり、5 回で下がるかの実測が無い。時間も延びる。(b) 上限を全部の機械で上げる。手元の設計目標（keep-sessions の 1 秒）まで緩める理由が無い。
@@ -219,18 +220,20 @@
 2. D1〜D7 を入れて commit する（一時の変更を入れる前に必ず commit する）。
 3. S2・S3・S4（新の順）・S5（直した後）・S7・S8・S9・S10 を取る。
 4. PR を作り、S1（10 回）と S6（使い捨ての下書き PR）を取る。
-5. 第5版（D8・D9）: D1〜D7 は 022433e で入っている。D8・D9 は 022433e の上に足す。直す前（022433e）の写しで S11 を取る。D8・D9 を入れて commit し、直した後で S11・S12・S9・S10 を取る。S1 の 10 回は D8・D9 を push した後に初めから数え直す。
+5. 第5版（D8・D9）: D1〜D7 は 022433e で入っている。D8・D9 は 022433e の上に足す。直す前（022433e）の写しで S11 を取る。D8・D9 を入れて commit し、直した後で S11・S12・S9（この Mac の評価役が build・test:e2e を含めて全部 rc=0 をもう一度取る）・S10 を取る。S1 の 10 回は D8・D9 を push した後に初めから数え直す。
    - 時刻ずらしの道具（S11。commit しない。scratchpad に置く）: 次の中身の shift.cjs を `NODE_OPTIONS=--require <shift.cjs のフルパス> AC_SHIFT_TO=<開始時刻> TZ=UTC npx vitest run tests/unit/daily-use.integration.test.ts` で読み込ませる。2026-11-02 のクラウドの再現では、この形で vitest の中の時刻がずれた（cause_recon_20261102.md の表）。
      ```js
      // AC_SHIFT_TO の時刻から始まったことにする（試験の確かめだけに使う一時の道具）
      const RealDate = Date;
      const off = RealDate.parse(process.env.AC_SHIFT_TO) - RealDate.now();
+     if (!Number.isFinite(off)) throw new Error("shift.cjs: AC_SHIFT_TO が読めない");
      class ShiftDate extends RealDate {
        constructor(...a) { super(...(a.length ? a : [RealDate.now() + off])); }
        static now() { return RealDate.now() + off; }
      }
      globalThis.Date = ShiftDate;
      ```
+     ずれの量は、プロセス（vitest の親と各 worker）ごとに、そのプロセスが起動した時刻を基準に決まる。worker の起動は親より少し後なので、worker の中の開始時刻は AC_SHIFT_TO より数秒以内だけ先になる。各回の出力に、試験の中の開始時刻（`new Date().toISOString()` を shift.cjs の読み込みの時に 1 回 stderr へ出す）を残す。
      ずらさない回は NODE_OPTIONS と AC_SHIFT_TO を付けない。毎回、vitest の出力の試験の数が直す前と後で同じことを確かめる（数が違えば止まる）。
 6. 生出力のパスを PR 本文に書く。数が §1 と合わないときは止まって報告する（推測で書かない）。
 
@@ -260,3 +263,5 @@
 - 第4版（2026-11-01）: APPROVE（設計合格）。blocker 0・should-fix 0・nit 1（節の番号の飛び。見た目だけで参照は壊れていない）。審査記録は手元の scratchpad（acrecon/review_v4.md）。未確認として残るのは、Playwright の list 表示に試験の console.log が出るか（S7 の補足。合否は頼らない）。設計合格は PO の実装承認を兼ねない。
 - S1（第4版の直し、2026-11-01T15:07Z〜、10 回）の結果: 緑 7 回・赤 3 回（/tmp/CC報告ファイル/ci-flake-fix/d9/s1_attempts.txt）。赤の 3 回は、3 回目が macOS の 12 件のつなぎ直しの restore（D9）、6 回目と 7 回目が UTC 23:40・23:50 開始の日付の境目（D8）。D1〜D7 で直した 7 種類の失敗は 10 回で 0 回。S1 は ×。PO の決定（2026-11-02「1」: 新しく分かった 2 つを設計に足し、審査を通してから直し、10 回をもう一度確かめる）で第5版にした。
 - 第5版での対応: D8（活動記録の時計も T に替える）・D9（macOS の CI だけ restore の上限 1.5 秒）を足した。成功条件に S11（4 つの時刻で日付の境目の確かめ）・S12 を足し、S8・S10 を直した。§5 に時刻ずらしの道具と手順を書いた。
+- 第5版（2026-11-02）: REVISE。blocker 0・should-fix 5（:681 より後に試験は無い・「2〜5 倍」がログと合わない・S11 の直す前の停止条件が無い・card の S10 の数え方・card の終わりの条件と Mac の S9 の担当）・nit 7。審査記録は手元の scratchpad（acrecon/review_v5.md）。D8・D9 の変更前のコードと効き目、D9 の数、時刻ずらしの道具が worker に届くこと（vitest 5.0.3 の既定 pool は forks、env は process.env から作る）は確かめられた。
+- 第5.1版での対応: 5 件と nit 7 件をすべて直した。S11 の 4 つ目の時刻を、ファイルの所要時間から決める M にした。
