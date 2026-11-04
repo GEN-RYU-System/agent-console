@@ -57,10 +57,11 @@ ccdiscordcase() {
   # ほかのセッションと共有の一時の置き場を使わせない
   export CLAUDE_CODE_TMPDIR="$AC_CASE_TMP"
   export TMPDIR="$AC_CASE_TMP"
-  # claude の状態の置き場は件ごと。通信は受付だけを通し、余計な通信は止める
+  # claude の状態の置き場は件ごと。通信は受付だけを通し、余計な通信（公式の追加機能の一覧の自動登録も）は止める
   export CLAUDE_CONFIG_DIR="$AC_CASE_HOME"
   export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
   export DISABLE_AUTOUPDATER=1
+  export CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL=1
   export HTTPS_PROXY="$AC_CASE_PROXY" HTTP_PROXY="$AC_CASE_PROXY" https_proxy="$AC_CASE_PROXY" http_proxy="$AC_CASE_PROXY"
   export NO_PROXY=127.0.0.1,localhost
 
