@@ -1,6 +1,6 @@
 # 便2b-3e 2回目の部屋の受入で落ちた2つを直す（v0.50.1）作る係への指示書
 
-- 設計: `docs/handoff/discord-pdca/room-design.md` 第10版 §4-2b（1・2 と受入のやり直し）。前の便 `bin2b3d-card.md`（v0.48.1）
+- 設計: `docs/handoff/discord-pdca/room-design.md` 第10.1版 §4-2b（1・2 と受入のやり直し）。前の便 `bin2b3d-card.md`（v0.48.1）
 - 目的: ①case-home の `history.jsonl.lock` を部屋で作れるようにする。②起動関数で `CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL=1` を渡し、公式の追加機能の一覧の自動登録（`downloads.claude.ai` への通信）を止める
 - この便に入れないもの: ほかの部屋の規則（正規表現・順 3 の拒否・順 4）・受付の許可先・`.claude.json` の書き直し（`KEEP_CLAUDE_JSON_KEYS`・`rewriteCaseClaudeJson`）・会話の番号の拾い方・ほかの環境変数・ほかの役割の振る舞い。本物の件を開く試験（設計者がマージのあとに行う）
 - 入れる順番: 作る係は PR を作るところまで（Draft にしない。題は `fix: case room history lock and official marketplace autoinstall (v0.50.1)` の形）。審査・マージ・タグ・入れるのは設計者
@@ -35,5 +35,5 @@
 ## 確かめ（作る係が PR の前に行う）
 
 - `npm test`（vitest 全部）・`npm run lint`・型の確かめ（今の CI と同じ命令）が通る
-- `git diff origin/main --stat` が、上に挙げたファイル（6つ）だけ
+- `git diff origin/main --stat` が、上に挙げたファイル（8つ: `server/case-sandbox.ts`・`ops/shell/ccdiscord.zsh`・`tests/unit/case-sandbox.test.ts`・`tests/unit/ccdiscord-zsh.test.ts`・`package.json`・`package-lock.json`・`extension/manifest.json`・`docs/CHANGELOG.md`）だけ
 - 公開のリポジトリなので、家の道・利用者の名前・秘密を書かない（道は `<…>` に伏せる）
