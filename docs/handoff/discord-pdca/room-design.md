@@ -8,7 +8,7 @@ mode: handoff
 
 - 親: `docs/handoff/discord-pdca/design.md`。この文書が親の行を指すときは、**第24版（agent-console origin/main 50de8d5）の行番号**で書く（第25版の行を足したので、作業中の親では1つずつ後ろにずれる）。掛かる行: `:353`（使えない状態の扱い）・`:356`（読み取りの拒否の書き方）・`:364`（Bash の読み取り）・`:377`（権限の規則）・`:383`（設定の置き場）・`:384`（起動の確かめ）・`:385`（起動の形）・`:387`（起動コマンド）と、§9 の K11（`:608`）・K17（`:614`）。
 - 関係する ADR（Sales Anchor）: ADR-1039（件のセッションの囲い。許可した行き先へは送れる弱さを書く）・ADR-1034 R4（見張りを弱めない）・ADR-113（handoff の型）。衝突は無い。外への通信の許可先は、§4-4 の (a) が成り立つかぎり Bash の子に対して増やさない。成り立たないときは §7 の分岐で PO に聞く。
-- 状態: 設計案（Opus 作成）・第8.1版・段階 P の結果で分岐を1つに決めた（§7 の「段階 P の結果」）。第8版は審査で APPROVE（条件付き・§10）、条件は第8.1版で直した。PO の決定（2026-10-29、このセッションのチャット。選択肢の番号の返事）: ①「１」＝この設計どおりに作り始めてよい（実装の承認）②「1」＝件の設定からボードの見張り（board-guard）を外してよい（§4-1 の「ボードの見張りの扱い」）。第8.1版は v0.48.0（#89）で実装して入れた。受入の最初の確かめで3つ落ちたので止め、第9版で直し方を足した（§4-2a）。PO の決定（2026-10-29、このセッションのチャット）③「1」＝設計を直してから、もう一度試験する。第9.2版は2回目の審査の直しを入れた版で、3回目の審査で APPROVE。第9.3版でその LOW を直した。
+- 状態: 設計案（Opus 作成）・第8.1版・段階 P の結果で分岐を1つに決めた（§7 の「段階 P の結果」）。第8版は審査で APPROVE（条件付き・§10）、条件は第8.1版で直した。PO の決定（2026-10-29、このセッションのチャット。選択肢の番号の返事）: ①「１」＝この設計どおりに作り始めてよい（実装の承認）②「1」＝件の設定からボードの見張り（board-guard）を外してよい（§4-1 の「ボードの見張りの扱い」）。第8.1版は v0.48.0（#89）で実装して入れた。受入の最初の確かめで3つ落ちたので止め、第9版で直し方を足した（§4-2a）。PO の決定（2026-10-29、このセッションのチャット）③「1」＝設計を直してから、もう一度試験する。第9.2版は2回目の審査の直しを入れた版で、3回目の審査で APPROVE。第9.3版でその LOW を直した。v0.48.1 で入れた。2回目の受入（2026-11-04）で2つ落ちたので止め、第10版で直し方を足した（§4-2b）。PO の決定（2026-11-04、このセッションのチャット）④「1」＝2つを直す設計を書いてから、もう一度試験する。
 
 ## 1. 目的と成功条件（KGI）
 
@@ -181,6 +181,38 @@ v0.48.0（#89）を 2026-10-29 13:36 に入れ、上の「受入の最初の確�
 
 - 受入のやり直し（v0.48.1 を入れたあと。上の「受入の最初の確かめ」と同じ回）: (1) 件を開いてから閉じるまでの Sandbox の拒否のうち、case-home の下で (B) の名前（上の `chSettingNames` の2つの正規表現）に当たらない物が0件 (2) 入力待ちになった時点で、`.claude.json` のキー名（値は記録しない）が、サーバーの書き直しの2つ（`hasCompletedOnboarding`・`projects`）より増えている（本体が書けた印。【事実】146 では本体が `.claude.json` を書こうとしたのは起動の直後 15:43:19〜15:43:28 だけで、サーバーの書き直しは 15:43:12・193 バイト。35-sandbox-run3.txt・34-casehome-after.txt） (3) 合言葉を覚えさせ、サーバーを止め、件の端末を消し、サーバーを起こすと、件が合言葉を答える。`open-sessions.json` の件の項目に `claudeSessionId` がある (4) `downloads.claude.ai` の断りが0件。1つでも落ちたら止めの手順（件を閉じる・`case-room-macos.json` を消す・新しい件が 503）で止めて PO に戻す。費用は2回の起動で 0.5 ドル（約78円。1ドル156.40円・2026-10-23）以内。
 
+### 4-2b 2回目の受入の結果と直し（第10版・v0.50.1）
+
+v0.50.0（部屋の作りは v0.48.1 のまま。`server/case-sandbox.ts`・`server/case-proxy.ts`・`server/sessions.ts` の 10/29 より後の変更は v0.48.1 の1つだけ）で、§4-2a の「受入のやり直し」を 2026-11-04 16:38（日本時間）に行った（件1つ・起動1回。記録は PO の手元の記録の置き場。外に出さない）。10/30 の回の記録も合わせて読んだ。
+
+- (2) 合格: `.claude.json` のキー名が 25 個（サーバーの書き直しの2つより多い）。10/30 の回は 21 個。
+- (3) 半分: `open-sessions.json` の件の項目に `claudeSessionId` が付いた。10/30 の回はサーバーの起き直しのあと同じ会話で合言葉を答えた。11/04 の回は起き直しの試しをしていない。→ やり直しで行う。
+- (1) 不合格と (4) 不合格の直しは下の 1・2。
+
+1. case-home の `history.jsonl.lock` の作成を断った（(A) に足す）
+   - 【事実】case-home の下の拒否 23 行のうち、(B) の名前（`backups` 13・`plugins` 1・`policy-limits` の一時の名前 1・`remote-settings.json` 1）に当たらない物は、本体（2.1.318）の `file-write-create <CH>/history.jsonl.lock` だけ（7行。重ねた報告を足すと 27 回。16:38:22〜16:38:30）。会話は続いた。
+   - 【事実】§4-2a の 1 で足した `<CH>/.claude.json.lock` の literal は、同じ回で拒否が 0 件だった。同じ形（名前1つの literal）で足せる。
+   - 【未確認】`history.jsonl.lock` がファイルかディレクトリか。Seatbelt の literal はその道そのものに当たり、作成（mkdir も含む）・削除・時刻の書き換えは、順 2 の開け直しと順 3 の `file-write*` の許可に入る。中に物を作る形なら、受入 (1) で拒否が残るので分かる。
+   - 直し: `CH_RECORD_FILES`（`server/case-sandbox.ts:244`）に `"history.jsonl.lock"` を足す（`[".last-cleanup", ".claude.json", "history.jsonl", "history.jsonl.lock"]`）。`chRecordLit`（:320）を通るので、順 2（:322）と順 3（:330）の両方に literal が入る。ほかの行は変えない。正規表現は足さない。
+   - vitest: `tests/unit/case-sandbox.test.ts` の :434 の試験の literal の確かめ（:440）に `path.join(p.CH, "history.jsonl.lock")` を足す。`history.jsonl.lock/x`・`history.jsonl.lock2` が両方の塊で `covered` にならないことを足す。
+
+2. 起動ごとに1回 `downloads.claude.ai` を断った（止める変数を足す）
+   - 【事実】受付は 11/04 の回で 07:38:09.073Z、10/30 の回で 01:14:43Z と 02:24:43.745Z に `downloads.claude.ai` を断った。`DISABLE_AUTOUPDATER=1`（`ops/shell/ccdiscord.zsh:63`）を入れたあとも止まらなかった。
+   - 【事実】case-home の `.claude.json` の `officialMarketplaceAutoInstallLastAttemptTime` が、断りの時刻の直後だった（11/04 07:38:09.140Z・10/30 02:24:43.851Z。差は 0.07〜0.11 秒）。
+   - 【事実】本体 2.1.318 の中で、公式の追加機能の一覧（plugin marketplace）を自動で登録する処理が `https://downloads.claude.ai/claude-code-releases/plugins/claude-plugins-official/latest` を GET する。その処理は先に環境変数 `CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL` を見て、立っていれば取りに行かず、失敗の理由を `policy_blocked` として残す。
+   - 【事実】公式資料（Context7 `/websites/code_claude` の環境変数の頁）は、この変数を「`1` で公式の一覧の自動登録を止める」と書く。同じ資料の apps-gateway の頁は、`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` ではこの最初の登録が止まらないと書く。
+   - 【事実】サーバーは起動のたびに `.claude.json` を `KEEP_CLAUDE_JSON_KEYS`（:392）の7つだけに書き直す（`rewriteCaseClaudeJson` :398）。一覧の状態が残らないので、起動ごとに取りに行く。書き直しの中身は変えない（§4-2 の (C)）。
+   - 直し: 起動関数 `ccdiscordcase` の `:63`（`DISABLE_AUTOUPDATER=1`）の次に `export CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL=1` を足す。許可先は足さない。受入で断りが0件にならなければ、許可先は足さずに止めて PO に戻す。
+   - vitest: `tests/unit/ccdiscord-zsh.test.ts` の :207 の並び（`/^(CLAUDE|ANTHROPIC)/` で数える名前）に `CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL` を辞書順の位置で足す。:212 の下に、この値が `"1"` であることを足す。
+
+- 版: 0.50.1。戻し方は `bash scripts/ac-update.sh v0.50.0`（部屋の literal 1つと環境変数1つだけなので、戻しても case-home の置き場の形は変わらない）。
+- 受入のやり直し（v0.50.1 を入れたあと。件1つ）:
+  - (1) 件を開いてから閉じるまでの Sandbox の拒否のうち、case-home の下で (B) の名前に当たらない物が 0 件。
+  - (2) 入力待ちの時点で、`.claude.json` のキー名がサーバーの書き直しの2つより多い。
+  - (3) 合言葉を覚えさせ、サーバーを起き直し（件の端末を消す）、件が同じ会話で合言葉を答える。`open-sessions.json` の件の項目に `claudeSessionId` がある。
+  - (4) 受付の `downloads.claude.ai` の断りが 0 件。加えて `.claude.json` の一覧の自動登録の失敗の理由が `policy_blocked`（変数が効いた印。値はこの1つの語だけ記録する）。
+  - 1つでも落ちたら止めの手順（件を閉じる・`case-room-macos.json` を外す・新しい件が 503）で止めて PO に戻す。費用は2回の起動で 0.5 ドル（約78円。1ドル156.40円・2026-10-23）以内。
+
 ### 4-3 ログインの鍵（Keychain）
 
 - 【事実】§2-1 の Keychain の測りの記録のとおり、Keychains を開けると python から shingo-ops の項目が取り出せた記録がある。部屋で `~/Library/Keychains` の読み取りを塞ぐと claude のログインが通らず（「Not logged in」）、読めるように戻すと通った（124 の T2-claude1.json・T2-claude2.json）。
@@ -318,7 +350,7 @@ v0.48.0（#89）を 2026-10-29 13:36 に入れ、上の「受入の最初の確�
 - srt の新しい版: 月に1回の点検で `npm view @anthropic-ai/sandbox-runtime version` を見て、版が変わっていたら写した部分（§4-1 の 1〜4）の差分を読み、直す便を出すかを決める。
 - 受付の断った件数は監査記録に残り、便2b-4 の点検で数を見る。許可先を足すときは ADR-1039 の一覧を先に直す（正本は1つ）。
 - ログインの鍵の期限: 鍵を作った日（2026-10-28）を `<dataDir>` の記録に書き、作ってから11か月を過ぎたら、毎週の点検で PO に作り直しを知らせる（作り直しは PO の手の操作。§4-3）。
-- claude の自動の入れ替え: 件を開くたびに realpath を解き直して room.sb と `AC_CLAUDE_BIN` に同じ値を書くので、入れ替わっても次に開くときに新しい道になる。起動の確かめ ⑫ は書いた2つが同じ文字列で、ファイルがあることを見る。開いている間に古い版の置き場が消えたら、起こし直しの exec が失敗して開かない側に倒れる。`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` で部屋の中の本体は自動更新を止める（公式資料の記述。受入で `downloads.claude.ai` の断り0件を確かめる。§4-4）ので、入れ替えは部屋の外の普段のセッションで起きる。第9版で `DISABLE_AUTOUPDATER=1` も足した（§4-2a の 3）。
+- claude の自動の入れ替え: 件を開くたびに realpath を解き直して room.sb と `AC_CLAUDE_BIN` に同じ値を書くので、入れ替わっても次に開くときに新しい道になる。起動の確かめ ⑫ は書いた2つが同じ文字列で、ファイルがあることを見る。開いている間に古い版の置き場が消えたら、起こし直しの exec が失敗して開かない側に倒れる。`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` で部屋の中の本体は自動更新を止める（公式資料の記述。受入で `downloads.claude.ai` の断り0件を確かめる。§4-4）ので、入れ替えは部屋の外の普段のセッションで起きる。第9版で `DISABLE_AUTOUPDATER=1` も足した（§4-2a の 3）。それでも公式の追加機能の一覧の自動登録が `downloads.claude.ai` へ行ったので、第10版で `CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL=1` を足した（§4-2b の 2）。claude の版が変わったら、受入と同じく受付の断りの数を見る（新しい通信が増えたら、許可先は足さずに止める変数を探す便を出す）。
 - 会話の番号の拾い方（§4-2a の 2）は、本体の `sessions/<pid>.json` の形に頼る。claude の版が変わったら、件を1回開いて `open-sessions.json` の件の項目に `claudeSessionId` が付くかを見る（付かなければ再開が新しい会話になる側に倒れるだけ。直す便を出す）。
 - 守り手: agent-console の設計の担当（Opus）。
 
@@ -336,3 +368,4 @@ v0.48.0（#89）を 2026-10-29 13:36 に入れ、上の「受入の最初の確�
 - 第9.1版（2026-10-29）: 審査（148 の review.md）の REVISE の8件を反映した。一時の名前の正規表現を `{12}` から12回並べた形へ（Seatbelt は `{n}` を受けない）・会話の番号の取り違えの塞ぎ・読み方に `O_NONBLOCK`・`nlink`・読む長さの上限・`sessions/` の確かめ・件の処理の例外を外へ出さない・受入の基準 (1)(2) を ○× で付けられる形へ・件の `sessions/` のファイルを【未確認】に直し受入で記録する。
 - 第9.2版（2026-10-29）: 2回目の審査（150 の review.md）の REVISE を反映した。番号の照合を付けるときだけでなく今付いている番号（復元した物も）にも毎回掛ける・`hub.ts:577` の側の外しを毎回にする・受入の基準 (2) を「入力待ちの時点でキー名がサーバーの書き直しより増えている」に直す・Seatbelt の正規表現は大文字小文字を区別しない注記・`sessions` の dev/ino の読み後の確かめ・`~/.claude/sessions` を読み取りの拒否に足さない理由。
 - 第9.3版（2026-10-29）: 3回目の審査（152 の review.md）は APPROVE（LOW 3件）。LOW を反映した。`hub.ts:577` では件に付けない・vitest の並びをカードに揃えた・番号の外しは値が無ければ通知しない。
+- 第10版（2026-11-04）: v0.50.0 での2回目の受入で2つ落ちた（case-home の `history.jsonl.lock` の作成の拒否・`downloads.claude.ai` の断り）。§4-2b に事実と直し方と受入のやり直しを足した。
