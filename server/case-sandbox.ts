@@ -239,9 +239,9 @@ export const CASE_PROTECTED_WRITE = (p: Pick<CaseParams, "W" | "R" | "CH">): str
     ...PROTECTED_BARE.map((n) => `^${reesc(X)}/${cip(n)}(/.*)?$`),
   ]);
 
-/** case-home の中で本体が書く記録（§4-2 (A)）。置き場6つ（subpath）と、ファイル2つ（literal） */
+/** case-home の中で本体が書く記録（§4-2 (A)）。置き場6つ（subpath）と、ファイル4つ（literal） */
 const CH_RECORD_DIRS = ["projects", "sessions", "session-env", "shell-snapshots", "tasks", "teams"];
-const CH_RECORD_FILES = [".last-cleanup", ".claude.json", "history.jsonl"];
+const CH_RECORD_FILES = [".last-cleanup", ".claude.json", "history.jsonl", "history.jsonl.lock"];
 /** `.claude.json` の書き直しの仲間（(C)）。ロックの literal と、一時の名前 `.claude.json.tmp.<pid>.<16進12桁>` の正規表現。Seatbelt の正規表現は `{n}` を受けないので 12 桁は並べて書く */
 const CH_CLAUDE_JSON_COMPANIONS = [".claude.json.lock"];
 const chClaudeJsonTmp = (CH: string): string => `^${reesc(CH)}/\\.claude\\.json\\.tmp\\.[0-9]+\\.${"[0-9a-f]".repeat(12)}$`;

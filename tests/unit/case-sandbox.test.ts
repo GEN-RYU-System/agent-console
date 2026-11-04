@@ -437,7 +437,9 @@ describe("buildCaseRoomProfile", () => {
     const write = formsStarting(text, "(allow file-write*")[0];
     const tmpRe = chClaudeJsonTmpForTest(p.CH);
     for (const form of [reopen, write]) {
-      expect(literalsOf(form)).toEqual(expect.arrayContaining([path.join(p.CH, "history.jsonl"), path.join(p.CH, ".claude.json.lock")]));
+      expect(literalsOf(form)).toEqual(expect.arrayContaining([path.join(p.CH, "history.jsonl"), path.join(p.CH, ".claude.json.lock"), path.join(p.CH, "history.jsonl.lock")]));
+      expect(covered(form, `${p.CH}/history.jsonl.lock`)).toBe(true);
+      for (const bad of ["history.jsonl.lock/x", "history.jsonl.lock2"]) expect(covered(form, `${p.CH}/${bad}`), bad).toBe(false);
       expect(regexesOf(form)).toContain(tmpRe);
       expect(covered(form, `${p.CH}/.claude.json.tmp.20273.0c36f211e77d`)).toBe(true);
       for (const bad of [".claude.json.tmp.20273.0c36f211e77", ".claude.json.tmp.x.0c36f211e77d", ".claude.json.tmp.20273.0c36f211e77d/x", ".claude.json.evil", ".claude.json.backup.1", "backups/.claude.json.tmp.1.0c36f211e77d"]) expect(covered(form, `${p.CH}/${bad}`), bad).toBe(false);

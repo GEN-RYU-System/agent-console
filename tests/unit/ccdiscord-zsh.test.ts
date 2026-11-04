@@ -204,12 +204,13 @@ describe.skipIf(!hasZsh && process.env.CI === undefined)("ccdiscordcase", () => 
     expect(r.status, r.stderr).toBe(0);
     const e = fullEnv();
     const prefixed = Object.keys(e).filter((k) => /^(CLAUDE|ANTHROPIC)/.test(k)).sort();
-    expect(prefixed).toEqual(["CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_TMPDIR", "CLAUDE_CONFIG_DIR"]);
+    expect(prefixed).toEqual(["CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_TMPDIR", "CLAUDE_CONFIG_DIR"]);
     expect(e.CLAUDE_CONFIG_DIR).toBe(caseHome);
     expect(e.CLAUDE_CODE_TMPDIR).toBe(caseTmp);
     expect(e.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS).toBe("1");
     expect(e.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC).toBe("1");
     expect(e.DISABLE_AUTOUPDATER).toBe("1");
+    expect(e.CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL).toBe("1");
     expect(e.CLAUDE_CODE_OAUTH_TOKEN).toBe(FAKE_LOGIN);
     expect(e.TMUX).toBeUndefined();
     expect(e.TMUX_PANE).toBeUndefined();
