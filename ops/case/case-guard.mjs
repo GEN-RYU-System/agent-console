@@ -73,6 +73,7 @@ function checkHardLink(real) {
 const AGENT_KEYS = new Set(["description", "prompt", "subagent_type", "model", "run_in_background"]);
 
 function decide(input, c) {
+  if (input.agent_id === undefined && typeof input.permission_mode === "string" && input.permission_mode !== "dontAsk") block("permission mode is not dontAsk; ask the person to close and reopen this case");
   const name = input.tool_name;
   const ti = input.tool_input;
   if (typeof name !== "string") block("tool name missing");

@@ -2,6 +2,7 @@
 
 版を出すたびに 1 行追記する（版の正本は git タグ `vX.Y.Z`）。
 
+- 0.50.2 件の窓で Shift+Tab を外し（case-home の `keybindings.json`）、本体の会話の形が dontAsk でないとき（計画の形など）は case-guard が道具を止めるようにした。戻し方 `bash scripts/ac-update.sh v0.50.1`
 - 0.50.1 部屋の2回目の受入で落ちた2つを直した（case-home の `history.jsonl.lock` を書けるようにした・起動関数で `CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL=1` を渡して公式の追加機能の一覧の自動登録を止めた）。戻し方 `bash scripts/ac-update.sh v0.50.0`
 - 0.50.0 未読の印を「PO の番で止まっている窓」だけに付けるようにした（AI が自分で続きを始める予定が無い返事の終わり・許可や選択の画面・失敗で付き、AI が自分で再開したら消える。失敗の印は PO が送るまで残る。予定があって付けなかった窓は 30 分で付く）。印は付く・付かないの1つで、行の言葉は「未読」だけ、タブの題の (N) は印の付いた窓の数。Stop の記録に `bg_tasks`・`bg_types`・`crons_once`・`crons_repeat`・予定の文のハッシュを足した（説明文・コマンド・prompt は残さない）。測る台本 `scripts/measure-unread.mjs`。戻し方 `bash scripts/ac-update.sh v0.49.0`（記録の欄が増えても古い版は読まないだけ）。設計は docs/handoff/unread-ball-with-po/design.md
 - 0.49.0 返事が来たら未読を付け、PO がその窓で送る（端末の Enter・チャット欄）まで消さないようにした（Claude の Stop の記録と待ちの観測で数える。行を選んでも窓を開いたままでも消えない。macOS の通知は従来どおり）。戻し方 `bash scripts/ac-update.sh v0.48.1`。設計は docs/handoff/unread-on-reply/design.md
