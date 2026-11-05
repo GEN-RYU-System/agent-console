@@ -91,6 +91,7 @@ const fullEnv = (): Record<string, string> => Object.fromEntries(readFileSync(`$
 
 // CI では zsh が無ければ飛ばさず落とす（ci.yml が Linux に入れる）。手元で zsh が無いときだけ飛ばす
 describe.skipIf(!hasZsh && process.env.CI === undefined)("ccdiscordcase", () => {
+  // §14-13-2 の条件 (1)(2)(4) を守る試験。変えるときは design §14-13 を読み直す
   it("starts claude with the restricted flags and without chrome / setting-sources; the token is not in the arguments", () => {
     const r = run();
     expect(r.status, r.stderr).toBe(0);
@@ -187,6 +188,7 @@ describe.skipIf(!hasZsh && process.env.CI === undefined)("ccdiscordcase", () => 
     expect(run({ PATH: `${path.join(tmp, "path-claude-dir")}:${bin}:${process.env.PATH ?? ""}` }).status).toBe(0);
   });
 
+  // §14-13-2 の条件 (1)(2)(4) を守る試験。変えるときは design §14-13 を読み直す
   it("removes inherited CLAUDE_*, ANTHROPIC_*, CLAUDECODE, TMUX and SSH_AUTH_SOCK, then adds only its own values", () => {
     const r = run({
       CLAUDECODE: "1",

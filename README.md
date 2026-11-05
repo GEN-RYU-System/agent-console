@@ -278,6 +278,33 @@ Discord の不具合の件を調べる Claude のセッション用の役割で�
 - 件ごとの設定（権限・囲い・見張りのフック）は `dataDir/cases/<id>/`、gh の名義は `dataDir/case-gh/<id>/` に置きます。それが無い・囲いの実行ファイルが使えないときは、開かずに HTTP 503（`sandbox unavailable`）を返します。
 - 定期実行・予約には選べません。終わった件の写しの片付けは便2b-4 です。
 
+## 件へ一文を送る（v0.51.0）
+
+Opus が、PO の承認した手順書に書かれた段階の指示を、件のセッション（discord-case）の窓へ送るための道です。設計は Sales Anchor の `docs/handoff/conversation-consent/design.md` §14-10・§14-13。
+
+```
+node "<dataDir>/bin/ac-case-say.mjs" <件の id> <手順ファイル名>
+```
+
+- 使い方はこの1つだけです。`<手順ファイル名>` は件の報告の置き場（`/tmp/CC報告ファイル/discord-case/<件の id>/`）にある `<名前>.md`（英数字・`.`・`_`・`-` の 64 字まで、64KiB まで）。
+- 件の窓には、サーバーが組み立てる次の1種類の文だけが入ります: `<置き場>/<手順ファイル名> を読み、書いてある手順を順に行ってください。` 文・宛先・送ってよいかの判定はすべてサーバーが決めます（命令は件の id と手順ファイル名を頼むだけ）。合言葉（`dataDir/reserve-token`）は命令が自分で読み、値は出しません。呼び出し元の番号は環境変数 `CLAUDE_CODE_SESSION_ID` だけから取ります。
+- 呼べるのは設定 `caseSayRoles`（既定 `["opus-designer"]`。件の役割は入れられない）の役割の会話だけです。
+- 宛先は、このサーバーが今の起動中に自分で新しく作った件の窓だけです。**サーバーを起き直してつなぎ直した窓（`reattached`）には送りません**（開き直した件にだけ送れます）。窓の形が記録と違う（区画の入れ替え・分割・窓の追加）、端末の接続が今すぐ書けない（用意前・取り直し中・ため込みあり）、件の状態ファイルが `idle` でない・待ちのキーがある、のときも送りません。
+- 貼り付けと Enter は、区画の番号 `%N` を宛先にし、tmux が実行する時点でその区画の pid が記録のときだけ書く条件付き（`if-shell -F`）で送ります。貼り付けを書いた後に Enter を送り切らずに終えたときは、その窓にはもう送りません（止めの印。窓が終わる・一覧から外すまで続き、消す口はありません）。
+- 断られたときは理由を1行出して終了コード 1 になります（例: `断られました（409）: claude_version_unverified`）。理由: `no_session`・`closing`・`not_case_session`・`reattached`・`no_main_record`・`main_changed`・`pane_unreadable`・`pane_changed`・`terminal_not_ready`・`claude_version_unverified`・`stopped_after_paste`・`step_file_unusable`・`state_file_unreadable`・`state_file_pid_mismatch`・`claude_not_idle`・`claude_waiting`・`agents_unavailable`・`process_list_unavailable`・`write_in_progress`・`pane_changed_during_paste`・`state_changed_before_enter`・`enter_not_sent`・`enter_not_confirmed`・`exception`。
+- 監査: 送るたびに `dataDir/routine-audit.jsonl` へ `caseSay`、断るたびに `caseSayRefused`（理由・件の id・手順ファイル名・呼び出し元の番号・文と手順ファイルの sha256 の先頭16桁・claude の版）を1行残します。本文と合言葉は書きません。
+
+### claude の版の一覧（`caseSayClaudeVersions`）
+
+件を開くとき、サーバーは claude の実体の道を解き、その最後の名前が `N.N.N` の形ならそれを件の claude の版として記録します。設定 `caseSayClaudeVersions` に無い版・版の形でない名前の件には送りません（`claude_version_unverified`）。コードの既定は空（どの件にも送らない）で、同梱の `agent-console.config.json` には `["2.1.318"]` が入っています。要素が `N.N.N` の形でないと起動時エラーです。
+
+版を足す手順（PO のふつうの claude が更新されて、件の版が変わったとき）:
+
+1. PO が件を1つ開く。
+2. PO が、設計 §14-13-7 の K41 (a)(b) の頼み事と K32 の一文を件の窓に打つ。
+3. Opus が、画面の写しと状態ファイルを読むだけで、選ぶ画面が 0 件であることと K41 の○を確かめる（Opus は件の窓に打たない）。
+4. 版を足す PR を出し、審査を通してから入れる。
+
 ## 設計メモ
 
 - 設計・調査・実装メモ: `docs/handoff/stage1/`（段階1）、`docs/handoff/stage1-5/`（段階1.5: 起動・版管理・セキュリティ）

@@ -82,6 +82,10 @@ export interface Config {
   routineManagerRoles: string[];
   /** ac-reserve（AI による予約）を使ってよい役割の id（SSOT）。既定 ["opus-designer","shell"]。roles に無い id は起動時エラー */
   reserveRoles: string[];
+  /** ac-case-say（件のセッションへ決まった一文を送る）を呼んでよい役割の id。既定 ["opus-designer"]。roles に無い id・件の役割は起動時エラー */
+  caseSayRoles: string[];
+  /** 件の claude の版のうち、case-say で送ってよい物（`1.2.3` の形）。コードの既定は空＝どの件にも送らない。足す手順は README の「件へ一文を送る」 */
+  caseSayClaudeVersions: string[];
   /** 「アカウントを切り替える」で動かす命令（config 固定）。無ければ切り替えボタンを出さない。roles には入れない */
   accountLoginCommand?: string[];
   /** よく使う指示などアプリが保存するデータの置き場 */
@@ -314,9 +318,14 @@ export function parseConfig(raw: unknown): Config {
   }
   const routineManagerRoles = parseRoutineManagerRoles(o.routineManagerRoles, ids);
   const reserveRoles = parseReserveRoles(o.reserveRoles, ids);
+  const caseSayRoles = parseCaseSayRoles(o.caseSayRoles, ids);
+  const caseSayClaudeVersions = parseCaseSayClaudeVersions(o.caseSayClaudeVersions);
   const caseRoleIds = new Set(roles.filter((r) => r.caseSandbox === true).map((r) => r.id));
   for (const id of [...routineManagerRoles, ...reserveRoles]) {
     if (caseRoleIds.has(id)) throw new Error(`config: role ${id} (caseSandbox) cannot be in routineManagerRoles or reserveRoles`);
+  }
+  for (const id of caseSayRoles) {
+    if (caseRoleIds.has(id)) throw new Error(`config: role ${id} (caseSandbox) cannot be in caseSayRoles`);
   }
   return {
     port: o.port as number,
@@ -333,6 +342,8 @@ export function parseConfig(raw: unknown): Config {
     roles,
     routineManagerRoles,
     reserveRoles,
+    caseSayRoles,
+    caseSayClaudeVersions,
     ...(o.accountLoginCommand !== undefined ? { accountLoginCommand: parseCommand(o.accountLoginCommand, "accountLoginCommand") } : {}),
     dataDir: parseDataDir(o.dataDir),
     notify: parseNotify(o.notify),
@@ -383,6 +394,25 @@ function parseReserveRoles(raw: unknown, roleIds: ReadonlySet<string>): string[]
   if (!Array.isArray(list) || list.some((x) => typeof x !== "string" || x === "")) throw new Error("config: reserveRoles must be an array of role ids");
   for (const id of list as string[]) if (!roleIds.has(id)) throw new Error(`config: reserveRoles has unknown role id ${id}`);
   return [...new Set(list as string[])];
+}
+
+export const DEFAULT_CASE_SAY_ROLES: readonly string[] = ["opus-designer"];
+
+function parseCaseSayRoles(raw: unknown, roleIds: ReadonlySet<string>): string[] {
+  if (raw === undefined) return DEFAULT_CASE_SAY_ROLES.filter((id) => roleIds.has(id));
+  if (!Array.isArray(raw) || raw.some((x) => typeof x !== "string" || x === "")) throw new Error("config: caseSayRoles must be an array of role ids");
+  for (const id of raw as string[]) if (!roleIds.has(id)) throw new Error(`config: caseSayRoles has unknown role id ${id}`);
+  return [...new Set(raw as string[])];
+}
+
+/** claude の版の形（実体の道の最後の名前）。case-say の判定 4b と config の要素の確かめで使う */
+export const CLAUDE_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+
+function parseCaseSayClaudeVersions(raw: unknown): string[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) throw new Error("config: caseSayClaudeVersions must be an array of version strings (e.g. \"2.1.318\")");
+  for (const x of raw) if (typeof x !== "string" || !CLAUDE_VERSION_PATTERN.test(x)) throw new Error(`config: caseSayClaudeVersions has an invalid version ${JSON.stringify(x)} (expected N.N.N)`);
+  return [...new Set(raw as string[])];
 }
 
 const TMUX_SOCKET = /^[A-Za-z0-9_-]+$/;
