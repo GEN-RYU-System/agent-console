@@ -8,7 +8,7 @@ import { ACCOUNT_LOGIN_ROLE_ID, CHILD_ENV_BLOCKLIST, DEFAULT_MAX_SESSIONS, TERMI
 import { hookPathIn } from "./activity-setup.ts";
 import { caseBranchOf, caseCloneDir, checkCaseClone, createCaseClone } from "./case-clone.ts";
 import { readLstartSync, type MainProcess } from "./case-proxy.ts";
-import { CASE_PROXY_PORT, CaseSandboxUnavailableError, caseDirOf, caseNodeHome, casePaths, caseRoomLiteral, removeCaseFiles, resolveClaudeReal, rewriteCaseClaudeJson, writeCaseFiles, writeCaseRoom, type CaseParams } from "./case-sandbox.ts";
+import { CASE_PROXY_PORT, CaseSandboxUnavailableError, caseDirOf, caseNodeHome, casePaths, caseRoomLiteral, removeCaseFiles, resolveClaudeReal, rewriteCaseClaudeJson, writeCaseFiles, writeCaseKeybindings, writeCaseRoom, type CaseParams } from "./case-sandbox.ts";
 import { descendantPids, readProcessTable } from "./process-tree.ts";
 import { RingBuffer } from "./ring-buffer.ts";
 import { sessionName } from "./terminal-host/tmux-protocol.ts";
@@ -625,6 +625,7 @@ export class SessionManager {
     const isCase = role.caseSandbox === true;
     const room = isCase ? this.prepareCaseRoom(id) : null;
     const caseEnv = room === null ? {} : this.checkCaseSandbox(id, cwd, room.claudeReal);
+    if (room !== null) writeCaseKeybindings(room.CH);
     // 新しく claude を起動するときだけ、case-home の .claude.json を書き直す（つなぎ直しでは書き直さない）
     const beforeNew = room === null ? undefined : (): void => rewriteCaseClaudeJson(room.CH, realOr(cwd));
     const { term, reattached, pid } = this.openTerminal(id, role, cwd, command, { ...extraEnv, ...caseEnv }, knownId === id && isNew !== true, beforeNew);
