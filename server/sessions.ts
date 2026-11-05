@@ -624,8 +624,8 @@ export class SessionManager {
     const id = knownId !== undefined && !this.sessions.has(knownId) ? knownId : randomUUID();
     const isCase = role.caseSandbox === true;
     const room = isCase ? this.prepareCaseRoom(id) : null;
-    if (room !== null) writeCaseKeybindings(room.CH);
     const caseEnv = room === null ? {} : this.checkCaseSandbox(id, cwd, room.claudeReal);
+    if (room !== null) writeCaseKeybindings(room.CH);
     // 新しく claude を起動するときだけ、case-home の .claude.json を書き直す（つなぎ直しでは書き直さない）
     const beforeNew = room === null ? undefined : (): void => rewriteCaseClaudeJson(room.CH, realOr(cwd));
     const { term, reattached, pid } = this.openTerminal(id, role, cwd, command, { ...extraEnv, ...caseEnv }, knownId === id && isNew !== true, beforeNew);
