@@ -12,7 +12,7 @@ import { handleAccount } from "./account-routes.ts";
 import { handleChat } from "./chat-routes.ts";
 import { handleFiles } from "./files-routes.ts";
 import type { Config } from "./config.ts";
-import type { Hub } from "./hub.ts";
+import type { CaseSayResult, Hub } from "./hub.ts";
 import type { MemoryCollector } from "./memory.ts";
 import { DiffCommentsUnreadableError, type DiffCommentStore } from "./diff-comments.ts";
 import { DiffGitError } from "./diff.ts";
@@ -482,6 +482,59 @@ async function handleAgentReservations(deps: AppDeps, req: IncomingMessage, res:
   sendJson(res, 200, await deps.reservations.cancel(safeDecode(id as string), who));
 }
 
+const CASE_SAY_PATH = "/api/agent/case-say";
+const CASE_SAY_BODY_MAX_BYTES = 4096;
+const CASE_SAY_STEP_FILE = /^[A-Za-z0-9._-]{1,64}\.md$/;
+const FORBIDDEN_CASE_SAY_MESSAGE = "ac-case-say is limited to case-say role sessions (起動直後は数秒〜数十秒待って再試行)";
+
+/**
+ * AI 用の「件へ一文を送る」受け口（POST /api/agent/case-say だけ）。認証の前に分ける（design conversation-consent §14-10-3 (a)）。
+ * 順序: POST 以外 405 → Origin があれば 403 → 合言葉が無い・違うなら 401 → 本文（4KiB まで）400 → 呼び出し元の役割 403 → 宛先と状態の確かめ・送信（Hub.caseSay）。
+ * 外れたら端末へ何も書かずに断る。監査は本文の確かめ以後の断り（400・403・409）と送った 1 回ごとに 1 行（合言葉の前の断りは相手を特定できないので残さない）
+ */
+async function handleCaseSay(deps: AppDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (req.method !== "POST") { sendJson(res, 405, { error: "method not allowed" }); return; }
+  if (req.headers.origin !== undefined) { sendJson(res, 403, { error: "forbidden" }); return; }
+  const presented = (req.headers.authorization ?? "").replace(/^Bearer /, "");
+  if (deps.reserve.token === null || !sameSecret(presented, deps.reserve.token)) { sendJson(res, 401, { error: "unauthorized" }); return; }
+  let body: Record<string, unknown> = {};
+  let bodyError: string | null = null;
+  try {
+    body = jsonBody(await readJsonBody(req, CASE_SAY_BODY_MAX_BYTES));
+  } catch {
+    bodyError = "bad_request";
+  }
+  const callerSessionId = isClaudeSessionId(body.callerSessionId) ? body.callerSessionId : null;
+  const caseId = isClaudeSessionId(body.caseId) ? body.caseId : undefined;
+  const stepFile = typeof body.stepFile === "string" && CASE_SAY_STEP_FILE.test(body.stepFile) && !body.stepFile.includes("..") ? body.stepFile : undefined;
+  const refused = async (status: 400 | 403 | 409, reason: string, message: string, extra: Partial<RoutineAuditEntry> = {}, roleId?: string): Promise<void> => {
+    await writeAudit(deps, { action: "caseSayRefused", outcome: "denied", callerSessionId, ...(roleId !== undefined ? { roleId } : {}), ...(caseId !== undefined ? { caseId } : {}), ...(stepFile !== undefined ? { stepFile } : {}), reason, ...extra });
+    sendJson(res, status, { error: message, reason });
+  };
+  if (bodyError !== null || caseId === undefined || stepFile === undefined) { await refused(400, "bad_request", "caseId (session id) and stepFile (<name>.md) are required"); return; }
+  const caller = checkCaller(deps, callerSessionId, deps.config.caseSayRoles);
+  if (!caller.ok) { await refused(403, "forbidden_caller", FORBIDDEN_CASE_SAY_MESSAGE, {}, caller.roleId); return; }
+  let result: CaseSayResult;
+  try {
+    result = await deps.hub.caseSay({ caseId, stepFile });
+  } catch (err) {
+    console.error("case-say: failed:", err instanceof Error ? err.message : err);
+    result = { status: 409, reason: "exception" };
+  }
+  const detail: Partial<RoutineAuditEntry> = {
+    ...(result.claudeVersion !== undefined ? { claudeVersion: result.claudeVersion } : {}),
+    ...(result.textSha16 !== undefined ? { textSha16: result.textSha16 } : {}),
+    ...(result.stepSha16 !== undefined ? { stepSha16: result.stepSha16 } : {}),
+  };
+  if (result.status === 200) {
+    await writeAudit(deps, { action: "caseSay", outcome: "ok", callerSessionId, ...(caller.roleId !== undefined ? { roleId: caller.roleId } : {}), caseId, stepFile, ...detail });
+    sendJson(res, 200, { sent: true, caseId, stepFile });
+    return;
+  }
+  const reason = result.reason ?? "refused";
+  await refused(409, reason, `refused: ${reason}`, detail, caller.roleId);
+}
+
 const AGENT_ROUTINE_PATH = /^\/api\/agent\/routines(?:\/([^/]+)(\/enabled)?)?$/;
 const FORBIDDEN_ROUTINE_MESSAGE = "ac-routine is limited to manager role sessions (起動直後は数秒〜数十秒待って再試行)";
 /** 担当が動いている間の書き込みの拒否（設計 ac-hardening S3）。承認の出し方を案内する */
@@ -696,6 +749,10 @@ export function createRequestHandler(deps: AppDeps) {
       // 拡張からの部品の受け取り口。認証の前に通すのはこの完全一致の 1 本だけ（Origin と合言葉で守る）
       if (req.method === "POST" && url.pathname === PICK_INGEST_PATH) {
         await handlePickIngest(deps, req, res);
+        return;
+      }
+      if (url.pathname === CASE_SAY_PATH) {
+        await handleCaseSay(deps, req, res);
         return;
       }
       const agentReservation = AGENT_RESERVATION_PATH.exec(url.pathname);

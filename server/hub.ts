@@ -7,11 +7,15 @@ import { ciOfResponse, fetchPr, isSettled, resolveTarget, type CiState, type PrR
 import { BreakTracker, breakBody, osascriptSender, type NotificationSender } from "./notify.ts";
 import type { SelfResumeEvent, TurnEndEvent } from "./activity.ts";
 import { startPolling } from "./poll.ts";
-import { readCaseClaudeSessionId } from "./case-agents.ts";
-import { descendantPids, readProcessTable } from "./process-tree.ts";
+import { readCaseClaudeSessionId, readCaseStateFile, readStepFileSha16, type CaseStateFile } from "./case-agents.ts";
+import { readLstartSync } from "./case-proxy.ts";
+import { CLAUDE_VERSION_PATTERN } from "./config.ts";
+import { createHash } from "node:crypto";
+import path from "node:path";
+import { descendantPids, readProcessTable, type PsRow } from "./process-tree.ts";
 import type { RelayView } from "./relay.ts";
 import type { RestoreNotice } from "./restore.ts";
-import { SessionConflictError, SessionNotFoundError, type SessionManager, type TerminalNotice } from "./sessions.ts";
+import { SessionConflictError, SessionNotFoundError, type Session, type SessionManager, type TerminalNotice } from "./sessions.ts";
 import { resolveWorkplace } from "./workplace.ts";
 
 export interface SessionView {
@@ -91,6 +95,61 @@ export interface Snapshot {
 }
 
 /** claude agents の定期取得と台帳の定期取得をまとめ、変化があれば購読者へ配信する。 */
+/** case-say（件へ決まった一文を送る）の外の物への入り口。試験で差し替える */
+export interface CaseSayPorts {
+  readLstart(pid: number): string | null;
+  readTable(): Promise<PsRow[]>;
+  fetchAgents(claudeBin: string): Promise<AgentRow[] | null>;
+  sleep(ms: number): Promise<void>;
+}
+
+const defaultCaseSayPorts = (): CaseSayPorts => ({
+  readLstart: readLstartSync,
+  readTable: readProcessTable,
+  fetchAgents,
+  sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+});
+
+/** case-say の結果。200 は送った、409 は断った（reason に理由）。claudeVersion は判定 4b に着いたときだけ（読めなければ空文字） */
+export interface CaseSayResult {
+  status: 200 | 409;
+  reason?: string;
+  claudeVersion?: string;
+  textSha16?: string;
+  stepSha16?: string;
+}
+
+/**
+ * case-say の判定 7。件の本体の状態ファイルが、ちょうど 1 つ読めて、pid が同じで、status がちょうど `idle` で、名前に wait を含むキーが無いこと。
+ * あわせて `claude agents --json` に子孫の pid の行があれば、その行も idle で waitingFor が無いこと（行が無ければ状態ファイルだけで決める）。
+ * 画面のチャットの chatVerdict は使わない（件の本体は agents の行に出ないため、確認待ちでも通してしまう）
+ */
+export function caseSayVerdict(input: { state: CaseStateFile | undefined; pids: ReadonlySet<number>; rows: AgentRow[] | null }): { ok: true } | { ok: false; reason: string } {
+  const { state } = input;
+  if (state === undefined) return { ok: false, reason: "state_file_unreadable" };
+  if (state.pid !== state.filePid) return { ok: false, reason: "state_file_pid_mismatch" };
+  if (state.status !== "idle") return { ok: false, reason: "claude_not_idle" };
+  if (state.waitKeys.length > 0) return { ok: false, reason: "claude_waiting" };
+  if (input.rows === null) return { ok: false, reason: "agents_unavailable" };
+  const row = agentForSession({ exited: false, pids: input.pids }, input.rows);
+  if (row !== undefined && (row.status !== "idle" || row.waitingFor !== undefined)) return { ok: false, reason: "claude_not_idle" };
+  return { ok: true };
+}
+
+/** case-say で送る文。サーバーが組み立てる 1 種類だけ */
+export const caseSayText = (R: string, stepFile: string): string => `${R}/${stepFile} を読み、書いてある手順を順に行ってください。`;
+
+const sha16 = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex").slice(0, 16);
+
+interface CaseSayTarget {
+  session: Session;
+  mainPid: number;
+  paneId: string;
+  CH: string;
+  R: string;
+  claudeVersion: string;
+}
+
 export class Hub {
   private agents: AgentRow[] | null = null;
   private ledger: LedgerSnapshot | null = null;
@@ -110,6 +169,9 @@ export class Hub {
   private relays: RelayView[] = [];
   /** 端末へ書いている最中のセッション id（書き込みの印）。2 回書きの間に別の書き込みが入って入力が連結されるのを防ぐ */
   readonly writing = new Set<string>();
+  /** case-say の止めの印: 貼り付けを書いた後、Enter を送り切らずに終えた窓（件の id → その窓のセッション）。窓が終わる（別のセッションに替わる）・一覧から外すと効かなくなる。消す口は作らない */
+  private readonly caseSayStopped = new Map<string, Session>();
+  private readonly caseSayPorts: CaseSayPorts;
   private picksUnsent = 0;
   private activityRev = 0;
   /** 送信の予約（セッション id → 古い順）。メモリだけ。アプリを再起動すると消える。正本はここ */
@@ -146,8 +208,9 @@ export class Hub {
     private readonly config: Config,
     private readonly sessions: SessionManager,
     sendNotification?: NotificationSender | null,
-    options: { ghTimeoutMs?: number; now?: () => number } = {},
+    options: { ghTimeoutMs?: number; now?: () => number; caseSay?: Partial<CaseSayPorts> } = {},
   ) {
+    this.caseSayPorts = { ...defaultCaseSayPorts(), ...options.caseSay };
     this.ghTimeoutMs = options.ghTimeoutMs;
     this.now = options.now ?? Date.now;
     this.sendNotification = sendNotification !== undefined ? sendNotification : config.notify.macos ? osascriptSender(config.notify.osascriptBin) : null;
@@ -157,6 +220,7 @@ export class Hub {
       this.tracker.forget(id);
       this.pendingRenames.delete(id);
       this.writing.delete(id);
+      this.caseSayStopped.delete(id);
       this.prKeyOfSession.delete(id);
       this.dropChatState(id);
     });
@@ -451,6 +515,94 @@ export class Hub {
       this.endWrite(sessionId);
     }
     return true;
+  }
+
+  /** case-say の判定 4・4b。すべてサーバーのメモリの記録で決める。同期（tmux を 1 回だけ同期で聞く） */
+  private caseSayTarget(caseId: string): ({ ok: true } & CaseSayTarget) | { ok: false; reason: string; claudeVersion?: string } {
+    const session = this.sessions.get(caseId);
+    if (!session || session.exited) return { ok: false, reason: "no_session" };
+    if (this.sessions.isClosing(caseId)) return { ok: false, reason: "closing" };
+    const CH = this.sessions.caseHomeOf(caseId);
+    const R = this.sessions.caseRootOf(caseId);
+    if (CH === undefined || R === undefined) return { ok: false, reason: "not_case_session" };
+    if (session.reattached === true) return { ok: false, reason: "reattached" };
+    const main = this.sessions.caseMainProcesses().get(caseId);
+    if (main === undefined) return { ok: false, reason: "no_main_record" };
+    const lstart = this.caseSayPorts.readLstart(main.pid);
+    if (lstart === null || lstart !== main.lstart) return { ok: false, reason: "main_changed" };
+    const pane = this.sessions.casePaneInfo(caseId);
+    if (pane === null) return { ok: false, reason: "pane_unreadable" };
+    if (pane.panePid !== main.pid || pane.windows !== 1 || pane.panes !== 1) return { ok: false, reason: "pane_changed" };
+    const state = session.term.writeState?.();
+    if (state === undefined || !state.writable || state.pending !== 0) return { ok: false, reason: "terminal_not_ready" };
+    // 4b: 件を開くときに解いた claude の実体の道の最後の名前が版の形で、config の並びにあること
+    const real = this.sessions.caseClaudeRealOf(caseId);
+    const last = real === undefined ? "" : path.basename(real);
+    const claudeVersion = CLAUDE_VERSION_PATTERN.test(last) ? last : "";
+    if (claudeVersion === "" || !this.config.caseSayClaudeVersions.includes(claudeVersion)) return { ok: false, reason: "claude_version_unverified", claudeVersion };
+    return { ok: true, session, mainPid: main.pid, paneId: pane.paneId, CH, R, claudeVersion };
+  }
+
+  /** case-say の判定 7（状態ファイルと agents の取り直し） */
+  private async caseSayState(t: CaseSayTarget): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const [rows, table] = await Promise.all([this.caseSayPorts.fetchAgents(this.config.claudeBin), this.caseSayPorts.readTable().catch(() => null)]);
+    if (table === null) return { ok: false, reason: "process_list_unavailable" };
+    const pids = descendantPids(t.mainPid, table);
+    return caseSayVerdict({ state: readCaseStateFile(t.CH, pids), pids, rows });
+  }
+
+  /**
+   * 件のセッションへ決まった一文を 1 回送る（design §14-10-3 (a) の 4〜9）。1〜3（認証・本文・呼び出し元）は受け口が済ませている。
+   * 外れたら端末へ何も書かずに 409。貼り付けを書いた後に Enter を送り切らずに終えたら、止めの印を付ける（次の呼び出しは 409）
+   */
+  async caseSay(input: { caseId: string; stepFile: string }): Promise<CaseSayResult> {
+    const { caseId, stepFile } = input;
+    const refuse = (reason: string, extra: Partial<CaseSayResult> = {}): CaseSayResult => ({ status: 409, reason, ...extra });
+    // 4 / 4b
+    const target = this.caseSayTarget(caseId);
+    if (!target.ok) return refuse(target.reason, target.claudeVersion !== undefined ? { claudeVersion: target.claudeVersion } : {});
+    const { session, claudeVersion } = target;
+    const base = { claudeVersion };
+    // 5 止めの印
+    if (this.caseSayStopped.get(caseId) === session) return refuse("stopped_after_paste", base);
+    // 6 手順ファイル
+    const stepSha16 = readStepFileSha16(target.R, stepFile);
+    if (stepSha16 === undefined) return refuse("step_file_unusable", base);
+    const text = caseSayText(target.R, stepFile);
+    const hashes = { ...base, textSha16: sha16(text), stepSha16 };
+    // 7 件の状態
+    const state = await this.caseSayState(target);
+    if (!state.ok) return refuse(state.reason, hashes);
+    // 8 書き込みの印
+    if (!this.tryBeginWrite(caseId)) return refuse("write_in_progress", hashes);
+    let pasted = false;
+    let completed = false;
+    try {
+      const term = session.term;
+      if (term.sendToPane === undefined || term.queryPanePid === undefined) return refuse("terminal_not_ready", hashes);
+      // 9 (1) 括弧付きの文を、区画 %N への条件付きの送り方で貼る。ここから先、Enter を送り切らずに終えたら止めの印
+      pasted = true;
+      const paste = await term.sendToPane(target.paneId, target.mainPid, `${BRACKETED_PASTE_START}${text}${BRACKETED_PASTE_END}`);
+      if (!paste.written) return refuse("pane_changed_during_paste", hashes);
+      // (2)
+      await this.caseSayPorts.sleep(this.config.pasteSubmitDelayMs);
+      // (3) 4・7 をもう一度（区画の番号が同じことを含む）
+      const again = this.caseSayTarget(caseId);
+      if (!again.ok || again.session !== session || again.paneId !== target.paneId) return refuse("state_changed_before_enter", hashes);
+      const stateAgain = await this.caseSayState(again);
+      if (!stateAgain.ok) return refuse("state_changed_before_enter", hashes);
+      // (4) Enter（0d）
+      const enter = await term.sendToPane(target.paneId, target.mainPid, "\r");
+      if (!enter.written) return refuse("enter_not_sent", hashes);
+      // (5) 送った後の区画の pid
+      const pid = await term.queryPanePid(target.paneId);
+      if (pid !== target.mainPid) return refuse("enter_not_confirmed", hashes);
+      completed = true;
+      return { status: 200, ...hashes };
+    } finally {
+      if (pasted && !completed) this.caseSayStopped.set(caseId, session);
+      this.endWrite(caseId);
+    }
   }
 
   /** そのセッションの送信の予約（古い順）。画面の写し用 */

@@ -7,8 +7,8 @@ export const ROUTINE_AUDIT_FILE = "routine-audit.jsonl";
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
 
-/** add / update / enable / disable は書き込み。approvalIssued は一時承認の発行。closed / kept は定期実行セッションの自動クローズ（設計 ac-hardening §7）。reserveCreate は予約の作成、reserveCancel は予約の取消、reserveDispatch は予約が時刻になって開くこと。caseProxy は件の受付（case-proxy）の通した・断った1回、caseRoomMacosAccepted は macOS の版の記録（scripts/ac-case-macos.mjs accept） */
-export type RoutineAuditAction = "add" | "update" | "enable" | "disable" | "approvalIssued" | "closed" | "kept" | "reserveCreate" | "reserveCancel" | "reserveDispatch" | "caseProxy" | "caseRoomMacosAccepted";
+/** add / update / enable / disable は書き込み。approvalIssued は一時承認の発行。closed / kept は定期実行セッションの自動クローズ（設計 ac-hardening §7）。reserveCreate は予約の作成、reserveCancel は予約の取消、reserveDispatch は予約が時刻になって開くこと。caseProxy は件の受付（case-proxy）の通した・断った1回、caseRoomMacosAccepted は macOS の版の記録（scripts/ac-case-macos.mjs accept）。caseSay は件のセッションへ決まった一文を送ったこと、caseSayRefused は断ったこと（理由は reason） */
+export type RoutineAuditAction = "add" | "update" | "enable" | "disable" | "approvalIssued" | "closed" | "kept" | "reserveCreate" | "reserveCancel" | "reserveDispatch" | "caseProxy" | "caseRoomMacosAccepted" | "caseSay" | "caseSayRefused";
 
 export interface RoutineAuditEntry {
   at: string;
@@ -47,6 +47,16 @@ export interface RoutineAuditEntry {
   host?: string;
   /** caseProxy: 送り元が件の本体だったか */
   main?: boolean;
+  /** caseSay / caseSayRefused: 宛先の件のセッション id（isSessionId の形のときだけ） */
+  caseId?: string;
+  /** caseSay / caseSayRefused: 手順ファイル名（決まった形のときだけ） */
+  stepFile?: string;
+  /** caseSay / caseSayRefused: 送る文の sha256 の先頭 16 桁（文を組み立てた後だけ） */
+  textSha16?: string;
+  /** caseSay / caseSayRefused: 手順ファイルの中身の sha256 の先頭 16 桁（読めた後だけ） */
+  stepSha16?: string;
+  /** caseSay / caseSayRefused: 件の claude の版。判定 4b より前で断った行には欄が無い。4b 以後は読めた版、版の形でなければ空文字 */
+  claudeVersion?: string;
   /** caseRoomMacosAccepted: 記録した macOS の版（sw_vers -productVersion） */
   productVersion?: string;
 }

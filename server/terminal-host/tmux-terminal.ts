@@ -5,6 +5,8 @@ import {
   classifyHasSession,
   CommandQueue,
   commonArgs,
+  conditionalSendCommands,
+  conditionalWritten,
   ControlParser,
   decodeLine,
   DISPLAY_FORMAT,
@@ -18,13 +20,15 @@ import {
   type ControlEvent,
   type HasSessionResult,
 } from "./tmux-protocol.ts";
-import type { TerminalHandle, TerminalLogger, TmuxContext } from "./types.ts";
+import type { PaneSendResult, TerminalHandle, TerminalLogger, TmuxContext } from "./types.ts";
 
 const MAX_ATTACH_ATTEMPTS = 3;
 const REATTACH_INTERVAL_MS = 500;
 const RELEASE_GRACE_MS = 2000;
 /** つながるまで（つながらない間も）溜めておく入力の上限 */
 const MAX_PENDING_WRITE_BYTES = 64 * 1024;
+/** 条件付きの送りや問い合わせの応答を待つ上限（ms）。超えたら接続を取り直す */
+const EXCHANGE_TIMEOUT_MS = 5000;
 
 export interface TmuxTerminalOptions {
   ctx: TmuxContext;
@@ -39,6 +43,8 @@ export interface TmuxTerminalOptions {
 
 interface Waiter {
   resolve(block: ControlBlock): void;
+  /** 接続を取り直す・捨てるときに、応答が来ないまま待ちが消える場合の後始末 */
+  abort?(): void;
 }
 
 /** 1 本の control client（tmux -C attach）で、tmux の pane 1 つを端末として扱う */
@@ -61,6 +67,8 @@ export class TmuxControlTerminal implements TerminalHandle {
   private attempts = 0;
   private released = false;
   private exited = false;
+  /** 接続を取り直し中（待ち行列を捨てた後、古い接続の応答を読まない）。attach で戻す */
+  private resetting = false;
   private pane = "";
   private readonly interval: number;
 
@@ -91,10 +99,12 @@ export class TmuxControlTerminal implements TerminalHandle {
     if (this.released || this.exited) return;
     this.attempts += 1;
     this.parser = new ControlParser();
+    for (const w of this.queue.drain()) w.abort?.();
     this.queue = new CommandQueue<Waiter>();
     this.decoder = new StringDecoder("utf8");
     this.ready = false;
     this.replaying = false;
+    this.resetting = false;
     const client = spawn(this.opts.ctx.tmux, this.args("-C", "attach-session", "-E", "-t", sessionTarget(this.opts.name)), {
       stdio: ["pipe", "pipe", "pipe"],
       env: this.opts.env,
@@ -129,6 +139,7 @@ export class TmuxControlTerminal implements TerminalHandle {
       return;
     }
     if (ev.kind === "block") {
+      if (this.resetting) return;
       if (!this.ready) {
         this.ready = true;
         this.queue.markSeen(ev.block.num);
@@ -232,6 +243,89 @@ export class TmuxControlTerminal implements TerminalHandle {
       return;
     }
     this.writeNow(data);
+  }
+
+  writeState(): { writable: boolean; pending: number } {
+    const writable = this.ready && !this.replaying && !this.resetting && this.client !== null && !this.exited && !this.released;
+    return { writable, pending: this.pendingWrites.length };
+  }
+
+  /** 待ち行列を捨てて接続を取り直す。残った待ちが次の命令の応答を取らないようにする。待っていた呼び出しは失敗で返す */
+  private resetConnection(): void {
+    this.resetting = true;
+    this.ready = false;
+    this.replaying = false;
+    for (const w of this.queue.drain()) w.abort?.();
+    const client = this.client;
+    if (!client) return;
+    try {
+      client.stdin?.end();
+    } catch {
+      /* すでに閉じている */
+    }
+    try {
+      client.kill();
+    } catch {
+      /* すでに終わっている */
+    }
+  }
+
+  /** 1 命令を送り、応答を count 個待つ。待ちの途中で接続が取り直されたら null。1 つ目が失敗（%error）のときは、残りの応答が来ないことがあるので接続を取り直す */
+  private exchange(line: string, count: number): Promise<ControlBlock[] | null> {
+    return new Promise((resolve) => {
+      const got: ControlBlock[] = [];
+      let done = false;
+      const finish = (result: ControlBlock[] | null): void => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve(result);
+      };
+      const timer = setTimeout(() => {
+        finish(null);
+        this.resetConnection();
+      }, EXCHANGE_TIMEOUT_MS);
+      for (let i = 0; i < count; i++) {
+        this.queue.enqueue({
+          resolve: (b) => {
+            got.push(b);
+            if (!b.ok && got.length < count) {
+              finish(got);
+              this.resetConnection();
+              return;
+            }
+            if (got.length === count) finish(got);
+          },
+          abort: () => finish(null),
+        });
+      }
+      this.client?.stdin?.write(`${line}\n`);
+    });
+  }
+
+  async sendToPane(pane: string, pid: number, data: string): Promise<PaneSendResult> {
+    let commands: string[];
+    try {
+      commands = conditionalSendCommands(pane, pid, data);
+    } catch {
+      return { written: false, reason: "invalid" };
+    }
+    // 1 本ずつ、2 つの応答がそろってから次を送る。どれか 1 本でも「書いた」と読めなければ、そこで止める
+    for (const cmd of commands) {
+      if (!this.writeState().writable) return { written: false, reason: "not_writable" };
+      const blocks = await this.exchange(cmd, 2);
+      if (blocks === null) return { written: false, reason: "no_response" };
+      if (blocks.length < 2 || !conditionalWritten(blocks[0], blocks[1])) return { written: false, reason: "not_written" };
+    }
+    return { written: true };
+  }
+
+  async queryPanePid(pane: string): Promise<number | null> {
+    if (!/^%\d+$/.test(pane) || !this.writeState().writable) return null;
+    const blocks = await this.exchange(`display -p -t ${pane} '#{pane_pid}'`, 1);
+    if (blocks === null || !blocks[0].ok || blocks[0].lines.length !== 1) return null;
+    const pid = Number(blocks[0].lines[0].trim());
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
   }
 
   resize(cols: number, rows: number): void {

@@ -11,8 +11,8 @@ import { readLstartSync, type MainProcess } from "./case-proxy.ts";
 import { CASE_PROXY_PORT, CaseSandboxUnavailableError, caseDirOf, caseNodeHome, casePaths, caseRoomLiteral, removeCaseFiles, resolveClaudeReal, rewriteCaseClaudeJson, writeCaseFiles, writeCaseKeybindings, writeCaseRoom, type CaseParams } from "./case-sandbox.ts";
 import { descendantPids, readProcessTable } from "./process-tree.ts";
 import { RingBuffer } from "./ring-buffer.ts";
-import { sessionName } from "./terminal-host/tmux-protocol.ts";
-import { findTmux, newSession, probeSession, startupSweep, tmuxVersion, tmuxVersionAtLeast } from "./terminal-host/tmux-runner.ts";
+import { paneTarget, sessionName } from "./terminal-host/tmux-protocol.ts";
+import { findTmux, newSession, probeSession, runTmuxSync, startupSweep, tmuxVersion, tmuxVersionAtLeast } from "./terminal-host/tmux-runner.ts";
 import { TmuxControlTerminal } from "./terminal-host/tmux-terminal.ts";
 import { consoleLogger, type TerminalHandle, type TerminalLogger, type TmuxContext } from "./terminal-host/types.ts";
 import path from "node:path";
@@ -215,6 +215,8 @@ export class SessionManager {
   private readonly caseProxyListening: () => boolean;
   /** 件のセッション id → 本体（tmux の pane の pid と開始時刻）。サーバーが起き直したら空から始める（restore で件ごとに引き直す） */
   private readonly caseMain = new Map<string, MainProcess>();
+  /** 件のセッション id → 件を開くときに prepareCaseRoom が解いた claude の実体の道（case-say の判定 4b が版を読む）。窓が終わる・一覧から外すと消す */
+  private readonly caseClaudeReal = new Map<string, string>();
 
   constructor(
     private readonly config: Config,
@@ -286,6 +288,32 @@ export class SessionManager {
   /** 件のセッションの本体の記録の写し（受付と活動の入口が、pid から件を逆引きするために回す） */
   caseMainProcesses(): ReadonlyMap<string, MainProcess> {
     return new Map(this.caseMain);
+  }
+
+  /** 件を開いたときに解いた claude の実体の道（realpath）。件でない・止まった・記録が無いときは undefined */
+  caseClaudeRealOf(id: string): string | undefined {
+    const session = this.sessions.get(id);
+    if (!session || session.exited) return undefined;
+    return this.caseClaudeReal.get(id);
+  }
+
+  /** 件の手順書の置き場 R。生きている件のセッションのときだけ（caseHomeOf と同じ条件） */
+  caseRootOf(id: string): string | undefined {
+    if (this.caseHomeOf(id) === undefined) return undefined;
+    return casePaths({ id, H: this.caseHomeDir, D: this.config.dataDir, tmpRoot: this.caseTmpRoot }).R;
+  }
+
+  /**
+   * 件の窓の今の形を tmux に聞く（case-say の判定 4）。`display -p -t =ac-<id>: '#{pane_id} #{pane_pid} #{session_windows} #{window_panes}'`。
+   * 聞けない・形が違うときは null。同期で 1 回だけ tmux を呼ぶ
+   */
+  casePaneInfo(id: string): { paneId: string; panePid: number; windows: number; panes: number } | null {
+    const ctx = this.tmuxCtx;
+    if (ctx === null || !isSessionId(id)) return null;
+    const r = runTmuxSync(ctx, ["display", "-p", "-t", paneTarget(sessionName(id)), "#{pane_id} #{pane_pid} #{session_windows} #{window_panes}"], this.childEnv());
+    if (r.status !== 0) return null;
+    const m = /^(%\d+) (\d+) (\d+) (\d+)$/.exec(r.stdout.trim());
+    return m === null ? null : { paneId: m[1], panePid: Number(m[2]), windows: Number(m[3]), panes: Number(m[4]) };
   }
 
   /** 件の本体の pid を記録する（pid が 0・開始時刻が引けないときは入れない。受付は断る側） */
@@ -630,6 +658,7 @@ export class SessionManager {
     const beforeNew = room === null ? undefined : (): void => rewriteCaseClaudeJson(room.CH, realOr(cwd));
     const { term, reattached, pid } = this.openTerminal(id, role, cwd, command, { ...extraEnv, ...caseEnv }, knownId === id && isNew !== true, beforeNew);
     if (isCase) this.recordCaseMain(id, pid);
+    if (room !== null) this.caseClaudeReal.set(id, room.claudeReal);
     const session: Session = {
       id,
       name,
@@ -667,6 +696,7 @@ export class SessionManager {
     term.onExit(() => {
       session.exited = true;
       this.caseMain.delete(id);
+      this.caseClaudeReal.delete(id);
       this.cannotAttach.delete(id);
       this.notify();
     });
@@ -736,6 +766,7 @@ export class SessionManager {
     for (const ws of session.clients) ws.close();
     this.sessions.delete(id);
     this.caseMain.delete(id);
+    this.caseClaudeReal.delete(id);
     this.cannotAttach.delete(id);
     for (const l of this.removedListeners) l(id);
     this.notify();
