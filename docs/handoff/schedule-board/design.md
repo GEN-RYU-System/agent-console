@@ -1,6 +1,6 @@
 # 予定画面（開発／秘書）— design
 
-状態: 設計案（Opus 作成 2026-10-30）・独立審査 第1回 REVISE（高4・中6・低4）を第7回で反映・第2回 REVISE（中5・低6）を第8回で反映・第3回 REVISE（中4・低2）を本版（第9回）で反映・再審査待ち・PO 決定待ち1件（§14）・実装未着手。
+状態: 設計（Opus 作成 2026-10-30）・独立審査 第4回 APPROVE（§13）・PO 決定 D1〜D4 済み（§14）・D4 の金型 CalendarView は Sales Anchor main に入った（2026-11-06）・第12回（2026-11-06）で便1の画面を金型 CalendarView に合わせて直した・便1の実装カードは card-bin1.md・実装未着手。
 調査は recon.md（同じフォルダ）。成功条件（１）〜（７）と（８）〜（１２）は PO 承認済み（2026-10-30「1」）で、ここでは変えない。
 
 ## 1 目的（PO の言葉）
@@ -60,7 +60,11 @@
 - 開発側: 同じ時間割の形にする（確定。2026-10-30 PO「1」）。時刻のある項目（締め切り・時刻つきやること・Google の「[開発]」予定・見積もり（§4-8））はブロック。作業の進み具合（作戦ボード doing）・待っている確認・始める時刻の無い見積もりは、時刻が無いので右脇の欄に出す。見積もりの点線・実線の出し方は §4-8。
 - スマホ（（７）、後の便）: 幅が狭いときは「今日」1列だけを出し、「明日」は切り替えで見る。
 - 上部に「最後に読んだ時刻 HH:MM」と「読み直す」ボタン。読めなかったときは Callout（金型）で「Google カレンダーを読めませんでした（理由）」と出し、前回の中身を「HH:MM 時点」と明記して残す。
-- 部品は金型（Tabs/Badge/Button/Callout/EmptyState/Modal）。色・寸法はトークン。文言は全部 t()（ja.json）。
+- 部品は金型（Tabs/Badge/Button/Callout/EmptyState/Modal/TextField/Select/Textarea、時間割と月の升目は CalendarView）。色・寸法はトークン。文言は全部 t()（ja.json）。
+- 時間割（日・週）と月の升目は、金型 `CalendarView`（Sales Anchor frontend/src/components/CalendarView.tsx、`@sa/components/CalendarView` で読む。FullCalendar 6.1.22 を包む。2026-11-06 main に入った）で出す。日＝mode "days"・dayCount 2、週＝mode "days"・dayCount 7・date は月曜、月＝mode "month"。目盛りの 8〜20 時と範囲外の予定に合わせた広げ方・1時間 48px（--schedule-row-height）・いまの線・重なりの横並び・「ほか N 件」は金型がする。予定ごとの色は tone、重なりの赤枠は conflict、点線は line（便2）で渡す。FullCalendar の名前・型・クラス名は agent-console のコードと試験に出さない（金型の決まり）。
+- 種類の色（tone）: やること todo＝personal、返事待ち waiting＝shipping、締め切り deadline＝billing、終わったもの＝holiday（灰）。Google の予定（便3）＝meeting。色は金型のトークン --cal-* が決める。
+- 前へ・次へ・今日のボタン（金型 Button）は日・週・月のすべてに置く（日は1日ずつ、週は7日、月は1か月）。月の升目で日を押すと、その日から2列の「日」表示に移る。
+- 終わったやることは時間割に残し、中に「終わった」の札（Badge）を出す。重なりの数には入れない（§4-6）。消すと消える。
 - 取得: active の間、開いた瞬間に1回、その後 60 秒ごと。表示の範囲を変えたときにも1回。
 
 ### 4-2 開発／秘書の振り分け
@@ -157,7 +161,7 @@ interface ScheduleItem {
 ### 4-6 重なりの赤印（（５））
 - 同じ日の「時刻のある行」（Google の予定＋start/end のあるやること＋始める時刻のある見積もり。開発・秘書の両方を合わせて）で、区間 [start, end) が少しでも重なる2行の両方に赤い印（危険色のトークン）と「重なり: 〇〇」の説明を付ける。end の無いやることは 30 分とみなす。終日の予定・終わったやること・終わった見積もりは数えない。
 - 計算は画面側の純粋な関数 `findOverlaps(rows)`（単体試験しやすくするため）。
-- 時間割での見せ方: 重なる予定は列を左右に分けて並べ（重なりの組ごとに横幅を等分）、両方を赤枠にする。位置の計算も純粋な関数 `layoutDay(rows, startHour)`（上端・高さ・左右の位置を返す）にして単体試験する。
+- 時間割での見せ方: 重なる予定は列を左右に分けて並べ（重なりの組ごとに横幅を等分）、両方を赤枠にする。横並びと位置は金型 CalendarView（FullCalendar）がする。画面側は findOverlaps の結果を events の conflict に渡すだけ。第12回で `layoutDay` は作らないことにした（金型と二重になるため）。横並びは e2e（K7b）で確かめる。
 
 ### 4-7 API
 - 画面用（`/api/` の下・認証あり・変更系は Origin 必須。http.ts:716-727）:
@@ -321,7 +325,7 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 ## 9 受入（基準と検証のしかた）
 | 基準 | 検証方法 |
 |---|---|
-| K1（１）予定タブを開くと、秘書側は時刻の目盛りつきの時間割で今日・明日の2列が出て、各予定が開始時刻の位置に長さどおりのブロックで出る。開発側に切り替えても同じ | e2e: 今日 10:00〜11:00 と明日 15:00〜16:00 の項目を作り、ブロックの上端が 10:00・15:00 の目盛りと同じ高さ（±2px）、高さが 60 分ぶん（±2px）であることを確認。開発側でも同じ。PO 目視（朝に開く） |
+| K1（１）予定タブを開くと、秘書側は時刻の目盛りつきの時間割で今日・明日の2列が出て、各予定が開始時刻の位置に長さどおりのブロックで出る。開発側に切り替えても同じ | e2e（画面の時計を 2026-11-04 水 09:00 日本時間に固定）: 今日 08:00〜09:00・10:00〜11:00・12:00〜14:00 と明日 15:00〜16:00 を作る。(a) 10:00 の上端 − 08:00 の上端 ＝ 96px（±2px） (b) 明日 15:00 の上端 − 今日 10:00 の上端 ＝ 240px（±2px） (c) 120 分の高さ − 60 分の高さ ＝ 48px（±2px） (d) 明日の予定は今日の予定より右。開発側でも同じ。位置は予定どうしの差で測る（FullCalendar の名前を試験に出さないため・第12回）。PO 目視（朝に開く） |
 | K1b 日／週／月を切り替えると、日=2列・週=7列の時間割、月=升目に変わり、どの表示でも同じ予定が同じ日に出る | e2e: 今日 14:00 の予定を作り、3つの表示それぞれで今日の位置に出ることを確認。月表示で日を押すと日表示に移る |
 | K2（２）Google で予定を足してから予定タブを開くと、その予定が出る | 単体: 偽の Google 応答で events.list の引数（timeMin/timeMax/singleEvents/timeZone）を日・週・月の3つで確認（週=月曜0時〜次の月曜0時、月=升目の最初〜最後の翌日）。nextPageToken を4ページたどり5ページ目で止めて truncated=true。PO 目視: Google で予定を足す→タブを開く→出る（60秒以内、または「読み直す」で即時） |
 | K3（２）読めないとき空にせず理由と前回時刻を出す | 単体: 取得失敗・invalid_grant で写しが残り error が返る |
@@ -330,7 +334,7 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 | K5（４）話しかけ欄に「11/6 に〇〇のやることを秘書に足して」→画面に出る | PO 目視（便4の後）。単体: ac-schedule の検査（役割・Origin・上限）。単体: §4-5 の試験 (a)〜(g)（作業フォルダの例外・復元・見分け方・開いている途中） |
 | K6（４）「この面接を来週火曜に入れて」→ Google に入り、画面に出る | PO 目視（便4の後、S0-1 が ○ のとき） |
 | K7（５）重なる2行の両方に赤印、重ならない行には出ない | 単体: findOverlaps（端が接するだけは重なりでない・終日除外・end 無しは30分） |
-| K7b（５）重なる予定が時間割で左右に並び、互いに隠れない | 単体: layoutDay（13:00〜14:15 と 14:00〜15:00 が左右に分かれる・重ならない予定は全幅）。e2e: 2つのブロックの横の範囲が重ならない |
+| K7b（５）重なる予定が時間割で左右に並び、互いに隠れない | e2e: 13:00〜14:15 と 14:00〜15:00 の2つのブロックの横の範囲が重ならず、両方に「重なり」の札が出る。重ならない 16:00〜17:00 には札が出ない（横並びは金型がするので layoutDay の単体試験は無い・第12回） |
 | K10（８）（９）見積もりを打つと時間割に点線の枠、終わりを打つと実線の枠と結果札が出る | e2e: 試験の前に、試験用の dataDir の estimates/log.jsonl へ時刻を決めた行（今日 10:00 始める予定・60分の estimated、10:00 の started、11:35 の done）を書き込んでおく（サーバーは読むたびにファイル全体を読むので、書いた行がそのまま画面に出る。Playwright の偽の時計はサーバーの時刻に効かないので使わない）→ 点線の枠の上端が 10:00・高さ 60 分ぶん（±2px）→ 実線の枠が右隣に出て「1.6倍かかった」。AI 用の口（/api/agent/schedule）を通す確かめは単体（ac-schedule の試験）で行い、e2e では使わない（生きている opus-designer のセッションが要るため）。単体: 結果札の文言（60→75 は「見積もりどおり」、60→76 は「1.3倍かかった」、60→44 は「0.7倍で終わった」、60→45 は「見積もりどおり」、95/60 の丸めは 1.6） |
 | K11（１０）週の数字が記録どおりに出る | 単体: summarizeEstimates — (a) ±25%: 60→75 は以内・76 は外・45 は以内・44 は外 (b) 直した見積もり（60→revise 120→実際 75）は最初の 60 で判定して以内 (c) 締め切り: doneAt=due は間に合った、due+1分は遅れ、due の無い作業は分母に入らない、全部 due 無しは「—」 (d) 真ん中の値: r が [1.0, 1.5, 2.0] で 1.50、[1.0, 1.2, 1.4, 2.0] で 1.30 (e) 週の境目: 日曜 23:59 の done はその週、月曜 00:00（日本時間）の done は次の週 (f) 8週の棒は常に8本、0件の週は「—」 (g) cancelled と終わっていない作業は数えない |
 | K12（１１）（１２）記録が消えず CSV で出る・直した回数が出る | 単体: log.jsonl への追記だけ（既存の行のバイト列が変わらない）・壊れた行を飛ばして残りを読み、飛ばした数を返す・順番違反（started 前の done 等）は 409。単体: CSV の1行目が §4-8 の17列の見出しと一致、行数＝作業の数＋1、BOM 付き。e2e: K10 と同じく、log.jsonl に estimated → revised → revised → started → done の5行を先に書き込み、時間割の枠と当たり具合の表に「直した 2回」、CSV の revisions 列が 2 |
@@ -343,7 +347,7 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 
 ## 11 維持の仕組み
 - 正本: やることは schedule.json（書き手はサーバーだけ）、予定は Google カレンダー（アプリは写しだけ）、見積もりと実際は estimates/log.jsonl（追記だけ・書き手はサーバーだけ）。
-- 試験: tests/unit（schedule-store / google-calendar / google-oauth-callback / keychain-write / find-overlaps / layout-day / estimate-log / summarize-estimates / board-complement / estimates-csv / ac-schedule / launch-extra-cwd / restore-assistant / assistant-session）と tests/e2e/schedule.spec.ts を CI が毎回回す。
+- 試験: tests/unit（schedule-store / google-calendar / google-oauth-callback / keychain-write / find-overlaps / estimate-log / summarize-estimates / board-complement / estimates-csv / ac-schedule / launch-extra-cwd / restore-assistant / assistant-session）と tests/e2e/schedule.spec.ts を CI が毎回回す。
 - e2e を CI で動かすために: playwright.config.ts の app の testMatch（今は console|activity|chat|reservations|relay|terminal-wheel|pc-meter|file-link だけ）に schedule を足す。dataDir 直下の一覧を完全一致で比べている tests/e2e/console.spec.ts:769 には、起動時に必ずできる schedule-assistant だけを足す。schedule.json（最初にやることを書いたときに作る）と estimates/（最初に見積もりか補完の行を書いたときに作る）は起動時に作らないので、除外の側（activity・boards と同じ）に足す。
 - 決まりの置き場: README に「予定」節（使い方・AI の命令・鍵の登録・つなぎ直し・見積もりの打ち方と数え方）。予定係の決まりはアプリが写す CLAUDE.md（正本はリポジトリの hooks/ 横に置く）。
 
@@ -366,6 +370,8 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 - 第9回（同日、第3回の反映）: R3-M1→§4-5 再起動では予定係も戻し番号を覚え直す（飛ばすと tmux に残るため）。R3-M2→slotKey は jstSlot(new Date()).key。R3-M3→§4-5 開いている途中の待ち行列・失敗時の画面・202 と assistant.state・試験 (g)。R3-M4→console.spec.ts:769 は schedule-assistant だけ一覧へ、schedule.json・estimates は除外へ。R3-L1→§4-5 監査の名前2つ・欄・拒否も書く。R3-L2→K5 を (a)〜(g) に。
 - 第11回（同日、実装前の実物照合 §15）: ボードの写し board-seen.json を取りやめ（二重持ちのため）・1時間の高さをトークン --schedule-row-height に・設定の置き場を config.json の schedule に・金型に無い部品を D4 として PO に聞く。
 - 独立審査 第4回（同日、全文 /tmp/CC報告ファイル/schedule-board/review-pr92-r4.md）: APPROVE。6件すべて〇・重大な新しい指摘なし。合否に関係しない気付き3つ（開けなかったときのセッションを閉じる・復元が2つのとき createdAt で選ぶ・§4-7 に 202/429/409 と assistant を書く）と行番号1か所を第10回で反映。
+
+- 第12回（2026-11-06、金型 CalendarView が main に入ったのを受けて・Opus）: §4-1 に金型の使い方・種類の色・送るボタン・終わった札を足した。§4-6 の layoutDay を取りやめ（金型と二重）、K1 を予定どうしの差で測る形に、K7b を e2e だけに直した。§15-1 に未確認4点の結果を書いた。便1の実装カード card-bin1.md を作った。
 
 ## 14 PO の決定
 - D1: Google カレンダーをアプリに読ませるための、Google 側の初回設定（PO の手作業・約15分・Google の管理画面での操作）を行うか。→ 行う（2026-10-30 PO「1」）。手順は Opus が画面ごとに案内する。
@@ -417,6 +423,9 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
     | 配る JS の大きさ（gzip） | 120,514 B | 124,869 B（ほかに CSS 5,807 B） |
   - 判断（Opus 推奨・PO 未承認）: FullCalendar v6 を包んだ金型を salesanchor components/ に登録して使う。理由: 既に依存に入っている／回避策なしで要る形が全部出た／いまの線が無料の標準機能で変数で色を替えられる／中身を React で差し替えられる。
   - 残る未確認: v7 に上げるか（最新 v7.1.3、v7 の色の変数の仕組みは見ていない）、1時間の高さを --schedule-row-height だけで決める方法（今はセレクタ指定で 49px）、影の rgba 7種をトークンに寄せる方法、実機のスマホ幅。これらは金型を作る設計で確かめる。
+  - 結果（2026-11-06、Sales Anchor の金型 CalendarView が main に入った・設計は Sales Anchor docs/handoff/calendar-view-component/design.md、ADR-1065）: 版は 6.1.22 に固定（v7 にはしない）。1時間の行の間隔は評価役の実測で 11組とも 48px。影と変数を通らない色は金型の CSS でトークンに置き換えた（--fc-* 28個・影は --shadow-xs ほか）。スマホ幅は agent-console のスマホ化（後の便）で確かめる。
+  - 金型の受け口（calendarView.utils.ts の CalendarViewProps）: mode（"days" | "month"）・date・dayCount（1〜7）・events（id・title・start・end・allDay・tone・line・conflict）・startHour・endHour・monthMaxEvents・renderEventContent・onEventClick・onDayClick・ariaLabel・className。
+  - agent-console に足す依存: @fullcalendar/core・daygrid・react・timegrid を 6.1.22 ちょうどで（金型の import 先。@sa の写しは agent-console の node_modules から読むため）。
 
 ### 15-2 データの置き場（事実と決定）
 - やること schedule.json、見積もり estimates/log.jsonl、Google の予定はメモリの写しだけ（ファイルに残さない）。それぞれ書き手はサーバーだけ。
