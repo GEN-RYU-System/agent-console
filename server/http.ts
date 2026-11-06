@@ -33,6 +33,7 @@ import { RoutineLimitError, validateReason, type RoutineService } from "./routin
 import { ScheduleConflictError, type ScheduleGate, type SchedulePreview } from "./schedule-gate.ts";
 import { RoutineAudit, type RoutineAuditAction, type RoutineAuditEntry } from "./routine-audit.ts";
 import { resolveRunAt, type ReservationService } from "./reservations.ts";
+import { checkScheduleDate, type ScheduleItemService } from "./schedule-items.ts";
 import type { RelayManager } from "./relay.ts";
 import type { ReserveAccess } from "./reserve-token.ts";
 import { disabledIntakeStatus, type DiscordIntakeStatus } from "./discord-intake.ts";
@@ -74,6 +75,8 @@ export interface AppDeps {
   routines: RoutineService;
   /** 予約（日時を指定して 1 回送る）。正本は dataDir/reservations.json */
   reservations: ReservationService;
+  /** 予定のやること（開発／秘書）。正本は dataDir/schedule.json。deps.schedule（ScheduleGate）とは別 */
+  scheduleItems: ScheduleItemService;
   /** 1時間の関門。画面には preview で重なりを見せるだけ（止めない） */
   schedule: ScheduleGate;
   /** 引き継ぎ（今のセッションに引き継ぎ書を書かせ、次のセッションへ渡す）。進行はメモリだけ */
@@ -174,6 +177,17 @@ function schedulePreview(gate: ScheduleGate, q: URLSearchParams): SchedulePrevie
   return gate.previewRoutine({ ...(excludeId !== null ? { id: excludeId } : {}), name: "", weekdays, timeHHmm: time }, Date.now());
 }
 
+const SCHEDULE_MAX_SPAN_DAYS = 42;
+
+/** GET /api/schedule の from・to の検査。形・存在・順序・42日以内。誤りは SessionInputError で 400 */
+function scheduleRange(q: URLSearchParams): { from: string; to: string } {
+  const from = checkScheduleDate(q.get("from"));
+  const to = checkScheduleDate(q.get("to"));
+  const days = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000 + 1;
+  if (days < 1 || days > SCHEDULE_MAX_SPAN_DAYS) throw new SessionInputError("schedule range invalid");
+  return { from, to };
+}
+
 async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerResponse, url: URL, authKind: AuthMethod): Promise<void> {
   const { sessions, hub, config, meta } = deps;
   if (await handleRoutineApproval(deps, req, res, url, authKind)) return;
@@ -224,6 +238,11 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   if (routineMatch && req.method === "PUT") { sendJson(res, 200, await deps.routines.update(routineMatch[1], jsonBody(await readJsonBody(req)) as never)); return; }
   if (routineEnabledMatch && req.method === "POST") { sendJson(res, 200, await deps.routines.setEnabled(routineEnabledMatch[1], jsonBody(await readJsonBody(req)).enabled)); return; }
   if (req.method === "GET" && url.pathname === "/api/reservations") { sendJson(res, 200, { items: await deps.reservations.listReady() }); return; }
+  if (req.method === "GET" && url.pathname === "/api/schedule") { const { from, to } = scheduleRange(url.searchParams); sendJson(res, 200, { items: await deps.scheduleItems.list(from, to) }); return; }
+  const scheduleItemMatch = /^\/api\/schedule\/items(?:\/([^/]+))?$/.exec(url.pathname);
+  if (scheduleItemMatch && !scheduleItemMatch[1] && req.method === "POST") { sendJson(res, 201, await deps.scheduleItems.create(jsonBody(await readJsonBody(req)), "ui")); return; }
+  if (scheduleItemMatch && scheduleItemMatch[1] && req.method === "PATCH") { sendJson(res, 200, await deps.scheduleItems.update(safeDecode(scheduleItemMatch[1]), jsonBody(await readJsonBody(req)))); return; }
+  if (scheduleItemMatch && scheduleItemMatch[1] && req.method === "DELETE") { await deps.scheduleItems.remove(safeDecode(scheduleItemMatch[1])); sendJson(res, 200, { ok: true }); return; }
   if (req.method === "GET" && url.pathname === "/api/schedule/preview") { sendJson(res, 200, schedulePreview(deps.schedule, url.searchParams)); return; }
   if (req.method === "GET" && url.pathname === "/api/discord-intake/status") { sendJson(res, 200, deps.discordIntake?.status() ?? disabledIntakeStatus()); return; }
   if (req.method === "POST" && url.pathname === "/api/reservations") { sendJson(res, 201, await deps.reservations.create(uiReservationInput(jsonBody(await readJsonBody(req))), "ui", { callerSessionId: null })); return; }
