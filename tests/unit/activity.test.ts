@@ -2,7 +2,11 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ActivityStore, FILES_KEEP, RUNNING_MAX_AGE_MS } from "../../server/activity.ts";
+import { ActivityStore, FILES_KEEP, RUNNING_MAX_AGE_MS, promptKey } from "../../server/activity.ts";
+import * as hookModule from "../../hooks/activity-hook.mjs";
+
+// activity-hook.d.mts は触らない対象なので、型は試験の中で付ける
+const hookPromptKey = (hookModule as unknown as { promptKey: (value: unknown) => string }).promptKey;
 
 const SID = "11111111-2222-4333-8444-555555555555";
 const OTHER = "99999999-2222-4333-8444-555555555555";
@@ -627,5 +631,138 @@ describe("file-viewer §3-3: セッションが書いたファイル", () => {
       expect((await store.refresh()).applied).toBe(0);
       expect(store.files(SID)).toHaveLength(3);
     });
+  });
+});
+
+describe("onTurnEnd (unread-on-reply K8/K13)", () => {
+  const stopRec = (ts: number, over: Rec = {}): Rec => rec({ event: "Stop", ts, last_assistant_message: "done", ...over });
+  const collect = (s: ActivityStore): Array<{ claudeSessionId: string; ts: number; failed: boolean; stopHookActive: boolean; pendingSelfResume: boolean | null }> => {
+    const got: Array<{ claudeSessionId: string; ts: number; failed: boolean; stopHookActive: boolean; pendingSelfResume: boolean | null }> = [];
+    s.onTurnEnd((e) => got.push(e));
+    return got;
+  };
+
+  it("fires for Stop after the store started, carrying the Claude session id and stop_hook_active", async () => {
+    const got = collect(store);
+    write([stopRec(nowMs + 1000), stopRec(nowMs + 2000, { stop_hook_active: true })]);
+    await store.refresh();
+    expect(got).toEqual([
+      { claudeSessionId: SID, ts: nowMs + 1000, failed: false, stopHookActive: false, pendingSelfResume: null },
+      { claudeSessionId: SID, ts: nowMs + 2000, failed: false, stopHookActive: true, pendingSelfResume: null },
+    ]);
+  });
+
+  it("fires for StopFailure with failed = true", async () => {
+    const got = collect(store);
+    write([rec({ event: "StopFailure", ts: nowMs + 1000, error: "rate_limit" })]);
+    await store.refresh();
+    expect(got).toEqual([{ claudeSessionId: SID, ts: nowMs + 1000, failed: true, stopHookActive: false, pendingSelfResume: null }]);
+  });
+
+  it("K8: does not fire for a Stop older than the store's start", async () => {
+    const got = collect(store);
+    write([stopRec(nowMs - 1000)]);
+    await store.refresh();
+    expect(got).toEqual([]);
+  });
+
+  it("K8: re-reading the same Stop line after the file shrinks fires only once", async () => {
+    const got = collect(store);
+    const file = path.join(actDir, dayName(T0));
+    write([stopRec(nowMs + 1000)]);
+    await store.refresh();
+    expect(got).toHaveLength(1);
+    truncateSync(file, 0);
+    write([stopRec(nowMs + 1000)]);
+    await store.refresh();
+    expect(got).toHaveLength(1);
+  });
+
+  it("keeps at most 500 timestamps per conversation, dropping the oldest", async () => {
+    const got = collect(store);
+    write(Array.from({ length: 501 }, (_, i) => stopRec(nowMs + 1000 + i)));
+    await store.refresh();
+    expect(got).toHaveLength(501);
+    // the oldest (nowMs + 1000) was forgotten, so it fires again; the newest is still remembered
+    write([stopRec(nowMs + 1000), stopRec(nowMs + 1500)]);
+    await store.refresh();
+    expect(got).toHaveLength(502);
+    expect(got[501]?.ts).toBe(nowMs + 1000);
+  });
+});
+
+describe("pendingSelfResume and onSelfResume (unread-ball-with-po)", () => {
+  const stopRec = (ts: number, over: Rec = {}): Rec => rec({ event: "Stop", ts, last_assistant_message: "done", ...over });
+  const promptRec = (ts: number, prompt: string, over: Rec = {}): Rec => rec({ event: "UserPromptSubmit", ts, prompt, ...over });
+
+  it("pendingSelfResume: null without both fields; true with bg_tasks or crons_once >= 1; false otherwise", async () => {
+    const got: Array<boolean | null> = [];
+    store.onTurnEnd((e) => got.push(e.pendingSelfResume));
+    write([
+      stopRec(nowMs + 1),
+      stopRec(nowMs + 2, { bg_tasks: 1 }),
+      stopRec(nowMs + 3, { crons_once: 2 }),
+      stopRec(nowMs + 4, { bg_tasks: 0, crons_once: 0, crons_repeat: 3 }),
+      stopRec(nowMs + 5, { bg_tasks: 0 }),
+      stopRec(nowMs + 6, { crons_once: 0 }),
+    ]);
+    await store.refresh();
+    expect(got).toEqual([null, true, true, false, false, false]);
+  });
+
+  it("fires onSelfResume for agent-message / task-notification / cross-session-message / Autonomous loop prompts and source=agent", async () => {
+    const got: number[] = [];
+    store.onSelfResume((e) => got.push(e.ts));
+    write([
+      promptRec(nowMs + 1, "<agent-message x>done"),
+      promptRec(nowMs + 2, "  <task-notification>x"),
+      promptRec(nowMs + 3, "<cross-session-message from=a>"),
+      promptRec(nowMs + 4, "# Autonomous loop\nnext"),
+      promptRec(nowMs + 5, "hello", { source: "agent" }),
+      promptRec(nowMs + 6, "ordinary question"),
+    ]);
+    await store.refresh();
+    expect(got).toEqual([nowMs + 1, nowMs + 2, nowMs + 3, nowMs + 4, nowMs + 5]);
+  });
+
+  it("fires only once for the same ts, and not for a record older than the start", async () => {
+    const got: number[] = [];
+    store.onSelfResume((e) => got.push(e.ts));
+    write([promptRec(nowMs - 1000, "<task-notification>old"), promptRec(nowMs + 1, "<task-notification>a")]);
+    await store.refresh();
+    write([promptRec(nowMs + 1, "<task-notification>a")]);
+    await store.refresh();
+    expect(got).toEqual([nowMs + 1]);
+  });
+
+  it("matches a prompt against the hashes of the last Stop (once and repeat), and an old Stop's hashes are replaced", async () => {
+    const got: number[] = [];
+    store.onSelfResume((e) => got.push(e.ts));
+    write([
+      stopRec(nowMs + 1, { cron_once_hashes: [promptKey("wake up and check")], cron_repeat_hashes: [promptKey("every five")] }),
+      promptRec(nowMs + 2, "wake up and check"),
+      promptRec(nowMs + 3, "every five"),
+      promptRec(nowMs + 4, "unrelated"),
+      stopRec(nowMs + 5, {}),
+      promptRec(nowMs + 6, "wake up and check"),
+    ]);
+    await store.refresh();
+    expect(got).toEqual([nowMs + 2, nowMs + 3]);
+  });
+
+  it("still shows a self-resume prompt text rules unchanged: agent-message stays out of chat, a hash-matched prompt is a normal input", async () => {
+    write([stopRec(nowMs + 1, { cron_once_hashes: [promptKey("scheduled text")] }), promptRec(nowMs + 2, "scheduled text"), promptRec(nowMs + 3, "<agent-message>r")]);
+    await store.refresh();
+    const users = store.chat(SID).items.filter((c) => c.role === "user").map((c) => c.text);
+    expect(users).toEqual(["scheduled text"]);
+  });
+
+  it("promptKey: the hook and the server give the same value for the same text (truncated schedule text included)", () => {
+    const long = "あ".repeat(1500) + "\r\u001b";
+    const truncated = `${"あ".repeat(1000)}… [+500 chars]`;
+    for (const s of ["plain", "multi\nline\ttab", long, "😀".repeat(300)]) expect(promptKey(s)).toBe(hookPromptKey(s));
+    expect(promptKey(truncated)).toBe(promptKey("あ".repeat(1000) + "x".repeat(500)));
+    expect(promptKey(truncated)).toBe(hookPromptKey(truncated));
+    expect(promptKey("a")).toMatch(/^[0-9a-f]{16}$/);
   });
 });

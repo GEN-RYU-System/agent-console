@@ -239,15 +239,15 @@ export const CASE_PROTECTED_WRITE = (p: Pick<CaseParams, "W" | "R" | "CH">): str
     ...PROTECTED_BARE.map((n) => `^${reesc(X)}/${cip(n)}(/.*)?$`),
   ]);
 
-/** case-home の中で本体が書く記録（§4-2 (A)）。置き場6つ（subpath）と、ファイル2つ（literal） */
+/** case-home の中で本体が書く記録（§4-2 (A)）。置き場6つ（subpath）と、ファイル4つ（literal） */
 const CH_RECORD_DIRS = ["projects", "sessions", "session-env", "shell-snapshots", "tasks", "teams"];
-const CH_RECORD_FILES = [".last-cleanup", ".claude.json", "history.jsonl"];
+const CH_RECORD_FILES = [".last-cleanup", ".claude.json", "history.jsonl", "history.jsonl.lock"];
 /** `.claude.json` の書き直しの仲間（(C)）。ロックの literal と、一時の名前 `.claude.json.tmp.<pid>.<16進12桁>` の正規表現。Seatbelt の正規表現は `{n}` を受けないので 12 桁は並べて書く */
 const CH_CLAUDE_JSON_COMPANIONS = [".claude.json.lock"];
 const chClaudeJsonTmp = (CH: string): string => `^${reesc(CH)}/\\.claude\\.json\\.tmp\\.[0-9]+\\.${"[0-9a-f]".repeat(12)}$`;
 /** case-home の中の設定として読み戻される名前（§4-2 (B)）。書き込みの拒否と作成・削除の塞ぎに入れる */
 const chSettingNames = (CH: string): string[] => [
-  `^${reesc(CH)}/(remote-settings\\.json|remote-settings\\.json\\.synced-at|plugins|backups|settings\\.json|agents|hooks|commands|skills|CLAUDE\\.md)(/.*)?$`,
+  `^${reesc(CH)}/(remote-settings\\.json|remote-settings\\.json\\.synced-at|plugins|backups|settings\\.json|keybindings\\.json|agents|hooks|commands|skills|CLAUDE\\.md)(/.*)?$`,
   `^${reesc(CH)}/policy-limits[^/]*\\.json$`,
 ];
 
@@ -417,6 +417,15 @@ export function rewriteCaseClaudeJson(CH: string, W: string): void {
     writeAtomicSync(file, JSON.stringify(next, null, 2) + "\n");
   } catch {
     throw new CaseSandboxUnavailableError("sandbox unavailable: claude.json could not be rewritten");
+  }
+}
+
+/** CH/keybindings.json に Shift+Tab（計画の形などへの切り替え）を外す割り当てを書く（同期）。書けなければ CaseSandboxUnavailableError */
+export function writeCaseKeybindings(CH: string): void {
+  try {
+    writeAtomicSync(path.join(CH, "keybindings.json"), JSON.stringify({ bindings: [{ context: "Chat", bindings: { "shift+tab": null } }] }, null, 2) + "\n");
+  } catch {
+    throw new CaseSandboxUnavailableError("sandbox unavailable: keybindings not writable");
   }
 }
 

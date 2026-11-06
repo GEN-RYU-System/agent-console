@@ -2,6 +2,7 @@
 // 標準入力の JSON から決めた項目だけを、dataDir/activity/events-YYYYMMDD.jsonl に 1 行で追記する。
 // どんな失敗でも終了コード 0 で終わり、何も出力しない（Claude を止めない）。node の標準の部品だけを使う。
 // この本体は、サーバーが起動のたびに dataDir/hooks/activity-hook.mjs へ写す。dataDir は、この写しの 2 つ上のフォルダ。
+import { createHash } from "node:crypto";
 import { chmodSync, closeSync, fchmodSync, mkdirSync, openSync, readFileSync, realpathSync, writeSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,6 +40,44 @@ const TEXT_CONTROL_CHARS = /[\u0000-\u0008\u000b-\u001f\u007f]/g;
 /** 全文用の整形。文字列でなければ空。改行とタブは残す（右の欄の短い項目は clip() を使う） */
 function fullText(value) {
   return typeof value === "string" ? value.replace(TEXT_CONTROL_CHARS, "") : "";
+}
+
+/** 予定の文と再開の文の突き合わせの鍵（design §4-6。server/activity.ts の promptKey と同じ式）。全文の整形のあと、末尾の「… [+N chars]」を外し、先頭 200 文字の sha256 の先頭 16 桁 */
+export function promptKey(value) {
+  const body = fullText(value).replace(/… \[\+\d+ chars\]$/, "");
+  return createHash("sha256").update(Array.from(body).slice(0, 200).join(""), "utf8").digest("hex").slice(0, 16);
+}
+
+const BG_TYPES = new Set(["shell", "subagent", "monitor", "workflow", "teammate", "cloud session", "MCP task"]);
+/** ハッシュの上限（一度きり＋繰り返しの合計） */
+const CRON_HASHES_MAX = 20;
+
+/**
+ * Stop の入力の background_tasks・session_crons から、数とハッシュだけを足した記録を返す（design §3）。
+ * 欄が無い・配列でないときはその欄の分を足さない。説明文・コマンド・prompt の文字は残さない。
+ */
+function withPendingFields(base, input) {
+  let rec = base;
+  if (Array.isArray(input.background_tasks)) {
+    const types = {};
+    for (const task of input.background_tasks) {
+      const type = isObject(task) && typeof task.type === "string" && BG_TYPES.has(task.type) ? task.type : "other";
+      types[type] = (types[type] ?? 0) + 1;
+    }
+    rec = { ...rec, bg_tasks: input.background_tasks.length, bg_types: types };
+  }
+  if (Array.isArray(input.session_crons)) {
+    const once = [];
+    const repeat = [];
+    for (const cron of input.session_crons) {
+      const c = isObject(cron) ? cron : {};
+      (c.recurring === true ? repeat : once).push(promptKey(c.prompt));
+    }
+    const repeatKept = repeat.slice(0, CRON_HASHES_MAX);
+    const onceKept = repeat.length > CRON_HASHES_MAX ? [] : once.slice(0, CRON_HASHES_MAX - repeatKept.length);
+    rec = { ...rec, crons_once: once.length, crons_repeat: repeat.length, cron_once_hashes: onceKept, cron_repeat_hashes: repeatKept };
+  }
+  return rec;
 }
 
 /**
@@ -172,7 +211,8 @@ export function buildRecord(input, now = Date.now()) {
     }
     case "Stop": {
       // 1 回の返事の最後の本文（途中の文章は含まれない。工程0 (a)）。1 回の入力に Stop が何回か来ることがある
-      const base = typeof input.stop_hook_active === "boolean" ? { ...common, stop_hook_active: input.stop_hook_active } : common;
+      const active = typeof input.stop_hook_active === "boolean" ? { ...common, stop_hook_active: input.stop_hook_active } : common;
+      const base = withPendingFields(active, input);
       const text = fullText(input.last_assistant_message);
       return text === "" ? base : withFullText(base, "last_assistant_message", text);
     }

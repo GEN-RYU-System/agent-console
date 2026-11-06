@@ -52,7 +52,7 @@ const makeHub = (sessions: unknown, verdicts: Verdict[] | (() => Verdict)) => {
   return hub;
 };
 
-const setup = async (opts: { verdicts?: Verdict[] | (() => Verdict); routines?: Partial<Routine>[]; capacity?: boolean; saveFails?: boolean } = {}) => {
+const setup = async (opts: { verdicts?: Verdict[] | (() => Verdict); routines?: Partial<Routine>[]; capacity?: boolean; saveFails?: boolean; timing?: Partial<typeof TIMING> } = {}) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "ac-routine-"));
   const created: { id: string; exited: boolean }[] = [];
   const sessions = {
@@ -67,7 +67,7 @@ const setup = async (opts: { verdicts?: Verdict[] | (() => Verdict); routines?: 
   const hub = makeHub(sessions, opts.verdicts ?? [{ ok: true, hasClaude: true }]);
   const store = new RoutineStore(dir);
   if (opts.saveFails) vi.spyOn(store, "save").mockRejectedValue(new Error("disk"));
-  const service = new RoutineService(cfg as never, sessions as never, hub as never, store, NOW, TIMING);
+  const service = new RoutineService(cfg as never, sessions as never, hub as never, store, NOW, { ...TIMING, ...opts.timing });
   (service as unknown as { routines: Routine[] }).routines = (opts.routines ?? [{}]).map((o, i) => routine({ id: `r${i + 1}`, cwd: os.tmpdir(), ...o }));
   return { service, sessions, hub, dir, store, created };
 };
@@ -152,7 +152,8 @@ describe("routine dispatch opens a new session", () => {
   });
 
   it("sends the name first, waits for the matching display name, then sends the prompt (v0.29.0)", async () => {
-    const { service, sessions, hub } = await setup();
+    // 2 回目の確かめで一致する試験。混んだ機械で 5ms の休みが延びても時間切れにしない。一致した時点で戻るので遅くならない。vitest の既定の 5 秒より短くし、一致しない不具合は下の確かめで落ちるようにする
+    const { service, sessions, hub } = await setup({ timing: { nameTimeoutMs: 2000 } });
     const log: string[] = [];
     let polls = 0;
     (hub as Record<string, unknown>).sendName = vi.fn((_id: string, n: string) => { log.push(`rename:${n}`); return true; });

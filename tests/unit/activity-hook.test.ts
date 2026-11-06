@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_LINE_BYTES, POST_MAX_BYTES, activityFileName, appendRecord, buildRecord, postActivity, postUrlOf, run } from "../../hooks/activity-hook.mjs";
+import * as hookModule from "../../hooks/activity-hook.mjs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -40,6 +41,9 @@ function runHook(hook: string, stdin: string): { status: number | null; stdout: 
 }
 
 const lines = (file: string): string[] => readFileSync(file, "utf8").split("\n").filter((l) => l !== "");
+
+// activity-hook.d.mts は触らない対象なので、型は試験の中で付ける
+const promptKey = (hookModule as unknown as { promptKey: (value: unknown) => string }).promptKey;
 
 describe("K5 / §3-2: buildRecord は決めた項目と長さだけを残す", () => {
   it("P1: PermissionDenied(Agent) は common と tool・tool_use_id だけを残す。reason・tool_input は残さない", () => {
@@ -131,9 +135,56 @@ describe("K5 / §3-2: buildRecord は決めた項目と長さだけを残す", (
     expect(rec?.prompt).toBe("a\nb\tcdef");
   });
 
+  it("K3 Stop: 欄あり → 数とハッシュだけを書き、説明文・コマンド・prompt は書かない", () => {
+    const secretPrompt = "秘密の予定の文 SECRET-PROMPT";
+    const rec = buildRecord(
+      {
+        session_id: SID,
+        hook_event_name: "Stop",
+        stop_hook_active: false,
+        background_tasks: [
+          { id: "a", type: "shell", status: "running", description: "SECRET-DESC", command: "SECRET-CMD" },
+          { id: "b", type: "subagent", status: "running" },
+          { id: "c", type: "shell", status: "running" },
+          { id: "d", type: "mystery" },
+        ],
+        session_crons: [
+          { id: "x", schedule: "*/5 * * * *", recurring: false, prompt: secretPrompt },
+          { id: "y", schedule: "*/5 * * * *", recurring: true, prompt: "繰り返しの文" },
+        ],
+      },
+      NOW,
+    );
+    expect(rec).toMatchObject({ bg_tasks: 4, bg_types: { shell: 2, subagent: 1, other: 1 }, crons_once: 1, crons_repeat: 1, cron_once_hashes: [promptKey(secretPrompt)], cron_repeat_hashes: [promptKey("繰り返しの文")] });
+    const line = JSON.stringify(rec);
+    for (const leak of ["SECRET-DESC", "SECRET-CMD", "SECRET-PROMPT", "繰り返しの文"]) expect(line).not.toContain(leak);
+  });
+
+  it("K3 Stop: 欄なし・配列でないときは何も足さない", () => {
+    const none = buildRecord({ session_id: SID, hook_event_name: "Stop", stop_hook_active: false }, NOW);
+    expect(none).toEqual({ ts: NOW, event: "Stop", session_id: SID, stop_hook_active: false });
+    const bad = buildRecord({ session_id: SID, hook_event_name: "Stop", stop_hook_active: false, background_tasks: "x", session_crons: { a: 1 } }, NOW);
+    expect(bad).toEqual({ ts: NOW, event: "Stop", session_id: SID, stop_hook_active: false });
+    const onlyBg = buildRecord({ session_id: SID, hook_event_name: "Stop", background_tasks: [] }, NOW);
+    expect(onlyBg).toMatchObject({ bg_tasks: 0, bg_types: {} });
+    expect(onlyBg).not.toHaveProperty("crons_once");
+  });
+
+  it("K3 Stop: ハッシュは繰り返しを先に20個まで残す。繰り返しだけで20個を超えたら一度きりは空", () => {
+    const crons = (n: number, recurring: boolean): unknown[] => Array.from({ length: n }, (_, i) => ({ recurring, prompt: `${recurring ? "r" : "o"}${i}` }));
+    const mixed = buildRecord({ session_id: SID, hook_event_name: "Stop", session_crons: [...crons(15, false), ...crons(10, true)] }, NOW);
+    expect(mixed).toMatchObject({ crons_once: 15, crons_repeat: 10 });
+    expect((mixed?.cron_repeat_hashes as string[]).length).toBe(10);
+    expect((mixed?.cron_once_hashes as string[]).length).toBe(10);
+    const many = buildRecord({ session_id: SID, hook_event_name: "Stop", session_crons: [...crons(3, false), ...crons(25, true)] }, NOW);
+    expect((many?.cron_repeat_hashes as string[]).length).toBe(20);
+    expect(many?.cron_once_hashes).toEqual([]);
+    expect(many).toMatchObject({ crons_once: 3, crons_repeat: 25 });
+  });
+
   it("K8 Stop: last_assistant_message を全文で残す。stop_hook_active は真偽のときだけ残す。空なら本文の項目ごと無い", () => {
     const text = `返事の1行目\n\n- 箇条書き\n\`\`\`ts\nconst a = 1;\n\`\`\`\n${"あ".repeat(500)}`;
-    const rec = buildRecord({ session_id: SID, hook_event_name: "Stop", stop_hook_active: false, last_assistant_message: text, background_tasks: [], session_crons: [] }, NOW);
+    const rec = buildRecord({ session_id: SID, hook_event_name: "Stop", stop_hook_active: false, last_assistant_message: text }, NOW);
     expect(rec).toEqual({ ts: NOW, event: "Stop", session_id: SID, stop_hook_active: false, last_assistant_message: text });
     expect(buildRecord({ session_id: SID, hook_event_name: "Stop", stop_hook_active: true, last_assistant_message: "x" }, NOW)).toMatchObject({ stop_hook_active: true });
     const empty = buildRecord({ session_id: SID, hook_event_name: "Stop", last_assistant_message: "" }, NOW);

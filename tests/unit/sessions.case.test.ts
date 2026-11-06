@@ -443,6 +443,24 @@ describe("the case main process and .claude.json on reattach / relaunch", () => 
     expect(m3.caseMainProcesses().has(s.id)).toBe(false);
   });
 
+  it("case-say: records the resolved claude path, the case root, and the window shape (pane id, pid, 1 window, 1 pane); closing removes the claude path", async () => {
+    const x = await setup();
+    const s = await x.h.sessions.create({ name: "say", roleId: "case" });
+    expect(x.h.sessions.caseClaudeRealOf(s.id)).toBe(x.claude);
+    expect(x.h.sessions.caseRootOf(s.id)).toBe(path.join(realpathSync(x.tmpRoot), "CC報告ファイル", "discord-case", s.id));
+    const main = x.h.sessions.caseMainProcesses().get(s.id);
+    const info = x.h.sessions.casePaneInfo(s.id);
+    expect(info).toMatchObject({ panePid: main?.pid, windows: 1, panes: 1 });
+    expect(info?.paneId).toMatch(/^%\d+$/);
+    expect(x.h.sessions.casePaneInfo(randomUUID())).toBeNull();
+    // 区画を分けると、窓の形が変わったと読める
+    expect(tmuxRun(x.socket as string, ["split-window", "-d", "-t", `=ac-${s.id}:`, "/bin/sh", "-c", "sleep 30"]).status).toBe(0);
+    expect(x.h.sessions.casePaneInfo(s.id)).toMatchObject({ panes: 2 });
+    await x.h.sessions.close(s.id);
+    expect(x.h.sessions.caseClaudeRealOf(s.id)).toBeUndefined();
+    expect(x.h.sessions.caseRootOf(s.id)).toBeUndefined();
+  });
+
   it("the copy returned by caseMainProcesses() does not change the manager's record", async () => {
     const x = await setup();
     const s = await x.h.sessions.create({ name: "cp", roleId: "case" });

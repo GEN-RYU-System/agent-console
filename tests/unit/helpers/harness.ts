@@ -156,6 +156,10 @@ export interface HarnessOptions {
   routineManagerRoles?: string[];
   /** ac-reserve を使ってよい役割 id（既定は "echo" だけ。routineManagerRoles と同じ形） */
   reserveRoles?: string[];
+  /** ac-case-say を呼んでよい役割 id（既定は "echo" だけ） */
+  caseSayRoles?: string[];
+  /** case-say で送ってよい件の claude の版（既定は空） */
+  caseSayClaudeVersions?: string[];
   /** ログインの記録を dataDir の auth-sessions.json に残す（既定は残さない＝AGENT_CONSOLE_PORT 指定時の本番と同じ。再起動の試験だけ true） */
   persistSessions?: boolean;
   /** サーバーの秘密（既定は TOKEN）。Bearer の試験は TOKEN のままで、変わった秘密の試験だけ指定する */
@@ -224,6 +228,8 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     ...(options.configMaxSessions !== undefined ? { maxSessions: options.configMaxSessions } : {}),
     routineManagerRoles: options.routineManagerRoles ?? ["echo"],
     reserveRoles: options.reserveRoles ?? ["echo"],
+    caseSayRoles: options.caseSayRoles ?? ["echo"],
+    caseSayClaudeVersions: options.caseSayClaudeVersions ?? [],
     ...(options.accountLoginCommand !== undefined ? { accountLoginCommand: options.accountLoginCommand } : {}),
     roles: [
       { id: "echo", labelKey: "role.shell", command: ["/bin/sh", "-c", "echo READY; cat"], needsWorktree: false },

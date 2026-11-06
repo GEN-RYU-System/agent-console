@@ -28,6 +28,22 @@ export const CHAT_KEEP = 200;
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g;
 const AGENT_MESSAGE_PREFIX = /^\s*<agent-message\b/;
+/** AI が自分で再開した入力の先頭の形（design §4-3 C2）。担当の報告の戻り・裏の作業の終わりの知らせ・別の会話からの知らせ・loop の定期の回 */
+const SELF_RESUME_PREFIX = /^\s*(<agent-message\b|<task-notification\b|<cross-session-message\b|# Autonomous loop\b)/;
+// 全文用: 改行（LF）とタブ以外の制御文字だけを除く（hooks/activity-hook.mjs の TEXT_CONTROL_CHARS と同じ）
+// eslint-disable-next-line no-control-regex
+const TEXT_CONTROL_CHARS = /[\u0000-\u0008\u000b-\u001f\u007f]/g;
+
+/** 全文用の整形（hooks/activity-hook.mjs の fullText と同じ） */
+function fullText(value: unknown): string {
+  return typeof value === "string" ? value.replace(TEXT_CONTROL_CHARS, "") : "";
+}
+
+/** 予定の文と再開の文の突き合わせの鍵（hooks/activity-hook.mjs の promptKey と同じ式。design §4-6） */
+export function promptKey(value: unknown): string {
+  const body = fullText(value).replace(/… \[\+\d+ chars\]$/, "");
+  return createHash("sha256").update(Array.from(body).slice(0, 200).join(""), "utf8").digest("hex").slice(0, 16);
+}
 /** 貼り付けの包みの行（工程0 (c)。`<pasted_content id="…">` と `</pasted_content id="…">`）。行ごと外す */
 const PASTED_WRAPPER_LINE = /^[ \t]*<\/?pasted_content\b[^>\n]*>[ \t]*\n?/gm;
 /** ファイルを書く 4 つのツール（file-viewer 設計 §3-1。hooks/activity-hook.mjs の FILE_TOOLS と同じ） */
@@ -130,6 +146,41 @@ interface Task {
   completedAt: number | null;
   seq: number;
 }
+/** 返事の終わりの記録（未読用）。stopHookActive は別の Stop hook に止められて続けた後の終わりのとき true */
+export interface TurnEndEvent {
+  claudeSessionId: string;
+  ts: number;
+  failed: boolean;
+  stopHookActive: boolean;
+  /** AI が自分で続きを始める予定があるか。null = 欄が無かった（StopFailure も null） */
+  pendingSelfResume: boolean | null;
+}
+
+/** AI が自分で再開した記録（UserPromptSubmit。design §4-3 C2） */
+export interface SelfResumeEvent {
+  claudeSessionId: string;
+  ts: number;
+}
+
+const isCount = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/** Stop の記録から「AI が自分で続きを始める予定があるか」。2 つの欄がどちらも無ければ null（design §3・カード §2-4 (c)） */
+function pendingOf(rec: Raw): boolean | null {
+  const bg = rec.bg_tasks;
+  const once = rec.crons_once;
+  if (!isCount(bg) && !isCount(once)) return null;
+  return (isCount(bg) && bg >= 1) || (isCount(once) && once >= 1);
+}
+
+/** Stop の記録の cron_once_hashes と cron_repeat_hashes を合わせたもの。欄が無ければ空 */
+function cronKeysOf(rec: Raw): string[] {
+  const pick = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  return [...pick(rec.cron_once_hashes), ...pick(rec.cron_repeat_hashes)];
+}
+
+/** 1 会話で覚える返事の終わりの ts の上限 */
+const TURN_ENDS_KEEP = 500;
+
 interface SessionState {
   starts: Map<string, Start>;
   posts: Map<string, Post>;
@@ -147,6 +198,12 @@ interface SessionState {
   /** chat に入っている会話の重なり防止の鍵（同じ記録を読み直しても二重に出さない） */
   chatKeys: Set<string>;
   chatSeq: number;
+  /** 返事の終わり（Stop / StopFailure）として通知済みの ts。読み直しても 2 度通知しない。新しい 500 個まで */
+  turnEndTs: Set<number>;
+  /** 同じ会話の最後の Stop の予定の文のハッシュ（一度きり＋繰り返し）。欄が無ければ空 */
+  cronPromptKeys: string[];
+  /** AI の再開として通知済みの ts（turnEndTs とは別） */
+  resumeTs: Set<number>;
   /** path → 最後に書いた記録（当て方は順序に依存しない） */
   files: Map<string, Omit<FileItem, "path">>;
   lastEventAt: number;
@@ -164,6 +221,9 @@ const newSession = (): SessionState => ({
   chat: [],
   chatKeys: new Set(),
   chatSeq: 0,
+  turnEndTs: new Set(),
+  cronPromptKeys: [],
+  resumeTs: new Set(),
   files: new Map(),
   lastEventAt: 0,
 });
@@ -241,6 +301,10 @@ export class ActivityStore {
   private historyLoaded = false;
   private readonly keepDays: number;
   private readonly now: () => number;
+  /** このストアを作った時刻（注入の now）。これより前の返事の終わりでは未読を足さない */
+  private readonly startedAt: number;
+  private readonly turnEndListeners = new Set<(e: TurnEndEvent) => void>();
+  private readonly selfResumeListeners = new Set<(e: SelfResumeEvent) => void>();
 
   constructor(
     private readonly dataDir: string,
@@ -248,6 +312,39 @@ export class ActivityStore {
   ) {
     this.keepDays = options.keepDays ?? 7;
     this.now = options.now ?? Date.now;
+    this.startedAt = this.now();
+  }
+
+  /** 返事の終わり（Stop / StopFailure）を読んだとき。起動前の昔の記録・同じ（会話, ts）の読み直しでは呼ばない */
+  onTurnEnd(listener: (e: TurnEndEvent) => void): () => void {
+    this.turnEndListeners.add(listener);
+    return () => this.turnEndListeners.delete(listener);
+  }
+
+  /** AI が自分で再開した記録を読んだとき。起動前の昔の記録・同じ（会話, ts）の読み直しでは呼ばない */
+  onSelfResume(listener: (e: SelfResumeEvent) => void): () => void {
+    this.selfResumeListeners.add(listener);
+    return () => this.selfResumeListeners.delete(listener);
+  }
+
+  private emitSelfResume(state: SessionState, sessionId: string, ts: number): void {
+    if (ts < this.startedAt || state.resumeTs.has(ts)) return;
+    state.resumeTs.add(ts);
+    if (state.resumeTs.size > TURN_ENDS_KEEP) {
+      const oldestFirst = [...state.resumeTs].sort((a, b) => a - b);
+      for (const old of oldestFirst.slice(0, state.resumeTs.size - TURN_ENDS_KEEP)) state.resumeTs.delete(old);
+    }
+    for (const listener of this.selfResumeListeners) listener({ claudeSessionId: sessionId, ts });
+  }
+
+  private emitTurnEnd(state: SessionState, sessionId: string, rec: Raw, ts: number, failed: boolean): void {
+    if (ts < this.startedAt || state.turnEndTs.has(ts)) return;
+    state.turnEndTs.add(ts);
+    if (state.turnEndTs.size > TURN_ENDS_KEEP) {
+      const oldestFirst = [...state.turnEndTs].sort((a, b) => a - b);
+      for (const old of oldestFirst.slice(0, state.turnEndTs.size - TURN_ENDS_KEEP)) state.turnEndTs.delete(old);
+    }
+    for (const listener of this.turnEndListeners) listener({ claudeSessionId: sessionId, ts, failed, stopHookActive: rec.stop_hook_active === true, pendingSelfResume: failed ? null : pendingOf(rec) });
   }
 
   get activityDir(): string {
@@ -388,13 +485,16 @@ export class ActivityStore {
         this.applyTask(state, rec, ts);
         break;
       case "UserPromptSubmit":
-        this.applyPrompt(state, rec, ts);
+        this.applyPrompt(state, sessionId, rec, ts);
         break;
       case "Stop":
         if (text(rec.last_assistant_message) !== "") this.addChat(state, { ts, role: "assistant", text: text(rec.last_assistant_message), ...(rec.truncated === true ? { truncated: true } : {}) });
+        state.cronPromptKeys = cronKeysOf(rec);
+        this.emitTurnEnd(state, sessionId, rec, ts, false);
         break;
       case "StopFailure":
         this.addChat(state, { ts, role: "error", text: "", error: text(rec.error) || "unknown" });
+        this.emitTurnEnd(state, sessionId, rec, ts, true);
         break;
     }
   }
@@ -467,8 +567,9 @@ export class ActivityStore {
     trimOldest(state.tasks, TASKS_KEEP, (t) => t.createdAt ?? t.completedAt ?? 0);
   }
 
-  private applyPrompt(state: SessionState, rec: Raw, ts: number): void {
+  private applyPrompt(state: SessionState, sessionId: string, rec: Raw, ts: number): void {
     const raw = text(rec.prompt);
+    if (rec.source === "agent" || SELF_RESUME_PREFIX.test(raw) || (raw !== "" && state.cronPromptKeys.includes(promptKey(raw)))) this.emitSelfResume(state, sessionId, ts);
     // 担当の報告の戻りは人の入力ではない（記録は残るが、右の欄にもチャットにも出さない）
     if (rec.source === "agent" || AGENT_MESSAGE_PREFIX.test(raw)) return;
     const shown = unwrapPasted(raw);

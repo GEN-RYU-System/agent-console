@@ -135,7 +135,7 @@ export function SessionList({ sessions, roles, selectedId, onSelect, onRemove, o
               {s.unread > 0 && (
                 <span data-testid="unread-badge">
                   <Badge variant="info" appearance="solid" size="sm">
-                    {t("ac.unread", { count: s.unread })}
+                    {t("ac.unread")}
                   </Badge>
                 </span>
               )}

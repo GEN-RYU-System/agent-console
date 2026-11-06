@@ -172,3 +172,24 @@ describe("case-guard: other tools", { timeout: 20_000 }, () => {
     expect(run("Bash", {}, path.join(tmp, "nope.json")).code).toBe(2);
   });
 });
+
+describe("case-guard: permission_mode", () => {
+  const runMode = (input: Record<string, unknown>): { code: number | null; err: string } => {
+    const r = spawnSync(process.execPath, [GUARD, caseFile], { input: JSON.stringify({ tool_name: "Read", tool_input: { file_path: path.join(W, "a.txt") }, ...input }), encoding: "utf8" });
+    return { code: r.status, err: r.stderr };
+  };
+
+  it("blocks every non-dontAsk mode in the main conversation", () => {
+    for (const permission_mode of ["plan", "default", "acceptEdits", "auto", "bypassPermissions"]) {
+      const r = runMode({ permission_mode });
+      expect(r.code, permission_mode).toBe(2);
+      expect(r.err, permission_mode).toContain("permission mode is not dontAsk");
+    }
+  });
+
+  it("keeps the usual decision for dontAsk, a missing mode, and sub-agents", () => {
+    expect(runMode({ permission_mode: "dontAsk" }).code).toBe(0);
+    expect(runMode({}).code).toBe(0);
+    expect(runMode({ permission_mode: "plan", agent_id: "a1" }).code).toBe(0);
+  });
+});

@@ -84,6 +84,16 @@ export function installReserveCommand(sourceDir: string, dataDir: string): strin
   return copyAtomically(sourceDir, RESERVE_COMMAND_FILE_NAME, reserveCommandPathIn(dataDir));
 }
 
+export const CASE_SAY_COMMAND_FILE_NAME = "ac-case-say.mjs";
+
+/** dataDir/bin/ac-case-say.mjs（Opus が打つ、件のセッションへ決まった一文を送る命令） */
+export const caseSayCommandPathIn = (dataDir: string): string => path.join(dataDir, "bin", CASE_SAY_COMMAND_FILE_NAME);
+
+/** リポジトリの hooks/ac-case-say.mjs（正本）を dataDir/bin/ へ写す（ac-reserve と同じ作法） */
+export function installCaseSayCommand(sourceDir: string, dataDir: string): string {
+  return copyAtomically(sourceDir, CASE_SAY_COMMAND_FILE_NAME, caseSayCommandPathIn(dataDir));
+}
+
 export const ROUTINE_COMMAND_FILE_NAME = "ac-routine.mjs";
 
 /** dataDir/bin/ac-routine.mjs（Claude の Bash が打つ、定期実行の命令。Opus 限定） */

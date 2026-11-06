@@ -91,6 +91,7 @@ const fullEnv = (): Record<string, string> => Object.fromEntries(readFileSync(`$
 
 // CI では zsh が無ければ飛ばさず落とす（ci.yml が Linux に入れる）。手元で zsh が無いときだけ飛ばす
 describe.skipIf(!hasZsh && process.env.CI === undefined)("ccdiscordcase", () => {
+  // §14-13-2 の条件 (1)(2)(4) を守る試験。変えるときは design §14-13 を読み直す
   it("starts claude with the restricted flags and without chrome / setting-sources; the token is not in the arguments", () => {
     const r = run();
     expect(r.status, r.stderr).toBe(0);
@@ -187,6 +188,7 @@ describe.skipIf(!hasZsh && process.env.CI === undefined)("ccdiscordcase", () => 
     expect(run({ PATH: `${path.join(tmp, "path-claude-dir")}:${bin}:${process.env.PATH ?? ""}` }).status).toBe(0);
   });
 
+  // §14-13-2 の条件 (1)(2)(4) を守る試験。変えるときは design §14-13 を読み直す
   it("removes inherited CLAUDE_*, ANTHROPIC_*, CLAUDECODE, TMUX and SSH_AUTH_SOCK, then adds only its own values", () => {
     const r = run({
       CLAUDECODE: "1",
@@ -204,12 +206,13 @@ describe.skipIf(!hasZsh && process.env.CI === undefined)("ccdiscordcase", () => 
     expect(r.status, r.stderr).toBe(0);
     const e = fullEnv();
     const prefixed = Object.keys(e).filter((k) => /^(CLAUDE|ANTHROPIC)/.test(k)).sort();
-    expect(prefixed).toEqual(["CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_TMPDIR", "CLAUDE_CONFIG_DIR"]);
+    expect(prefixed).toEqual(["CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_TMPDIR", "CLAUDE_CONFIG_DIR"]);
     expect(e.CLAUDE_CONFIG_DIR).toBe(caseHome);
     expect(e.CLAUDE_CODE_TMPDIR).toBe(caseTmp);
     expect(e.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS).toBe("1");
     expect(e.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC).toBe("1");
     expect(e.DISABLE_AUTOUPDATER).toBe("1");
+    expect(e.CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL).toBe("1");
     expect(e.CLAUDE_CODE_OAUTH_TOKEN).toBe(FAKE_LOGIN);
     expect(e.TMUX).toBeUndefined();
     expect(e.TMUX_PANE).toBeUndefined();

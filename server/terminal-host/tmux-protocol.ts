@@ -48,6 +48,36 @@ export function sendKeysCommands(name: string, data: string, chunk = SEND_KEYS_C
   return commands;
 }
 
+const PANE_ID_PATTERN = /^%\d+$/;
+
+/** tmux の区画の番号（`%N`）の形か */
+export const isPaneId = (value: unknown): value is string => typeof value === "string" && PANE_ID_PATTERN.test(value);
+
+/**
+ * 区画の番号 `%N` を宛先にし、tmux が命令を実行する時点でその区画の pid が `pid` のときだけ書く送り方（case-say 用）。
+ * `if-shell -F -t %N '#{==:#{pane_pid},<pid>}' 'send-keys -t %N -H <16進>' 'display -p NO'`。外れたら書かずに `NO` を返す。
+ * 制御の接続の応答は、合う場合も外れる場合も 2 つ（if-shell の分と、差し込まれる 2 つ目の命令の分）になる。
+ */
+export function conditionalSendCommand(pane: string, pid: number, bytes: Uint8Array): string {
+  if (!isPaneId(pane)) throw new Error(`invalid pane id: ${JSON.stringify(pane)}`);
+  if (!Number.isInteger(pid) || pid <= 0) throw new Error(`invalid pane pid: ${String(pid)}`);
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join(" ");
+  return `if-shell -F -t ${pane} '#{==:#{pane_pid},${pid}}' 'send-keys -t ${pane} -H ${hex}' 'display -p NO'`;
+}
+
+/** 文字列を UTF-8 のバイトにして、1000 バイトごとの条件付きの送り方の命令（1 行ずつ）にする */
+export function conditionalSendCommands(pane: string, pid: number, data: string, chunk = SEND_KEYS_CHUNK_BYTES): string[] {
+  const bytes = Buffer.from(data, "utf8");
+  const commands: string[] = [];
+  for (let i = 0; i < bytes.length; i += chunk) commands.push(conditionalSendCommand(pane, pid, bytes.subarray(i, i + chunk)));
+  return commands;
+}
+
+/** 条件付きの送り方の 2 つの応答を読む。両方成功（%end）で 2 つ目の中身が空のときだけ「書いた」。それ以外は書いていないとみなす */
+export function conditionalWritten(first: ControlBlock, second: ControlBlock): boolean {
+  return first.ok && second.ok && second.lines.length === 0;
+}
+
 export const resizeCommand = (cols: number, rows: number): string => `refresh-client -C ${cols}x${rows}`;
 
 export type HasSessionResult = "alive" | "gone" | "unreachable";
@@ -149,6 +179,10 @@ export class CommandQueue<T> {
   }
   get size(): number {
     return this.waiting.length;
+  }
+  /** 待ちを全部取り出して空にする（接続を取り直すとき。残った待ちが次の命令の応答を取らないようにする） */
+  drain(): T[] {
+    return this.waiting.splice(0, this.waiting.length);
   }
 }
 

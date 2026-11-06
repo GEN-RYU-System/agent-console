@@ -9,13 +9,14 @@ case "${1:-}" in
     SLOW="$(cat "${STUB_SLOW_FILE:-/dev/null}" 2>/dev/null | head -1)"
     [ -n "${SLOW}" ] && sleep "${SLOW}"
     STATUS="$(cat "${STUB_STATUS_FILE:-/dev/null}" 2>/dev/null || echo idle)"
+    # $STUB_UUID_FILE に中身があるときだけ、sessionId を pid から作った UUID の形にする（本物の claude は UUID を返す。既定は UUID でない "x"）
+    UUID_MODE="$(cat "${STUB_UUID_FILE:-/dev/null}" 2>/dev/null | head -1)"
+    PIDS="$(ps -axo pid=,command= | grep 'agent-console-e2e-role' | grep -v grep | awk '{print $1}')"
+    # 名前は ps の後に読む。ps に出た窓は、試験が名前のファイルを書いた後に作られたものなので、後に読めば必ずその名前が見える（逆の順だと古い名前が新しい窓に付き、/rename が送られる。recon R6）
     # $STUB_NAME_FILE に中身があるときだけ name を返す（Claude 側の名前。無ければアプリの名前が表示される）
     NAME="$(cat "${STUB_NAME_FILE:-/dev/null}" 2>/dev/null | head -1)"
     NAME_JSON=""
     [ -n "${NAME}" ] && NAME_JSON="\"name\":\"${NAME}\","
-    # $STUB_UUID_FILE に中身があるときだけ、sessionId を pid から作った UUID の形にする（本物の claude は UUID を返す。既定は UUID でない "x"）
-    UUID_MODE="$(cat "${STUB_UUID_FILE:-/dev/null}" 2>/dev/null | head -1)"
-    PIDS="$(ps -axo pid=,command= | grep 'agent-console-e2e-role' | grep -v grep | awk '{print $1}')"
     printf '[\r\n'
     FIRST=1
     for P in ${PIDS}; do

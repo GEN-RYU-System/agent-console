@@ -28,6 +28,7 @@ import {
   resolveClaudeReal,
   rewriteCaseClaudeJson,
   writeCaseFiles,
+  writeCaseKeybindings,
   writeCaseRoom,
   type CaseParams,
   type CaseRoomOptions,
@@ -437,7 +438,9 @@ describe("buildCaseRoomProfile", () => {
     const write = formsStarting(text, "(allow file-write*")[0];
     const tmpRe = chClaudeJsonTmpForTest(p.CH);
     for (const form of [reopen, write]) {
-      expect(literalsOf(form)).toEqual(expect.arrayContaining([path.join(p.CH, "history.jsonl"), path.join(p.CH, ".claude.json.lock")]));
+      expect(literalsOf(form)).toEqual(expect.arrayContaining([path.join(p.CH, "history.jsonl"), path.join(p.CH, ".claude.json.lock"), path.join(p.CH, "history.jsonl.lock")]));
+      expect(covered(form, `${p.CH}/history.jsonl.lock`)).toBe(true);
+      for (const bad of ["history.jsonl.lock/x", "history.jsonl.lock2"]) expect(covered(form, `${p.CH}/${bad}`), bad).toBe(false);
       expect(regexesOf(form)).toContain(tmpRe);
       expect(covered(form, `${p.CH}/.claude.json.tmp.20273.0c36f211e77d`)).toBe(true);
       for (const bad of [".claude.json.tmp.20273.0c36f211e77", ".claude.json.tmp.x.0c36f211e77d", ".claude.json.tmp.20273.0c36f211e77d/x", ".claude.json.evil", ".claude.json.backup.1", "backups/.claude.json.tmp.1.0c36f211e77d"]) expect(covered(form, `${p.CH}/${bad}`), bad).toBe(false);
@@ -489,7 +492,7 @@ describe("buildCaseRoomProfile", () => {
     const { p, text } = prof();
     const writeDeny = formsStarting(text, "(deny file-write*")[0];
     const block = formsStarting(text, "(deny file-write-unlink file-write-create").at(-1) as string;
-    const names = ["remote-settings.json", "remote-settings.json.synced-at", "plugins", "backups", "settings.json", "agents", "hooks", "commands", "skills", "CLAUDE.md"];
+    const names = ["remote-settings.json", "remote-settings.json.synced-at", "plugins", "backups", "settings.json", "keybindings.json", "agents", "hooks", "commands", "skills", "CLAUDE.md"];
     for (const form of [writeDeny, block]) {
       for (const n of names) expect(covered(form, path.join(p.CH, n)), n).toBe(true);
       expect(covered(form, path.join(p.CH, "plugins", "x", "y"))).toBe(true);
@@ -675,6 +678,19 @@ describe("rewriteCaseClaudeJson", () => {
 
   it("throws CaseSandboxUnavailableError when the case-home is not writable (missing)", () => {
     expect(() => rewriteCaseClaudeJson(path.join(tmp, "nope"), W)).toThrow(CaseSandboxUnavailableError);
+  });
+});
+
+describe("writeCaseKeybindings", () => {
+  it("writes the Shift+Tab unbind to CH/keybindings.json", () => {
+    const CH = path.join(tmp, "ch");
+    mkdirSync(CH);
+    writeCaseKeybindings(CH);
+    expect(readFileSync(path.join(CH, "keybindings.json"), "utf8")).toBe(JSON.stringify({ bindings: [{ context: "Chat", bindings: { "shift+tab": null } }] }, null, 2) + "\n");
+  });
+
+  it("throws CaseSandboxUnavailableError when the case-home is not writable (missing)", () => {
+    expect(() => writeCaseKeybindings(path.join(tmp, "nope"))).toThrow(CaseSandboxUnavailableError);
   });
 });
 
