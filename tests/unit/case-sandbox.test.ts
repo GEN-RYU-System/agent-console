@@ -21,6 +21,7 @@ import {
   CASE_ROOM_BASE,
   CASE_ROOM_MACH,
   CASE_ROOM_READ_NAMED,
+  CASE_VERSION_RECORD_PATHS,
   CaseSandboxUnavailableError,
   caseProxyDomains,
   casePaths,
@@ -84,14 +85,27 @@ const rules = (list: string[], tool: string): string[] => list.filter((r) => r.s
 const bare = (list: string[], tool: string): string[] => list.filter((r) => r.startsWith(`${tool}(//`) && !r.endsWith("/**)")).map((r) => "/" + r.slice(`${tool}(//`.length, -1));
 
 describe("buildCaseSettings", () => {
-  it("builds the permission denies from the same arrays the room profile uses (one source), and leaves only sandbox.enabled: false", () => {
+  it("builds the permission denies from the same arrays the room profile uses minus the version record and key, and leaves only sandbox.enabled: false", () => {
     const p = params();
     const s = settingsOf(p);
-    expect(rules(s.permissions.deny, "Edit")).toEqual(CASE_DENY_WRITE(p));
-    expect(bare(s.permissions.deny, "Edit")).toEqual(CASE_DENY_WRITE(p));
-    expect(rules(s.permissions.deny, "Read")).toEqual(CASE_DENY_READ(p));
-    expect(bare(s.permissions.deny, "Read")).toEqual(CASE_DENY_READ(p));
+    const rec = new Set(CASE_VERSION_RECORD_PATHS(p));
+    const w = CASE_DENY_WRITE(p).filter((d) => !rec.has(d));
+    const r = CASE_DENY_READ(p).filter((d) => !rec.has(d));
+    expect(rules(s.permissions.deny, "Edit")).toEqual(w);
+    expect(bare(s.permissions.deny, "Edit")).toEqual(w);
+    expect(rules(s.permissions.deny, "Read")).toEqual(r);
+    expect(bare(s.permissions.deny, "Read")).toEqual(r);
     expect(s.sandbox).toEqual({ enabled: false });
+  });
+
+  it("keeps the version record and key out of the permission denies", () => {
+    const p = params();
+    const deny = settingsOf(p).permissions.deny;
+    for (const x of CASE_VERSION_RECORD_PATHS(p)) {
+      expect(CASE_DENY_WRITE(p)).toContain(x);
+      expect(CASE_DENY_READ(p)).toContain(x);
+      expect(deny.some((d) => d.includes(abs(x)))).toBe(false);
+    }
   });
 
   it("sets the permission mode, disables bypass/auto mode and git instructions, and names T for Read", () => {
@@ -202,6 +216,10 @@ describe("writeCaseFiles / removeCaseFiles", () => {
     expect(info).toMatchObject({ worktree: p.W, report: p.R, tmp: p.T });
     expect(info.denyWrite).toEqual(CASE_DENY_WRITE(p));
     expect(info.denyRead).toEqual(CASE_DENY_READ(p));
+    for (const x of CASE_VERSION_RECORD_PATHS(p)) {
+      expect(info.denyWrite).toContain(x);
+      expect(info.denyRead).toContain(x);
+    }
     expect(statSync(p.R).isDirectory()).toBe(true);
     expect(statSync(p.T).isDirectory()).toBe(true);
     expect(path.dirname(p.T)).toBe(path.join(tmp, "tmp", "acc"));
@@ -345,6 +363,16 @@ describe("buildCaseRoomProfile", () => {
     const p = params(over);
     return { p, text: buildCaseRoomProfile(p, roomOpts()), full: { ...p, guardScript: roomOpts().guardScript, claudeReal: CLAUDE_REAL } };
   };
+
+  it("puts the version record and key into the deny file-read and deny file-write of room.sb", () => {
+    const { p, text } = prof();
+    const rec = CASE_VERSION_RECORD_PATHS(p);
+    expect(rec.length).toBeGreaterThan(0);
+    for (const x of rec) {
+      expect(formsStarting(text, "(deny file-read*").some((f) => subpathsOf(f).includes(x)), `read ${x}`).toBe(true);
+      expect(formsStarting(text, "(deny file-write*").some((f) => subpathsOf(f).includes(x)), `write ${x}`).toBe(true);
+    }
+  });
 
   it("starts with deny default and the base, and puts every list path into a rule", () => {
     const { p, text, full } = prof();
