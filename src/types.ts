@@ -38,6 +38,15 @@ export interface RestoreNotice {
   name?: string;
 }
 
+/** 件の claude の版ずれの知らせ（文言は画面の i18n）。n1 件を開いたが指紋が未確認 / n2 起動時に未記録 / n3 記録の実体が変わった / n4 自動の確かめが× / n5 記録が読めない / n6 監査に書けなかった */
+export interface CaseVersionNotice {
+  reason: "n1" | "n2" | "n3" | "n4" | "n5" | "n6";
+  claudeVersion: string;
+  sha16: string;
+  detail?: string;
+  at: number;
+}
+
 /** 端末の置き場（tmux）についての案内（文言は画面の i18n）。name はセッション名 */
 export interface TerminalNotice {
   reason: "tmuxMissing" | "cannotAttach";
@@ -62,6 +71,8 @@ export interface ConsoleState {
   sessions: SessionView[];
   agentsAvailable: boolean;
   restoreNotices: RestoreNotice[];
+  /** 件の claude の版ずれの知らせ。無ければキー自体が無い */
+  caseVersionNotices?: CaseVersionNotice[];
   /** tmux が無い・つなげない時の案内。無ければ空（キー自体が無い） */
   terminalNotices?: TerminalNotice[];
   /** 引き継ぎの進行。無ければキー自体が無い */

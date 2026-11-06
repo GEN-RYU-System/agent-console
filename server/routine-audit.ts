@@ -1,5 +1,5 @@
 // ac-routine（AI による定期実行の登録・変更）の監査記録。設計 docs/handoff/ac-routine/design.md §4-1-3。
-// dataDir/routine-audit.jsonl に 1 件 1 行で追記するだけ（0600）。token・本文の中身（promptText など）は書かない。
+// dataDir/routine-audit.jsonl に 1 件 1 行で追記するだけ（0600）。token・本文の中身（promptText など）は書かない（例外: `caseClaudeVersionProbe` の `paneSamples`。設計 conversation-consent §14-14-6 の 8・9）。
 import { appendFile, chmod, mkdir } from "node:fs/promises";
 import path from "node:path";
 
@@ -7,13 +7,13 @@ export const ROUTINE_AUDIT_FILE = "routine-audit.jsonl";
 const FILE_MODE = 0o600;
 const DIR_MODE = 0o700;
 
-/** add / update / enable / disable は書き込み。approvalIssued は一時承認の発行。closed / kept は定期実行セッションの自動クローズ（設計 ac-hardening §7）。reserveCreate は予約の作成、reserveCancel は予約の取消、reserveDispatch は予約が時刻になって開くこと。caseProxy は件の受付（case-proxy）の通した・断った1回、caseRoomMacosAccepted は macOS の版の記録（scripts/ac-case-macos.mjs accept）。caseSay は件のセッションへ決まった一文を送ったこと、caseSayRefused は断ったこと（理由は reason） */
-export type RoutineAuditAction = "add" | "update" | "enable" | "disable" | "approvalIssued" | "closed" | "kept" | "reserveCreate" | "reserveCancel" | "reserveDispatch" | "caseProxy" | "caseRoomMacosAccepted" | "caseSay" | "caseSayRefused";
+/** add / update / enable / disable は書き込み。approvalIssued は一時承認の発行。closed / kept は定期実行セッションの自動クローズ（設計 ac-hardening §7）。reserveCreate は予約の作成、reserveCancel は予約の取消、reserveDispatch は予約が時刻になって開くこと。caseProxy は件の受付（case-proxy）の通した・断った1回、caseRoomMacosAccepted は macOS の版の記録（scripts/ac-case-macos.mjs accept）。caseSay は件のセッションへ決まった一文を送ったこと、caseSayRefused は断ったこと（理由は reason）。caseClaudeVersionProbe は件の claude の版の自動の確かめ 1 回、caseClaudeVersionNotice は版ずれの知らせ（設計 conversation-consent §14-14） */
+export type RoutineAuditAction = "add" | "update" | "enable" | "disable" | "approvalIssued" | "closed" | "kept" | "reserveCreate" | "reserveCancel" | "reserveDispatch" | "caseProxy" | "caseRoomMacosAccepted" | "caseSay" | "caseSayRefused" | "caseClaudeVersionProbe" | "caseClaudeVersionNotice";
 
 export interface RoutineAuditEntry {
   at: string;
   action: RoutineAuditAction;
-  outcome: "ok" | "denied";
+  outcome: "ok" | "denied" | "aborted";
   /** 対象を解決できた行だけに入れる。その行では targetCreatedBy も必須 */
   routineId?: string;
   /** 予約の行だけ */
@@ -59,6 +59,21 @@ export interface RoutineAuditEntry {
   claudeVersion?: string;
   /** caseRoomMacosAccepted: 記録した macOS の版（sw_vers -productVersion） */
   productVersion?: string;
+  /** caseClaudeVersionProbe: 始めた時刻・終わった時刻（ISO 8601） */
+  startedAt?: string;
+  endedAt?: string;
+  /** caseClaudeVersionProbe / caseClaudeVersionNotice: 実体の sha256 の先頭 16 桁 */
+  sha16?: string;
+  /** caseClaudeVersionProbe: ×の番号（E1〜E4・P0〜P5・R1） */
+  failedCheck?: string;
+  /** caseClaudeVersionProbe: 発火の理由（t1 件を開いた・t2 サーバー起動） */
+  trigger?: "t1" | "t2";
+  /** caseClaudeVersionProbe: probe の件の id */
+  probeCaseId?: string;
+  /** caseClaudeVersionProbe: P2・P3・P5 で数えた数 */
+  counts?: Record<string, number>;
+  /** caseClaudeVersionProbe: P0〜P3 の各 idle 復帰の時点の probe の件の画面の写し（制御文字を除き各 4KiB まで・最大 4 枚。MAC の対象外） */
+  paneSamples?: string[];
 }
 
 export class RoutineAudit {

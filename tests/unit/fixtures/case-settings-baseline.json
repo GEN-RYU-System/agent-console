@@ -1,0 +1,375 @@
+{
+  "disableAutoMode": "disable",
+  "includeGitInstructions": false,
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "disableBypassPermissionsMode": "disable",
+    "allow": [
+      "Bash",
+      "Agent",
+      "Edit(//h/w/ID/**)",
+      "Edit(//t/acc/R/ID/**)",
+      "Read(//t/acc/R/ID/**)",
+      "Read(//t/acc/11111111/**)"
+    ],
+    "deny": [
+      "Edit(//h/w/ID/.git/hooks/**)",
+      "Edit(//h/w/ID/.git/hooks)",
+      "Edit(//h/w/ID/.git/config/**)",
+      "Edit(//h/w/ID/.git/config)",
+      "Edit(//h/w/ID/.git/commondir/**)",
+      "Edit(//h/w/ID/.git/commondir)",
+      "Edit(//h/w/ID/.git/objects/info/alternates/**)",
+      "Edit(//h/w/ID/.git/objects/info/alternates)",
+      "Edit(//h/w/ID/.claude/**)",
+      "Edit(//h/w/ID/.claude)",
+      "Edit(//h/w/ID/.mcp.json/**)",
+      "Edit(//h/w/ID/.mcp.json)",
+      "Edit(//t/acc/R/ID/.claude/**)",
+      "Edit(//t/acc/R/ID/.claude)",
+      "Edit(//d/data/cases/**)",
+      "Edit(//d/data/cases)",
+      "Edit(//d/data/case-gh/**)",
+      "Edit(//d/data/case-gh)",
+      "Edit(//d/data/hooks/**)",
+      "Edit(//d/data/hooks)",
+      "Edit(//d/data/activity/**)",
+      "Edit(//d/data/activity)",
+      "Edit(//h/home/.claude/**)",
+      "Edit(//h/home/.claude)",
+      "Edit(//h/home/.claude.json/**)",
+      "Edit(//h/home/.claude.json)",
+      "Edit(//h/home/.zshrc/**)",
+      "Edit(//h/home/.zshrc)",
+      "Edit(//private/tmp/claude-UID/**)",
+      "Edit(//private/tmp/claude-UID)",
+      "Edit(//m/main/**)",
+      "Edit(//m/main)",
+      "Read(//d/data/reserve-token/**)",
+      "Read(//d/data/reserve-token)",
+      "Read(//h/home/.claude-access.env/**)",
+      "Read(//h/home/.claude-access.env)",
+      "Read(//h/home/.claude/channels/**)",
+      "Read(//h/home/.claude/channels)",
+      "Read(//h/home/.claude/projects/**)",
+      "Read(//h/home/.claude/projects)",
+      "Read(//h/home/.claude/.credentials.json/**)",
+      "Read(//h/home/.claude/.credentials.json)",
+      "Read(//h/home/Library/Keychains/**)",
+      "Read(//h/home/Library/Keychains)",
+      "Read(//h/home/.config/gh/**)",
+      "Read(//h/home/.config/gh)",
+      "Read(//d/data/cases/**)",
+      "Read(//d/data/cases)",
+      "Read(//h/home/.config/git/credentials/**)",
+      "Read(//h/home/.config/git/credentials)",
+      "Read(//h/home/.git-credentials/**)",
+      "Read(//h/home/.git-credentials)",
+      "Bash(security *)",
+      "Bash(security)",
+      "Bash(gh auth *)",
+      "Bash(gh auth)",
+      "Bash(gh pr merge *)",
+      "Bash(gh pr merge)",
+      "Bash(ac-reserve *)",
+      "Bash(ac-reserve)",
+      "Bash(ac-routine *)",
+      "Bash(ac-routine)"
+    ]
+  },
+  "sandbox": {
+    "enabled": false
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Agent|Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/d/data/hooks/activity-hook.mjs",
+              "--post",
+              "http://127.0.0.1:4319/api/agent/case-activity"
+            ],
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/d/data/hooks/activity-hook.mjs",
+              "--post",
+              "http://127.0.0.1:4319/api/agent/case-activity"
+            ],
+            "async": true
+          }
+        ]
+      }
+    ],
+    "TaskCreated": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/d/data/hooks/activity-hook.mjs",
+              "--post",
+              "http://127.0.0.1:4319/api/agent/case-activity"
+            ],
+            "async": true
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/d/data/hooks/activity-hook.mjs",
+              "--post",
+              "http://127.0.0.1:4319/api/agent/case-activity"
+            ],
+            "async": true
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/d/data/hooks/activity-hook.mjs",
+              "--post",
+              "http://127.0.0.1:4319/api/agent/case-activity"
+            ],
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/d/data/hooks/activity-hook.mjs",
+              "--post",
+              "http://127.0.0.1:4319/api/agent/case-activity"
+            ],
+            "async": true
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/d/data/hooks/activity-hook.mjs",
+              "--post",
+              "http://127.0.0.1:4319/api/agent/case-activity"
+            ],
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/d/data/hooks/activity-hook.mjs",
+              "--post",
+              "http://127.0.0.1:4319/api/agent/case-activity"
+            ],
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/d/data/hooks/activity-hook.mjs",
+              "--post",
+              "http://127.0.0.1:4319/api/agent/case-activity"
+            ],
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/g/case-guard.mjs",
+              "/d/data/cases/ID/case.json"
+            ],
+            "onFailure": "block",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|SubagentHandback",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/d/data/hooks/activity-hook.mjs",
+              "--post",
+              "http://127.0.0.1:4319/api/agent/case-activity"
+            ],
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/d/data/hooks/ac-routine-guard.mjs"
+            ],
+            "timeout": 5,
+            "if": "Bash(*/bin/ac-routine.mjs*)"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/d/data/hooks/ac-routine-guard.mjs"
+            ],
+            "timeout": 5,
+            "if": "Bash(*agent-console/reserve-token*)"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/d/data/hooks/ac-routine-guard.mjs"
+            ],
+            "timeout": 5,
+            "if": "Bash(*Application Support/agent-console*)"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/d/data/hooks/ac-routine-guard.mjs"
+            ],
+            "timeout": 5,
+            "if": "Bash(*127.0.0.1*)"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/d/data/hooks/ac-routine-guard.mjs"
+            ],
+            "timeout": 5,
+            "if": "Bash(*localhost*)"
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/d/data/hooks/ac-routine-guard.mjs"
+            ],
+            "timeout": 5,
+            "if": "Read(*Application Support/agent-console*)"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/d/data/hooks/server-kill-guard.mjs"
+            ],
+            "timeout": 5,
+            "if": "Bash(*kill*)"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/n/node",
+            "args": [
+              "/d/data/hooks/server-kill-guard.mjs"
+            ],
+            "timeout": 5,
+            "if": "Bash(*launchctl*)"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -41,6 +41,12 @@ interface World {
     pane: { paneId: string; panePid: number; windows: number; panes: number } | null;
     writeState: { writable: boolean; pending: number } | undefined;
     real: string | undefined;
+    /** 件を開く前に取った指紋（無ければ undefined） */
+    fp: { size: number; sha256: string } | undefined;
+    /** 記録の使える項目 */
+    usable: Array<{ size: number; sha256: string }>;
+    /** 動いている probe の指紋 */
+    probing: string | undefined;
     rows: AgentRow[] | null;
     table: Array<{ pid: number; ppid: number; rssKb: number; cpu: number }> | null;
     sendResults: PaneSendResult[];
@@ -73,12 +79,15 @@ function makeWorld(over: { versions?: string[] } = {}): World {
     pane: { paneId: PANE, panePid: MAIN_PID, windows: 1, panes: 1 },
     writeState: { writable: true, pending: 0 },
     real: "/Users/x/.local/share/claude/versions/2.1.318",
+    fp: { size: 1234, sha256: "a".repeat(64) },
     rows: [],
     table: [{ pid: MAIN_PID, ppid: 1, rssKb: 0, cpu: 0 }],
     sendResults: [],
     sendThrows: false,
     queryPid: MAIN_PID,
     onSleep: () => undefined,
+    usable: [{ size: 1234, sha256: "a".repeat(64) }],
+    probing: undefined,
   };
   const sends: World["sends"] = [];
   const term = {
@@ -105,8 +114,9 @@ function makeWorld(over: { versions?: string[] } = {}): World {
     caseMainProcesses: () => new Map(s.main === undefined ? [] : [[CASE_ID, s.main]]),
     casePaneInfo: () => s.pane,
     caseClaudeRealOf: () => s.real,
+    caseClaudeFingerprintOf: () => s.fp,
   } as unknown as SessionManager;
-  const config = { caseSayClaudeVersions: over.versions ?? ["2.1.318"], pasteSubmitDelayMs: 5, claudeBin: "claude", notify: { macos: false } } as unknown as Config;
+  const config = { caseSayClaudeVersions: over.versions ?? [], pasteSubmitDelayMs: 5, claudeBin: "claude", notify: { macos: false } } as unknown as Config;
   const ports: CaseSayPorts = {
     readLstart: () => s.lstart,
     readTable: async () => {
@@ -117,6 +127,11 @@ function makeWorld(over: { versions?: string[] } = {}): World {
     sleep: async () => s.onSleep(),
   };
   const hub = new Hub(config, sessions, null, { caseSay: ports });
+  // 判定 4b は記録の使える項目と指紋で決める（既定では記録に使える項目が 1 つある。設計 §14-14-4）
+  hub.setCaseVersions(
+    { isUsable: (fp) => fp !== undefined && s.usable.some((u) => u.sha256 === fp.sha256 && u.size === fp.size), usableVersions: () => [] },
+    { isProbing: (sha) => s.probing === sha, probingVersions: () => [] },
+  );
   const w: World = { dir, CH, R, sends, hub, session, s, removed, config };
   writeState(w, { pid: MAIN_PID, status: "idle", sessionId: "x" });
   return w;
@@ -331,29 +346,59 @@ describe("K31: Hub.caseSay judgement 4 to 9", () => {
   });
 });
 
-describe("K42: the claude version must be in the allowed list (4b)", () => {
-  it("refuses with claude_version_unverified and writes nothing when the version is not in the list, not a version shape, or the list is the default []", async () => {
-    w.s.real = "/x/claude/versions/2.1.319";
-    const r1 = await say();
-    expect(r1).toMatchObject({ status: 409, reason: "claude_version_unverified", claudeVersion: "2.1.319" });
-    for (const real of ["/x/bin/claude", "/x/versions/2.1", "/x/versions/2.1.318-beta", "/x/versions/v2.1.318", "/x/versions/2.1.318.1", undefined]) {
-      w.s.real = real;
-      const r = await say();
-      expect(r, String(real)).toMatchObject({ status: 409, reason: "claude_version_unverified", claudeVersion: "" });
-    }
-    expect(w.sends).toHaveLength(0);
-    rmSync(w.dir, { recursive: true, force: true });
-    w = makeWorld({ versions: [] });
-    expect(await say()).toMatchObject({ status: 409, reason: "claude_version_unverified", claudeVersion: "2.1.318" });
-    expect(w.sends).toHaveLength(0);
-  });
-
-  it("passes on to judgement 5 and later when the version is in the list; an earlier refusal carries no version field", async () => {
+describe("K50/K42: the claude version is decided by the record of usable fingerprints (4b)", () => {
+  it("passes on to judgement 5 and later when the fingerprint matches a usable entry; an earlier refusal carries no version field", async () => {
     expect((await say()).status).toBe(200);
     w.s.pane = null;
     const early = await say();
     expect(early.reason).toBe("pane_unreadable");
     expect("claudeVersion" in early).toBe(false);
+  });
+
+  it("refuses with claude_version_unverified and writes nothing when there is no usable entry, the sha256 or size differs, or the fingerprint is missing", async () => {
+    w.s.usable = [];
+    expect(await say()).toMatchObject({ status: 409, reason: "claude_version_unverified", claudeVersion: "2.1.318" });
+    w.s.usable = [{ size: 1234, sha256: "b".repeat(64) }];
+    expect(await say()).toMatchObject({ status: 409, reason: "claude_version_unverified", claudeVersion: "2.1.318" });
+    w.s.usable = [{ size: 4321, sha256: "a".repeat(64) }];
+    expect(await say()).toMatchObject({ status: 409, reason: "claude_version_unverified", claudeVersion: "2.1.318" });
+    w.s.usable = [{ size: 1234, sha256: "a".repeat(64) }];
+    w.s.fp = undefined;
+    expect(await say()).toMatchObject({ status: 409, reason: "claude_version_unverified", claudeVersion: "2.1.318" });
+    expect(w.sends).toHaveLength(0);
+  });
+
+  it("refuses when the last name of the real path is not a version shape, even if the fingerprint is usable", async () => {
+    for (const real of ["/x/bin/claude", "/x/versions/2.1", "/x/versions/2.1.318-beta", "/x/versions/v2.1.318", "/x/versions/2.1.318.1", undefined]) {
+      w.s.real = real;
+      expect(await say(), String(real)).toMatchObject({ status: 409, reason: "claude_version_unverified", claudeVersion: "" });
+    }
+    expect(w.sends).toHaveLength(0);
+  });
+
+  it("refuses with claude_version_probing while a probe of the same fingerprint is running", async () => {
+    w.s.usable = [];
+    w.s.probing = "a".repeat(64);
+    expect(await say()).toMatchObject({ status: 409, reason: "claude_version_probing", claudeVersion: "2.1.318" });
+    w.s.probing = "c".repeat(64);
+    expect(await say()).toMatchObject({ status: 409, reason: "claude_version_unverified" });
+    expect(w.sends).toHaveLength(0);
+  });
+
+  it("transition: a version name in the config list also passes (record union config)", async () => {
+    w.s.usable = [];
+    expect(await say()).toMatchObject({ status: 409, reason: "claude_version_unverified" });
+    rmSync(w.dir, { recursive: true, force: true });
+    w = makeWorld({ versions: ["2.1.318"] });
+    w.s.usable = [];
+    w.s.fp = undefined;
+    expect((await say()).status).toBe(200);
+  });
+
+  it("refuses a probe session with version_probe_session", async () => {
+    (w.session as unknown as { versionProbe: boolean }).versionProbe = true;
+    expect(await say()).toMatchObject({ status: 409, reason: "version_probe_session" });
+    expect(w.sends).toHaveLength(0);
   });
 });
 

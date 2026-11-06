@@ -193,6 +193,7 @@ export function ConsolePage() {
   // 復元の案内は、閉じた内容を覚えておく（メモリだけ。同じ内容は出し直さない）
   const [dismissedNotices, setDismissedNotices] = useState<string | null>(null);
   const [dismissedTerminalNotices, setDismissedTerminalNotices] = useState<string | null>(null);
+  const [dismissedCaseVersionNotices, setDismissedCaseVersionNotices] = useState<string | null>(null);
   const terminalRef = useRef<TerminalHandle>(null);
   const selectedIdRef = useRef<string | null>(null);
   selectedIdRef.current = selectedId;
@@ -409,6 +410,9 @@ export function ConsolePage() {
   const terminalNotices = state.terminalNotices ?? [];
   const terminalNoticesKey = JSON.stringify(terminalNotices);
   const showTerminalNotices = terminalNotices.length > 0 && dismissedTerminalNotices !== terminalNoticesKey;
+  const caseVersionNotices = state.caseVersionNotices ?? [];
+  const caseVersionNoticesKey = JSON.stringify(caseVersionNotices);
+  const showCaseVersionNotices = caseVersionNotices.length > 0 && dismissedCaseVersionNotices !== caseVersionNoticesKey;
 
   return (
     <div className="ac-page">
@@ -474,6 +478,20 @@ export function ConsolePage() {
               </ul>
               <Button variant="outline" size="sm" onClick={() => setDismissedNotices(noticesKey)}>
                 {t("ac.restoreNotice.dismiss")}
+              </Button>
+            </Callout>
+          </div>
+        )}
+        {showCaseVersionNotices && (
+          <div data-testid="case-version-notices">
+            <Callout variant="info" title={t("ac.caseVersionNotice.title")}>
+              <ul>
+                {caseVersionNotices.map((n, i) => (
+                  <li key={`${n.reason}-${n.sha16}-${i}`}>{t(`ac.caseVersionNotice.${n.reason}`, { version: n.claudeVersion, detail: n.detail ?? "" })}</li>
+                ))}
+              </ul>
+              <Button variant="outline" size="sm" onClick={() => setDismissedCaseVersionNotices(caseVersionNoticesKey)}>
+                {t("ac.caseVersionNotice.dismiss")}
               </Button>
             </Callout>
           </div>

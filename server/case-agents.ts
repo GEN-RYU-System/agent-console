@@ -81,6 +81,8 @@ export interface CaseStateFile {
   status: string | undefined;
   /** 名前に `wait` を含むキー（大小文字を区別しない） */
   waitKeys: string[];
+  /** JSON の version（文字列のときだけ。probe の P0 が使う。無ければ undefined） */
+  version?: string;
 }
 
 /**
@@ -114,6 +116,7 @@ export function readCaseStateFile(caseHome: string, pids: ReadonlySet<number>): 
         pid: typeof o.pid === "number" ? o.pid : undefined,
         status: typeof o.status === "string" ? o.status : undefined,
         waitKeys: Object.keys(o).filter((k) => k.toLowerCase().includes("wait")),
+        ...(typeof o.version === "string" ? { version: o.version } : {}),
       });
     }
     const after = isRealDir(dir);

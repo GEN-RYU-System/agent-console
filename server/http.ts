@@ -39,7 +39,8 @@ import type { ReserveAccess } from "./reserve-token.ts";
 import { disabledIntakeStatus, type DiscordIntakeStatus } from "./discord-intake.ts";
 import { POST_MAX_BYTES, run as runActivityHook } from "../hooks/activity-hook.mjs";
 import { lookupPidByLsof, readLstart, singleOtherPid, type LookupPid } from "./case-proxy.ts";
-import { caseDirOf } from "./case-sandbox.ts";
+import { CASE_PROBE_ACTIVITY_PATH, caseDirOf } from "./case-sandbox.ts";
+import type { CaseVersionProbe } from "./case-say-probe.ts";
 import { readJsonFile, writeJsonAtomic } from "./json-store.ts";
 import { readProcessTable } from "./process-tree.ts";
 
@@ -83,6 +84,8 @@ export interface AppDeps {
   relay: RelayManager;
   /** AI 用コマンドの合言葉（dataDir/reserve-token）。作れなかった・本番のポートでないときは token が null */
   reserve: ReserveAccess;
+  /** 件の claude の版の自動の確かめ（probe の件の道具の記録の受け口が使う。省略時は受け口が 403） */
+  versionProbe?: CaseVersionProbe;
   /** ac-routine の一時承認の保管。無ければ deps ごとにメモリに 1 つ作る（試験では時刻を差し替えたものを渡す） */
   routineApprovals?: RoutineApprovals;
   /** Discord の受け口（設計 discord-pdca §4-1）。省略時は状態の入口が notStarted を返す */
@@ -204,6 +207,7 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
       terminalRenderer: config.terminalRenderer,
       uploadMaxBytes: config.uploadMaxBytes,
       accountSwitchEnabled: config.accountLoginCommand !== undefined,
+      caseSayVersions: hub.caseSayVersions(),
     });
     return;
   }
@@ -465,6 +469,23 @@ async function handleCaseActivity(deps: AppDeps, req: IncomingMessage, res: Serv
     if (!pinned) { sendJson(res, 409, { error: "session_id differs from the case" }); return; }
     runActivityHook(JSON.stringify(body), deps.config.dataDir);
   }
+  res.writeHead(204).end();
+}
+
+/**
+ * probe の件の道具の記録の受け口（POST /api/agent/case-probe-activity。設計 conversation-consent §14-14-3 D3'）。合言葉は持たない。
+ * 件を caseOfRequest で引き、それが今動いている probe の件でなければ 403。受けた入力は runActivityHook に渡さない
+ * （活動の記録にも applyPre にも入らず、Agent の開始の記録を上書きしない）。pre / post の記録はメモリの probe だけが持つ
+ */
+async function handleCaseProbeActivity(deps: AppDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (req.method !== "POST") { sendJson(res, 405, { error: "method not allowed" }); return; }
+  if (req.headers.origin !== undefined) { sendJson(res, 403, { error: "forbidden" }); return; }
+  const caseId = await caseOfRequest(deps, req);
+  if (caseId === null) { sendJson(res, 401, { error: "unauthorized" }); return; }
+  const probe = deps.versionProbe;
+  if (probe === undefined || probe.runningCaseId() !== caseId) { sendJson(res, 403, { error: "forbidden" }); return; }
+  const body = await readJsonBody(req, POST_MAX_BYTES);
+  probe.recordTool(body);
   res.writeHead(204).end();
 }
 
@@ -788,6 +809,10 @@ export function createRequestHandler(deps: AppDeps) {
       // 件のセッションの活動の受け口。合言葉を持たないので、/api/ の認証の前に置く（件の判定は送り元の pid）
       if (url.pathname === CASE_ACTIVITY_PATH) {
         await handleCaseActivity(deps, req, res);
+        return;
+      }
+      if (url.pathname === CASE_PROBE_ACTIVITY_PATH) {
+        await handleCaseProbeActivity(deps, req, res);
         return;
       }
       if (url.pathname.startsWith("/api/")) {

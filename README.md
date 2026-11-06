@@ -303,19 +303,20 @@ node "<dataDir>/bin/ac-case-say.mjs" <件の id> <手順ファイル名>
 - 呼べるのは設定 `caseSayRoles`（既定 `["opus-designer"]`。件の役割は入れられない）の役割の会話だけです。
 - 宛先は、このサーバーが今の起動中に自分で新しく作った件の窓だけです。**サーバーを起き直してつなぎ直した窓（`reattached`）には送りません**（開き直した件にだけ送れます）。窓の形が記録と違う（区画の入れ替え・分割・窓の追加）、端末の接続が今すぐ書けない（用意前・取り直し中・ため込みあり）、件の状態ファイルが `idle` でない・待ちのキーがある、のときも送りません。
 - 貼り付けと Enter は、区画の番号 `%N` を宛先にし、tmux が実行する時点でその区画の pid が記録のときだけ書く条件付き（`if-shell -F`）で送ります。貼り付けを書いた後に Enter を送り切らずに終えたときは、その窓にはもう送りません（止めの印。窓が終わる・一覧から外すまで続き、消す口はありません）。
-- 断られたときは理由を1行出して終了コード 1 になります（例: `断られました（409）: claude_version_unverified`）。理由: `no_session`・`closing`・`not_case_session`・`reattached`・`no_main_record`・`main_changed`・`pane_unreadable`・`pane_changed`・`terminal_not_ready`・`claude_version_unverified`・`stopped_after_paste`・`step_file_unusable`・`state_file_unreadable`・`state_file_pid_mismatch`・`claude_not_idle`・`claude_waiting`・`agents_unavailable`・`process_list_unavailable`・`write_in_progress`・`pane_changed_during_paste`・`state_changed_before_enter`・`enter_not_sent`・`enter_not_confirmed`・`exception`。
+- 断られたときは理由を1行出して終了コード 1 になります（例: `断られました（409）: claude_version_unverified`）。理由: `no_session`・`closing`・`not_case_session`・`reattached`・`no_main_record`・`main_changed`・`pane_unreadable`・`pane_changed`・`terminal_not_ready`・`claude_version_unverified`・`claude_version_probing`・`version_probe_session`・`stopped_after_paste`・`step_file_unusable`・`state_file_unreadable`・`state_file_pid_mismatch`・`claude_not_idle`・`claude_waiting`・`agents_unavailable`・`process_list_unavailable`・`write_in_progress`・`pane_changed_during_paste`・`state_changed_before_enter`・`enter_not_sent`・`enter_not_confirmed`・`exception`。
 - 監査: 送るたびに `dataDir/routine-audit.jsonl` へ `caseSay`、断るたびに `caseSayRefused`（理由・件の id・手順ファイル名・呼び出し元の番号・文と手順ファイルの sha256 の先頭16桁・claude の版）を1行残します。本文と合言葉は書きません。
 
-### claude の版の一覧（`caseSayClaudeVersions`）
+### 版はサーバーが自分で確かめる
 
-件を開くとき、サーバーは claude の実体の道を解き、その最後の名前が `N.N.N` の形ならそれを件の claude の版として記録します。設定 `caseSayClaudeVersions` に無い版・版の形でない名前の件には送りません（`claude_version_unverified`）。コードの既定は空（どの件にも送らない）で、同梱の `agent-console.config.json` には `["2.1.318", "2.1.319"]` が入っています。要素が `N.N.N` の形でないと起動時エラーです。
+件の claude の版が使ってよいかは、サーバーが自分で確かめて決めます。人が打つ・読む・PR を出す手順はありません（設計は Sales Anchor の `docs/handoff/conversation-consent/design.md` §14-14）。
 
-版を足す手順（PO のふつうの claude が更新されて、件の版が変わったとき）:
-
-1. PO が件を1つ開く。
-2. PO が、設計 §14-13-7 の K41 (a)(b) の頼み事と K32 の一文を件の窓に打つ。
-3. Opus が、画面の写しと状態ファイルを読むだけで、選ぶ画面が 0 件であることと K41 の○を確かめる（Opus は件の窓に打たない）。
-4. 版を足す PR を出し、審査を通してから入れる。
+- 件を開く前に、サーバーが claude の実体の指紋（sha256・サイズ）を取ります。判定 4b は、この指紋が記録の「使える項目」と一致するかで決めます。版の名前だけでは通りません。
+- 記録は `dataDir/case-say-claude-versions.json`（書き手はサーバーだけ。項目ごとに `dataDir/case-say-claude-versions.key` の鍵で MAC を付けます。件の部屋からは読めず書けません）。読めない・MAC が合わない項目があるときは、使える版 0 として扱い、上書きしません（記録を別の名前に退避してサーバーを起き直すと、もう一度確かめます）。
+- 指紋が未記録なら、サーバーが「probe の件」を自分で開き、決まった文 3 つを送って機械的に確かめます（件を開いたとき・サーバーの起動時）。○なら記録に `usable: true` の項目を足し、×なら使えないまま残します（24 時間は再確認せず、連続 3 回×で止まります）。probe の件への画面入力・チャット・case-say は全部断ります（`version_probe_session`）。
+- 起動のたびに、記録の各項目の実体を指紋で確かめ直し、変わっていれば `usable: false` にします。
+- 知らせ: 画面の案内・macOS 通知（設定 `notify.macos` が true のとき）・`routine-audit.jsonl` の `caseClaudeVersionNotice`・`/api/state` の `caseSayVersions`。確かめた結果は 1 回ごとに `caseClaudeVersionProbe` として監査に残ります（消しません）。
+- 確かめている間・計算中は case-say が `claude_version_probing` で断られます。
+- 過渡期（この版の間だけ）: 設定 `caseSayClaudeVersions` の一覧にある版の名前も、記録の使える項目と並べて通します（記録が 1 度も○になる前に case-say が全件止まるのを避けるため）。一覧は次の便で外します。
 
 ## 設計メモ
 
