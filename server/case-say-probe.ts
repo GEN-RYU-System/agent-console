@@ -36,6 +36,8 @@ export interface ProbeToolRecord {
   tool: string;
   tool_use_id: string;
   permission_mode: string;
+  /** Write のときだけ tool_input.file_path（文字列のとき）。ほかの道具・無いときは "" */
+  path: string;
 }
 
 /** 受け口が受けた JSON から、持ってよい欄だけを取り出す。pre / post の判別ができなければ null */
@@ -46,7 +48,10 @@ export function toolRecordOf(body: unknown, ts: number): ProbeToolRecord | null 
   const phase = ev === "PreToolUse" ? "pre" : ev === "PostToolUse" ? "post" : null;
   if (phase === null) return null;
   const str = (v: unknown): string => (typeof v === "string" ? v.slice(0, 200) : "");
-  return { ts, phase, agent_id: str(o.agent_id), tool: str(o.tool_name), tool_use_id: str(o.tool_use_id), permission_mode: str(o.permission_mode) };
+  const tool = str(o.tool_name);
+  const input = typeof o.tool_input === "object" && o.tool_input !== null && !Array.isArray(o.tool_input) ? (o.tool_input as Record<string, unknown>) : undefined;
+  const filePath = tool === "Write" && typeof input?.file_path === "string" ? input.file_path.slice(0, 1024) : "";
+  return { ts, phase, agent_id: str(o.agent_id), tool, tool_use_id: str(o.tool_use_id), permission_mode: str(o.permission_mode), path: filePath };
 }
 
 /** 画面の写し: 制御文字（改行以外）を除き、末尾 4KiB に切る */
@@ -155,7 +160,8 @@ export interface ProbePorts {
   capturePane(c: ProbeCase): Promise<string>;
   /** R の下のファイルの中身。無ければ undefined */
   readFile(c: ProbeCase, name: string): Promise<string | undefined>;
-  agentEvidence(c: ProbeCase, probeFile: string): Promise<AgentEvidence>;
+  /** records は probe の道具の記録。P2 の間（sent2At 以降）の Write の post で path が probeFile に完全一致し agent_id が空でない記録から、その agent_id の開始・終了の数を読む */
+  agentEvidence(c: ProbeCase, probeFile: string, records: readonly ProbeToolRecord[], sent2At: number): Promise<AgentEvidence>;
   audit(entry: RoutineAuditEntry): Promise<void>;
   notice(n: { reason: VersionNoticeReason; claudeVersion: string; sha256: string; detail?: string }): void;
 }
@@ -355,7 +361,12 @@ export class CaseVersionProbe {
       // 件を開く（P0）。記録に runningVersionProbe を書く
       probeCase = await ports.openCase(`probe claude ${version}`);
       this.runningCase = probeCase.id;
-      await this.store.setRunning({ caseId: probeCase.id, startedAt: startMs, sha256: target.fp.sha256, claudeVersion: version });
+      try {
+        await this.store.setRunning({ caseId: probeCase.id, startedAt: startMs, sha256: target.fp.sha256, claudeVersion: version });
+      } catch {
+        // 記録に書けなければ打ち切る（既存の打ち切りと同じ片付けの道へ。outcome は aborted）
+        throw new ProbeAborted("setRunning");
+      }
       const c = probeCase;
       const idleWait = async (timeoutMs: number, extra?: () => Promise<boolean>): Promise<boolean> => {
         const end = Math.min(ports.now() + timeoutMs, deadline);
@@ -431,7 +442,7 @@ export class CaseVersionProbe {
           await this.tick(deadline);
         }
       }
-      const ev = await ports.agentEvidence(c, path.join(c.R, "probe-2.txt"));
+      const ev = await ports.agentEvidence(c, path.join(c.R, "probe-2.txt"), this.records, sent2At);
       p2 = p2 && ev.agentWrite && ev.subagentStarts >= 1 && ev.subagentStops >= 1;
       checks.P2 = p2;
       counts = { p2AgentWrite: ev.agentWrite ? 1 : 0, p2SubagentStarts: ev.subagentStarts, p2SubagentStops: ev.subagentStops };
@@ -443,9 +454,10 @@ export class CaseVersionProbe {
       if (!(await ports.send(c, s3))) throw new ProbeFailed("P3");
       {
         const end = ports.now() + PROBE_P3_MS;
-        await idleWait(Math.max(0, end - ports.now()), async () =>
+        const back = await idleWait(Math.max(0, end - ports.now()), async () =>
           this.records.some((r) => r.ts >= sent3At && r.phase === "pre" && r.agent_id === "" && r.permission_mode === "plan"),
         );
+        if (!back) throw new ProbeFailed("P3");
       }
       // idle に戻った後、hook の送信の打ち切り（2 秒）より長く待ってから判定する
       await ports.sleep(this.postIdleWaitMs);
@@ -480,7 +492,7 @@ export class CaseVersionProbe {
       await ports.cleanup(probeCase).catch(() => undefined);
     }
     this.runningCase = undefined;
-    await this.store.setRunning(undefined);
+    await this.store.setRunning(undefined).catch(() => undefined);
     this.records = [];
     if (failed === undefined && !aborted && checks.P5 === undefined) failed = "P5";
     return this.finish({ target, trigger, startedAt, version, checks, failed, aborted, counts, panes, probeCaseId: probeCase?.id ?? "" });

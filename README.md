@@ -311,7 +311,7 @@ node "<dataDir>/bin/ac-case-say.mjs" <件の id> <手順ファイル名>
 件の claude の版が使ってよいかは、サーバーが自分で確かめて決めます。人が打つ・読む・PR を出す手順はありません（設計は Sales Anchor の `docs/handoff/conversation-consent/design.md` §14-14）。
 
 - 件を開く前に、サーバーが claude の実体の指紋（sha256・サイズ）を取ります。判定 4b は、この指紋が記録の「使える項目」と一致するかで決めます。版の名前だけでは通りません。
-- 記録は `dataDir/case-say-claude-versions.json`（書き手はサーバーだけ。項目ごとに `dataDir/case-say-claude-versions.key` の鍵で MAC を付けます。件の部屋からは読めず書けません）。読めない・MAC が合わない項目があるときは、使える版 0 として扱い、上書きしません（記録を別の名前に退避してサーバーを起き直すと、もう一度確かめます）。
+- 記録は `dataDir/case-say-claude-versions.json`（書き手はサーバーだけ。項目ごとに `dataDir/case-say-claude-versions.key` の鍵で MAC を付けます。件の部屋からは読めず書けません）。MAC が合わない項目はその項目だけ捨て（記録は上書きしません）、知らせ n5 を出します。記録が壊れた JSON で読めないときは、使える版 0 として扱います。
 - 指紋が未記録なら、サーバーが「probe の件」を自分で開き、決まった文 3 つを送って機械的に確かめます（件を開いたとき・サーバーの起動時）。○なら記録に `usable: true` の項目を足し、×なら使えないまま残します（24 時間は再確認せず、連続 3 回×で止まります）。probe の件への画面入力・チャット・case-say は全部断ります（`version_probe_session`）。
 - 起動のたびに、記録の各項目の実体を指紋で確かめ直し、変わっていれば `usable: false` にします。
 - 知らせ: 画面の案内・macOS 通知（設定 `notify.macos` が true のとき）・`routine-audit.jsonl` の `caseClaudeVersionNotice`・`/api/state` の `caseSayVersions`。確かめた結果は 1 回ごとに `caseClaudeVersionProbe` として監査に残ります（消しません）。

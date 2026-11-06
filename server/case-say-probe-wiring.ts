@@ -6,7 +6,7 @@ import path from "node:path";
 import type { ActivityStore } from "./activity.ts";
 import { readCaseStateFile } from "./case-agents.ts";
 import { caseCloneDir } from "./case-clone.ts";
-import { removeCaseFiles, resolveClaudeReal } from "./case-sandbox.ts";
+import { removeCaseFiles, resolveClaudeReal, UUID } from "./case-sandbox.ts";
 import { CaseVersionProbe, type ProbePorts } from "./case-say-probe.ts";
 import { CaseSayVersionStore, fingerprintFile } from "./case-say-versions.ts";
 import type { Config } from "./config.ts";
@@ -96,13 +96,24 @@ export function realProbePorts(deps: CaseVersionDeps, notice: ProbePorts["notice
         return undefined;
       }
     },
-    agentEvidence: async (c, probeFile) => {
+    agentEvidence: async (c, probeFile, records, sent2At) => {
+      const none = { agentWrite: false, subagentStarts: 0, subagentStops: 0 };
       const csid = sessions.get(c.id)?.claudeSessionId;
-      if (csid === undefined) return { agentWrite: false, subagentStarts: 0, subagentStops: 0 };
+      if (csid === undefined) return none;
+      // P2 の間の Write の post で、path が probe-2.txt に完全一致し、agent_id が空でない記録
+      const ids = new Set(records.filter((r) => r.phase === "post" && r.tool === "Write" && r.ts >= sent2At && r.path === probeFile && r.agent_id !== "").map((r) => r.agent_id));
+      if (ids.size === 0) return none;
       await activity.refresh().catch(() => undefined);
-      const wrote = activity.files(csid).some((f) => f.path === probeFile && f.byAgent);
-      const sizes = activity.sizes(csid);
-      return { agentWrite: wrote, subagentStarts: sizes.restarts, subagentStops: sizes.stops };
+      let best = { starts: 0, stops: 0 };
+      for (const id of ids) {
+        const life = activity.agentLifecycle(csid, id);
+        if (life.starts >= 1 && life.stops >= 1) {
+          best = life;
+          break;
+        }
+        if (life.starts + life.stops > best.starts + best.stops) best = life;
+      }
+      return { agentWrite: true, subagentStarts: best.starts, subagentStops: best.stops };
     },
     audit,
     notice,
@@ -140,7 +151,11 @@ export function setupCaseVersionService(deps: CaseVersionDeps): CaseVersionServi
       if (report.discarded) notice({ reason: "n5", claudeVersion: "", sha256: "" });
       // 前回の probe が残っていれば片付ける（順: 一覧 → kill-session 1 つ → 写し・R・D/cases → 記録 → 復元）
       const running = store.runningVersionProbe();
-      if (running !== undefined) {
+      if (running !== undefined && !UUID.test(running.caseId)) {
+        // caseId が UUID の形でない記録は信じない: kill も片付けもせず、記録を消して知らせだけ出す
+        await store.setRunning(undefined);
+        notice({ reason: "n5", claudeVersion: "", sha256: "" });
+      } else if (running !== undefined) {
         const name = sessionName(running.caseId);
         sessions.killSweptSession(name);
         await ports.cleanup({ id: running.caseId, R: sessions.caseCleanupPaths(running.caseId).R }).catch(() => undefined);

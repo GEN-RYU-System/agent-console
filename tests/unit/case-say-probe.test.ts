@@ -146,8 +146,11 @@ describe("probe pure helpers", () => {
   });
   it("toolRecordOf keeps only the allowed fields (no tool_input / tool_response)", () => {
     const r = toolRecordOf({ hook_event_name: "PreToolUse", tool_name: "Write", tool_use_id: "x", permission_mode: "plan", tool_input: { file_path: "/secret" }, tool_response: "x", agent_id: "" }, 7);
-    expect(r).toEqual({ ts: 7, phase: "pre", agent_id: "", tool: "Write", tool_use_id: "x", permission_mode: "plan" });
-    expect(JSON.stringify(r)).not.toContain("secret");
+    expect(r).toEqual({ ts: 7, phase: "pre", agent_id: "", tool: "Write", tool_use_id: "x", permission_mode: "plan", path: "/secret" });
+    expect(JSON.stringify(r)).not.toContain("tool_response");
+    // Write 以外の道具では path を持たない
+    expect(toolRecordOf({ hook_event_name: "PostToolUse", tool_name: "Read", tool_input: { file_path: "/x" } }, 1)?.path).toBe("");
+    expect(toolRecordOf({ hook_event_name: "PostToolUse", tool_name: "Write", tool_input: { file_path: 5 } }, 1)?.path).toBe("");
     expect(toolRecordOf({ hook_event_name: "Stop" }, 1)).toBeNull();
     expect(toolRecordOf("x", 1)).toBeNull();
   });
@@ -164,7 +167,7 @@ describe("probe pure helpers", () => {
     expect(s).not.toMatch(/[\u0000-\u0008\u000b-\u001f]/);
   });
   it("countTools separates the P2 window, plan rows, passed tools and Bash rows", () => {
-    const r = (ts: number, phase: "pre" | "post", over: Partial<ProbeToolRecord> = {}): ProbeToolRecord => ({ ts, phase, agent_id: "", tool: "Write", tool_use_id: `i${ts}`, permission_mode: "dontAsk", ...over });
+    const r = (ts: number, phase: "pre" | "post", over: Partial<ProbeToolRecord> = {}): ProbeToolRecord => ({ ts, phase, agent_id: "", tool: "Write", tool_use_id: `i${ts}`, permission_mode: "dontAsk", path: "", ...over });
     const c = countTools([r(1, "pre"), r(2, "post", { tool_use_id: "i1" }), r(5, "post"), r(11, "pre", { permission_mode: "plan", tool_use_id: "p" }), r(12, "pre", { tool: "Bash" })], 4, 10);
     expect(c).toMatchObject({ p2Posts: 1, planPres: 1, planPresNoId: 0, planPosts: 0, mainPostsAfter3: 0, bashPres: 1, unpairedPres: 0 });
   });
@@ -247,6 +250,36 @@ describe("K51: exactly one check failing is not usable and names the number", ()
       if (check.startsWith("E")) expect(w.opened).toHaveLength(0);
     });
   }
+
+  it("F1: P3 fails when the state stays busy after sentence 3 (never back to idle)", async () => {
+    const w = world(dir);
+    await w.store.load();
+    const [, , s3] = probeSentences(R);
+    const base = w.ports.readState;
+    w.ports.readState = async (c) => {
+      const s = await base(c);
+      return w.sent.includes(s3) && s.state ? { ...s, state: { ...s.state, status: "busy" } } : s;
+    };
+    const result = await w.probe.request("t2");
+    expect(result?.outcome).toBe("denied");
+    expect(result?.failedCheck).toBe("P3");
+    expect(w.store.isUsable(FP)).toBe(false);
+  });
+
+  it("F5: when setRunning throws, the probe is aborted, the case is cleaned up and the audit outcome is aborted", async () => {
+    const w = world(dir);
+    await w.store.load();
+    w.store.setRunning = async () => {
+      throw new Error("disk full");
+    };
+    const result = await w.probe.request("t2");
+    expect(result?.outcome).toBe("aborted");
+    expect(w.closed).toEqual(["probe-1"]);
+    expect(w.cleaned).toEqual(["probe-1"]);
+    expect(w.sent).toEqual([]);
+    expect(w.audit.at(-1)).toMatchObject({ action: "caseClaudeVersionProbe", outcome: "aborted" });
+    expect(w.store.isUsable(FP)).toBe(false);
+  });
 
   it("P5: a status other than idle/busy while waiting is recorded as P5", async () => {
     const w = world(dir);

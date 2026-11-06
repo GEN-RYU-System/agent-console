@@ -78,6 +78,25 @@ describe("K52: startup cleanup and re-check", () => {
     expect(r.audit.find((a) => a.action === "caseClaudeVersionProbe")).toMatchObject({ outcome: "aborted", probeCaseId: OLD_PROBE, sha16: b.sha256.slice(0, 16) });
   });
 
+  it("F4: a running record whose caseId is not a UUID is not trusted: no kill, no cleanup, record cleared, n5 once, recheck still runs", async () => {
+    const seed = new CaseSayVersionStore(dir);
+    await seed.load();
+    const b = binary("2.1.320", "claude-bytes");
+    await seed.upsert(entry(b));
+    await seed.setRunning({ caseId: "../../etc", startedAt: 1, sha256: b.sha256, claudeVersion: "2.1.320" });
+    // recheck が呼ばれたことは、実体が変わった項目が使えなくなる（n3）ことで確かめる
+    writeFileSync(b.real, "changed-bytes");
+    const r = rig(b.real);
+    mkdirSync(r.R, { recursive: true });
+    await r.svc.startupCleanup();
+    expect(r.calls.filter((x) => x.startsWith("kill:"))).toEqual([]);
+    expect(existsSync(r.R)).toBe(true);
+    expect(r.audit.filter((a) => a.action === "caseClaudeVersionProbe")).toEqual([]);
+    expect(r.svc.store.runningVersionProbe()).toBeUndefined();
+    expect(r.notices.filter((n) => n.reason === "n5")).toHaveLength(1);
+    expect(r.notices.filter((n) => n.reason === "n3")).toHaveLength(1);
+  });
+
   it("an entry whose binary changed or vanished becomes unusable, with n3 and an audit notice row for each", async () => {
     const seed = new CaseSayVersionStore(dir);
     await seed.load();

@@ -11,7 +11,7 @@ import { caseCloneDir } from "./case-clone.ts";
 
 export class CaseSandboxUnavailableError extends Error {}
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DIR_MODE = 0o700;
 const FILE_MODE = 0o600;
 const GH_USER = "shingo-cc";
