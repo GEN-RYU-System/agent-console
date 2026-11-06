@@ -66,6 +66,8 @@ export interface RoutineAuditEntry {
   sha16?: string;
   /** caseClaudeVersionProbe: ×の番号（E1〜E4・P0〜P5・R1） */
   failedCheck?: string;
+  /** caseClaudeVersionProbe: outcome が aborted のときの打ち切りの理由（200 バイトまで） */
+  abortReason?: string;
   /** caseClaudeVersionProbe: 発火の理由（t1 件を開いた・t2 サーバー起動） */
   trigger?: "t1" | "t2";
   /** caseClaudeVersionProbe: probe の件の id */

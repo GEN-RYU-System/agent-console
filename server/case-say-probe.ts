@@ -63,6 +63,13 @@ export function sanitizePane(text: string): string {
   return buf.subarray(buf.length - PROBE_PANE_MAX_BYTES).toString("utf8").replace(/^�+/, "");
 }
 
+/** 文字列を UTF-8 で maxBytes 以内に切る（末尾の欠けた文字は落とす） */
+function truncateBytes(text: string, maxBytes: number): string {
+  const buf = Buffer.from(text, "utf8");
+  if (buf.length <= maxBytes) return text;
+  return buf.subarray(0, maxBytes).toString("utf8").replace(/�+$/, "");
+}
+
 /** P4: 選ぶ画面の形の数。行頭の番号付き選択肢が 2 行以上連続・(y/n)・Do you want to・Esc to cancel・Yes と No が同じ行 */
 export function countPickScreens(sample: string): number {
   let n = 0;
@@ -186,7 +193,11 @@ interface Target {
   fp: Fingerprint | null;
 }
 
-class ProbeAborted extends Error {}
+class ProbeAborted extends Error {
+  constructor(readonly reason: string) {
+    super(reason);
+  }
+}
 class ProbeFailed extends Error {
   constructor(readonly check: string) {
     super(check);
@@ -339,6 +350,7 @@ export class CaseVersionProbe {
     let counts: Record<string, number> = {};
     let failed: string | undefined;
     let aborted = false;
+    let abortReason: string | undefined;
     this.abortFlag = false;
     this.records = [];
     try {
@@ -482,11 +494,24 @@ export class CaseVersionProbe {
         if (!checks[key]) throw new ProbeFailed(key);
       }
     } catch (err) {
-      if (err instanceof ProbeAborted) aborted = true;
-      else if (err instanceof ProbeFailed) failed = err.check;
+      if (err instanceof ProbeAborted) {
+        aborted = true;
+        abortReason = err.reason;
+      } else if (err instanceof ProbeFailed) failed = err.check;
       else {
         // 件が開けない(503 など)・想定外の例外: 途中で終わった扱い（failCount を増やさない）
         aborted = true;
+        const name = err instanceof Error ? err.name : "non-Error";
+        const msg = err instanceof Error ? err.message : String(err);
+        abortReason = truncateBytes(sanitizePane(`error: ${name}: ${msg}`), 200);
+      }
+    }
+    // ×・打ち切りのときも画面を1枚残す（撮れなくても片付けの道は必ず通す）
+    if (probeCase !== undefined && (failed !== undefined || aborted) && panes.length < PROBE_PANE_MAX_SAMPLES) {
+      try {
+        panes.push(sanitizePane(await ports.capturePane(probeCase)));
+      } catch {
+        // 飲み込む
       }
     }
     // 片付け: 閉じる → R・W・D/cases を消す。どこまで進んだかに依らず必ず行う
@@ -498,7 +523,7 @@ export class CaseVersionProbe {
     await this.store.setRunning(undefined).catch(() => undefined);
     this.records = [];
     if (failed === undefined && !aborted && checks.P5 === undefined) failed = "P5";
-    return this.finish({ target, trigger, startedAt, version, checks, failed, aborted, counts, panes, probeCaseId: probeCase?.id ?? "" });
+    return this.finish({ target, trigger, startedAt, version, checks, failed, aborted, abortReason, counts, panes, probeCaseId: probeCase?.id ?? "" });
   }
 
   private async finish(f: {
@@ -509,6 +534,7 @@ export class CaseVersionProbe {
     checks: Record<string, boolean>;
     failed: string | undefined;
     aborted: boolean;
+    abortReason: string | undefined;
     counts: Record<string, number>;
     panes: string[];
     probeCaseId: string;
@@ -532,6 +558,7 @@ export class CaseVersionProbe {
       counts: f.counts,
       paneSamples: f.panes,
       ...(f.failed !== undefined ? { failedCheck: f.failed } : {}),
+      ...(outcome === "aborted" && f.abortReason !== undefined ? { abortReason: f.abortReason } : {}),
     };
     let auditOk = true;
     try {

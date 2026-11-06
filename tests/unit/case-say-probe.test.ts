@@ -428,3 +428,68 @@ describe("K59: the record is kept (§14-14-6 の 9)", () => {
     for (const f of fields) expect(aborted, f).toHaveProperty(f);
   });
 });
+
+describe("CS3a evidence: pane after a failure and the abort reason", () => {
+  it("T1: P3 failing keeps a 4th pane sample taken after sentence 3", async () => {
+    const w = world(dir);
+    await w.store.load();
+    const [, , s3] = probeSentences(R);
+    const base = w.ports.readState;
+    w.ports.readState = async (c) => {
+      const s = await base(c);
+      return w.sent.includes(s3) && s.state ? { ...s, state: { ...s.state, status: "busy" } } : s;
+    };
+    w.ports.capturePane = async () => (w.sent.includes(s3) ? "AFTER-SENTENCE-3\n" : "BEFORE\n");
+    const result = await w.probe.request("t2");
+    expect(result?.outcome).toBe("denied");
+    expect(result?.failedCheck).toBe("P3");
+    const row = w.audit.at(-1)!;
+    expect(row.paneSamples).toHaveLength(4);
+    expect(row.paneSamples?.at(-1)).toContain("AFTER-SENTENCE-3");
+  });
+
+  it("T2: openCase throwing Error('boom') aborts with the reason and takes no pane (no case)", async () => {
+    const w = world(dir);
+    await w.store.load();
+    w.ports.openCase = async () => {
+      throw new Error("boom");
+    };
+    const result = await w.probe.request("t2");
+    expect(result?.outcome).toBe("aborted");
+    const row = w.audit.at(-1)!;
+    expect(row.abortReason).toBe("error: Error: boom");
+    expect(row.paneSamples).toEqual([]);
+  });
+
+  it("T3: setRunning returning false records abortReason setRunning", async () => {
+    const w = world(dir);
+    await w.store.load();
+    const real = w.store.setRunning.bind(w.store);
+    w.store.setRunning = async (arg) => (arg === undefined ? real(arg) : false);
+    const result = await w.probe.request("t2");
+    expect(result?.outcome).toBe("aborted");
+    expect(w.audit.at(-1)?.abortReason).toBe("setRunning");
+  });
+
+  it("T4: capturePane throwing only after the failure still cleans up and stays denied", async () => {
+    const w = world(dir);
+    await w.store.load();
+    const [, , s3] = probeSentences(R);
+    const base = w.ports.readState;
+    w.ports.readState = async (c) => {
+      const s = await base(c);
+      return w.sent.includes(s3) && s.state ? { ...s, state: { ...s.state, status: "busy" } } : s;
+    };
+    let calls = 0;
+    w.ports.capturePane = async () => {
+      calls += 1;
+      if (calls > 3) throw new Error("tmux gone");
+      return "❯ \n";
+    };
+    const result = await w.probe.request("t2");
+    expect(result?.outcome).toBe("denied");
+    expect(w.closed).toEqual(["probe-1"]);
+    expect(w.cleaned).toEqual(["probe-1"]);
+    expect(w.audit.at(-1)?.paneSamples).toHaveLength(3);
+  });
+});
