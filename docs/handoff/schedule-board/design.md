@@ -1,6 +1,6 @@
 # 予定画面（開発／秘書）— design
 
-状態: 設計（Opus 作成 2026-10-30）・独立審査 第4回 APPROVE（§13）・PO 決定 D1〜D4 済み（§14）・D4 の金型 CalendarView は Sales Anchor main に入った（2026-11-06）・第12回・第13回（2026-11-06）で便1の画面を金型 CalendarView に合わせて直した・便1の実装カードは card-bin1.md・実装未着手。
+状態: 設計（Opus 作成 2026-10-30）・独立審査 第4回 APPROVE（§13）・PO 決定 D1〜D4 済み（§14）・D4 の金型 CalendarView は Sales Anchor main に入った（2026-11-06）・第12回・第13回（2026-11-06）で便1の画面を金型 CalendarView に合わせて直した・便1の実装カードは card-bin1.md（第13回 再審査 APPROVE）・便1は実装中。
 調査は recon.md（同じフォルダ）。成功条件（１）〜（７）と（８）〜（１２）は PO 承認済み（2026-10-30「1」）で、ここでは変えない。
 
 ## 1 目的（PO の言葉）
@@ -373,6 +373,7 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 
 - 第12回（2026-11-06、金型 CalendarView が main に入ったのを受けて・Opus）: §4-1 に金型の使い方・種類の色・送るボタン・終わった札を足した。§4-6 の layoutDay を取りやめ（金型と二重）、K1 を予定どうしの差で測る形に、K7b を e2e だけに直した。§15-1 に未確認4点の結果を書いた。便1の実装カード card-bin1.md を作った。
 - 第13回（2026-11-06、第12回のクラウド設計審査 REVISE の反映・Opus）: M1→カード §1 に tests/unit/helpers/harness.ts:281（AppDeps の必須欄が増えると型検査が落ちる）と作り方を足した。M2→カード §8 の月の升目を 10/26〜12/6 の42日ちょうどの1通りに直した。M3→§4-1 の行番号を :57・:540・:602 に、K9・§11 の console.spec.ts を :785 に、試験名 schedule-store を schedule-items に直し、schedule-assistant は便4・estimates は便5と書き添えた。M4→カード §8 に e2e で項目を作るときの認証を書いた。
+- 第13回の再審査（2026-11-06 14:49 JST、クラウド Opus 設計審査役・bf1a36c）: APPROVE。R1〜R5 すべて ○、新しい指摘なし。便1は実装カード card-bin1.md で実装に渡す（PO 承認 D3・D4 済み）。
 
 ## 14 PO の決定
 - D1: Google カレンダーをアプリに読ませるための、Google 側の初回設定（PO の手作業・約15分・Google の管理画面での操作）を行うか。→ 行う（2026-10-30 PO「1」）。手順は Opus が画面ごとに案内する。
