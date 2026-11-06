@@ -21,10 +21,11 @@
 | src/components/Schedule/SchedulePane.tsx（新） | 画面（§5） |
 | src/components/Schedule/ScheduleItemEditor.tsx（新） | 足す小窓の中身（ReservationEditor.tsx と同じ型） |
 | src/components/Schedule/scheduleView.ts（新） | 純粋な関数: `findOverlaps`・`jstToday`・`viewRange`・`toCalendarEvents`（§6） |
-| src/components/Schedule/Schedule.css（新） | var() だけ。border は 1px だけ |
+| src/components/Schedule/Schedule.css（新） | var() だけ。border は 1px だけ。第16回: `.ac-schedule` に display を付けるので、ほかの画面（ac-diff・ac-files 等）と同じく `.ac-schedule[hidden] { display: none; }` を必ず置く |
 | src/pages/ConsolePage.tsx | :57 の CenterTab に `"schedule"`、:540 の後に `{ key: "schedule", label: t("ac.tabs.schedule") }`、:602 の後に `<SchedulePane active={centerTab === "schedule"} />`、:46 の後に import |
 | src/locales/ja.json | `ac.tabs.schedule`＝「予定」、新しい名前の段 `ac.scheduleBoard.*`（§7）。既存の `ac.schedule.*`（:309、予約の重なりの知らせ）は触らない |
 | tests/unit/schedule-items.test.ts（新）・tests/unit/find-overlaps.test.tsx（新）・tests/unit/schedule-view.test.tsx（新）・tests/unit/schedule-http.test.ts（新） | §8 | 第15回: find-overlaps と schedule-view は src と @sa を読むので .tsx（tests/unit/**/*.ts は server 側の tsconfig で検査され src を解決できないため） |
+| tests/e2e/chat.spec.ts | 第16回: :86 の中央タブの並びの期待値の最後に「予定」を足す。ほかは変えない |
 | src/pages/ConsolePage.test.tsx | 第15回: 中央タブが1つ増えるので、タブの数と並びを数える試験（「8 tabs」・チャットが先頭でほかは今の順）を「予定」入りの数と並びに直す。ほかの試験は変えない |
 | tests/e2e/schedule.spec.ts（新） | §8 |
 | playwright.config.ts | :27 の app の testMatch に `schedule` を足す |
@@ -93,6 +94,8 @@ en.json は無い（agent-console は ja だけ。src/i18n.ts:19）。
 - 既存: `npm run typecheck`・`npm run lint`・`npm test`・e2e の既存の試験が緑のまま。Mac では回さない（CI に任せる）。
 
 - 第15回の補足（実装役の2回目の報告を受けて）: SchedulePane の CalendarView には `key`（月か日か・列の数）を付けてよい。同じ部品のまま日から月へ替えると画面が落ちるため。金型は直さない。全体の `npm test` で今回触っていないファイルが赤くなったら、土台（origin/main 412717f）でも同じ試験が赤いかを確かめる。同じなら直さずに報告に書き、土台では緑なら止まって報告する。
+
+- 第16回の補足（審査役の指摘を受けて）: e2e は schedule.spec.ts だけでなく `npm run test:e2e` の全体を回し、結果の数を報告する。土台 412717f で緑の e2e が赤になったら止まる。
 
 ## 9 受入（design §9 のうち便1の分）
 K1・K1b・K4・K7・K7b・K9。CI の結果に schedule.spec.ts の行があること（K9）。

@@ -376,6 +376,7 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 - 第13回の再審査（2026-11-06 14:49 JST、クラウド Opus 設計審査役・bf1a36c）: APPROVE。R1〜R5 すべて ○、新しい指摘なし。便1は実装カード card-bin1.md で実装に渡す（PO 承認 D3・D4 済み）。
 - 第14回（2026-11-06、実装役の NEEDS_DECISION の反映・Opus）: カード §5 が重なりの説明欄に Callout（danger）を指定していたが、金型 Callout の variant は warning と info だけ（salesanchor frontend/src/components/Callout.tsx:13）。§9（Google が止まるときは赤字でなく注意の Callout）と同じ考えで warning に直した。赤い印（K7・K7b）は箱の赤枠（conflict）と Badge（danger）で出すので、受入れ条件は変わらない。金型に danger を足す案は Sales Anchor 側の別の変更になり便1の範囲を広げるので採らない。
 - 第15回（2026-11-06、実装役の2回目の NEEDS_DECISION の反映・Opus）: 金型の月の日付は href の無い a で、link の役にならず、名前は title「2026年11月4日」だけだった（実装役が実物で観測）。K1b の押し口を getByTitle に直した。FullCalendar の名前は使わない約束のままで、受入れ条件の中身（月から日へ移ると2列）は変わらない。中央タブが1つ増えるので ConsolePage.test.tsx のタブの数と並びの試験を直す行をカードに足した。src を読む単体試験は .tsx にし、CalendarView の key 付けを認めた（どちらも金型と受入れ条件は変えない）。
+- 第16回（2026-11-06、マージ前審査の REQUEST_CHANGES の反映・Opus）: GitHub の e2e で端末の中身が空になる6本が赤（土台 412717f は緑）。原因は `.ac-schedule { display: grid }` が hidden 属性を打ち消し、隠しているはずの予定画面が中央に出たまま端末の場所をつぶしていたこと（ほかの画面は `[hidden] { display: none }` を置いている。src/components/DiffPane/DiffPane.css:10 ほか）。Schedule.css に同じ1行を置く。中央タブの並びを見る tests/e2e/chat.spec.ts:86 に「予定」を足す行をカードに足した。金型・受入れ条件は変えない。
 
 ## 14 PO の決定
 - D1: Google カレンダーをアプリに読ませるための、Google 側の初回設定（PO の手作業・約15分・Google の管理画面での操作）を行うか。→ 行う（2026-10-30 PO「1」）。手順は Opus が画面ごとに案内する。
