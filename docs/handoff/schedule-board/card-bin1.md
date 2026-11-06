@@ -30,6 +30,7 @@
 | tests/e2e/schedule.spec.ts（新） | §8 |
 | playwright.config.ts | :27 の app の testMatch に `schedule` を足す |
 | tests/e2e/console.spec.ts | :785 の除外に `schedule.json` を足す（activity・boards と同じ。起動時には作らないため）。一覧の配列は変えない。第17回: :598 の中央タブの数の期待値 `toBe(8)` を `toBe(9)` にする（「予定」が増えたぶん。その下の 1400px ではみ出さない確かめは変えない） |
+| src/pages/ConsolePage.css | 第18回: :26-30 の `.ac-center-tabs.comp-tabs .comp-tabs__tab` の `padding: 0 var(--space-3);` を `padding: 0 var(--space-2);` にする（12px→8px。9本で72px空く）。height・font-size の2行と上の説明は変えない（ConsolePage.test.tsx の「px/rem の直書きが無い」試験をそのまま通す）。説明に「タブ9本が1400pxで収まるよう左右の余白は --space-2（第18回、ubuntu の e2e で 0.03px はみ出しを実測）」を1行足す |
 | tests/unit/pairing.integration.test.ts | 第17回: :370 の CSP の期待の文字列に、http.ts と同じ位置で `font-src 'self' data:; ` を足す。ほかは変えない |
 | README.md | 「予定」節（使い方・保存先 dataDir/schedule.json・戻し方） |
 | docs/CHANGELOG.md | 0.52.0 の1行（戻し方 `bash scripts/ac-update.sh v0.51.0`） |
