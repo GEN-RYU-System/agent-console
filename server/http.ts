@@ -33,6 +33,7 @@ import { RoutineLimitError, validateReason, type RoutineService } from "./routin
 import { ScheduleConflictError, type ScheduleGate, type SchedulePreview } from "./schedule-gate.ts";
 import { RoutineAudit, type RoutineAuditAction, type RoutineAuditEntry } from "./routine-audit.ts";
 import { resolveRunAt, type ReservationService } from "./reservations.ts";
+import { type ScheduleItemService } from "./schedule-items.ts";
 import type { RelayManager } from "./relay.ts";
 import type { ReserveAccess } from "./reserve-token.ts";
 import { disabledIntakeStatus, type DiscordIntakeStatus } from "./discord-intake.ts";
@@ -74,6 +75,8 @@ export interface AppDeps {
   routines: RoutineService;
   /** 予約（日時を指定して 1 回送る）。正本は dataDir/reservations.json */
   reservations: ReservationService;
+  /** やること（予定画面）。正本は dataDir/schedule.json。ScheduleGate（schedule）とは別 */
+  scheduleItems: ScheduleItemService;
   /** 1時間の関門。画面には preview で重なりを見せるだけ（止めない） */
   schedule: ScheduleGate;
   /** 引き継ぎ（今のセッションに引き継ぎ書を書かせ、次のセッションへ渡す）。進行はメモリだけ */
@@ -225,6 +228,14 @@ async function handleApi(deps: AppDeps, req: IncomingMessage, res: ServerRespons
   if (routineEnabledMatch && req.method === "POST") { sendJson(res, 200, await deps.routines.setEnabled(routineEnabledMatch[1], jsonBody(await readJsonBody(req)).enabled)); return; }
   if (req.method === "GET" && url.pathname === "/api/reservations") { sendJson(res, 200, { items: await deps.reservations.listReady() }); return; }
   if (req.method === "GET" && url.pathname === "/api/schedule/preview") { sendJson(res, 200, schedulePreview(deps.schedule, url.searchParams)); return; }
+  if (req.method === "GET" && url.pathname === "/api/schedule") { sendJson(res, 200, { items: await deps.scheduleItems.list(url.searchParams.get("from") ?? "", url.searchParams.get("to") ?? "") }); return; }
+  const scheduleItemPath = /^\/api\/schedule\/items(?:\/([^/]+))?$/.exec(url.pathname);
+  if (scheduleItemPath) {
+    const itemId = scheduleItemPath[1] === undefined ? undefined : safeDecode(scheduleItemPath[1]);
+    if (req.method === "POST" && itemId === undefined) { sendJson(res, 201, await deps.scheduleItems.create(jsonBody(await readJsonBody(req)), "ui")); return; }
+    if (req.method === "PATCH" && itemId !== undefined) { sendJson(res, 200, await deps.scheduleItems.update(itemId, jsonBody(await readJsonBody(req)))); return; }
+    if (req.method === "DELETE" && itemId !== undefined) { await deps.scheduleItems.remove(itemId); sendJson(res, 200, { ok: true }); return; }
+  }
   if (req.method === "GET" && url.pathname === "/api/discord-intake/status") { sendJson(res, 200, deps.discordIntake?.status() ?? disabledIntakeStatus()); return; }
   if (req.method === "POST" && url.pathname === "/api/reservations") { sendJson(res, 201, await deps.reservations.create(uiReservationInput(jsonBody(await readJsonBody(req))), "ui", { callerSessionId: null })); return; }
   const reservationCancel = /^\/api\/reservations\/([^/]+)\/cancel$/.exec(url.pathname);

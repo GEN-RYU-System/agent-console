@@ -356,3 +356,17 @@ export type FileContentResponse =
   | { status: "tooLarge"; size: number }
   | { status: "binary"; size: number }
   | { status: "ok"; text: string; size: number; mtimeMs: number; kind: "markdown" | "text" };
+
+export type ScheduleSide = "dev" | "secretary";
+export type ScheduleKind = "todo" | "waiting" | "deadline";
+/** サーバーの schedule-items.ts と同じ形（予定画面のやること） */
+export interface ScheduleItem {
+  id: string; side: ScheduleSide; kind: ScheduleKind; title: string;
+  date?: string; start?: string; end?: string; waitingOn?: string; note?: string;
+  status: "open" | "done"; createdBy: "ui" | "agent"; createdAt: number; updatedAt: number; doneAt?: number;
+}
+export interface ScheduleItemInput { side: ScheduleSide; kind: ScheduleKind; title: string; date?: string; start?: string; end?: string; waitingOn?: string; note?: string; }
+/** null は「消す」。送らなかった欄は変えない */
+export interface ScheduleItemPatch {
+  title?: string; date?: string | null; start?: string | null; end?: string | null; note?: string | null; waitingOn?: string | null; status?: "open" | "done";
+}

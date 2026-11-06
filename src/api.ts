@@ -1,4 +1,4 @@
-import type { AccountResponse, ActivityResponse, BoardResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileContentResponse, FileDiff, FilesResponse, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, Reservation, ReservationInput, ResumeTarget, Routine, RoutineInput, SchedulePreview, UsageResponse } from "./types";
+import type { AccountResponse, ActivityResponse, BoardResponse, ChatResponse, ConsoleState, DiffComment, DiffCommentInput, DiffList, FileContentResponse, FileDiff, FilesResponse, LedgerSnapshot, MemorySnapshot, PickItem, PrResponse, QuickPrompt, Reservation, ReservationInput, ResumeTarget, Routine, RoutineInput, ScheduleItem, ScheduleItemInput, ScheduleItemPatch, SchedulePreview, UsageResponse } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -165,6 +165,10 @@ export const setRoutineEnabled = (id: string, enabled: boolean): Promise<Routine
 export const fetchReservations = (): Promise<{ items: Reservation[] }> => request("/api/reservations");
 export const createReservation = (input: ReservationInput): Promise<Reservation> => request("/api/reservations", { method: "POST", body: JSON.stringify(input) });
 export const cancelReservation = (id: string): Promise<Reservation> => request(`/api/reservations/${encodeURIComponent(id)}/cancel`, { method: "POST", body: "{}" });
+export const fetchSchedule = (from: string, to: string): Promise<{ items: ScheduleItem[] }> => request(`/api/schedule?${new URLSearchParams({ from, to })}`);
+export const createScheduleItem = (input: ScheduleItemInput): Promise<ScheduleItem> => request("/api/schedule/items", { method: "POST", body: JSON.stringify(input) });
+export const updateScheduleItem = (id: string, patch: ScheduleItemPatch): Promise<ScheduleItem> => request(`/api/schedule/items/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
+export const deleteScheduleItem = (id: string): Promise<{ ok: true }> => request(`/api/schedule/items/${encodeURIComponent(id)}`, { method: "DELETE" });
 export const previewReservationSchedule = (date: string, time: string): Promise<SchedulePreview> => request(`/api/schedule/preview?${new URLSearchParams({ kind: "reservation", date, time })}`);
 export const previewRoutineSchedule = (weekdays: number[], timeHHmm: string, excludeId?: string): Promise<SchedulePreview> => request(`/api/schedule/preview?${new URLSearchParams({ kind: "routine", weekdays: weekdays.join(","), time: timeHHmm, ...(excludeId ? { excludeId } : {}) })}`);
 
