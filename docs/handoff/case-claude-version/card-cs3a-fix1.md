@@ -16,6 +16,11 @@
   - Write の記録: probe の受け口の記録（this.records。pre/post・tool・agent_id・path を持つか先に確かめる）か、activity の記録で道具の名前が取れる物。
   - SubagentStart／Stop の agent_id ごとの数: activity の既存の読み口から取る。
 - 上の材料のどれかが既存の読み口で取れないときは、作らずに停止して NEEDS_DECISION:（何が取れて何が取れないかを file:line で書く）。
+- 決定（Opus・1回目の NEEDS_DECISION への答え）。1回目の報告では、Write の path は ProbeToolRecord（case-say-probe.ts:32-39）に無く、agent_id ごとの開始・終了は activity.ts:188,192 の Map にあるが読み口が合計の sizes()（:599-602）だけだった。次のとおり作る。
+  - Write の path: probe の受け口の記録を使う。`ProbeToolRecord` に `path: string`（無ければ ""）を足す。`toolRecordOf` は `tool_name` が "Write" のときだけ `tool_input.file_path` を文字列なら取る。ほかの道具では "" のまま。受け口は今までどおり runActivityHook に渡さない。
+  - agent_id ごとの開始・終了の数: server/activity.ts に読み取りだけの口を1つ足す（例: `agentLifecycle(csid, agentId): { starts: number; stops: number }`。restarts・stops の Map から数を返すだけ）。親カード §2 の「activity.ts を触らない」の例外として、この1つの読み口だけを許す。記録の書き方・状態の形・既存の関数は1文字も変えない。
+  - agentEvidence は「P2 の間の post で tool が "Write"・path が probe-2.txt の完全一致の道・agent_id が空でない記録」を探し、その agent_id で agentLifecycle を読む。starts ≥ 1 かつ stops ≥ 1 のときだけ ○。probe-2.txt の完全一致の道は、今の agentEvidence に渡している probeFile と同じ値を使う。
+  - activity.ts に足した読み口の単体試験を1件足す（agent_id が違えば 0 を返す）。
 - 試験: 本物の配線（realProbePorts か、それと同じ対応づけの関数）を通す試験を1件以上。場面は次の3つ。
   - (a) 下請けが Write で書き、同じ agent_id の開始と終了がある → ○
   - (b) 主の会話（agent_id 空）だけが書いた → ×
