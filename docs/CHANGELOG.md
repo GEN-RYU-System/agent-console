@@ -2,6 +2,7 @@
 
 版を出すたびに 1 行追記する（版の正本は git タグ `vX.Y.Z`）。
 
+- 0.52.0 中央に「予定」タブを足した。やることを足す・終わった・消すができ、日（今日と明日）／週（月〜日）／月の時間割で開発／秘書に分けて見える。重なる2つは赤枠と「重なり」の札。保存先は `dataDir/schedule.json`、道は `GET /api/schedule`・`POST /api/schedule/items`・`PATCH`/`DELETE /api/schedule/items/:id`。時間割は Sales Anchor の金型 CalendarView（FullCalendar 6.1.22 を依存に足した）。戻し方 `bash scripts/ac-update.sh v0.51.1`
 - 0.51.1 case-say が送る claude の版の一覧（同梱の agent-console.config.json の caseSayClaudeVersions）に 2.1.319 を足した（2.1.319 の件の窓で K41 (a)(b) を測り、選ぶ画面 0 件・下請けは dontAsk で通り計画の形では case-guard が止めることを確かめた。Sales Anchor docs/handoff/conversation-consent/design.md §14-13 M2 の版を足す手順）。コードは変えていない。戻し方 `bash scripts/ac-update.sh v0.51.0`
 - 0.51.0 件のセッションへ決まった一文を送る受け口 `POST /api/agent/case-say` と命令 `hooks/ac-case-say.mjs`（`node "<dataDir>/bin/ac-case-say.mjs" <件の id> <手順ファイル名>`）を足した。宛先はサーバーが自分で開いた窓の記録だけで決め（つなぎ直した窓・claude の版が設定 `caseSayClaudeVersions` に無い窓には送らない）、送る文は固定の1種類、区画の番号 `%N` と pid の条件付きで tmux へ送り、状態ファイルが idle・待ちなしのときだけ貼る。新しい設定 `caseSayRoles`（既定 opus-designer）・`caseSayClaudeVersions`（コードの既定は空、同梱の設定は `["2.1.318"]`）。監査に `caseSay`・`caseSayRefused`。設計は Sales Anchor の docs/handoff/conversation-consent/design.md §14-10・§14-13。戻し方 `bash scripts/ac-update.sh v0.50.2`（受け口と命令が消える）
 - 0.50.2 件の窓で Shift+Tab を外し（case-home の `keybindings.json`）、本体の会話の形が dontAsk でないとき（計画の形など）は case-guard が道具を止めるようにした。戻し方 `bash scripts/ac-update.sh v0.50.1`

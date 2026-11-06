@@ -249,7 +249,8 @@
       "pr": "PR",
       "picks": "部品",
       "routines": "定期実行",
-      "reservations": "予約"
+      "reservations": "予約",
+      "schedule": "予定"
     },
     "routines": {
       "title": "定期実行",
@@ -305,6 +306,43 @@
       "loadFailed": "画面を開き直してください",
       "noneTitle": "作業用コピーがありません",
       "none": "本店で動く役割を選ぶか、先に作業用コピーを作ってください"
+    },
+    "scheduleBoard": {
+      "title": "予定",
+      "sideDev": "開発",
+      "sideSecretary": "秘書",
+      "viewDay": "日",
+      "viewWeek": "週",
+      "viewMonth": "月",
+      "prev": "前へ",
+      "today": "今日",
+      "next": "次へ",
+      "add": "やることを足す",
+      "calendarLabel": "予定の時間割",
+      "untimed": "時刻の決まっていないこと",
+      "untimedEmpty": "時刻の決まっていないことはありません",
+      "overlapTitle": "時間が重なっています",
+      "overlapPair": "{{a}} と {{b}}",
+      "overlapBadge": "重なり",
+      "doneBadge": "終わった",
+      "markDone": "終わった",
+      "reopen": "開き直す",
+      "remove": "消す",
+      "loadFailed": "予定を読めませんでした",
+      "saveFailed": "保存できませんでした",
+      "kind": { "todo": "やること", "waiting": "返事待ち", "deadline": "締め切り" },
+      "field": {
+        "side": "どちら",
+        "kind": "種類",
+        "title": "題名",
+        "date": "日付",
+        "start": "開始",
+        "end": "終了",
+        "timeHint": "HH:mm（例: 09:00）。空なら時刻なし",
+        "note": "メモ",
+        "waitingOn": "返事待ちの相手"
+      },
+      "save": "足す"
     },
     "schedule": {
       "overlapTitle": "ほかの予定と開始が1時間以内です",

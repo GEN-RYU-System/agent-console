@@ -133,6 +133,16 @@ export interface Reservation {
 }
 export interface ReservationInput { name: string; roleId: string; cwd?: string; branch?: string; date: string; time: string; promptText: string; }
 
+export type ScheduleSide = "dev" | "secretary";
+export type ScheduleKind = "todo" | "waiting" | "deadline";
+export interface ScheduleItem {
+  id: string; side: ScheduleSide; kind: ScheduleKind; title: string;
+  date?: string; start?: string; end?: string; waitingOn?: string; note?: string;
+  status: "open" | "done"; createdBy: "ui" | "agent"; createdAt: number; updatedAt: number; doneAt?: number;
+}
+export interface ScheduleItemInput { side: ScheduleSide; kind: ScheduleKind; title: string; date?: string; start?: string; end?: string; waitingOn?: string; note?: string; }
+export interface ScheduleItemPatch { title?: string; date?: string; start?: string; end?: string; note?: string; waitingOn?: string; status?: "open" | "done"; }
+
 /** サーバーの schedule-gate.ts と同じ形。画面に見せる重なり（before/after は予約の候補なら日時、定期実行の候補なら HH:mm。無ければ null） */
 export interface ScheduleOverlap { name: string; kind: "reservation" | "routine"; at: string; before: string | null; after: string | null }
 export type SchedulePreview = { ready: false } | { ready: true; overlap: ScheduleOverlap | null };

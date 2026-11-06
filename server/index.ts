@@ -28,6 +28,7 @@ import { CLOSE_IDLE_MS, KEEP_WAITING_MS, RoutineCloser, gapLimitMsFor } from "./
 import { RoutineService, RoutineStore } from "./routines.ts";
 import { ScheduleGate } from "./schedule-gate.ts";
 import { ReservationService, ReservationStore } from "./reservations.ts";
+import { ScheduleItemService, ScheduleItemStore } from "./schedule-items.ts";
 import { RelayManager, resolveRelayDir } from "./relay.ts";
 import { setupReserveToken } from "./reserve-token.ts";
 import { DiscordIntake } from "./discord-intake.ts";
@@ -89,6 +90,7 @@ async function main(): Promise<void> {
   const routines = new RoutineService(config, sessions, hub, new RoutineStore(config.dataDir), undefined, undefined, gate);
   const reservations = new ReservationService(config, sessions, hub, new ReservationStore(config.dataDir), undefined, undefined, false, { gate, audit: (entry) => routineAudit.append({ at: new Date().toISOString(), ...entry }) });
   gate.attach({ reservations: () => reservations.list(), reservationsReady: () => reservations.isLoaded(), routines: () => routines.list() });
+  const scheduleItems = new ScheduleItemService(new ScheduleItemStore(config.dataDir));
   const relay = new RelayManager({ config, sessions, hub, relayDir: resolveRelayDir(config, process.env) });
   const meta = { saSource: await readSaSource(), claudeVersion: await fetchClaudeVersion(config.claudeBin), version: readVersion(), commit: await readCommit() };
 
@@ -116,7 +118,7 @@ async function main(): Promise<void> {
 
   const memory = new MemoryCollector();
   let stopMetrics: (() => void) | null = null;
-  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity: activity.store, checkHooks: activity.check, memory, staticDir: path.join(process.cwd(), "dist"), meta, routines, reservations, schedule: gate, relay, reserve, routineApprovals, ...(discordIntake ? { discordIntake } : {}) }));
+  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity: activity.store, checkHooks: activity.check, memory, staticDir: path.join(process.cwd(), "dist"), meta, routines, reservations, scheduleItems, schedule: gate, relay, reserve, routineApprovals, ...(discordIntake ? { discordIntake } : {}) }));
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   // 期限切れ（12 時間）になったセッションの WebSocket を閉じる
   setInterval(() => controls.sweep(), SESSION_SWEEP_MS).unref();

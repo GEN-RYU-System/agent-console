@@ -23,6 +23,7 @@ import { OpenSessionRecorder } from "../../../server/restore.ts";
 import { RoutineApprovals } from "../../../server/routine-approvals.ts";
 import { RoutineService, RoutineStore } from "../../../server/routines.ts";
 import { ReservationService, ReservationStore } from "../../../server/reservations.ts";
+import { ScheduleItemService, ScheduleItemStore } from "../../../server/schedule-items.ts";
 import { RoutineAudit } from "../../../server/routine-audit.ts";
 import { ScheduleGate } from "../../../server/schedule-gate.ts";
 import type { ReserveAccess } from "../../../server/reserve-token.ts";
@@ -60,6 +61,7 @@ export interface Harness {
   uploads: UploadStore;
   auth: Auth;
   reservations: ReservationService;
+  scheduleItems: ScheduleItemService;
   relay: RelayManager;
   routines: RoutineService;
   /** ac-routine の一時承認の保管（時刻は clock） */
@@ -265,6 +267,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const routines = new RoutineService(config, sessions, hub, new RoutineStore(config.dataDir), undefined, undefined, gate);
   const reservations = new ReservationService(config, sessions, hub, new ReservationStore(config.dataDir), undefined, undefined, true, { gate, audit: (entry) => routineAudit.append({ at: new Date().toISOString(), ...entry }) });
   gate.attach({ reservations: () => reservations.list(), reservationsReady: () => reservations.isLoaded(), routines: () => routines.list() });
+  const scheduleItems = new ScheduleItemService(new ScheduleItemStore(config.dataDir));
   const relay = new RelayManager({ config, sessions, hub, relayDir: options.relayDir ?? null }, undefined, { ...defaultRelayTiming(config), ...options.relayTiming });
   if (options.recorder === true) recorder.start();
   const clock: Clock = { t: Date.now(), advance(ms) { this.t += ms; } };
@@ -278,7 +281,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const reserve: ReserveAccess = options.reserve ?? { token: RESERVE_TOKEN };
   const routineApprovals = new RoutineApprovals(() => clock.t);
   const server = createServer(
-    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines, reservations, schedule: gate, relay, reserve, routineApprovals, ...(options.discordIntake ? { discordIntake: options.discordIntake } : {}), ...(options.lookupPid ? { lookupPid: options.lookupPid } : {}) }),
+    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines, reservations, scheduleItems, schedule: gate, relay, reserve, routineApprovals, ...(options.discordIntake ? { discordIntake: options.discordIntake } : {}), ...(options.lookupPid ? { lookupPid: options.lookupPid } : {}) }),
   );
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
@@ -300,6 +303,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
     uploads,
     auth,
     reservations,
+    scheduleItems,
     relay,
     routines,
     routineApprovals,
