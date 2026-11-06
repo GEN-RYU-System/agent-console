@@ -57,6 +57,8 @@ export const CHAT_QUEUE_MAX = 10;
 /** 結べない返事の終わりの記録を保留する長さ: max(30 秒, agents の取得 3 回分) */
 const PENDING_TURN_END_MIN_MS = 30_000;
 const PENDING_TURN_END_POLLS = 3;
+/** 画面に出す版ずれの知らせの上限（古い方から捨てる） */
+const CASE_VERSION_NOTICES_MAX = 20;
 const BRACKETED_PASTE_START = "\u001b[200~";
 const BRACKETED_PASTE_END = "\u001b[201~";
 
@@ -75,11 +77,25 @@ export interface ChatSource {
   chat(sessionId: string, since?: number): { items: ReadonlyArray<{ seq: number; role: string }>; lastSeq: number };
 }
 
+/** 件の claude の版ずれの知らせ（設計 conversation-consent §14-14-3 D1。メモリだけ。文言は画面側の i18n） */
+export interface CaseVersionNotice {
+  /** n1 件を開いたが指紋が未確認 / n2 起動時に PATH の claude が未記録 / n3 記録の実体が変わった / n4 probe が× / n5 記録が読めない / n6 監査に書けなかった */
+  reason: "n1" | "n2" | "n3" | "n4" | "n5" | "n6";
+  claudeVersion: string;
+  /** sha256 の先頭 16 桁 */
+  sha16: string;
+  /** 追加の理由（×の番号など） */
+  detail?: string;
+  at: number;
+}
+
 export interface Snapshot {
   sessions: SessionView[];
   agentsAvailable: boolean;
   /** 起動時に前回のセッションを開き直せなかった理由（メモリだけ。画面の案内） */
   restoreNotices: RestoreNotice[];
+  /** 件の claude の版ずれの知らせ（メモリだけ）。無ければ省く */
+  caseVersionNotices?: CaseVersionNotice[];
   /** 端末の置き場についての案内（tmux が無い／端末につなげない）。無ければ省く */
   terminalNotices?: TerminalNotice[];
   /** 引き継ぎの進行（メモリだけ）。空のときは項目ごと無い */
@@ -166,6 +182,9 @@ export class Hub {
   /** 名前の変更の予約（セッション id → 名前）。メモリだけ。送るか捨てるまでの正本はここ */
   private readonly pendingRenames = new Map<string, string>();
   private restoreNotices: RestoreNotice[] = [];
+  private caseVersionNotices: CaseVersionNotice[] = [];
+  private caseVersions: { isUsable(fp: { size: number; sha256: string } | undefined): boolean; usableVersions(): string[] } | undefined;
+  private caseVersionProbing: { isProbing(sha256: string): boolean; probingVersions(): string[] } | undefined;
   private relays: RelayView[] = [];
   /** 端末へ書いている最中のセッション id（書き込みの印）。2 回書きの間に別の書き込みが入って入力が連結されるのを防ぐ */
   readonly writing = new Set<string>();
@@ -355,6 +374,26 @@ export class Hub {
     void this.publish().catch((err) => this.onPollError("publish", err));
   }
 
+  /** 版ずれの知らせを足す（画面の案内と macOS 通知。1 場面につき 1 回）。同じ場面（reason・版・指紋）の重複は足さない */
+  addCaseVersionNotice(n: Omit<CaseVersionNotice, "at">): void {
+    const same = this.caseVersionNotices.some((x) => x.reason === n.reason && x.sha16 === n.sha16 && x.claudeVersion === n.claudeVersion && x.detail === n.detail);
+    if (same) return;
+    this.caseVersionNotices = [...this.caseVersionNotices, { ...n, at: this.now() }].slice(-CASE_VERSION_NOTICES_MAX);
+    this.sendNotification?.(`件の claude ${n.claudeVersion || "(版不明)"}: ${n.reason}${n.detail ? ` ${n.detail}` : ""}`);
+    void this.publish().catch((err) => this.onPollError("publish", err));
+  }
+
+  /** 判定 4b の記録（使える項目）と probe の状態を結ぶ */
+  setCaseVersions(store: NonNullable<Hub["caseVersions"]>, probe: NonNullable<Hub["caseVersionProbing"]>): void {
+    this.caseVersions = store;
+    this.caseVersionProbing = probe;
+  }
+
+  /** /api/state の caseSayVersions（画面用） */
+  caseSayVersions(): { usable: string[]; probing: string[] } {
+    return { usable: this.caseVersions?.usableVersions() ?? [], probing: this.caseVersionProbing?.probingVersions() ?? [] };
+  }
+
   /** 引き継ぎの進行を配信に載せる。 */
   setRelays(relays: readonly RelayView[]): void {
     this.relays = [...relays];
@@ -391,6 +430,7 @@ export class Hub {
   async requestRename(sessionId: string, name: string): Promise<RenameMode> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new SessionConflictError("session not found");
+    if (session.versionProbe === true) throw new SessionConflictError("version probe session does not take input");
     const verdict = await this.checkInput(sessionId);
     if (session.exited) throw new SessionConflictError(verdict.reason ?? "session is stopped");
     if (verdict.ok) {
@@ -507,7 +547,7 @@ export class Hub {
   /** 新しく開いたセッションへ /rename を 1 回書く（書き込みの印を取れなければ書かず false）。 */
   sendName(sessionId: string, name: string): boolean {
     const session = this.sessions.get(sessionId);
-    if (!session || session.exited) return false;
+    if (!session || session.exited || session.versionProbe === true) return false;
     if (!this.tryBeginWrite(sessionId)) return false;
     try {
       this.sessions.write(session, `/rename ${name}\r`);
@@ -519,8 +559,27 @@ export class Hub {
 
   /** case-say の判定 4・4b。すべてサーバーのメモリの記録で決める。同期（tmux を 1 回だけ同期で聞く） */
   private caseSayTarget(caseId: string): ({ ok: true } & CaseSayTarget) | { ok: false; reason: string; claudeVersion?: string } {
+    const base = this.caseSayBase(caseId);
+    if (!base.ok) return base;
+    // 4b: 件を開く前に取った実体の指紋が、記録の使える項目と一致すること（過渡期は config の一覧にある版の名前も通す。便CS3b で外す）
+    const fp = this.sessions.caseClaudeFingerprintOf(caseId);
+    const real = this.sessions.caseClaudeRealOf(caseId);
+    const last = real === undefined ? "" : path.basename(real);
+    const claudeVersion = CLAUDE_VERSION_PATTERN.test(last) ? last : "";
+    const byRecord = claudeVersion !== "" && (this.caseVersions?.isUsable(fp) ?? false);
+    const byConfig = claudeVersion !== "" && this.config.caseSayClaudeVersions.includes(claudeVersion);
+    if (!byRecord && !byConfig) {
+      if (fp !== undefined && this.caseVersionProbing?.isProbing(fp.sha256) === true) return { ok: false, reason: "claude_version_probing", claudeVersion };
+      return { ok: false, reason: "claude_version_unverified", claudeVersion };
+    }
+    return { ...base, claudeVersion };
+  }
+
+  /** 判定 4（4b を除く）。probe の件への送信にも使う */
+  private caseSayBase(caseId: string): ({ ok: true } & Omit<CaseSayTarget, "claudeVersion">) | { ok: false; reason: string } {
     const session = this.sessions.get(caseId);
     if (!session || session.exited) return { ok: false, reason: "no_session" };
+    if (session.versionProbe === true && !this.probeSending) return { ok: false, reason: "version_probe_session" };
     if (this.sessions.isClosing(caseId)) return { ok: false, reason: "closing" };
     const CH = this.sessions.caseHomeOf(caseId);
     const R = this.sessions.caseRootOf(caseId);
@@ -535,12 +594,52 @@ export class Hub {
     if (pane.panePid !== main.pid || pane.windows !== 1 || pane.panes !== 1) return { ok: false, reason: "pane_changed" };
     const state = session.term.writeState?.();
     if (state === undefined || !state.writable || state.pending !== 0) return { ok: false, reason: "terminal_not_ready" };
-    // 4b: 件を開くときに解いた claude の実体の道の最後の名前が版の形で、config の並びにあること
-    const real = this.sessions.caseClaudeRealOf(caseId);
-    const last = real === undefined ? "" : path.basename(real);
-    const claudeVersion = CLAUDE_VERSION_PATTERN.test(last) ? last : "";
-    if (claudeVersion === "" || !this.config.caseSayClaudeVersions.includes(claudeVersion)) return { ok: false, reason: "claude_version_unverified", claudeVersion };
-    return { ok: true, session, mainPid: main.pid, paneId: pane.paneId, CH, R, claudeVersion };
+    return { ok: true, session, mainPid: main.pid, paneId: pane.paneId, CH, R };
+  }
+
+  /** probe の送信の間だけ true（caseSayBase が probe の件を通す）。送信は 1 つずつなので 1 つの印で足りる */
+  private probeSending = false;
+
+  /**
+   * サーバーが自分で開いた probe の件へ、定数の文を 1 回送る（設計 §14-14-3 D4 の台本）。case-say の判定 4・5・7・8・9 と同じ道
+   * （区画 %N と pid の条件付き送信・Enter の前に状態ファイルが idle のままか確かめ直す）。4b は飛ばす。probe の件でなければ送らない
+   */
+  async probeSend(caseId: string, text: string): Promise<boolean> {
+    const session = this.sessions.get(caseId);
+    if (!session || session.exited || session.versionProbe !== true) return false;
+    this.probeSending = true;
+    let target: ReturnType<Hub["caseSayBase"]>;
+    try {
+      target = this.caseSayBase(caseId);
+    } finally {
+      this.probeSending = false;
+    }
+    if (!target.ok) return false;
+    const t = { ...target, claudeVersion: "" } as CaseSayTarget;
+    const state = await this.caseSayState(t);
+    if (!state.ok) return false;
+    if (!this.tryBeginWrite(caseId)) return false;
+    try {
+      const term = session.term;
+      if (term.sendToPane === undefined) return false;
+      const paste = await term.sendToPane(target.paneId, target.mainPid, `${BRACKETED_PASTE_START}${text}${BRACKETED_PASTE_END}`);
+      if (!paste.written) return false;
+      await this.caseSayPorts.sleep(this.config.pasteSubmitDelayMs);
+      this.probeSending = true;
+      let again: ReturnType<Hub["caseSayBase"]>;
+      try {
+        again = this.caseSayBase(caseId);
+      } finally {
+        this.probeSending = false;
+      }
+      if (!again.ok || again.session !== session || again.paneId !== target.paneId) return false;
+      const stateAgain = await this.caseSayState({ ...again, claudeVersion: "" } as CaseSayTarget);
+      if (!stateAgain.ok) return false;
+      const enter = await term.sendToPane(target.paneId, target.mainPid, "\r");
+      return enter.written;
+    } finally {
+      this.endWrite(caseId);
+    }
   }
 
   /** case-say の判定 7（状態ファイルと agents の取り直し） */
@@ -617,6 +716,7 @@ export class Hub {
   enqueueChat(sessionId: string, text: string): ChatQueueItem {
     const session = this.sessions.get(sessionId);
     if (!session) throw new SessionNotFoundError("session not found");
+    if (session.versionProbe === true) throw new SessionConflictError("version probe session does not take input");
     if (session.exited) throw new SessionConflictError("session is stopped");
     const items = this.chatQueue.get(sessionId) ?? [];
     if (items.length >= CHAT_QUEUE_MAX) throw new SessionConflictError(`chat queue is full (max ${CHAT_QUEUE_MAX})`);
@@ -764,7 +864,7 @@ export class Hub {
    */
   async submitText(sessionId: string, text: string): Promise<boolean> {
     const session = this.sessions.get(sessionId);
-    if (!session || session.exited) return false;
+    if (!session || session.exited || session.versionProbe === true) return false;
     // 書き込みの印が取れるまで待つ（200ms ごと・最大 10 秒）。取れなければ書かず false
     const deadline = Date.now() + WRITE_WAIT_MAX_MS;
     while (!this.tryBeginWrite(sessionId)) {
@@ -991,7 +1091,7 @@ export class Hub {
     const previous = this.lastNames;
     this.lastNames = new Map(views.map((v) => [v.id, v.name]));
     if (views.some((v) => previous.has(v.id) && previous.get(v.id) !== v.name)) for (const l of this.nameListeners) l();
-    return { sessions: views, agentsAvailable: this.agents !== null, restoreNotices: this.restoreNotices, ...terminalNoticesField(this.sessions.terminalNotices()), maxSessions: this.sessions.maxSessionCount(), openCount: this.sessions.openCount(), picksUnsent: this.picksUnsent, activityRev: this.activityRev + this.chatRev, ...(this.relays.length > 0 ? { relays: this.relays } : {}) };
+    return { sessions: views, agentsAvailable: this.agents !== null, restoreNotices: this.restoreNotices, ...(this.caseVersionNotices.length > 0 ? { caseVersionNotices: this.caseVersionNotices } : {}), ...terminalNoticesField(this.sessions.terminalNotices()), maxSessions: this.sessions.maxSessionCount(), openCount: this.sessions.openCount(), picksUnsent: this.picksUnsent, activityRev: this.activityRev + this.chatRev, ...(this.relays.length > 0 ? { relays: this.relays } : {}) };
   }
 
   subscribe(ws: WebSocket): void {

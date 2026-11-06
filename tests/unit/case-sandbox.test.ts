@@ -21,6 +21,7 @@ import {
   CASE_ROOM_BASE,
   CASE_ROOM_MACH,
   CASE_ROOM_READ_NAMED,
+  CASE_VERSION_RECORD_PATHS,
   CaseSandboxUnavailableError,
   caseProxyDomains,
   casePaths,
@@ -84,14 +85,27 @@ const rules = (list: string[], tool: string): string[] => list.filter((r) => r.s
 const bare = (list: string[], tool: string): string[] => list.filter((r) => r.startsWith(`${tool}(//`) && !r.endsWith("/**)")).map((r) => "/" + r.slice(`${tool}(//`.length, -1));
 
 describe("buildCaseSettings", () => {
-  it("builds the permission denies from the same arrays the room profile uses (one source), and leaves only sandbox.enabled: false", () => {
+  it("builds the permission denies from the same arrays the room profile uses minus the version record and key, and leaves only sandbox.enabled: false", () => {
     const p = params();
     const s = settingsOf(p);
-    expect(rules(s.permissions.deny, "Edit")).toEqual(CASE_DENY_WRITE(p));
-    expect(bare(s.permissions.deny, "Edit")).toEqual(CASE_DENY_WRITE(p));
-    expect(rules(s.permissions.deny, "Read")).toEqual(CASE_DENY_READ(p));
-    expect(bare(s.permissions.deny, "Read")).toEqual(CASE_DENY_READ(p));
+    const rec = new Set(CASE_VERSION_RECORD_PATHS(p));
+    const w = CASE_DENY_WRITE(p).filter((d) => !rec.has(d));
+    const r = CASE_DENY_READ(p).filter((d) => !rec.has(d));
+    expect(rules(s.permissions.deny, "Edit")).toEqual(w);
+    expect(bare(s.permissions.deny, "Edit")).toEqual(w);
+    expect(rules(s.permissions.deny, "Read")).toEqual(r);
+    expect(bare(s.permissions.deny, "Read")).toEqual(r);
     expect(s.sandbox).toEqual({ enabled: false });
+  });
+
+  it("keeps the version record and key out of the permission denies", () => {
+    const p = params();
+    const deny = settingsOf(p).permissions.deny;
+    for (const x of CASE_VERSION_RECORD_PATHS(p)) {
+      expect(CASE_DENY_WRITE(p)).toContain(x);
+      expect(CASE_DENY_READ(p)).toContain(x);
+      expect(deny.some((d) => d.includes(abs(x)))).toBe(false);
+    }
   });
 
   it("sets the permission mode, disables bypass/auto mode and git instructions, and names T for Read", () => {
@@ -202,6 +216,10 @@ describe("writeCaseFiles / removeCaseFiles", () => {
     expect(info).toMatchObject({ worktree: p.W, report: p.R, tmp: p.T });
     expect(info.denyWrite).toEqual(CASE_DENY_WRITE(p));
     expect(info.denyRead).toEqual(CASE_DENY_READ(p));
+    for (const x of CASE_VERSION_RECORD_PATHS(p)) {
+      expect(info.denyWrite).toContain(x);
+      expect(info.denyRead).toContain(x);
+    }
     expect(statSync(p.R).isDirectory()).toBe(true);
     expect(statSync(p.T).isDirectory()).toBe(true);
     expect(path.dirname(p.T)).toBe(path.join(tmp, "tmp", "acc"));
@@ -345,6 +363,16 @@ describe("buildCaseRoomProfile", () => {
     const p = params(over);
     return { p, text: buildCaseRoomProfile(p, roomOpts()), full: { ...p, guardScript: roomOpts().guardScript, claudeReal: CLAUDE_REAL } };
   };
+
+  it("puts the version record and key into the deny file-read and deny file-write of room.sb", () => {
+    const { p, text } = prof();
+    const rec = CASE_VERSION_RECORD_PATHS(p);
+    expect(rec.length).toBeGreaterThan(0);
+    for (const x of rec) {
+      expect(formsStarting(text, "(deny file-read*").some((f) => subpathsOf(f).includes(x)), `read ${x}`).toBe(true);
+      expect(formsStarting(text, "(deny file-write*").some((f) => subpathsOf(f).includes(x)), `write ${x}`).toBe(true);
+    }
+  });
 
   it("starts with deny default and the base, and puts every list path into a rule", () => {
     const { p, text, full } = prof();
@@ -730,5 +758,55 @@ describe.skipIf(process.platform !== "darwin")("room.sb under sandbox-exec (darw
     expect(sh(`echo x > '${p.CH}/remote-settings.json'`)).not.toBe(0);
     expect(sh(`mv '${p.W}/.git' '${p.W}/g'`)).not.toBe(0);
     expect(sh(`cat '${p.H}/other/secret'`)).not.toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------- 件の版の記録・probe の件の設定（便CS3a。設計 conversation-consent §14-14-3 D3'・D5）
+describe("K53/K51: version record paths and the probe-only hooks", () => {
+  const fixed: CaseParams = {
+    M: "/m/main", W: "/h/w/ID", T: "/t/acc/11111111", D: "/d/data", H: "/h/home", R: "/t/acc/R/ID", GH: "/d/data/case-gh/ID", CH: "/d/data/case-home/ID",
+    guardScript: "/g/case-guard.mjs", nodeBin: "/n/node", caseFile: "/d/data/cases/ID/case.json", hookPath: "/d/data/hooks/activity-hook.mjs",
+  };
+  const normalize = (v: unknown): string => JSON.stringify(v, null, 2).replaceAll(`claude-${uid}`, "claude-UID");
+
+  it("CASE_DENY_WRITE and CASE_DENY_READ contain the version record and its key", () => {
+    const record = path.join(fixed.D, "case-say-claude-versions.json");
+    const key = path.join(fixed.D, "case-say-claude-versions.key");
+    expect(CASE_DENY_WRITE(fixed)).toEqual(expect.arrayContaining([record, key]));
+    expect(CASE_DENY_READ(fixed)).toEqual(expect.arrayContaining([record, key]));
+  });
+
+  it("the room profile denies writing and reading the record and the key", () => {
+    const p = params();
+    const profile = buildCaseRoomProfile(p, { proxyPort: CASE_PROXY_PORT, consolePort: CONSOLE_PORT, claudeReal: "/x/claude/2.1.318", guardScript: p.guardScript });
+    expect(profile).toContain("case-say-claude-versions.json");
+    expect(profile).toContain("case-say-claude-versions.key");
+  });
+
+  it("buildCaseSettings called without options is exactly the output of the previous version (the PO's case)", () => {
+    const golden = readFileSync(path.join(__dirname, "fixtures", "case-settings-baseline.json"), "utf8").trimEnd();
+    expect(normalize(buildCaseSettings(fixed, CONSOLE_PORT))).toBe(golden);
+    expect(normalize(buildCaseSettings(fixed, CONSOLE_PORT, {}))).toBe(golden);
+    expect(normalize(buildCaseSettings(fixed, CONSOLE_PORT, { versionProbe: false }))).toBe(golden);
+  });
+
+  it("versionProbe: true adds exactly two synchronous handlers (timeout 5, no async) posting to the probe endpoint; HOOK_SPECS is unchanged", () => {
+    const before = HOOK_SPECS.length;
+    const base = buildCaseSettings(fixed, CONSOLE_PORT) as unknown as { hooks: Record<string, Array<{ matcher: string; hooks: Array<Record<string, unknown>> }>> };
+    const probe = buildCaseSettings(fixed, CONSOLE_PORT, { versionProbe: true }) as unknown as { hooks: Record<string, Array<{ matcher: string; hooks: Array<Record<string, unknown>> }>> };
+    const handlersOf = (s: typeof base): number => Object.values(s.hooks).reduce((n, groups) => n + groups.reduce((m, g) => m + g.hooks.length, 0), 0);
+    expect(handlersOf(probe)).toBe(handlersOf(base) + 2);
+    const added = [probe.hooks.PreToolUse.at(-1), probe.hooks.PostToolUse.at(-1)];
+    for (const group of added) {
+      expect(group?.matcher).toBe("*");
+      const h = group?.hooks[0] as Record<string, unknown>;
+      expect(h.async).toBeUndefined();
+      expect(h.timeout).toBe(5);
+      expect(h.args).toEqual([fixed.hookPath, "--post", `http://127.0.0.1:${CONSOLE_PORT}/api/agent/case-probe-activity`]);
+    }
+    expect(HOOK_SPECS.length).toBe(before);
+    // 入れ物のほかは同じ
+    const strip = (s: typeof base): unknown => ({ ...s, hooks: undefined });
+    expect(strip(probe)).toEqual(strip(base));
   });
 });

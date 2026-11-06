@@ -9,6 +9,7 @@ import { hookPathIn } from "./activity-setup.ts";
 import { caseBranchOf, caseCloneDir, checkCaseClone, createCaseClone } from "./case-clone.ts";
 import { readLstartSync, type MainProcess } from "./case-proxy.ts";
 import { CASE_PROXY_PORT, CaseSandboxUnavailableError, caseDirOf, caseNodeHome, casePaths, caseRoomLiteral, removeCaseFiles, resolveClaudeReal, rewriteCaseClaudeJson, writeCaseFiles, writeCaseKeybindings, writeCaseRoom, type CaseParams } from "./case-sandbox.ts";
+import { fingerprintFile, type Fingerprint } from "./case-say-versions.ts";
 import { descendantPids, readProcessTable } from "./process-tree.ts";
 import { RingBuffer } from "./ring-buffer.ts";
 import { paneTarget, sessionName } from "./terminal-host/tmux-protocol.ts";
@@ -100,6 +101,15 @@ export interface Session {
   reattached?: boolean;
   /** 起動直後の Claude に /rename で合わせる名前（メモリだけ。合わせ終えた・10 分過ぎた・終了したら Hub が消す） */
   initialName?: string;
+  /** サーバーが自分で開いた probe の件（設計 conversation-consent §14-14-3 D4。メモリだけ）。入力・チャット・case-say を全部断り、復元の一覧に書かない */
+  versionProbe?: boolean;
+}
+
+/** 件を開く前に取った claude の実体の道と指紋（設計 §14-14-3 D2） */
+export interface CaseClaudeInfo {
+  real: string;
+  /** 指紋が取れなかった（読めない・60 秒超）ときは undefined。その件は判定 4b で通らない */
+  fp?: Fingerprint;
 }
 
 // eslint-disable-next-line no-control-regex
@@ -216,7 +226,11 @@ export class SessionManager {
   /** 件のセッション id → 本体（tmux の pane の pid と開始時刻）。サーバーが起き直したら空から始める（restore で件ごとに引き直す） */
   private readonly caseMain = new Map<string, MainProcess>();
   /** 件のセッション id → 件を開くときに prepareCaseRoom が解いた claude の実体の道（case-say の判定 4b が版を読む）。窓が終わる・一覧から外すと消す */
-  private readonly caseClaudeReal = new Map<string, string>();
+  private readonly caseClaudeReal = new Map<string, CaseClaudeInfo>();
+  /** 件を開いた直後の知らせ（D1 n1・probe の発火。index.ts が付ける）。probe の件では呼ばない */
+  private caseOpenedListener: ((info: { id: string; real: string; fp: Fingerprint | undefined }) => void) | undefined;
+  /** 枠が足りないとき、動いている probe を中断して閉じるまで待つ関数（index.ts が付ける） */
+  private versionProbeAborter: (() => Promise<void>) | undefined;
 
   constructor(
     private readonly config: Config,
@@ -294,7 +308,54 @@ export class SessionManager {
   caseClaudeRealOf(id: string): string | undefined {
     const session = this.sessions.get(id);
     if (!session || session.exited) return undefined;
-    return this.caseClaudeReal.get(id);
+    return this.caseClaudeReal.get(id)?.real;
+  }
+
+  /** 件を開く前に取った指紋（判定 4b）。件でない・止まった・指紋が無い（復元した件など）ときは undefined */
+  caseClaudeFingerprintOf(id: string): Fingerprint | undefined {
+    const session = this.sessions.get(id);
+    if (!session || session.exited) return undefined;
+    return this.caseClaudeReal.get(id)?.fp;
+  }
+
+  setCaseOpenedListener(listener: (info: { id: string; real: string; fp: Fingerprint | undefined }) => void): void {
+    this.caseOpenedListener = listener;
+  }
+
+  setVersionProbeAborter(fn: () => Promise<void>): void {
+    this.versionProbeAborter = fn;
+  }
+
+  /** 動いている probe の件があるか */
+  hasRunningVersionProbe(): boolean {
+    return [...this.sessions.values()].some((s) => s.versionProbe === true && !s.exited);
+  }
+
+  /** 件の窓の画面の写し（capture-pane -p）。probe の件だけが使う。取れなければ空文字 */
+  captureCasePane(id: string): string {
+    const ctx = this.tmuxCtx;
+    if (ctx === null || !isSessionId(id) || this.sessions.get(id)?.versionProbe !== true) return "";
+    const r = runTmuxSync(ctx, ["capture-pane", "-p", "-t", paneTarget(sessionName(id))], this.childEnv());
+    return r.status === 0 ? r.stdout : "";
+  }
+
+  /** 起動時の片付け用: 起動時に見つけた ac-* の名前（startupSweep の結果） */
+  sweptSessionNames(): readonly string[] {
+    return this.sweptNames;
+  }
+
+  /** 起動時の片付け: 名前が起動時の一覧にあるときだけ、その tmux セッション 1 つを消す。消せたら true */
+  killSweptSession(name: string): boolean {
+    const ctx = this.tmuxCtx;
+    if (ctx === null || !this.sweptNames.includes(name)) return false;
+    const r = runTmuxSync(ctx, ["kill-session", "-t", `=${name}`], this.childEnv());
+    return r.status === 0;
+  }
+
+  /** 件が使う区画の置き場（probe の片付け用） */
+  caseCleanupPaths(id: string): { D: string; R: string; W: string; H: string; tmpRoot: string } {
+    const p = casePaths({ id, H: this.caseHomeDir, D: this.config.dataDir, tmpRoot: this.caseTmpRoot });
+    return { D: p.D, R: p.R, W: p.W, H: p.H, tmpRoot: this.caseTmpRoot };
   }
 
   /** 件の手順書の置き場 R。生きている件のセッションのときだけ（caseHomeOf と同じ条件） */
@@ -372,6 +433,8 @@ export class SessionManager {
       branch = input.branch;
     }
     // 枠を先に確保してから worktree を作る（同時作成で上限を超えない）
+    // 枠が足りないとき、probe の件が動いていれば PO を優先して probe を中断して閉じる（設計 §14-14-3 D4 の枠）
+    if (this.occupiedCount() >= this.maxSessions && this.versionProbeAborter !== undefined && this.hasRunningVersionProbe()) await this.versionProbeAborter();
     if (this.occupiedCount() >= this.maxSessions) throw new SessionInputError("too many sessions");
     this.pending += 1;
     try {
@@ -391,7 +454,20 @@ export class SessionManager {
    * 件のセッション（役割 caseSandbox）を開く: 件ごとの写しを作って確かめ、件ごとの設定を書いて、写しを作業場所に開く。
    * 途中で失敗したら、作った設定・一時の置き場・写しを消して同じ誤りを投げ直す（終わった件の片付けは別）。
    */
-  private async createCase(name: string, role: RoleConfig, inputBranch: unknown): Promise<Session> {
+  /** サーバーの内側から probe の件を開く（設計 §14-14-3 D4）。役割は caseSandbox の役割。空きが 2 以上のときだけ */
+  async openVersionProbe(name: string): Promise<Session> {
+    const role = this.config.roles.find((r) => r.caseSandbox === true);
+    if (role === undefined) throw new SessionInputError("no case role");
+    if (this.maxSessions - this.occupiedCount() < 2) throw new SessionInputError("too many sessions");
+    this.pending += 1;
+    try {
+      return await this.createCase(validateName(name), role, undefined, { versionProbe: true });
+    } finally {
+      this.pending -= 1;
+    }
+  }
+
+  private async createCase(name: string, role: RoleConfig, inputBranch: unknown, opts: { versionProbe?: boolean } = {}): Promise<Session> {
     if (inputBranch !== undefined && inputBranch !== null) throw new SessionConflictError("case role does not take a branch");
     const M = realOr(this.config.salesanchorRoot);
     const id = randomUUID();
@@ -402,10 +478,16 @@ export class SessionManager {
       W = await createCaseClone({ M, H: paths.H, id });
       const reason = await checkCaseClone(W, M);
       if (reason !== null) throw new SessionConflictError(`case clone check failed: ${reason}`);
-      await writeCaseFiles({ M, W, T: paths.T, D: paths.D, H: paths.H, R: paths.R, GH: paths.GH, CH: paths.CH, guardScript: realOr(this.caseGuardPath), nodeBin: process.execPath, hookPath: hookPathIn(paths.D) }, id, this.config.port);
+      // 実体の指紋は、写しを作った後・claude を起動する前に取る（起動した後だと、計算するまでの間に中身を変えられる。設計 D2）
+      const real = resolveClaudeReal(this.config.claudeBin, process.env.PATH);
+      if (real === null) throw new CaseSandboxUnavailableError("sandbox unavailable: claude binary not found");
+      const fp = (await fingerprintFile(real)) ?? undefined;
+      await writeCaseFiles({ M, W, T: paths.T, D: paths.D, H: paths.H, R: paths.R, GH: paths.GH, CH: paths.CH, guardScript: realOr(this.caseGuardPath), nodeBin: process.execPath, hookPath: hookPathIn(paths.D) }, id, this.config.port, opts.versionProbe === true ? { versionProbe: true } : {});
       filesWritten = true;
-      const session = this.spawnSession(name, role, caseBranchOf(id), W, role.command, {}, undefined, id, true);
-      session.initialName = name;
+      const session = this.spawnSession(name, role, caseBranchOf(id), W, role.command, {}, undefined, id, true, { real, ...(fp !== undefined ? { fp } : {}) });
+      if (opts.versionProbe === true) session.versionProbe = true;
+      else session.initialName = name;
+      if (opts.versionProbe !== true) this.caseOpenedListener?.({ id: session.id, real, fp });
       return session;
     } catch (err) {
       await removeCaseFiles(paths.D, id, filesWritten ? { tmp: true, tmpRoot: this.caseTmpRoot } : {}).catch(() => undefined);
@@ -510,8 +592,8 @@ export class SessionManager {
    * 件を開くたび（作成・restore・つなぎ直し）に、起動の確かめの前に room.sb を書き直す。claude の実体の道（E）は、その前にここで解く。
    * 解けなければ書かずに投げる。前に開いたときの room.sb は使わない
    */
-  private prepareCaseRoom(id: string): { claudeReal: string; CH: string; W: string } {
-    const claudeReal = resolveClaudeReal(this.config.claudeBin, process.env.PATH);
+  private prepareCaseRoom(id: string, resolved?: string): { claudeReal: string; CH: string; W: string } {
+    const claudeReal = resolved ?? resolveClaudeReal(this.config.claudeBin, process.env.PATH);
     if (claudeReal === null) throw new CaseSandboxUnavailableError("sandbox unavailable: claude binary not found");
     const paths = casePaths({ id, H: this.caseHomeDir, D: this.config.dataDir, tmpRoot: this.caseTmpRoot });
     const params: CaseParams = {
@@ -648,17 +730,19 @@ export class SessionManager {
     claudeSessionId?: string,
     knownId?: string,
     isNew?: boolean,
+    /** 件を開く前に解いた claude の実体と指紋（createCase が渡す。渡されたらここで解き直さない） */
+    preClaude?: CaseClaudeInfo,
   ): Session {
     const id = knownId !== undefined && !this.sessions.has(knownId) ? knownId : randomUUID();
     const isCase = role.caseSandbox === true;
-    const room = isCase ? this.prepareCaseRoom(id) : null;
+    const room = isCase ? this.prepareCaseRoom(id, preClaude?.real) : null;
     const caseEnv = room === null ? {} : this.checkCaseSandbox(id, cwd, room.claudeReal);
     if (room !== null) writeCaseKeybindings(room.CH);
     // 新しく claude を起動するときだけ、case-home の .claude.json を書き直す（つなぎ直しでは書き直さない）
     const beforeNew = room === null ? undefined : (): void => rewriteCaseClaudeJson(room.CH, realOr(cwd));
     const { term, reattached, pid } = this.openTerminal(id, role, cwd, command, { ...extraEnv, ...caseEnv }, knownId === id && isNew !== true, beforeNew);
     if (isCase) this.recordCaseMain(id, pid);
-    if (room !== null) this.caseClaudeReal.set(id, room.claudeReal);
+    if (room !== null) this.caseClaudeReal.set(id, { real: room.claudeReal, ...(preClaude?.fp !== undefined && preClaude.real === room.claudeReal ? { fp: preClaude.fp } : {}) });
     const session: Session = {
       id,
       name,
@@ -778,6 +862,8 @@ export class SessionManager {
   }
 
   write(session: Session, data: string): void {
+    // probe の件への入力は全部断る（端末への書き込み 0 回。設計 §14-14-3 D4）
+    if (session.versionProbe === true) return;
     if (!session.exited) session.term.write(data);
   }
 

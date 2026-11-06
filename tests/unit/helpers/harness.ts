@@ -124,6 +124,8 @@ export interface HarnessOptions {
   caseProxyListening?: () => boolean;
   /** 件の活動の入口が、送り元の番号から pid を引く関数（AppDeps.lookupPid）の差し替え */
   lookupPid?: (sourcePort: number) => Promise<number[]>;
+  /** probe の件の道具の記録の受け口が使う probe（AppDeps.versionProbe）の差し替え */
+  versionProbe?: import("../../../server/case-say-probe.ts").CaseVersionProbe;
   /** 1 ファイルの変更の表示上限（byte）。既定は config の既定値 */
   diffMaxFileBytes?: number;
   /** 送る文章の上限（byte）。既定は config の既定値 */
@@ -281,7 +283,7 @@ export async function startHarness(options: HarnessOptions = {}): Promise<Harnes
   const reserve: ReserveAccess = options.reserve ?? { token: RESERVE_TOKEN };
   const routineApprovals = new RoutineApprovals(() => clock.t);
   const server = createServer(
-    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines, reservations, scheduleItems, schedule: gate, relay, reserve, routineApprovals, ...(options.discordIntake ? { discordIntake: options.discordIntake } : {}), ...(options.lookupPid ? { lookupPid: options.lookupPid } : {}) }),
+    createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity, checkHooks: () => checkHooks({ settingsPath: config.claudeSettingsPath, hookPath: hookPathIn(config.dataDir) }), memory: new MemoryCollector(0), staticDir, meta: { saSource: "sha", claudeVersion: "v", version: "9.9.9", commit: COMMIT }, routines, reservations, scheduleItems, schedule: gate, relay, reserve, routineApprovals, ...(options.discordIntake ? { discordIntake: options.discordIntake } : {}), ...(options.lookupPid ? { lookupPid: options.lookupPid } : {}), ...(options.versionProbe ? { versionProbe: options.versionProbe } : {}) }),
   );
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));

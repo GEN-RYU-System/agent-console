@@ -5,12 +5,13 @@ import { accessSync, constants as fsConstants, lstatSync, readFileSync, readdirS
 import { chmod, lstat, mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { ACTIVITY_HOOK_FILE, BOARD_GUARD_HOOK_FILE, GUARD_HOOK_FILE, SERVER_KILL_GUARD_HOOK_FILE, addHandlers } from "./activity-hooks.ts";
+import { ACTIVITY_HOOK_FILE, BOARD_GUARD_HOOK_FILE, GUARD_HOOK_FILE, SERVER_KILL_GUARD_HOOK_FILE, addHandlers, buildHandler } from "./activity-hooks.ts";
+import { CASE_SAY_VERSIONS_FILE, CASE_SAY_VERSIONS_KEY_FILE } from "./case-say-versions.ts";
 import { caseCloneDir } from "./case-clone.ts";
 
 export class CaseSandboxUnavailableError extends Error {}
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DIR_MODE = 0o700;
 const FILE_MODE = 0o600;
 const GH_USER = "shingo-cc";
@@ -67,6 +68,9 @@ export function casePaths(p: { id: string; H: string; D: string; tmpRoot?: strin
   };
 }
 
+/** 件の claude の版の記録と鍵（サーバーだけが書く。件の部屋からは読めず書けない） */
+export const CASE_VERSION_RECORD_PATHS = (p: CaseParams): string[] => [path.join(p.D, CASE_SAY_VERSIONS_FILE), path.join(p.D, CASE_SAY_VERSIONS_KEY_FILE)];
+
 export const CASE_DENY_WRITE = (p: CaseParams): string[] => [
   path.join(p.W, ".git", "hooks"),
   path.join(p.W, ".git", "config"),
@@ -79,6 +83,8 @@ export const CASE_DENY_WRITE = (p: CaseParams): string[] => [
   path.join(p.D, "case-gh"),
   path.join(p.D, "hooks"),
   path.join(p.D, "activity"),
+  path.join(p.D, CASE_SAY_VERSIONS_FILE),
+  path.join(p.D, CASE_SAY_VERSIONS_KEY_FILE),
   path.join(p.H, ".claude"),
   path.join(p.H, ".claude.json"),
   path.join(p.H, ".zshrc"),
@@ -88,6 +94,8 @@ export const CASE_DENY_WRITE = (p: CaseParams): string[] => [
 
 export const CASE_DENY_READ = (p: CaseParams): string[] => [
   path.join(p.D, "reserve-token"),
+  path.join(p.D, CASE_SAY_VERSIONS_FILE),
+  path.join(p.D, CASE_SAY_VERSIONS_KEY_FILE),
   path.join(p.H, ".claude-access.env"),
   path.join(p.H, ".claude", "channels"),
   path.join(p.H, ".claude", "projects"),
@@ -452,9 +460,20 @@ export function resolveClaudeReal(claudeBin: string, envPath: string | undefined
 /** 権限の絶対の道は先頭を `//` にする（realpath の先頭の `/` を除いてつなぐ） */
 const rule = (tool: string, abs: string, suffix = ""): string => `${tool}(//${abs.replace(/^\/+/, "")}${suffix})`;
 
-export function buildCaseSettings(p: CaseParams, consolePort: number): Record<string, unknown> {
-  const denyWrite = CASE_DENY_WRITE(p);
-  const denyRead = CASE_DENY_READ(p);
+/** 件の設定に足す任意の引数。versionProbe: true は probe の件（設計 §14-14-3 D3'）だけ。渡さなければ PO の件の設定と同じ */
+export interface CaseSettingsOptions {
+  versionProbe?: boolean;
+}
+
+/** probe の件だけの道具の記録の受け口 */
+export const CASE_PROBE_ACTIVITY_PATH = "/api/agent/case-probe-activity";
+
+export function buildCaseSettings(p: CaseParams, consolePort: number, opts: CaseSettingsOptions = {}): Record<string, unknown> {
+  // 件の版の記録と鍵（§14-14-3 D5）は room.sb と case.json（case-guard）で守る。権限の deny には入れない:
+  // buildCaseSettings を引数なしで呼んだ出力（PO の件の設定）は 1 文字も変えない決まり（設計 §14-14-9）
+  const versionPaths = new Set(CASE_VERSION_RECORD_PATHS(p));
+  const denyWrite = CASE_DENY_WRITE(p).filter((d) => !versionPaths.has(d));
+  const denyRead = CASE_DENY_READ(p).filter((d) => !versionPaths.has(d));
   // board-guard は件の設定から外す（部屋の中では D/open-sessions.json を読めず、黙って素通りになるため。設計 §4-1）。記録用 hook は部屋の外の受け口へ送る（§4-6）
   const base = addHandlers({}, p.nodeBin, p.hookPath, { skip: [BOARD_GUARD_HOOK_FILE], activityArgs: ["--post", `http://127.0.0.1:${consolePort}/api/agent/case-activity`] }).settings as { hooks?: { PreToolUse?: unknown[] } & Record<string, unknown> };
   const hooks = JSON.parse(JSON.stringify(base.hooks ?? {})) as Record<string, unknown[]>;
@@ -462,6 +481,13 @@ export function buildCaseSettings(p: CaseParams, consolePort: number): Record<st
     { matcher: "*", hooks: [{ type: "command", command: p.nodeBin, args: [p.guardScript, p.caseFile], onFailure: "block", timeout: 10 }] },
     ...(hooks.PreToolUse ?? []),
   ];
+  if (opts.versionProbe === true) {
+    // probe の件だけ: 道具の記録（pre と post）を同期で probe の受け口へ送る。async を付けない・timeout 5（設計 D3'）
+    const spec = { event: "PreToolUse", matcher: "*", async: false, timeout: 5 } as const;
+    const handler = buildHandler(p.nodeBin, p.hookPath, spec, ["--post", `http://127.0.0.1:${consolePort}${CASE_PROBE_ACTIVITY_PATH}`]);
+    hooks.PreToolUse = [...(hooks.PreToolUse ?? []), { matcher: "*", hooks: [handler] }];
+    hooks.PostToolUse = [...(hooks.PostToolUse ?? []), { matcher: "*", hooks: [handler] }];
+  }
   return {
     disableAutoMode: "disable",
     includeGitInstructions: false,
@@ -493,7 +519,7 @@ async function isOwnRealDirectory(p: string): Promise<boolean> {
  * 件の設定を書く: D/cases/<id>/settings.json・case.json、GH/config.yml・hosts.yml、R、T。
  * 途中で失敗したら自分が作った物だけを消してから投げる（すでにある T やリンクの先には触らない）。
  */
-export async function writeCaseFiles(p: Omit<CaseParams, "caseFile">, sessionId: string, consolePort: number): Promise<{ settingsPath: string; ghDir: string; caseFile: string; tmp: string }> {
+export async function writeCaseFiles(p: Omit<CaseParams, "caseFile">, sessionId: string, consolePort: number, opts: CaseSettingsOptions = {}): Promise<{ settingsPath: string; ghDir: string; caseFile: string; tmp: string }> {
   if (!UUID.test(sessionId)) throw new CaseSandboxUnavailableError("sandbox unavailable: case id must be a UUID");
   const dir = caseDirOf(p.D, sessionId);
   const settingsPath = path.join(dir, "settings.json");
@@ -501,7 +527,7 @@ export async function writeCaseFiles(p: Omit<CaseParams, "caseFile">, sessionId:
   const full: CaseParams = { ...p, caseFile };
   const made: string[] = [];
   try {
-    const settings = buildCaseSettings(full, consolePort);
+    const settings = buildCaseSettings(full, consolePort, opts);
     await mkdir(path.join(p.D, "cases"), { recursive: true, mode: DIR_MODE });
     await mkdir(dir, { mode: DIR_MODE });
     made.push(dir);

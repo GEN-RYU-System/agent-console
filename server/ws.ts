@@ -33,6 +33,8 @@ function attachTerminal(sessions: SessionManager, session: Session, ws: WebSocke
     } catch {
       return;
     }
+    // probe の件への端末入力は全部断る（設計 conversation-consent §14-14-3 D4）
+    if (session.versionProbe === true && msg.type === "input") return;
     if (msg.type === "input" && typeof msg.data === "string") {
       // Enter（\r）を含む入力は PO が送った印。Claude の受け取りより前に未読を消す（sessions.write の前）
       if (msg.data.includes("\r")) onSubmit(session.id);

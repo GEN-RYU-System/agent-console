@@ -766,3 +766,13 @@ describe("pendingSelfResume and onSelfResume (unread-ball-with-po)", () => {
     expect(promptKey("a")).toMatch(/^[0-9a-f]{16}$/);
   });
 });
+
+describe("CS3a fix1 F2: agentLifecycle（読み取りだけの口）", () => {
+  it("agent_id ごとの SubagentStart・SubagentStop の有無を返す。別の agent_id・別のセッションは 0", async () => {
+    write([pre("t1", { ts: T0 }), start("A", { ts: T0 + 500 }), post("t1", "A", { ts: T0 + 1000 }), stop("A", { ts: T0 + 2000 })]);
+    await store.refresh();
+    expect(store.agentLifecycle(SID, "A")).toEqual({ starts: 1, stops: 1 });
+    expect(store.agentLifecycle(SID, "B")).toEqual({ starts: 0, stops: 0 });
+    expect(store.agentLifecycle(OTHER, "A")).toEqual({ starts: 0, stops: 0 });
+  });
+});

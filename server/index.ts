@@ -24,6 +24,7 @@ import { OpenSessionRecorder, isRestoreEnabled, startOpenSessionRestore } from "
 import { OpenSessionStore } from "./session-store.ts";
 import { RoutineApprovals } from "./routine-approvals.ts";
 import { RoutineAudit } from "./routine-audit.ts";
+import { setupCaseVersionService } from "./case-say-probe-wiring.ts";
 import { CLOSE_IDLE_MS, KEEP_WAITING_MS, RoutineCloser, gapLimitMsFor } from "./routine-closer.ts";
 import { RoutineService, RoutineStore } from "./routines.ts";
 import { ScheduleGate } from "./schedule-gate.ts";
@@ -103,6 +104,8 @@ async function main(): Promise<void> {
   hub.watchPicks(picks);
   const activity = startActivity({ config, hub, env: process.env, hooksSourceDir: path.join(process.cwd(), "hooks") });
   const routineApprovals = new RoutineApprovals();
+  // 件の claude の版の自動の確かめ（記録・probe の件・版ずれの知らせ。設計 conversation-consent §14-14）
+  const caseVersions = setupCaseVersionService({ config, sessions, hub, activity: activity.store, audit: (entry) => routineAudit.append(entry) });
   // closeWhenIdle の定期実行が開いたセッションを、idle が累計 10 分続いたら閉じる（標本は claude agents の定期取得）
   const closer = new RoutineCloser({
     session: (id) => { const s = sessions.get(id); return s === undefined ? undefined : { exited: s.exited, ...(s.claudeSessionId !== undefined ? { claudeSessionId: s.claudeSessionId } : {}) }; },
@@ -118,7 +121,7 @@ async function main(): Promise<void> {
 
   const memory = new MemoryCollector();
   let stopMetrics: (() => void) | null = null;
-  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity: activity.store, checkHooks: activity.check, memory, staticDir: path.join(process.cwd(), "dist"), meta, routines, reservations, scheduleItems, schedule: gate, relay, reserve, routineApprovals, ...(discordIntake ? { discordIntake } : {}) }));
+  const server = createServer(createRequestHandler({ config, auth, sessions, hub, quickPrompts: new QuickPromptStore(config.dataDir), diffComments: new DiffCommentStore(config.dataDir), picks, uploads, picker, activity: activity.store, checkHooks: activity.check, memory, staticDir: path.join(process.cwd(), "dist"), meta, routines, reservations, scheduleItems, schedule: gate, relay, reserve, routineApprovals, versionProbe: caseVersions.probe, ...(discordIntake ? { discordIntake } : {}) }));
   const controls = attachWebSockets(server, { config, auth, sessions, hub });
   // 期限切れ（12 時間）になったセッションの WebSocket を閉じる
   setInterval(() => controls.sweep(), SESSION_SWEEP_MS).unref();
@@ -156,7 +159,12 @@ async function main(): Promise<void> {
     }
     // 前回開いていたセッションを開き直す（失敗してもサーバーは止めない）
     // 受付の待ち受けが始まってから（失敗したときも解ける。そのときは件が ⑨ で 503 になる）
-    const restored = Promise.all([heldRestored, caseProxy?.ready]).then(() => startOpenSessionRestore(process.env, { config, sessions, hub, store: openSessions, recorder })).catch((err) => console.error("restore failed:", err));
+    // 件の版の記録の読み込みと前回の probe の片付けは復元より前（片付けの順 (1)〜(4) → (5) 復元。設計 §14-14-3 D4）。本番のポート以外は読むだけ
+    const caseVersionsActive = isPickerSetupEnabled(process.env);
+    const versionsReady = caseVersionsActive ? caseVersions.startupCleanup() : caseVersions.store.load().then(() => undefined, () => undefined);
+    const restored = Promise.all([heldRestored, caseProxy?.ready, versionsReady]).then(() => startOpenSessionRestore(process.env, { config, sessions, hub, store: openSessions, recorder })).catch((err) => console.error("restore failed:", err));
+    // 復元と hub.start() の後に、PATH の claude の指紋が未記録なら probe を予約する（D4 t2）
+    if (caseVersionsActive) void restored.then(() => caseVersions.start());
     // 予約の時計は復元の完了を待ってから動かす（復元が先に席を取れるように）。復元の成否・無効に関わらず始まる
     void reservations.start(restored).catch((err) => console.error("reservations failed:", err));
     // 復元のあとで見張りに戻す（復元より前だと session が無く、すぐ外される）。失敗はログだけ

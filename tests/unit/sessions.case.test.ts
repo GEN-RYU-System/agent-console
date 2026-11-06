@@ -2,11 +2,12 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { caseCloneDir } from "../../server/case-clone.ts";
 import { CASE_PROXY_PORT, CaseSandboxUnavailableError, writeCaseRoom } from "../../server/case-sandbox.ts";
 import type { RoleConfig } from "../../server/config.ts";
+import { realProbePorts } from "../../server/case-say-probe-wiring.ts";
 import { restoreOnStartup } from "../../server/restore.ts";
 import { SessionConflictError, SessionInputError, SessionManager } from "../../server/sessions.ts";
 import { newSession, probeSession } from "../../server/terminal-host/tmux-runner.ts";
@@ -466,5 +467,77 @@ describe("the case main process and .claude.json on reattach / relaunch", () => 
     const s = await x.h.sessions.create({ name: "cp", roleId: "case" });
     (x.h.sessions.caseMainProcesses() as Map<string, unknown>).delete(s.id);
     expect(x.h.sessions.caseMainProcesses().has(s.id)).toBe(true);
+  });
+});
+
+describe("便CS3a: the fingerprint is taken before the start, and the probe case is the server's own", () => {
+  it("records the fingerprint of the binary as it was before the start, even if the binary is replaced after create(); tells the listener once", async () => {
+    const x = await setup();
+    const before = readFileSync(x.claude);
+    const sha = createHash("sha256").update(before).digest("hex");
+    const heard: Array<{ id: string; real: string; sha: string | undefined }> = [];
+    x.h.sessions.setCaseOpenedListener((i) => heard.push({ id: i.id, real: i.real, sha: i.fp?.sha256 }));
+    const s = await x.h.sessions.create({ name: "fp", roleId: "case" });
+    writeFileSync(x.claude, "#!/bin/sh\necho replaced after the start\n", { mode: 0o755 });
+    expect(x.h.sessions.caseClaudeFingerprintOf(s.id)).toEqual({ sha256: sha, size: before.length });
+    expect(heard).toEqual([{ id: s.id, real: x.claude, sha }]);
+    await x.h.sessions.close(s.id);
+    expect(x.h.sessions.caseClaudeFingerprintOf(s.id)).toBeUndefined();
+  });
+
+  it("openVersionProbe: marks the session, writes the 2 probe hooks into its settings only, keeps no initial name, tells no listener, ignores input, and is cleaned up by the real ports", async () => {
+    const x = await setup({ configMaxSessions: 4 });
+    const heard: string[] = [];
+    x.h.sessions.setCaseOpenedListener((i) => heard.push(i.id));
+    const po = await x.h.sessions.create({ name: "po", roleId: "case" });
+    const probe = await x.h.sessions.openVersionProbe("probe claude 2.1.320");
+    expect(probe.versionProbe).toBe(true);
+    expect(po.versionProbe).toBeUndefined();
+    expect(probe.initialName).toBeUndefined();
+    expect(heard).toEqual([po.id]);
+    const hooksOf = (id: string): number => {
+      const j = JSON.parse(readFileSync(path.join(x.D, "cases", id, "settings.json"), "utf8")) as { hooks: Record<string, Array<{ hooks: unknown[] }>> };
+      return Object.values(j.hooks).reduce((n, g) => n + g.reduce((m, e) => m + e.hooks.length, 0), 0);
+    };
+    expect(hooksOf(probe.id)).toBe(hooksOf(po.id) + 2);
+    // 画面からの入力は端末へ 0 回
+    let wrote = 0;
+    const term = probe.term as unknown as { write: (d: string) => void };
+    const orig = term.write.bind(term);
+    term.write = (d) => { wrote += 1; orig(d); };
+    x.h.sessions.write(probe, "echo hi\r");
+    expect(wrote).toBe(0);
+    x.h.sessions.write(po, "");
+    // 閉じた後、実物の片付けで D/cases・R・W が消える
+    const ports = realProbePorts({ config: x.h.config, sessions: x.h.sessions, hub: x.h.hub, activity: {} as never, audit: async () => undefined }, () => undefined);
+    const paths = x.h.sessions.caseCleanupPaths(probe.id);
+    mkdirSync(paths.R, { recursive: true });
+    await x.h.sessions.close(probe.id);
+    await ports.cleanup({ id: probe.id, R: paths.R });
+    expect(existsSync(path.join(x.D, "cases", probe.id))).toBe(false);
+    expect(existsSync(paths.R)).toBe(false);
+    expect(existsSync(paths.W)).toBe(false);
+    expect(existsSync(path.join(x.D, "cases", po.id))).toBe(true);
+    await x.h.sessions.close(po.id);
+  });
+
+  it("openVersionProbe is refused unless 2 slots are free (the PO's case keeps the room)", async () => {
+    const x = await setup({ configMaxSessions: 2 });
+    const po = await x.h.sessions.create({ name: "po", roleId: "case" });
+    await expect(x.h.sessions.openVersionProbe("probe claude 2.1.320")).rejects.toBeInstanceOf(SessionInputError);
+    await x.h.sessions.close(po.id);
+  });
+
+  it("when the window limit is reached, a running probe is aborted first so the PO's case can open", async () => {
+    const x = await setup({ configMaxSessions: 2 });
+    const probe = await x.h.sessions.openVersionProbe("probe claude 2.1.320");
+    let aborted = 0;
+    x.h.sessions.setVersionProbeAborter(async () => { aborted += 1; await x.h.sessions.close(probe.id); });
+    const a = await x.h.sessions.create({ name: "a", roleId: "case" });
+    expect(aborted).toBe(0);
+    const b = await x.h.sessions.create({ name: "b", roleId: "case" });
+    expect(aborted).toBe(1);
+    await x.h.sessions.close(a.id);
+    await x.h.sessions.close(b.id);
   });
 });

@@ -601,6 +601,12 @@ export class ActivityStore {
     return { starts: s?.starts.size ?? 0, stops: s?.stops.size ?? 0, handbacks: s?.handbacks.size ?? 0, restarts: s?.restarts.size ?? 0, tasks: s?.tasks.size ?? 0 };
   }
 
+  /** その担当（agent_id）の SubagentStart・SubagentStop の数（読み取りだけ。別のセッション・別の担当は 0）。版の確かめ（P2）が使う */
+  agentLifecycle(sessionId: string, agentId: string): { starts: number; stops: number } {
+    const s = this.sessions.get(sessionId);
+    return { starts: s?.restarts.has(agentId) ? 1 : 0, stops: s?.stops.has(agentId) ? 1 : 0 };
+  }
+
   /** そのセッションの、画面に出すまとめ。別のセッションの記録は入らない（K7） */
   view(sessionId: string): SessionActivity {
     const state = this.sessions.get(sessionId);
