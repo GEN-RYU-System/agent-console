@@ -24,7 +24,8 @@
 | src/components/Schedule/Schedule.css（新） | var() だけ。border は 1px だけ |
 | src/pages/ConsolePage.tsx | :57 の CenterTab に `"schedule"`、:540 の後に `{ key: "schedule", label: t("ac.tabs.schedule") }`、:602 の後に `<SchedulePane active={centerTab === "schedule"} />`、:46 の後に import |
 | src/locales/ja.json | `ac.tabs.schedule`＝「予定」、新しい名前の段 `ac.scheduleBoard.*`（§7）。既存の `ac.schedule.*`（:309、予約の重なりの知らせ）は触らない |
-| tests/unit/schedule-items.test.ts（新）・tests/unit/find-overlaps.test.ts（新）・tests/unit/schedule-view.test.ts（新）・tests/unit/schedule-http.test.ts（新） | §8 |
+| tests/unit/schedule-items.test.ts（新）・tests/unit/find-overlaps.test.tsx（新）・tests/unit/schedule-view.test.tsx（新）・tests/unit/schedule-http.test.ts（新） | §8 | 第15回: find-overlaps と schedule-view は src と @sa を読むので .tsx（tests/unit/**/*.ts は server 側の tsconfig で検査され src を解決できないため） |
+| src/pages/ConsolePage.test.tsx | 第15回: 中央タブが1つ増えるので、タブの数と並びを数える試験（「8 tabs」・チャットが先頭でほかは今の順）を「予定」入りの数と並びに直す。ほかの試験は変えない |
 | tests/e2e/schedule.spec.ts（新） | §8 |
 | playwright.config.ts | :27 の app の testMatch に `schedule` を足す |
 | tests/e2e/console.spec.ts | :785 の除外に `schedule.json` を足す（activity・boards と同じ。起動時には作らないため）。一覧の配列は変えない |
@@ -85,11 +86,13 @@ en.json は無い（agent-console は ja だけ。src/i18n.ts:19）。
 - 単体 schedule-http: 4つの道の成功と 400・404、`/api/schedule/preview` の既存の応答が変わらない。
 - e2e schedule.spec.ts（`test.use({ timezoneId: "Asia/Tokyo" })`、`page.clock.setFixedTime(new Date("2026-11-04T09:00:00+09:00"))`。項目は API（POST /api/schedule/items）で作る。認証は file-link.spec.ts:13 の BEARER（Authorization に Bearer と E2E_TOKEN、Content-Type に application/json）と同じ物を headers に付けて `page.request.post` で送る。E2E_TOKEN は tests/fixtures/e2e-env から読む）:
   - K1: design §9 K1 (a)〜(d)。測る箱は `[data-testid=schedule-event]` の boundingBox。開発側に替えて開発の項目でも (a)(c)。
-  - K1b: 11/2（月）・11/4（水）・11/5（木）の 14:00 を作る。週表示で x が 月 < 水 < 木。月表示で3つとも出る。月表示で 11/4 の日付（getByRole("link", { name: /11月4日/ })）を押すと日表示で 11/4 と 11/5 の2列になる。日付の押し口が名前で見つからなければ止まって報告する。
+  - K1b: 11/2（月）・11/4（水）・11/5（木）の 14:00 を作る。週表示で x が 月 < 水 < 木。月表示で3つとも出る。月表示で 11/4 の日付（`getByTitle("2026年11月4日")`）を押すと日表示で 11/4 と 11/5 の2列になる（第15回: 金型の月の日付は href の無い a で link の役にならず、名前は title「2026年11月4日」だけのため、title で押す。FullCalendar の名前（fc- や data-navlink）は使わない）。title でも見つからなければ止まって報告する。
   - K4: 画面から足す→ブロックが出る→押して「終わった」→「終わった」の札→「消す」→消える。画面を読み直しても状態が残る。
   - K7b: 13:00〜14:15 と 14:00〜15:00 の箱の x の範囲が重ならず両方に「重なり」、16:00〜17:00 には無い。重なりの説明欄が出る。
   - FullCalendar のクラス名・属性（fc-*、data-date 等）を試験に書かない。
 - 既存: `npm run typecheck`・`npm run lint`・`npm test`・e2e の既存の試験が緑のまま。Mac では回さない（CI に任せる）。
+
+- 第15回の補足（実装役の2回目の報告を受けて）: SchedulePane の CalendarView には `key`（月か日か・列の数）を付けてよい。同じ部品のまま日から月へ替えると画面が落ちるため。金型は直さない。全体の `npm test` で今回触っていないファイルが赤くなったら、土台（origin/main 412717f）でも同じ試験が赤いかを確かめる。同じなら直さずに報告に書き、土台では緑なら止まって報告する。
 
 ## 9 受入（design §9 のうち便1の分）
 K1・K1b・K4・K7・K7b・K9。CI の結果に schedule.spec.ts の行があること（K9）。

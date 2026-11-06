@@ -375,6 +375,7 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 - 第13回（2026-11-06、第12回のクラウド設計審査 REVISE の反映・Opus）: M1→カード §1 に tests/unit/helpers/harness.ts:281（AppDeps の必須欄が増えると型検査が落ちる）と作り方を足した。M2→カード §8 の月の升目を 10/26〜12/6 の42日ちょうどの1通りに直した。M3→§4-1 の行番号を :57・:540・:602 に、K9・§11 の console.spec.ts を :785 に、試験名 schedule-store を schedule-items に直し、schedule-assistant は便4・estimates は便5と書き添えた。M4→カード §8 に e2e で項目を作るときの認証を書いた。
 - 第13回の再審査（2026-11-06 14:49 JST、クラウド Opus 設計審査役・bf1a36c）: APPROVE。R1〜R5 すべて ○、新しい指摘なし。便1は実装カード card-bin1.md で実装に渡す（PO 承認 D3・D4 済み）。
 - 第14回（2026-11-06、実装役の NEEDS_DECISION の反映・Opus）: カード §5 が重なりの説明欄に Callout（danger）を指定していたが、金型 Callout の variant は warning と info だけ（salesanchor frontend/src/components/Callout.tsx:13）。§9（Google が止まるときは赤字でなく注意の Callout）と同じ考えで warning に直した。赤い印（K7・K7b）は箱の赤枠（conflict）と Badge（danger）で出すので、受入れ条件は変わらない。金型に danger を足す案は Sales Anchor 側の別の変更になり便1の範囲を広げるので採らない。
+- 第15回（2026-11-06、実装役の2回目の NEEDS_DECISION の反映・Opus）: 金型の月の日付は href の無い a で、link の役にならず、名前は title「2026年11月4日」だけだった（実装役が実物で観測）。K1b の押し口を getByTitle に直した。FullCalendar の名前は使わない約束のままで、受入れ条件の中身（月から日へ移ると2列）は変わらない。中央タブが1つ増えるので ConsolePage.test.tsx のタブの数と並びの試験を直す行をカードに足した。src を読む単体試験は .tsx にし、CalendarView の key 付けを認めた（どちらも金型と受入れ条件は変えない）。
 
 ## 14 PO の決定
 - D1: Google カレンダーをアプリに読ませるための、Google 側の初回設定（PO の手作業・約15分・Google の管理画面での操作）を行うか。→ 行う（2026-10-30 PO「1」）。手順は Opus が画面ごとに案内する。
