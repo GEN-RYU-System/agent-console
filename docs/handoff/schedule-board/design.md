@@ -374,6 +374,7 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 - 第12回（2026-11-06、金型 CalendarView が main に入ったのを受けて・Opus）: §4-1 に金型の使い方・種類の色・送るボタン・終わった札を足した。§4-6 の layoutDay を取りやめ（金型と二重）、K1 を予定どうしの差で測る形に、K7b を e2e だけに直した。§15-1 に未確認4点の結果を書いた。便1の実装カード card-bin1.md を作った。
 - 第13回（2026-11-06、第12回のクラウド設計審査 REVISE の反映・Opus）: M1→カード §1 に tests/unit/helpers/harness.ts:281（AppDeps の必須欄が増えると型検査が落ちる）と作り方を足した。M2→カード §8 の月の升目を 10/26〜12/6 の42日ちょうどの1通りに直した。M3→§4-1 の行番号を :57・:540・:602 に、K9・§11 の console.spec.ts を :785 に、試験名 schedule-store を schedule-items に直し、schedule-assistant は便4・estimates は便5と書き添えた。M4→カード §8 に e2e で項目を作るときの認証を書いた。
 - 第13回の再審査（2026-11-06 14:49 JST、クラウド Opus 設計審査役・bf1a36c）: APPROVE。R1〜R5 すべて ○、新しい指摘なし。便1は実装カード card-bin1.md で実装に渡す（PO 承認 D3・D4 済み）。
+- 第14回（2026-11-06、実装役の NEEDS_DECISION の反映・Opus）: カード §5 が重なりの説明欄に Callout（danger）を指定していたが、金型 Callout の variant は warning と info だけ（salesanchor frontend/src/components/Callout.tsx:13）。§9（Google が止まるときは赤字でなく注意の Callout）と同じ考えで warning に直した。赤い印（K7・K7b）は箱の赤枠（conflict）と Badge（danger）で出すので、受入れ条件は変わらない。金型に danger を足す案は Sales Anchor 側の別の変更になり便1の範囲を広げるので採らない。
 
 ## 14 PO の決定
 - D1: Google カレンダーをアプリに読ませるための、Google 側の初回設定（PO の手作業・約15分・Google の管理画面での操作）を行うか。→ 行う（2026-10-30 PO「1」）。手順は Opus が画面ごとに案内する。

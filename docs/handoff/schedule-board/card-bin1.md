@@ -63,7 +63,7 @@
   - onEventClick: 詳細の Modal（題名・日時・メモ、Button「終わった」（open のとき）／「開き直す」（done のとき）・「消す」）。消す前に確認の小窓は出さない（ブラウザの confirm は使わない。Modal の中で「消す」を押すと消す）。
   - onDayClick: 日表示に替え、その日を先頭にする。
 - 右脇の欄「時刻の決まっていないこと」: date か start の無い項目（選んでいる側）。各行に Badge（種類）・題名・Button「終わった」「消す」。無ければ金型 EmptyState。
-- 重なりの説明欄: 重なりが1つ以上あるとき、金型 Callout（danger）「時間が重なっています」と組の一覧（「〇〇 と △△」）。
+- 重なりの説明欄: 重なりが1つ以上あるとき、金型 Callout（warning）「時間が重なっています」と組の一覧（「〇〇 と △△」）。金型 Callout の variant は warning と info の2つだけ（salesanchor frontend/src/components/Callout.tsx:13）なので danger は使わない（第14回・実装役の NEEDS_DECISION を受けて直した）。赤い印は箱の赤枠（conflict）と Badge（danger）「重なり」で出す。
 - 読めないとき: 金型 Callout（warning）で理由。前の中身は消さない。
 - 足す小窓（ScheduleItemEditor）: 金型 Select（開発／秘書・種類）、TextField（題名・日付 type="date"・開始・終了。時刻は ReservationEditor.tsx:49 と同じ文字の欄と helperText）、Textarea（メモ）、TextField（返事待ちの相手。種類が返事待ちのときだけ）。送ったら閉じて取り直す。サーバーの 400 は Callout で出す。
 - 新しい部品は作らない。生の input・select・button は使わない。色・寸法の直書きをしない。
