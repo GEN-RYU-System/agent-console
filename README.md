@@ -288,7 +288,7 @@ Discord の不具合の件を調べる Claude のセッション用の役割で�
 - 重なり: 同じ日の時刻のある未完了の2つが少しでも重なると、赤枠と「重なり」の札が付き、説明欄に組が出る（終了の無いものは30分。端が接するだけは重なりでない。開発と秘書を合わせて数える）。
 - 保存先: `dataDir/schedule.json`（open は300件、全体は1000件まで。超えたら終わったものの古い順に消える）。壊れたファイルは上書きしない。
 - 道: `GET /api/schedule?from=&to=`（42日まで）・`POST /api/schedule/items`・`PATCH /api/schedule/items/:id`・`DELETE /api/schedule/items/:id`。
-- 戻し方: `bash scripts/ac-update.sh v0.51.0`（`schedule.json` は残るが、古い版は読まない）。
+- 戻し方: `bash scripts/ac-update.sh v0.51.1`（`schedule.json` は残るが、古い版は読まない）。
 
 ## 件へ一文を送る（v0.51.0）
 
