@@ -14,7 +14,8 @@
 | extension/manifest.json | version を 0.52.0（v0.51.0 の PR と同じ扱い） |
 | server/schedule-items.ts（新） | ScheduleItem の型・検査・`ScheduleItemStore`・`ScheduleItemService`（§3） |
 | server/http.ts | AppDeps に `scheduleItems: ScheduleItemService`（§4）、画面用の道4つ（§4） |
-| server/index.ts | :119 の createRequestHandler に `scheduleItems` を渡す（:90 の reservations と同じ並びで作る） |
+| server/index.ts | :119 の createRequestHandler に `scheduleItems` を渡す（:90 の reservations と同じ並びで `new ScheduleItemService(new ScheduleItemStore(config.dataDir))` を作る） |
+| tests/unit/helpers/harness.ts | :281 の createRequestHandler にも `scheduleItems` を渡す（同じ作り方。AppDeps の必須欄が増えると tsconfig.server.json の型検査がここで落ちるため）。返す物（:55-68 の型）に `scheduleItems: ScheduleItemService` を足す。schedule-http の試験はこの harness を使う |
 | src/types.ts | `ScheduleSide`・`ScheduleKind`・`ScheduleItem`・`ScheduleItemInput`・`ScheduleItemPatch` |
 | src/api.ts | `fetchSchedule(from,to)`・`createScheduleItem`・`updateScheduleItem`・`deleteScheduleItem`（:165-167 の予約と同じ書き方） |
 | src/components/Schedule/SchedulePane.tsx（新） | 画面（§5） |
@@ -43,6 +44,7 @@
 - ファイル `dataDir/schedule.json` ＝ `{ "version": 1, "items": [...] }`。書き手は `ScheduleItemStore` だけ。reservations.ts:86-101 の ReservationStore と同じ形（createSerial、書く前に read して壊れた中身・知らない版は上書きしない、writeJsonAtomic）。
 - 日付の検査: 正規表現のあと、`Date.UTC` で作った日付を日本時間で書き戻し、元の文字列と同じかを見る（reservations.ts:103-114 resolveRunAt の考え）。存在しない日付・時刻は SessionInputError（400）。
 - 上限: open が 300 件ある状態の追加は 400（`SessionInputError("schedule open limit")`）。全体 1000 件を超えたら doneAt の古い done から消す（reservations.ts:117-123 prune と同じ形）。
+- 作り方: `new ScheduleItemStore(dataDir)`、`new ScheduleItemService(store)`（引数はこの1つだけ）。
 - ScheduleItemService: `list(from, to)` は date が [from, to] のもの＋date の無いもの（終わったものも返す）。`create(input, "ui")`・`update(id, patch)`（title・date・start・end・note・waitingOn・status。status を done にしたら doneAt、open に戻したら doneAt を消す）・`remove(id)`。無い id は SessionNotFoundError（404）。
 
 ## 4 画面用の道（server/http.ts、認証の後・:227 の preview の近くに置く）
@@ -79,9 +81,9 @@ en.json は無い（agent-console は ja だけ。src/i18n.ts:19）。
 ## 8 試験
 - 単体 schedule-items: 保存と読み直し・壊れたファイルと version 2 を上書きしない・存在しない日付（2026-02-30）と 25:00 は 400・end ≤ start は 400・open 300 件目の次は 400・1001 件で古い done から消える・done で doneAt が付き open で消える・無い id は 404。
 - 単体 find-overlaps: 13:00〜14:15 と 14:00〜15:00 は重なり、14:00〜15:00 と 15:00〜16:00 は重ならない、end 無しは 30 分（10:00 と 10:20 は重なり、10:00 と 10:30 は重ならない）、done と日の違う項目は数えない、開発と秘書をまたいでも数える。
-- 単体 schedule-view: jstToday（UTC 2026-11-04T15:00Z は 2026-11-05）、viewRange（水曜 2026-11-04 の週は 11/2〜11/8、2026-11 の月の升目は 10/26〜11/29 か 12/6 までで 42 日以下）、toCalendarEvents（時刻なしは入らない・end 無しは＋30分・tone の対応・conflict）。
+- 単体 schedule-view: jstToday（UTC 2026-11-04T15:00Z は 2026-11-05）、viewRange（水曜 2026-11-04 の週は 11/2〜11/8、2026-11 の月の升目は 10/26（月）〜12/6（日）の 42 日ちょうど。11/1 は日曜・11/30 は月曜のため6週になる）、toCalendarEvents（時刻なしは入らない・end 無しは＋30分・tone の対応・conflict）。
 - 単体 schedule-http: 4つの道の成功と 400・404、`/api/schedule/preview` の既存の応答が変わらない。
-- e2e schedule.spec.ts（`test.use({ timezoneId: "Asia/Tokyo" })`、`page.clock.setFixedTime(new Date("2026-11-04T09:00:00+09:00"))`。項目は API（POST /api/schedule/items）で作る）:
+- e2e schedule.spec.ts（`test.use({ timezoneId: "Asia/Tokyo" })`、`page.clock.setFixedTime(new Date("2026-11-04T09:00:00+09:00"))`。項目は API（POST /api/schedule/items）で作る。認証は file-link.spec.ts:13 の BEARER（Authorization に Bearer と E2E_TOKEN、Content-Type に application/json）と同じ物を headers に付けて `page.request.post` で送る。E2E_TOKEN は tests/fixtures/e2e-env から読む）:
   - K1: design §9 K1 (a)〜(d)。測る箱は `[data-testid=schedule-event]` の boundingBox。開発側に替えて開発の項目でも (a)(c)。
   - K1b: 11/2（月）・11/4（水）・11/5（木）の 14:00 を作る。週表示で x が 月 < 水 < 木。月表示で3つとも出る。月表示で 11/4 の日付（getByRole("link", { name: /11月4日/ })）を押すと日表示で 11/4 と 11/5 の2列になる。日付の押し口が名前で見つからなければ止まって報告する。
   - K4: 画面から足す→ブロックが出る→押して「終わった」→「終わった」の札→「消す」→消える。画面を読み直しても状態が残る。

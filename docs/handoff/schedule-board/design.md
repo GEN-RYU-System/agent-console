@@ -1,6 +1,6 @@
 # 予定画面（開発／秘書）— design
 
-状態: 設計（Opus 作成 2026-10-30）・独立審査 第4回 APPROVE（§13）・PO 決定 D1〜D4 済み（§14）・D4 の金型 CalendarView は Sales Anchor main に入った（2026-11-06）・第12回（2026-11-06）で便1の画面を金型 CalendarView に合わせて直した・便1の実装カードは card-bin1.md・実装未着手。
+状態: 設計（Opus 作成 2026-10-30）・独立審査 第4回 APPROVE（§13）・PO 決定 D1〜D4 済み（§14）・D4 の金型 CalendarView は Sales Anchor main に入った（2026-11-06）・第12回・第13回（2026-11-06）で便1の画面を金型 CalendarView に合わせて直した・便1の実装カードは card-bin1.md・実装未着手。
 調査は recon.md（同じフォルダ）。成功条件（１）〜（７）と（８）〜（１２）は PO 承認済み（2026-10-30「1」）で、ここでは変えない。
 
 ## 1 目的（PO の言葉）
@@ -45,7 +45,7 @@
 | 見積もり | 記録しない | 見積もり・開始・終了を追記だけの記録に残し、時間割と当たり具合の画面に出す |
 
 ### 4-1 画面
-- 中央タブ `schedule`（ConsolePage.tsx:58 の型と :532-547 の items に1つ足す、ラベル t("ac.tabs.schedule")＝「予定」）。ペイン src/components/Schedule/SchedulePane.tsx を ReservationsPane と同じ型（`active` prop、`hidden={!active}`）で ConsolePage.tsx:608 の下に置く。
+- 中央タブ `schedule`（ConsolePage.tsx:57 の型と :540 の後の items に1つ足す、ラベル t("ac.tabs.schedule")＝「予定」）。ペイン src/components/Schedule/SchedulePane.tsx を ReservationsPane と同じ型（`active` prop、`hidden={!active}`）で ConsolePage.tsx:602 の下に置く。
 - 第2版（2026-10-30 PO 指摘「秘書をスケジュールにしてって言わなかった？タイムテーブル式にもなってない」を受けて変更）。第1版は時刻つきの一覧で、時間割の形を入れ忘れていた。
 - 上部に「開発／秘書」の切り替え（金型 Tabs。SegmentedControl は金型に無いので使わない）。既定は秘書。
 - その横に「日／週／月」の切り替え（2026-10-30 PO「day/week/month の切り替えタブは？」を受けて追加）。既定は日。選んだ表示は画面の中だけで覚える（localStorage、読めなければ日）。
@@ -340,15 +340,15 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 | K12（１１）（１２）記録が消えず CSV で出る・直した回数が出る | 単体: log.jsonl への追記だけ（既存の行のバイト列が変わらない）・壊れた行を飛ばして残りを読み、飛ばした数を返す・順番違反（started 前の done 等）は 409。単体: CSV の1行目が §4-8 の17列の見出しと一致、行数＝作業の数＋1、BOM 付き。e2e: K10 と同じく、log.jsonl に estimated → revised → revised → started → done の5行を先に書き込み、時間割の枠と当たり具合の表に「直した 2回」、CSV の revisions 列が 2 |
 | K13 打ち忘れの補完 | 単体: (a) started 済みの見積もりと同じ会話番号・同じ作業名のボードが doing→done になると、done(source: board) が1行だけ追記される (b) もう一度読み直しても増えない (c) サーバーを再起動して全部を読み直しても増えない (c2) start より前の mtime で done のボードは補わない (c3) dataDir/estimates/ に board-seen.json など log.jsonl 以外のファイルができない (d) 同じ作業名が2つ・会話番号違い・started 無しでは追記されない |
 | K8 秘密が画面・ログ・ファイル・子プロセスの引数に出ない | 単体: ログ出力と API 応答に鍵の値（試験用の偽の値）が含まれない。dataDir 下の新しいファイル（schedule.json・estimates/log.jsonl）に偽の値が含まれない。writeKeychainItem が spawn に渡す引数の配列が `["-i"]` だけで、偽の値は標準入力にだけ書かれる |
-| K9 既存の試験と CI が緑 | CI check（ubuntu / macos）。`/api/schedule/preview` と予約・定期実行・復元の既存試験が変わらず緑。tests/e2e/console.spec.ts:769 の dataDir 直下の一覧（起動時に必ずできるものだけ）に schedule-assistant を足し、起動時にはできない schedule.json・estimates を除外（今の activity・boards と同じ扱い）に足して緑。playwright.config.ts の app の testMatch に schedule を足し、tests/e2e/schedule.spec.ts が CI で実際に動いた（結果に schedule.spec.ts の行がある）ことを確かめる |
+| K9 既存の試験と CI が緑 | CI check（ubuntu / macos）。`/api/schedule/preview` と予約・定期実行・復元の既存試験が変わらず緑。tests/e2e/console.spec.ts:785 の dataDir 直下の一覧（起動時に必ずできるものだけ）に schedule-assistant を足し（便4）、起動時にはできない schedule.json（便1）・estimates（便5）を除外（今の activity・boards と同じ扱い）に足して緑。playwright.config.ts の app の testMatch に schedule を足し、tests/e2e/schedule.spec.ts が CI で実際に動いた（結果に schedule.spec.ts の行がある）ことを確かめる |
 
 ## 10 戻し方
 - 1つ前の版へ `bash scripts/ac-update.sh v<前の版>`（切り戻し手順は README の PO 向け節）。schedule.json・estimates/ は旧版が読まないだけで残る。Google との接続は Keychain の3項目を消し、Google のアカウント設定で接続を取り消す。
 
 ## 11 維持の仕組み
 - 正本: やることは schedule.json（書き手はサーバーだけ）、予定は Google カレンダー（アプリは写しだけ）、見積もりと実際は estimates/log.jsonl（追記だけ・書き手はサーバーだけ）。
-- 試験: tests/unit（schedule-store / google-calendar / google-oauth-callback / keychain-write / find-overlaps / estimate-log / summarize-estimates / board-complement / estimates-csv / ac-schedule / launch-extra-cwd / restore-assistant / assistant-session）と tests/e2e/schedule.spec.ts を CI が毎回回す。
-- e2e を CI で動かすために: playwright.config.ts の app の testMatch（今は console|activity|chat|reservations|relay|terminal-wheel|pc-meter|file-link だけ）に schedule を足す。dataDir 直下の一覧を完全一致で比べている tests/e2e/console.spec.ts:769 には、起動時に必ずできる schedule-assistant だけを足す。schedule.json（最初にやることを書いたときに作る）と estimates/（最初に見積もりか補完の行を書いたときに作る）は起動時に作らないので、除外の側（activity・boards と同じ）に足す。
+- 試験: tests/unit（schedule-items / google-calendar / google-oauth-callback / keychain-write / find-overlaps / estimate-log / summarize-estimates / board-complement / estimates-csv / ac-schedule / launch-extra-cwd / restore-assistant / assistant-session）と tests/e2e/schedule.spec.ts を CI が毎回回す。
+- e2e を CI で動かすために: playwright.config.ts の app の testMatch（今は console|activity|chat|reservations|relay|terminal-wheel|pc-meter|file-link だけ）に schedule を足す。dataDir 直下の一覧を完全一致で比べている tests/e2e/console.spec.ts:785 には、起動時に必ずできる schedule-assistant だけを足す（便4で足す。便1では一覧は変えない）。schedule.json（最初にやることを書いたときに作る）と estimates/（最初に見積もりか補完の行を書いたときに作る）は起動時に作らないので、除外の側（activity・boards と同じ）に足す。
 - 決まりの置き場: README に「予定」節（使い方・AI の命令・鍵の登録・つなぎ直し・見積もりの打ち方と数え方）。予定係の決まりはアプリが写す CLAUDE.md（正本はリポジトリの hooks/ 横に置く）。
 
 ## 12 外部事例
@@ -372,6 +372,7 @@ CSV（（１１）。`GET /api/schedule/estimates.csv`）:
 - 独立審査 第4回（同日、全文 /tmp/CC報告ファイル/schedule-board/review-pr92-r4.md）: APPROVE。6件すべて〇・重大な新しい指摘なし。合否に関係しない気付き3つ（開けなかったときのセッションを閉じる・復元が2つのとき createdAt で選ぶ・§4-7 に 202/429/409 と assistant を書く）と行番号1か所を第10回で反映。
 
 - 第12回（2026-11-06、金型 CalendarView が main に入ったのを受けて・Opus）: §4-1 に金型の使い方・種類の色・送るボタン・終わった札を足した。§4-6 の layoutDay を取りやめ（金型と二重）、K1 を予定どうしの差で測る形に、K7b を e2e だけに直した。§15-1 に未確認4点の結果を書いた。便1の実装カード card-bin1.md を作った。
+- 第13回（2026-11-06、第12回のクラウド設計審査 REVISE の反映・Opus）: M1→カード §1 に tests/unit/helpers/harness.ts:281（AppDeps の必須欄が増えると型検査が落ちる）と作り方を足した。M2→カード §8 の月の升目を 10/26〜12/6 の42日ちょうどの1通りに直した。M3→§4-1 の行番号を :57・:540・:602 に、K9・§11 の console.spec.ts を :785 に、試験名 schedule-store を schedule-items に直し、schedule-assistant は便4・estimates は便5と書き添えた。M4→カード §8 に e2e で項目を作るときの認証を書いた。
 
 ## 14 PO の決定
 - D1: Google カレンダーをアプリに読ませるための、Google 側の初回設定（PO の手作業・約15分・Google の管理画面での操作）を行うか。→ 行う（2026-10-30 PO「1」）。手順は Opus が画面ごとに案内する。
