@@ -281,6 +281,20 @@ describe("K51: exactly one check failing is not usable and names the number", ()
     expect(w.store.isUsable(FP)).toBe(false);
   });
 
+  it("F5': when setRunning returns false, the probe is aborted before any sentence is sent", async () => {
+    const w = world(dir);
+    await w.store.load();
+    const real = w.store.setRunning.bind(w.store);
+    w.store.setRunning = async (arg) => (arg === undefined ? real(arg) : false);
+    const result = await w.probe.request("t2");
+    expect(result?.outcome).toBe("aborted");
+    expect(w.closed).toEqual(["probe-1"]);
+    expect(w.cleaned).toEqual(["probe-1"]);
+    expect(w.sent).toEqual([]);
+    expect(w.audit.at(-1)).toMatchObject({ action: "caseClaudeVersionProbe", outcome: "aborted" });
+    expect(w.store.isUsable(FP)).toBe(false);
+  });
+
   it("P5: a status other than idle/busy while waiting is recorded as P5", async () => {
     const w = world(dir);
     await w.store.load();

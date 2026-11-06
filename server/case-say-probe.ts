@@ -362,8 +362,11 @@ export class CaseVersionProbe {
       probeCase = await ports.openCase(`probe claude ${version}`);
       this.runningCase = probeCase.id;
       try {
-        await this.store.setRunning({ caseId: probeCase.id, startedAt: startMs, sha256: target.fp.sha256, claudeVersion: version });
-      } catch {
+        const recorded = await this.store.setRunning({ caseId: probeCase.id, startedAt: startMs, sha256: target.fp.sha256, claudeVersion: version });
+        // 本物の store は投げずに false を返す（書けない状態・書き込み失敗）。false も打ち切り
+        if (recorded === false) throw new ProbeAborted("setRunning");
+      } catch (e) {
+        if (e instanceof ProbeAborted) throw e;
         // 記録に書けなければ打ち切る（既存の打ち切りと同じ片付けの道へ。outcome は aborted）
         throw new ProbeAborted("setRunning");
       }
