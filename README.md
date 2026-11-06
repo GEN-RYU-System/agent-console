@@ -308,7 +308,7 @@ node "<dataDir>/bin/ac-case-say.mjs" <件の id> <手順ファイル名>
 
 ### claude の版の一覧（`caseSayClaudeVersions`）
 
-件を開くとき、サーバーは claude の実体の道を解き、その最後の名前が `N.N.N` の形ならそれを件の claude の版として記録します。設定 `caseSayClaudeVersions` に無い版・版の形でない名前の件には送りません（`claude_version_unverified`）。コードの既定は空（どの件にも送らない）で、同梱の `agent-console.config.json` には `["2.1.318"]` が入っています。要素が `N.N.N` の形でないと起動時エラーです。
+件を開くとき、サーバーは claude の実体の道を解き、その最後の名前が `N.N.N` の形ならそれを件の claude の版として記録します。設定 `caseSayClaudeVersions` に無い版・版の形でない名前の件には送りません（`claude_version_unverified`）。コードの既定は空（どの件にも送らない）で、同梱の `agent-console.config.json` には `["2.1.318", "2.1.319"]` が入っています。要素が `N.N.N` の形でないと起動時エラーです。
 
 版を足す手順（PO のふつうの claude が更新されて、件の版が変わったとき）:
 

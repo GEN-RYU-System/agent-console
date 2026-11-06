@@ -392,7 +392,7 @@ describe("config: caseSayRoles and caseSayClaudeVersions", () => {
   });
   it("the shipped agent-console.config.json allows 2.1.318", () => {
     const shipped = parseConfig(JSON.parse(readFileSync("agent-console.config.json", "utf8")));
-    expect(shipped.caseSayClaudeVersions).toEqual(["2.1.318"]);
+    expect(shipped.caseSayClaudeVersions).toEqual(["2.1.318", "2.1.319"]);
   });
 });
 

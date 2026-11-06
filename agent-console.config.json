@@ -6,7 +6,7 @@
   "ledgerLookupScript": "scripts/ledger-lookup.sh",
   "ledgerDir": ".claude-pipeline/active-work.d",
   "claudeBin": "claude",
-  "caseSayClaudeVersions": ["2.1.318"],
+  "caseSayClaudeVersions": ["2.1.318", "2.1.319"],
   "agentsPollMs": 10000,
   "ledgerPollMs": 60000,
   "ringBufferBytes": 1048576,
