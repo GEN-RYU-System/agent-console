@@ -780,9 +780,15 @@ test("段階2 K3: よく使う指示を登録・編集・削除でき、ボタ�
   await expect.poll(countEcho).toBe(2);
 
   const file = path.join(DATA_DIR, "quick-prompts.json");
-  // 保存先は 8 つだけ（よく使う指示・v0.3.8 の復元リスト・v0.6.0 の拡張の合言葉と拡張のフォルダ・v0.9.0 の記録用 hook の本体の写し hooks/・v0.12.0 の作戦ボードの命令の写し bin/・v0.21.0 の予約の合言葉 reserve-token・v0.28.0 のログインの記録 auth-sessions.json）。
+  // 保存先は 9 つだけ（よく使う指示・v0.3.8 の復元リスト・v0.6.0 の拡張の合言葉と拡張のフォルダ・v0.9.0 の記録用 hook の本体の写し hooks/・v0.12.0 の作戦ボードの命令の写し bin/・v0.21.0 の予約の合言葉 reserve-token・v0.28.0 のログインの記録 auth-sessions.json・v0.53.0 の件の版の記録の鍵 case-say-claude-versions.key）。
   // 部品の picks/ は部品の試験（別の project）だけが、記録の activity/ と作戦ボードの boards/ は右の欄の試験（activity.spec.ts）だけが作る。予定の schedule.json は予定の試験（schedule.spec.ts）だけが作る
-  expect(readdirSync(DATA_DIR).filter((n) => n !== "activity" && n !== "boards" && n !== "schedule.json").sort()).toEqual(["auth-sessions.json", "bin", "chrome-extension", "hooks", "open-sessions.json", "picker-token", "quick-prompts.json", "reserve-token", "session-metrics.json"]);
+  // 件の版の記録の本体 case-say-claude-versions.json（書き込み途中の .tmp も）と監査 routine-audit.jsonl は probe の進み具合で有無が変わるので一覧から外す
+  expect(readdirSync(DATA_DIR).filter((n) => n !== "activity" && n !== "boards" && n !== "schedule.json" && !n.startsWith("case-say-claude-versions.json") && n !== "routine-audit.jsonl").sort()).toEqual(["auth-sessions.json", "bin", "case-say-claude-versions.key", "chrome-extension", "hooks", "open-sessions.json", "picker-token", "quick-prompts.json", "reserve-token", "session-metrics.json"]);
+  // 件の版の記録の鍵は起動の load で必ず作られ、所有者だけが読み書きできる。記録の本体は有るときだけ同じ権限
+  expect(statSync(path.join(DATA_DIR, "case-say-claude-versions.key")).mode & 0o777).toBe(0o600);
+  if (existsSync(path.join(DATA_DIR, "case-say-claude-versions.json"))) {
+    expect(statSync(path.join(DATA_DIR, "case-say-claude-versions.json")).mode & 0o777).toBe(0o600);
+  }
   // v0.38.0 の定期計測が書く session-metrics.json も所有者だけが読み書きできる
   expect(statSync(path.join(DATA_DIR, "session-metrics.json")).mode & 0o777).toBe(0o600);
   expect(statSync(file).mode & 0o777).toBe(0o600);
