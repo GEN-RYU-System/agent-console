@@ -595,7 +595,7 @@ async function expectLargeCenterTabs(page: Page): Promise<void> {
         rightFont: rightTab ? getComputedStyle(rightTab).fontSize : null,
       };
     });
-  await expect.poll(async () => (await measure()).tabs.length, { timeout: 5000 }).toBe(8);
+  await expect.poll(async () => (await measure()).tabs.length, { timeout: 5000 }).toBe(9);
   // 1400px の画面で、最後のタブの右端がタブ枠の右端以内（タブを足してもはみ出さない。横スクロールでしか見えないタブを作らない）
   expect(page.viewportSize()?.width).toBe(1400);
   const frame = await page.locator(".ac-center-tabs").boundingBox();

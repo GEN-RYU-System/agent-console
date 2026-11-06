@@ -742,10 +742,11 @@ async function handlePairing(deps: AppDeps, req: IncomingMessage, res: ServerRes
  * HTML 応答の CSP。スクリプトは自分のオリジンのみ・接続先は自分の HTTP と WebSocket のみ・iframe 埋込み不可。
  * style-src に 'unsafe-inline' が要る理由: xterm の DOM レンダラは実行時に <style> 要素を作り（テーマ・寸法）、
  * React/SA 金型もインラインの style 属性を使う。img-src に data: が要る理由: SA の Select が矢印を data: の SVG（CSS の背景）で描く。
+ * font-src に data: が要る理由: FullCalendar の印の字体 fcicons が data: で埋め込まれ、予定タブを開かなくても読まれる（第17回）。
  * どちらも無しだと CSP 違反が出ることを e2e で実測した（impl-notes）。
  */
 export function contentSecurityPolicy(port: number): string {
-  return `default-src 'self'; connect-src 'self' ws://127.0.0.1:${port}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`;
+  return `default-src 'self'; connect-src 'self' ws://127.0.0.1:${port}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`;
 }
 
 export function createRequestHandler(deps: AppDeps) {
