@@ -44,6 +44,7 @@ import { MacMeter } from "../components/MacMeter/MacMeter";
 import { UsageMeter } from "../components/UsageMeter/UsageMeter";
 import { RoutinesPane } from "../components/Routines/RoutinesPane";
 import { ReservationsPane } from "../components/Reservations/ReservationsPane";
+import { SchedulePane } from "../components/Schedule/SchedulePane";
 import { TerminalPane, type PasteResult, type TerminalHandle, type UploadNotice } from "../components/TerminalPane/TerminalPane";
 import { ACCOUNT_LOGIN_ROLE_ID, type ConsoleState, type LedgerSnapshot, type QuickPrompt, type RelayView, type ResumeTarget, type SessionState, type SessionView } from "../types";
 import "./ConsolePage.css";
@@ -54,7 +55,7 @@ const RENAME_CONFIRM_MS = 10000;
 const UPLOAD_NOTICE_MS = 8000;
 const BYTES_PER_MB = 1024 * 1024;
 
-type CenterTab = "chat" | "terminal" | "changes" | "files" | "pr" | "picks" | "routines" | "reservations";
+type CenterTab = "chat" | "terminal" | "changes" | "files" | "pr" | "picks" | "routines" | "reservations" | "schedule";
 
 /** onopen の無いまま切れた回数がこの数に達したら、/api/state を取り直して原因（ログイン切れ）を確かめる */
 const CONNECT_FAILURES_BEFORE_CHECK = 3;
@@ -538,6 +539,7 @@ export function ConsolePage() {
             { key: "picks", label: t("ac.tabs.picks"), ...(state.picksUnsent > 0 ? { count: state.picksUnsent } : {}) },
             { key: "routines", label: t("ac.tabs.routines") },
             { key: "reservations", label: t("ac.tabs.reservations") },
+            { key: "schedule", label: t("ac.tabs.schedule") },
           ]}
         />
         {centerTab === "terminal" && (
@@ -600,6 +602,7 @@ export function ConsolePage() {
         />
         <RoutinesPane roles={state.roles} active={centerTab === "routines"} />
         <ReservationsPane roles={state.roles} active={centerTab === "reservations"} />
+        <SchedulePane active={centerTab === "schedule"} />
       </main>
       <aside className="ac-page__right">
         <RightPane sessionId={activeId} rev={state.activityRev} ledger={ledger} onRefresh={handleRefresh} />

@@ -1,0 +1,19 @@
+.ac-schedule { padding: var(--space-3); overflow: auto; display: grid; gap: var(--space-3); align-content: start; }
+.ac-schedule__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.ac-schedule__nav { display: flex; align-items: center; gap: var(--space-1); }
+.ac-schedule__spacer { flex: 1; }
+.ac-schedule__body { display: flex; gap: var(--space-3); align-items: flex-start; }
+.ac-schedule__calendar { flex: 1; min-width: 0; }
+.ac-schedule__untimed { flex: 0 0 25%; display: grid; gap: var(--space-2); }
+.ac-schedule__heading { margin: 0; color: var(--text-muted); font-size: var(--font-sm); }
+.ac-schedule__row { display: grid; gap: var(--space-1); padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.ac-schedule__row-head { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.ac-schedule__row-title { overflow-wrap: anywhere; }
+.ac-schedule__row-actions { display: flex; gap: var(--space-1); }
+.ac-schedule__event { height: 100%; overflow: hidden; display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--font-xs); }
+.ac-schedule__event-title { overflow-wrap: anywhere; }
+.ac-schedule__pairs { margin: 0; padding-left: var(--space-4); }
+.ac-schedule__detail { display: grid; gap: var(--space-2); }
+.ac-schedule__detail-meta { color: var(--text-muted); font-size: var(--font-sm); }
+.ac-schedule__detail-note { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ac-schedule__detail-actions { display: flex; gap: var(--space-2); }
