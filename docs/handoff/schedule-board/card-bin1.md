@@ -13,7 +13,7 @@
 | package.json・package-lock.json | dependencies に `@fullcalendar/core`・`@fullcalendar/daygrid`・`@fullcalendar/react`・`@fullcalendar/timegrid` を `6.1.22` ちょうど（^ を付けない）で足す。version を 0.52.0 |
 | extension/manifest.json | version を 0.52.0（v0.51.0 の PR と同じ扱い） |
 | server/schedule-items.ts（新） | ScheduleItem の型・検査・`ScheduleItemStore`・`ScheduleItemService`（§3） |
-| server/http.ts | AppDeps に `scheduleItems: ScheduleItemService`（§4）、画面用の道4つ（§4） |
+| server/http.ts | AppDeps に `scheduleItems: ScheduleItemService`（§4）、画面用の道4つ（§4）。第17回: :748 の contentSecurityPolicy の `img-src 'self' data:;` の直後に `font-src 'self' data:;` を足す（並びはほかを変えない）。:741-746 の説明に「font-src に data: が要る理由: FullCalendar の CSS が矢印などの印の字体（fcicons）を data: で持ち、Chrome は data: の字体を使う前に読むため、予定タブを開かなくても CSP 違反が出る（e2e で実測）」を足す |
 | server/index.ts | :119 の createRequestHandler に `scheduleItems` を渡す（:90 の reservations と同じ並びで `new ScheduleItemService(new ScheduleItemStore(config.dataDir))` を作る） |
 | tests/unit/helpers/harness.ts | :281 の createRequestHandler にも `scheduleItems` を渡す（同じ作り方。AppDeps の必須欄が増えると tsconfig.server.json の型検査がここで落ちるため）。返す物（:55-68 の型）に `scheduleItems: ScheduleItemService` を足す。schedule-http の試験はこの harness を使う |
 | src/types.ts | `ScheduleSide`・`ScheduleKind`・`ScheduleItem`・`ScheduleItemInput`・`ScheduleItemPatch` |
@@ -29,7 +29,8 @@
 | src/pages/ConsolePage.test.tsx | 第15回: 中央タブが1つ増えるので、タブの数と並びを数える試験（「8 tabs」・チャットが先頭でほかは今の順）を「予定」入りの数と並びに直す。ほかの試験は変えない |
 | tests/e2e/schedule.spec.ts（新） | §8 |
 | playwright.config.ts | :27 の app の testMatch に `schedule` を足す |
-| tests/e2e/console.spec.ts | :785 の除外に `schedule.json` を足す（activity・boards と同じ。起動時には作らないため）。一覧の配列は変えない |
+| tests/e2e/console.spec.ts | :785 の除外に `schedule.json` を足す（activity・boards と同じ。起動時には作らないため）。一覧の配列は変えない。第17回: :598 の中央タブの数の期待値 `toBe(8)` を `toBe(9)` にする（「予定」が増えたぶん。その下の 1400px ではみ出さない確かめは変えない） |
+| tests/unit/pairing.integration.test.ts | 第17回: :370 の CSP の期待の文字列に、http.ts と同じ位置で `font-src 'self' data:; ` を足す。ほかは変えない |
 | README.md | 「予定」節（使い方・保存先 dataDir/schedule.json・戻し方） |
 | docs/CHANGELOG.md | 0.52.0 の1行（戻し方 `bash scripts/ac-update.sh v0.51.0`） |
 
