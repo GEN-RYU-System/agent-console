@@ -138,7 +138,11 @@ async function main(): Promise<void> {
         throw e;
       }
     },
-    liveCaseIds: () => sessions.list().filter((s) => !s.exited && s.roleId === "discord-case" && s.versionProbe !== true).map((s) => s.id),
+    liveCaseIds: () => {
+      const caseRoleId = config.roles.find((r) => r.caseSandbox === true)?.id;
+      if (caseRoleId === undefined) return [];
+      return sessions.list().filter((s) => !s.exited && s.roleId === caseRoleId && s.versionProbe !== true).map((s) => s.id);
+    },
     discardRequest: (id) => sessions.removeCaseRequest(id),
   };
   const discordIntake = isPickerSetupEnabled(process.env) ? new DiscordIntake({ dataDir: config.dataDir, securityBin: securityBinFor(process.env), macos: config.notify.macos ? osascriptSender(config.notify.osascriptBin) : null, launcher: caseLauncher }) : null;

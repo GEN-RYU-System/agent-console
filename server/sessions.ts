@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { accessSync, constants as fsConstants, existsSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { rm, unlink, writeFile } from "node:fs/promises";
+import { realpath, rm, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import { spawn, type IPty } from "node-pty";
 import type { WebSocket } from "ws";
@@ -499,6 +499,14 @@ export class SessionManager {
   /** 件の依頼の写し request.md を消す（無ければ何もしない。リンクでもリンク自身を消す） */
   async removeCaseRequest(id: string): Promise<void> {
     const R = casePaths({ id, H: this.caseHomeDir, D: this.config.dataDir, tmpRoot: this.caseTmpRoot }).R;
+    let real: string;
+    try {
+      real = await realpath(R);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw e;
+    }
+    if (real !== R) throw new Error("case report dir is not a real path");
     try {
       await unlink(path.join(R, "request.md"));
     } catch (e) {

@@ -440,6 +440,8 @@ describe("便2b-4b 順番待ちから件を開く", () => {
     for (const marker of [BODY_MARKER, TOKEN_MARKER, OPS_MARKER]) {
       expect(all).not.toContain(marker);
       expect(readFileSync(h.stateFile, "utf8")).not.toContain(marker);
+      expect(readFileSync(h2.stateFile, "utf8")).not.toContain(marker);
+      expect(readFileSync(h3.stateFile, "utf8")).not.toContain(marker);
     }
   });
 
@@ -678,5 +680,49 @@ describe("便2b-4b 順番待ちから件を開く", () => {
     await h.nextRound(30_000, again);
     expect(h.fake.opens).toHaveLength(1);
     again.stop();
+  });
+
+  it("29: 開いたあとの commit に失敗し close だけ例外 → closes と discards が1回ずつ・窓の知らせ1回・写しの知らせ0回", async () => {
+    const h = setup({ queue: [entry(1)] });
+    h.fake.openImpl = async () => { h.breakStateFile(); return { ok: true, sessionId: "s9" }; };
+    h.fake.closeImpl = async () => { throw new Error("did not stop"); };
+    await h.startReady();
+    expect(h.fake.closes).toEqual(["s9"]);
+    expect(h.fake.discards).toEqual(["s9"]);
+    expect(count(h.notes, "開いた件の窓を閉じられませんでした。agent-console の画面からその窓を閉じてください。")).toBe(1);
+    expect(count(h.notes, "件の依頼の写しを消せませんでした。")).toBe(0);
+  });
+
+  it("30: open の最中に受け口が止められたら、開いた件の窓を閉じ写しも消す。bugSlot は null のまま・順番待ちは残る", async () => {
+    const h = setup({ queue: [entry(1)] });
+    h.fake.openImpl = async () => { h.intake.stop(); return { ok: true, sessionId: "s7" }; };
+    await h.startReady();
+    expect(h.fake.closes).toEqual(["s7"]);
+    expect(h.fake.discards).toEqual(["s7"]);
+    expect(h.file().bugSlot).toBeNull();
+    expect(h.file().queues.bug).toHaveLength(1);
+  });
+
+  it("31: 8時間の見回りで初めて idle が10分に届く → 判断待ちと長くかかっていますが同じ見回りで書かれ、この順に出る", async () => {
+    const h = setup({ slot: slotOf({ sessionId: "s1", openedAt: new Date(T0 - 8 * HOUR + 10 * 60_000).toISOString() }) });
+    h.fake.probeResult = idleProbe();
+    h.fake.reply = "NEEDS_DECISION: どうしますか";
+    await h.startReady();
+    let seen = false;
+    for (let i = 0; i < 12 && !seen; i++) {
+      await h.nextRound(60_000);
+      const b = h.file().bugSlot;
+      if (b?.kept !== null && b?.kept !== undefined) {
+        seen = true;
+        expect(b.lastLongNoticeAt).not.toBeNull();
+      } else {
+        expect(b?.lastLongNoticeAt ?? null).toBeNull();
+      }
+    }
+    expect(seen).toBe(true);
+    const order = h.notes.filter((n) => n.includes("【判断待ち】") || n.includes("【長くかかっています】"));
+    expect(order).toHaveLength(2);
+    expect(order[0]).toContain("【判断待ち】");
+    expect(order[1]).toContain("【長くかかっています】");
   });
 });

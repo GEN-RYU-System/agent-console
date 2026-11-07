@@ -336,6 +336,9 @@ describe("parseConfig: caseSandbox (discord-pdca 便2b-3a)", () => {
     expect(() => parseConfig({ ...valid, roles: [...valid.roles, caseRole], reserveRoles: ["discord-case"] })).toThrow(/caseSandbox/);
     expect(() => parseConfig({ ...valid, roles: [...valid.roles, caseRole], routineManagerRoles: ["discord-case"] })).toThrow(/caseSandbox/);
   });
+  it("refuses two roles with caseSandbox", () => {
+    expect(() => parseConfig({ ...valid, roles: [...valid.roles, caseRole, { ...caseRole, id: "discord-case-2" }] })).toThrow("config: only one role can have caseSandbox");
+  });
   it("the shipped config has discord-case with caseSandbox, not reservable and no resumeCommand", () => {
     const shipped = parseConfig(JSON.parse(readFileSync("agent-console.config.json", "utf8")));
     const role = shipped.roles.find((r) => r.id === "discord-case");

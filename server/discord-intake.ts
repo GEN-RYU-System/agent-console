@@ -587,7 +587,13 @@ export class DiscordIntake {
     this.notedNotFound = false;
     this.notedAuth = false;
     const opened = await launcher.open(slotName(top.postedAt, now), this.buildRequest(top, res.value));
-    if (this.stopped) return;
+    if (this.stopped) {
+      if (opened.ok) {
+        try { await launcher.close(opened.sessionId); } catch { /* 止まった後なので知らせない */ }
+        try { await launcher.discardRequest(opened.sessionId); } catch { /* 同上 */ }
+      }
+      return;
+    }
     if (!opened.ok) {
       await this.recordFailure(top, launch, daily, opened.reason !== "probe", opened.reason === "full" ? "too_many_sessions" : "spawn_failed");
       return;
@@ -685,26 +691,26 @@ export class DiscordIntake {
       const verdict = replyVerdict(reply);
       if (verdict === "close") { await this.closeSlot(launcher, slot); return; }
       tr.idleMs = 0;
-      if (slot.kept === null) {
-        const next = cloneState(this.st);
-        next.bugSlot = { ...slot, kept: verdict === "decision" ? "decision" : "no-reply", keptAt: new Date(now).toISOString() };
-        if (!(await this.commit(next))) return;
-        this.notify(`【判断待ち】${formatJst(this.now())} ${name}が止まっています。agent-console の画面のその窓で答えてください。順番待ち${this.st.queues.bug.length}件。`);
-      }
     }
+    const keepNow = idleMs >= CLOSE_IDLE_MS && slot.kept === null;
+    const keptVerdict = replyVerdict(reply);
     // 長くかかっているとき（開いてから8時間ごとに1回）
+    let longNow = false;
     const opened = Date.parse(slot.openedAt);
     if (Number.isFinite(opened)) {
       const last = slot.lastLongNoticeAt !== null ? Date.parse(slot.lastLongNoticeAt) : opened;
       const periods = (ms: number): number => Math.floor((ms - opened) / LONG_NOTICE_MS);
-      if (Number.isFinite(last) && periods(now) > periods(last)) {
-        const next = cloneState(this.st);
-        const cur = next.bugSlot as BugSlot;
-        cur.lastLongNoticeAt = new Date(now).toISOString();
-        if (!(await this.commit(next))) return;
-        this.notify(`【長くかかっています】${formatJst(this.now())} ${name}が開いてから${periods(now) * 8}時間たちました。`);
-      }
+      if (Number.isFinite(last) && periods(now) > periods(last)) longNow = true;
     }
+    if (!keepNow && !longNow) return;
+    // 書き込みは1回の見回りで1回
+    const next = cloneState(this.st);
+    const cur = next.bugSlot as BugSlot;
+    if (keepNow) { cur.kept = keptVerdict === "decision" ? "decision" : "no-reply"; cur.keptAt = new Date(now).toISOString(); }
+    if (longNow) cur.lastLongNoticeAt = new Date(now).toISOString();
+    if (!(await this.commit(next))) return;
+    if (keepNow) this.notify(`【判断待ち】${formatJst(this.now())} ${name}が止まっています。agent-console の画面のその窓で答えてください。順番待ち${this.st.queues.bug.length}件。`);
+    if (longNow) this.notify(`【長くかかっています】${formatJst(this.now())} ${name}が開いてから${Math.floor((now - opened) / LONG_NOTICE_MS) * 8}時間たちました。`);
   }
 
   /** 窓を閉じて枠を空ける。閉じられなければ枠はそのまま（閉じ直し待ち） */
