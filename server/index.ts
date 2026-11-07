@@ -32,10 +32,12 @@ import { ReservationService, ReservationStore } from "./reservations.ts";
 import { ScheduleItemService, ScheduleItemStore } from "./schedule-items.ts";
 import { RelayManager, resolveRelayDir } from "./relay.ts";
 import { setupReserveToken } from "./reserve-token.ts";
-import { DiscordIntake } from "./discord-intake.ts";
+import { DiscordIntake, type CaseLauncher } from "./discord-intake.ts";
 import { osascriptSender } from "./notify.ts";
 import { resolveSecret, securityBinFor } from "./secret.ts";
-import { SessionManager } from "./sessions.ts";
+import { CaseProbeRunningError, SessionInputError, SessionManager, SessionNotFoundError } from "./sessions.ts";
+import { readCaseStateFile } from "./case-agents.ts";
+import { descendantPids, readProcessTable } from "./process-tree.ts";
 import { readSaSource } from "./tokens.ts";
 import { attachWebSockets, SESSION_SWEEP_MS } from "./ws.ts";
 
@@ -99,7 +101,47 @@ async function main(): Promise<void> {
   const picker = await setupPicker({ env: process.env, dataDir: config.dataDir, port: config.port, sourceDir: path.join(process.cwd(), "extension") });
   const reserve = await setupReserveToken({ env: process.env, dataDir: config.dataDir, port: config.port });
   // Discord の受け口は本番のポートのときだけ作る（試験・自己診断が同じ dataDir を2つのサーバーで読まないため）。設定ファイルが無ければ動かない（設計 discord-pdca §4-1）
-  const discordIntake = isPickerSetupEnabled(process.env) ? new DiscordIntake({ dataDir: config.dataDir, securityBin: securityBinFor(process.env), macos: config.notify.macos ? osascriptSender(config.notify.osascriptBin) : null }) : null;
+  // 順番待ちから件の窓を開く道具（activity は下で作る。呼ばれるのは起動のあとなので、そのときには揃っている）
+  const caseLauncher: CaseLauncher = {
+    open: async (name, request) => {
+      try {
+        return { ok: true, sessionId: (await sessions.createDiscordCase(name, request)).id };
+      } catch (e) {
+        if (e instanceof CaseProbeRunningError) return { ok: false, reason: "probe" };
+        if (e instanceof SessionInputError && e.message === "too many sessions") return { ok: false, reason: "full" };
+        return { ok: false, reason: "failed" };
+      }
+    },
+    probeRunning: () => sessions.isVersionProbeActive(),
+    probe: async (id) => {
+      const s = sessions.get(id);
+      if (s === undefined) return { exists: false, exited: false, status: "unknown", claudeSessionId: null };
+      const claudeSessionId = s.claudeSessionId ?? null;
+      if (s.exited) return { exists: true, exited: true, status: "unknown", claudeSessionId };
+      const CH = sessions.caseHomeOf(id);
+      const main = sessions.caseMainProcesses().get(id);
+      if (CH === undefined || main === undefined) return { exists: true, exited: false, status: "unknown", claudeSessionId };
+      const table = await readProcessTable().catch(() => null);
+      if (table === null) return { exists: true, exited: false, status: "unknown", claudeSessionId };
+      const state = readCaseStateFile(CH, descendantPids(main.pid, table));
+      const status = state?.status === "idle" || state?.status === "busy" ? state.status : "unknown";
+      return { exists: true, exited: false, status, claudeSessionId };
+    },
+    lastReply: (cid) => { const last = activity.store.chat(cid).items.filter((c) => c.role === "assistant").at(-1); return last === undefined ? null : last.text; },
+    runningCount: (cid) => activity.store.runningCount(cid),
+    close: async (id) => {
+      try {
+        await sessions.close(id);
+        return "closed";
+      } catch (e) {
+        if (e instanceof SessionNotFoundError) return "gone";
+        throw e;
+      }
+    },
+    liveCaseIds: () => sessions.list().filter((s) => !s.exited && s.roleId === "discord-case" && s.versionProbe !== true).map((s) => s.id),
+    discardRequest: (id) => sessions.removeCaseRequest(id),
+  };
+  const discordIntake = isPickerSetupEnabled(process.env) ? new DiscordIntake({ dataDir: config.dataDir, securityBin: securityBinFor(process.env), macos: config.notify.macos ? osascriptSender(config.notify.osascriptBin) : null, launcher: caseLauncher }) : null;
   const picks = new PickStore(config.dataDir, config.pickMaxKeep);
   hub.watchPicks(picks);
   const activity = startActivity({ config, hub, env: process.env, hooksSourceDir: path.join(process.cwd(), "hooks") });
@@ -165,6 +207,8 @@ async function main(): Promise<void> {
     const restored = Promise.all([heldRestored, caseProxy?.ready, versionsReady]).then(() => startOpenSessionRestore(process.env, { config, sessions, hub, store: openSessions, recorder })).catch((err) => console.error("restore failed:", err));
     // 復元と hub.start() の後に、PATH の claude の指紋が未記録なら probe を予約する（D4 t2）
     if (caseVersionsActive) void restored.then(() => caseVersions.start());
+    // 順番待ちから件を開くのは、保存していた窓の復元が終わってから（復元前だと、まだ戻っていない件を閉じたとみなす）
+    if (discordIntake) discordIntake.enableLaunch(restored);
     // 予約の時計は復元の完了を待ってから動かす（復元が先に席を取れるように）。復元の成否・無効に関わらず始まる
     void reservations.start(restored).catch((err) => console.error("reservations failed:", err));
     // 復元のあとで見張りに戻す（復元より前だと session が無く、すぐ外される）。失敗はログだけ

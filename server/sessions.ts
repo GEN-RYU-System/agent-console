@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { accessSync, constants as fsConstants, existsSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { rm, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import { spawn, type IPty } from "node-pty";
 import type { WebSocket } from "ws";
@@ -44,6 +44,8 @@ export interface TerminalNotice {
 export class SessionInputError extends Error {}
 export class SessionConflictError extends Error {}
 export class SessionNotFoundError extends Error {}
+/** 版の確かめの窓が作成中か動いているため、件を開かなかった（Discord の順番待ちが開くとき） */
+export class CaseProbeRunningError extends Error {}
 
 export interface SessionManagerOptions {
   maxSessions?: number;
@@ -208,6 +210,8 @@ export class SessionManager {
   private readonly closing = new Map<string, Promise<void>>();
   /** worktree 作成中など、まだ sessions に入っていない作成途中の数（上限判定に含める）。 */
   private pending = 0;
+  /** 版の確かめの窓を作成中の数（写しを作る間は、まだ一覧に入っていない） */
+  private versionProbeStarting = 0;
   /** tmux で端末を持つときの呼び出し情報。null なら direct（tmux が無い場合も含む） */
   private readonly tmuxCtx: TmuxContext | null;
   private readonly logger: TerminalLogger;
@@ -324,6 +328,11 @@ export class SessionManager {
 
   setVersionProbeAborter(fn: () => Promise<void>): void {
     this.versionProbeAborter = fn;
+  }
+
+  /** 版の確かめの窓が作成中か動いているか */
+  isVersionProbeActive(): boolean {
+    return this.versionProbeStarting > 0 || this.hasRunningVersionProbe();
   }
 
   /** 動いている probe の件があるか */
@@ -460,14 +469,44 @@ export class SessionManager {
     if (role === undefined) throw new SessionInputError("no case role");
     if (this.maxSessions - this.occupiedCount() < 2) throw new SessionInputError("too many sessions");
     this.pending += 1;
+    this.versionProbeStarting += 1;
     try {
       return await this.createCase(validateName(name), role, undefined, { versionProbe: true });
+    } finally {
+      this.versionProbeStarting -= 1;
+      this.pending -= 1;
+    }
+  }
+
+  /**
+   * Discord の順番待ちから件（役割 discord-case）を開く。最初の依頼は報告の置き場の request.md に置き、窓の最初の入力にそれを読ませる。
+   * 版の確かめの窓が作成中か動いているときは、中断せず何も作らずに CaseProbeRunningError を投げる。
+   */
+  async createDiscordCase(name: string, request: string): Promise<Session> {
+    if (this.isVersionProbeActive()) throw new CaseProbeRunningError("version probe is active");
+    const valid = validateName(name);
+    const role = this.config.roles.find((r) => r.caseSandbox === true);
+    if (role === undefined) throw new SessionInputError("no case role");
+    if (this.occupiedCount() >= this.maxSessions) throw new SessionInputError("too many sessions");
+    this.pending += 1;
+    try {
+      return await this.createCase(valid, role, undefined, { request });
     } finally {
       this.pending -= 1;
     }
   }
 
-  private async createCase(name: string, role: RoleConfig, inputBranch: unknown, opts: { versionProbe?: boolean } = {}): Promise<Session> {
+  /** 件の依頼の写し request.md を消す（無ければ何もしない。リンクでもリンク自身を消す） */
+  async removeCaseRequest(id: string): Promise<void> {
+    const R = casePaths({ id, H: this.caseHomeDir, D: this.config.dataDir, tmpRoot: this.caseTmpRoot }).R;
+    try {
+      await unlink(path.join(R, "request.md"));
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+    }
+  }
+
+  private async createCase(name: string, role: RoleConfig, inputBranch: unknown, opts: { versionProbe?: boolean; request?: string } = {}): Promise<Session> {
     if (inputBranch !== undefined && inputBranch !== null) throw new SessionConflictError("case role does not take a branch");
     const M = realOr(this.config.salesanchorRoot);
     const id = randomUUID();
@@ -484,7 +523,8 @@ export class SessionManager {
       const fp = (await fingerprintFile(real)) ?? undefined;
       await writeCaseFiles({ M, W, T: paths.T, D: paths.D, H: paths.H, R: paths.R, GH: paths.GH, CH: paths.CH, guardScript: realOr(this.caseGuardPath), nodeBin: process.execPath, hookPath: hookPathIn(paths.D) }, id, this.config.port, opts.versionProbe === true ? { versionProbe: true } : {});
       filesWritten = true;
-      const session = this.spawnSession(name, role, caseBranchOf(id), W, role.command, {}, undefined, id, true, { real, ...(fp !== undefined ? { fp } : {}) });
+      if (opts.request !== undefined) await writeFile(path.join(paths.R, "request.md"), opts.request, { mode: 0o600, flag: "wx" });
+      const session = this.spawnSession(name, role, caseBranchOf(id), W, role.command, opts.request !== undefined ? { AC_CASE_FIRST_PROMPT: "1" } : {}, undefined, id, true, { real, ...(fp !== undefined ? { fp } : {}) });
       if (opts.versionProbe === true) session.versionProbe = true;
       else session.initialName = name;
       if (opts.versionProbe !== true) this.caseOpenedListener?.({ id: session.id, real, fp });

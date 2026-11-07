@@ -10,7 +10,8 @@ export type ApiResult<T> =
   | { ok: true; value: T }
   | { ok: false; kind: "rateLimited"; retryAfterMs: number | null }
   | { ok: false; kind: "unauthorized" }
-  | { ok: false; kind: "forbidden" | "notFound"; status: number }
+  | { ok: false; kind: "forbidden"; status: number }
+  | { ok: false; kind: "notFound"; status: number; code: number | null }
   | { ok: false; kind: "failed"; reason: "http" | "timeout" | "network" | "badJson" | "badHost"; status?: number };
 
 export interface DiscordMessage {
@@ -21,10 +22,13 @@ export interface DiscordMessage {
   timestamp: string;
   webhook_id?: string;
   type: number;
+  /** 添付のファイル名（無いときは欄が無い） */
+  attachments?: string[];
 }
 
 export interface DiscordApi {
   listMessagesAfter(token: string, channelId: string, after: string | null): Promise<ApiResult<DiscordMessage[]>>;
+  getMessage(token: string, channelId: string, messageId: string): Promise<ApiResult<DiscordMessage>>;
   getChannel(token: string, channelId: string): Promise<ApiResult<{ guild_id: string | null }>>;
   getCurrentUser(token: string): Promise<ApiResult<{ id: string }>>;
   executeWebhook(url: string, content: string): Promise<ApiResult<null>>;
@@ -44,6 +48,7 @@ function toMessage(v: unknown): DiscordMessage | null {
   if (!isObj(a) || !isStr(a.id)) return null;
   if (a.bot !== undefined && typeof a.bot !== "boolean") return null;
   if (v.webhook_id !== undefined && v.webhook_id !== null && !isStr(v.webhook_id)) return null;
+  const attachments = Array.isArray(v.attachments) ? v.attachments.flatMap((x) => (isObj(x) && isStr(x.filename) ? [x.filename] : [])) : undefined;
   return {
     id: v.id,
     channel_id: v.channel_id,
@@ -52,6 +57,7 @@ function toMessage(v: unknown): DiscordMessage | null {
     timestamp: v.timestamp,
     ...(isStr(v.webhook_id) ? { webhook_id: v.webhook_id } : {}),
     type: v.type,
+    ...(attachments !== undefined ? { attachments } : {}),
   };
 }
 
@@ -95,7 +101,7 @@ export function createDiscordApi(fetchFn: FetchFn = defaultFetch, timeoutMs: num
     if (status === 429) return { ok: false, kind: "rateLimited", retryAfterMs: retryAfterMs(parsed ? body : undefined, retryHeader) };
     if (status === 401) return { ok: false, kind: "unauthorized" };
     if (status === 403) return { ok: false, kind: "forbidden", status };
-    if (status === 404) return { ok: false, kind: "notFound", status };
+    if (status === 404) return { ok: false, kind: "notFound", status, code: parsed && isObj(body) && typeof body.code === "number" ? body.code : null };
     if (status < 200 || status >= 300) return { ok: false, kind: "failed", reason: "http", status };
     if (!parsed) return ok(status, Symbol.for("badJson"));
     return ok(status, body);
@@ -117,6 +123,14 @@ export function createDiscordApi(fetchFn: FetchFn = defaultFetch, timeoutMs: num
         }
         return { ok: true, value: out };
       }),
+    getMessage: (token, channelId, messageId) => {
+      if (!SNOWFLAKE_RE.test(channelId) || !SNOWFLAKE_RE.test(messageId)) return Promise.resolve({ ok: false, kind: "failed", reason: "http" } as const);
+      return request(`${DISCORD_API_BASE}/channels/${channelId}/messages/${messageId}`, { method: "GET", headers: bot(token) }, (_s, body) => {
+        if (body === BAD) return badJson;
+        const m = toMessage(body);
+        return m === null ? badJson : { ok: true, value: m };
+      });
+    },
     getChannel: (token, channelId) =>
       request(`${DISCORD_API_BASE}/channels/${channelId}`, { method: "GET", headers: bot(token) }, (_s, body) => {
         if (body === BAD || !isObj(body)) return badJson;

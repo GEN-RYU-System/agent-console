@@ -88,6 +88,7 @@ function setup(opts: { channels?: IntakeChannelConfig[]; preState?: unknown; raw
       return { ok: true, value: { id: world.me } };
     },
     async executeWebhook() { return { ok: true, value: null }; },
+    async getMessage() { return { ok: false, kind: "failed", reason: "http" }; },
   };
   const notes: string[] = [];
   const notifier = { made: [] as (string | null)[], stops: 0 };
