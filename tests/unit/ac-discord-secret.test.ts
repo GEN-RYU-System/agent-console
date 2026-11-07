@@ -31,6 +31,16 @@ describe("ac-discord-secret.sh", () => {
     expect(e.log()).toContain("security -i");
     expect(e.log()).toContain("find-generic-password -s agent-console -a discord-bot");
   });
+  it("ops-api も受け、値は標準入力でだけ security に渡り、引数・出力には出ない", async () => {
+    const e = await fresh();
+    const r = e.run("ac-discord-secret.sh", ["ops-api"], { AC_SECRET_INPUT: inputFile(e, `${FAKE}\n`) });
+    expect(r.status, r.stderr).toBe(0);
+    expect(e.secret()).toBe(FAKE);
+    expect(e.log()).not.toContain(FAKE);
+    expect(r.stdout + r.stderr).not.toContain(FAKE);
+    expect(e.log()).toContain("security -i");
+    expect(e.log()).toContain("find-generic-password -s agent-console -a ops-api");
+  });
   it("取り消し（読み取りが失敗）なら保存せず、取り消した旨を出す", async () => {
     const e = await fresh();
     const r = e.run("ac-discord-secret.sh", ["discord-bot"], { AC_SECRET_INPUT: inputFile(e, "") });

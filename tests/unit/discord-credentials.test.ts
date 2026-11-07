@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isValidBotToken, isValidWebhookUrl, loadDiscordCredentials } from "../../server/discord-credentials.ts";
+import { isValidBotToken, isValidOpsApiToken, isValidWebhookUrl, loadDiscordCredentials, loadOpsApiToken } from "../../server/discord-credentials.ts";
 
 const TOKEN = "fake.Token_value-0123456789";
 const URL_OK = "https://discord.com/api/webhooks/100000000000000001/fake_token-abc";
@@ -44,5 +44,33 @@ describe("loadDiscordCredentials", () => {
   it("invalid when the shape is wrong; values are null", async () => {
     const r = await loadDiscordCredentials("/x", async (_b, a) => (a === "discord-bot" ? "bad token" : "https://discordapp.com/api/webhooks/1/a"));
     expect(r).toEqual({ botToken: null, webhookUrl: null, state: { bot: "invalid", webhook: "invalid" } });
+  });
+});
+
+describe("isValidOpsApiToken", () => {
+  it.each([["16 chars", "a".repeat(16)], ["mixed symbols", "Ab0._~+/=-Ab0._~+/=-"], ["512 chars", "a".repeat(512)]])("accepts %s", (_l, v) => {
+    expect(isValidOpsApiToken(v)).toBe(true);
+  });
+  it.each([["empty", ""], ["15 chars", "a".repeat(15)], ["513 chars", "a".repeat(513)], ["space", `${"a".repeat(16)} b`]])("rejects %s", (_l, v) => {
+    expect(isValidOpsApiToken(v)).toBe(false);
+  });
+});
+
+describe("loadOpsApiToken", () => {
+  const OPS = "fake.ops-token_0123456789";
+  it("returns the value when ok and reads the ops-api item", async () => {
+    let asked = "";
+    const r = await loadOpsApiToken("/x", async (_b, a) => { asked = a; return OPS; });
+    expect(asked).toBe("ops-api");
+    expect(r).toEqual({ value: OPS, state: "ok" });
+  });
+  it("unreadable when the read throws, without the value or message leaking", async () => {
+    const r = await loadOpsApiToken("/x", async () => { throw new Error(`secret ${OPS}`); });
+    expect(r).toEqual({ value: null, state: "unreadable" });
+    expect(JSON.stringify(r)).not.toContain(OPS);
+  });
+  it("invalid for a wrong shape, value is null", async () => {
+    const r = await loadOpsApiToken("/x", async () => "short");
+    expect(r).toEqual({ value: null, state: "invalid" });
   });
 });
