@@ -182,7 +182,7 @@ mode: handoff
   - 見張りは受け口の部品が自分で持つ。routine-closer は kept のあとは見なくなる（A:server/routine-closer.ts:70-74）ので、そのまま使うと kept のセッションが見張りから外れる。判定の関数（idle の続き・`NEEDS_DECISION:`/`BLOCKED:` の読み取り。:13・:56-57・:76-85）は共通の関数として取り出して両方から使い、kept のあとも見続けるのは受け口の側だけにする。定期実行の今の動きは変えない。
   - 見ているセッションの id と状態は `discord-intake.json` に書き、サーバーを起こし直したら読み直す。読み直したとき、そのセッションが `claude agents --json` に無ければ、閉じたとみなして出来事 `closed`（`reason: 'lost'`）を書く。
 - 測定の予約が時刻になったとき（M-5）: 予約の起動は、その種類の枠を通す。枠が空いていれば開く。空いていなければ、その種類の順番待ちの**先頭**に入れる（新しい件より先に開く）。
-- 開くときは `launchAndSend`（R§3）を使う。
+- 開くときは `launchAndSend`（R§3）を使う。**ただし不具合の件（役割 `discord-case`）は、部屋の中で件の写しを作って動くため `launchAndSend` を通らない。便2b-4b では `SessionManager.createDiscordCase` で開き、最初の依頼は件の報告の置き場の `request.md` で渡す**（2026-11-07 設計の直し。PO の決定「Sales Anchor の件の仕組みにはつながず agent-console の中で完結」に合わせた）。下の「開けなかったとき」の `full`・`failed` は `createDiscordCase` の答えに読み替える（`not_ready` は無い）。5回で止めたあとの戻し方は、画面の「やり直す」ができる便2b-4c までは、サーバーの起こし直し。
   - `bug`: 役割は `discord-case`。セッション名は `不具合 10/21 12:34`（投稿の日本時間。40字以内）。
   - `error-report`: 役割と指示文は ADR-1025 の決まり（S:design.md:73）。セッション名は報告番号を含む（S:kgi.md:12）。
 - 依頼文はサーバーが決まった型で組み立てる（§4-5）。不具合の本文は Discord から読み直し、4000字で切る。

@@ -44,9 +44,11 @@
   { "testMode": true, "forbiddenBotIds": ["<5>"], "channels": [ { "kind": "bug", "enabled": true, "guildId": "<1>", "channelId": "<2>", "allowedAuthors": [ { "id": "<3>", "name": "<4>" } ], "allowedMessageTypes": [0, 19] } ] }
   ```
   `allowedMessageTypes` は `[0, 19]`（通常の投稿と返信。設計 §4-1）で固定。聞かない
-- 書き方: JSON は shell の文字列つなぎで作らない。`node="$(ac_resolve_node)"`（ac-common.sh :317。本番では `AC_NODE` は :9-12 で消えているので `"$AC_NODE"` を直接使わない）の node に、値を**環境変数**で渡し、`JSON.stringify` で組み立てて `<AC_HOME>/discord-intake.config.json.tmp.<pid>` に mode 0600 で書き、`fs.renameSync` で置き換える。値を node の引数（argv）には入れない
+- 端末が開けない（`/dev/tty` が無い）ときは `ac_die "端末が無いため取り消しました（書いていません）"`
+- 書き方: JSON は shell の文字列つなぎで作らない。`node="$(ac_resolve_node)"`（ac-common.sh :317。本番では `AC_NODE` は :9-12 で消えているので `"$AC_NODE"` を直接使わない）の node に、値を**環境変数**で渡し、`JSON.stringify` で組み立てる。値を node の引数（argv）には入れない
+- 順番（古いファイルを失わないため）: ①node の中で下の「書いたあと」の決まりを**先に**確かめる（合わなければ何も書かずに 0 以外で終わり、台本は `ac_die`）②合えば node が `<AC_HOME>/discord-intake.config.json.tmp.<pid>` に mode 0600 で書く ③古いファイルがあれば `ac_trash` で移す ④`mv` で tmp を本名に置き換える（同じフォルダの中の名前の付け替え）。途中で失敗したら tmp を消して `ac_die`
 - 既にファイルがあるとき: 中身を読まず、上書きしてよいかを1問聞く（`上書きしますか（yes と打つと上書き）`）。`yes` 以外は `ac_die "取り消しました（書いていません）"`。上書きする前に今のファイルを `ac_trash <file> intake-config` で Trash へ移す（消さない。`kind` は `intake-config`）
-- 書いたあと: `node --experimental-strip-types` で `server/discord-intake-config.ts` の `readIntakeConfig` を呼ぶのはしない（入れた版のサーバーの中身と台本の版がずれるため）。代わりに、台本の中の node で同じ決まり（id の形・bug は testMode・種類の重なりなし）を確かめ、合わなければ書いたファイルを Trash へ移して `ac_die`
+- 確かめの中身: `node --experimental-strip-types` で `server/discord-intake-config.ts` の `readIntakeConfig` を呼ぶのはしない（入れた版のサーバーの中身と台本の版がずれるため）。代わりに、台本の中の node で同じ決まり（id の形・bug は testMode・種類の重なりなし）を書く前に確かめる
 - 終わりの文: `ac_log "受け口の設定を書きました（値は表示しません）。サーバーを起こし直すと読みます: bash scripts/ac-update.sh <今の版>"`。サーバーの起こし直しは台本ではしない
 - `AC_HOME/$AC_MARKER`（`.agent-console-home`）が普通のファイルとして無い（未導入）なら、何も聞かずに `ac_die "agent-console が入っていません"`（`ac_trash` :85 もこの印を要るため）
 
@@ -60,7 +62,8 @@
   3. id の形違い（各欄1つずつ）で終わりが 0 以外・ファイルが無い・出力に打った値が無い
   4. 2 と 5 が同じで止まる
   5. 既にあるとき `yes` 以外で止まり、元のファイルが残る。`yes` で元のファイルが Trash の置き場（試験の `AC_TRASH`）に移る
-  6. `AC_STUB_LOG` が無いとき `AC_CONFIG_INPUT` を読まない（`ac-discord-secret.test.ts:76` と同じ見方）
+  6. `AC_STUB_LOG` が無いとき `AC_CONFIG_INPUT` を読まない: `AC_STUB_LOG` を外し、`HOME` を一時のフォルダにして、その下の既定の `AC_HOME`（`$HOME/Library/Application Support/agent-console`）に印 `.agent-console-home` を作る。端末の無い試験で、出力に「端末が無いため取り消しました」が出て、0 以外で終わり、設定ファイルが無い（印の確かめで先に終わっていないことを出力の文で確かめる）
+  9. 確かめに通らない値で上書きを試すと、元のファイルがそのまま残り Trash に何も移らない
   7. 印 `.agent-console-home` が無いとき、何も書かず 0 以外で終わる
   8. `AC_NODE` を消した環境（`env -u AC_NODE`）でも 1 と同じく書ける（`ac_resolve_node` を使っている確かめ）
 - Mac で試験を回さない。確かめは GitHub の CI（ubuntu・macOS）で行う
