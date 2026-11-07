@@ -597,7 +597,8 @@ describe("便2b-4b: createDiscordCase / removeCaseRequest / isVersionProbeActive
 
   it("removeCaseRequest removes request.md without throwing when caseTmpRoot is a link to the real place", async () => {
     const x = await setup();
-    const linkRoot = path.join(path.dirname(x.tmpRoot), "tmproot-link");
+    mkdirSync(path.join(path.dirname(x.tmpRoot), "sub"), { recursive: true });
+    const linkRoot = path.join(path.dirname(x.tmpRoot), "sub", "tmproot-link");
     symlinkSync(x.tmpRoot, linkRoot);
     const options = { sandboxExecPath: path.join(path.dirname(x.claude), "sandbox-exec"), caseRoomMacosOk: true, caseProxyListening: () => true, caseHomeDir: x.H, caseTmpRoot: linkRoot, caseShellPath: path.join(process.cwd(), "ops", "shell", "ccdiscord.zsh"), caseGuardPath: path.join(process.cwd(), "ops", "case", "case-guard.mjs") };
     const m2 = new SessionManager(x.h.config, options);
