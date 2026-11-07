@@ -77,7 +77,7 @@
   6. 全停止を読む（E）。`running` 以外なら終わる
   7. 先頭の投稿を `getMessage` で読み直す。`notFound` で `code === 10008`（投稿が無い）のときだけ、先頭から外し `launch = null` にして同じ commit で書き、知らせる（`【お知らせ】<時刻> <投稿の時刻>の投稿が見つからないため（消された可能性）、順番待ちから外しました。`）。`code` がほかの値・null の `notFound`（チャンネルが無い 10003 など）は外さず、G の「数えない失敗」にし、続けて起きている間の初めの1回だけ `【異常】<時刻> 不具合のチャンネルが見つからないため、件を開かずに待ちます。` を知らせる（受け口の中の前の値 `notedNotFound`（真偽）で守る。401・403 の前の値とは別に持つ。`getMessage` がこの形以外の結果を返したら false に戻す）。ほかの失敗（429・401・403・失敗・打ち切り）も G の「数えない失敗」。401・403 は、続けて起きている間の初めの1回だけ `【異常】<時刻> Discord の投稿を読み直せないため（権限）、件を開かずに待ちます。` を知らせる（受け口の中の前の値で守る。ほかの結果が出たら戻す）
   8. 依頼文を組み立て（H）、`launcher.open("不具合 MM/DD HH:mm", 依頼文)`。名前の時刻は投稿の時刻（`postedAt`）の日本時間
-  9. 開けたら、1つの `commit` で「`queues.bug` の先頭を外す・`bugSlot` を入れる・`daily.opened + 1`・`launch = null`」。`commit` に失敗したら、開いた件を `launcher.close` で閉じ、続けて `launcher.discardRequest` で依頼の写しを消す（close は R を消さないため。受け口は commit の決まりで止まる）。`discardRequest` が例外なら `【異常】<時刻> 件の依頼の写しを消せませんでした。` を1回知らせる（F と同じ文）。`close` が例外（窓がまだ生きている）でも `discardRequest` は呼ぶ（この窓は `bugSlot` に入らず、ほかに写しを消す道が無いため）。そのうえで `【異常】<時刻> 開いた件の窓を閉じられませんでした。agent-console の画面からその窓を閉じてください。` を知らせる。残った窓は 2b（`liveCaseIds`）が数えるので、起こし直しても2つ目は開かない
+  9. 開けたら、1つの `commit` で「`queues.bug` の先頭を外す・`bugSlot` を入れる・`daily.opened + 1`・`launch = null`」。`commit` に失敗したら、開いた件を `launcher.close` で閉じ、続けて `launcher.discardRequest` で依頼の写しを消す（close は R を消さないため。受け口は commit の決まりで止まる）。`discardRequest` が例外なら `【異常】<時刻> 件の依頼の写しを消せませんでした。` を1回知らせる（F と同じ文）。`close` が例外（窓がまだ生きている）でも `discardRequest` は呼ぶ（この窓は `bugSlot` に入らず、ほかに写しを消す道が無いため）。`close` が例外のときだけ、そのうえで `【異常】<時刻> 開いた件の窓を閉じられませんでした。agent-console の画面からその窓を閉じてください。` を知らせる。残った窓は 2b（`liveCaseIds`）が数えるので、起こし直しても2つ目は開かない
 - `open` が `probe` を返したら G の「数えない失敗」（知らせない）、`full`・`failed` を返したら G の「数える失敗」（設計 §4-2 のとおり）
 
 ### E. 全停止の読み取り（新しい `server/ops-control.ts`）
@@ -187,7 +187,7 @@
   21. 版の確かめの窓が生きている間は `open` を呼ばず、`liveCaseIds` の知らせも出ない
   22. `launch.messageId` が先頭と違う状態のファイルから始めても、先頭の件を1回目として開く
   23. 設定から投稿者を引けないとき、依頼文に `不明` と入って開く
-  24. その回の commit に失敗して受け口が止まったとき、`advance` は `open` も `probe` も呼ばない。開いたあとの commit に失敗したときは `close` と `discardRequest` が1回ずつ呼ばれる
+  24. その回の commit に失敗して受け口が止まったとき、`advance` は `open` も `probe` も呼ばない。開いたあとの commit に失敗したときは `close` と `discardRequest` が1回ずつ呼ばれる。`close` が `"closed"` を返す場合は「開いた件の窓を閉じられませんでした」の知らせは出ない
   25. `advance` の中で偽の `launcher` が例外を投げても、次の `round` が予約される（偽の時計を30秒進めると `round` がまた走る）
   27. 10分の idle で `close` が `"gone"` → 枠が空き `discardRequest` が呼ばれる。`close` が例外 → 枠はそのまま・`discardRequest` は呼ばれない・知らせが1回。次の round で `probe` が `unknown` を返しても `close` がまた呼ばれ、`"closed"` で枠が空き `discardRequest` が呼ばれる。例外が続くと8時間後に知らせがもう1回。知らせは文で見分け、閉じ直し待ちの間は【長くかかっています】が出ないことも確かめる。閉じ直し待ちの間に `probe` が `exited` を返したら `close` を呼ばずに枠が空く
   28. 開いたあとの commit に失敗し `close` も例外 → `discardRequest` が1回呼ばれ、【異常】の知らせが1回。`discardRequest` も例外にした場合は「写しを消せませんでした」の知らせが1回足される。続けて、同じ状態ファイル（`bugSlot` が null のまま）から受け口を作り直し、偽の `liveCaseIds` が1つを返す形で `enableLaunch` を呼んでから round を回す → `open` を呼ばない
