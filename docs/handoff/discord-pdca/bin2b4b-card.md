@@ -70,14 +70,14 @@
   1. `bugSlot` があれば F（見張り）をして終わる
   2. `launch?.failed === true` なら何もしない（先頭で止まる。戻し方は G）
   2a. `launcher.probeRunning()` が true なら、知らせずに終わる（版の確かめを止めない。次の回でまた見る）
-  2b. `launcher.liveCaseIds()` が1つ以上なら開かずに終わる（`bugSlot` が null なのに件の窓が生きている＝開いてから commit までに落ちた・v0.54.0 に戻して欄が消えた・画面から手で開いた、のどれか。枠を2つ使わない）。この状態になったときに1回だけ知らせる（`【お知らせ】<時刻> 件の窓がほかに開いているため、次の件を開かずに待ちます。その窓を閉じると続けます。`。1回だけは受け口の中の前の値で守る。ファイルに書かない）
+  2b. `launcher.liveCaseIds()` が1つ以上なら開かずに終わる（`bugSlot` が null なのに件の窓が生きている＝開いてから commit までに落ちた・v0.54.0 に戻して欄が消えた・画面から手で開いた、のどれか。枠を2つ使わない）。この状態になったときと、続いている間8時間ごとに1回知らせる（`【お知らせ】<時刻> 件の窓がほかに開いているため、次の件を開かずに待ちます。その窓を閉じると続けます。`。最後に知らせた時刻は受け口の中だけに持つ。ファイルに書かない。0 に戻ったら消す。待ちが黙って続かないようにするため）
   3. `queues.bug` が空なら終わる
   4. `launch` があり `launch.messageId` が今の先頭と違えば、`launch` は null とみなす（commit は次に書くときにまとめる）。同じで `now < nextAt` なら終わる
   5. 日本時間の今日が `daily.day` と違えば `{ day: 今日, opened: 0 }` にする。`opened >= 10` なら、その日に1回だけ知らせて終わる（`【お知らせ】<時刻> 今日開ける件の上限（10件）に達しました。残り<n>件は明日開きます。`。1回だけは受け口の中に「知らせた日」を持って守る。ファイルに書かない。起こし直すとまた1回出てよい）
   6. 全停止を読む（E）。`running` 以外なら終わる
   7. 先頭の投稿を `getMessage` で読み直す。`notFound` で `code === 10008`（投稿が無い）のときだけ、先頭から外し `launch = null` にして同じ commit で書き、知らせる（`【お知らせ】<時刻> <投稿の時刻>の投稿が見つからないため（消された可能性）、順番待ちから外しました。`）。`code` がほかの値・null の `notFound`（チャンネルが無い 10003 など）は外さず、G の「数えない失敗」にし、続けて起きている間の初めの1回だけ `【異常】<時刻> 不具合のチャンネルが見つからないため、件を開かずに待ちます。` を知らせる（受け口の中の前の値 `notedNotFound`（真偽）で守る。401・403 の前の値とは別に持つ。`getMessage` がこの形以外の結果を返したら false に戻す）。ほかの失敗（429・401・403・失敗・打ち切り）も G の「数えない失敗」。401・403 は、続けて起きている間の初めの1回だけ `【異常】<時刻> Discord の投稿を読み直せないため（権限）、件を開かずに待ちます。` を知らせる（受け口の中の前の値で守る。ほかの結果が出たら戻す）
   8. 依頼文を組み立て（H）、`launcher.open("不具合 MM/DD HH:mm", 依頼文)`。名前の時刻は投稿の時刻（`postedAt`）の日本時間
-  9. 開けたら、1つの `commit` で「`queues.bug` の先頭を外す・`bugSlot` を入れる・`daily.opened + 1`・`launch = null`」。`commit` に失敗したら、開いた件を `launcher.close` で閉じ、続けて `launcher.discardRequest` で依頼の写しを消す（close は R を消さないため。受け口は commit の決まりで止まる）。`discardRequest` の失敗は飲み込む。`close` が例外（窓がまだ生きている）でも `discardRequest` は呼ぶ（この窓は `bugSlot` に入らず、ほかに写しを消す道が無いため）。そのうえで `【異常】<時刻> 開いた件の窓を閉じられませんでした。agent-console の画面からその窓を閉じてください。` を知らせる。残った窓は 2b（`liveCaseIds`）が数えるので、起こし直しても2つ目は開かない
+  9. 開けたら、1つの `commit` で「`queues.bug` の先頭を外す・`bugSlot` を入れる・`daily.opened + 1`・`launch = null`」。`commit` に失敗したら、開いた件を `launcher.close` で閉じ、続けて `launcher.discardRequest` で依頼の写しを消す（close は R を消さないため。受け口は commit の決まりで止まる）。`discardRequest` が例外なら `【異常】<時刻> 件の依頼の写しを消せませんでした。` を1回知らせる（F と同じ文）。`close` が例外（窓がまだ生きている）でも `discardRequest` は呼ぶ（この窓は `bugSlot` に入らず、ほかに写しを消す道が無いため）。そのうえで `【異常】<時刻> 開いた件の窓を閉じられませんでした。agent-console の画面からその窓を閉じてください。` を知らせる。残った窓は 2b（`liveCaseIds`）が数えるので、起こし直しても2つ目は開かない
 - `open` が `probe` を返したら G の「数えない失敗」（知らせない）、`full`・`failed` を返したら G の「数える失敗」（設計 §4-2 のとおり）
 
 ### E. 全停止の読み取り（新しい `server/ops-control.ts`）
@@ -97,7 +97,7 @@
 - `launcher.probe(bugSlot.sessionId)` で:
   - `exists === false` か `exited === true`: 閉じたとみなし `bugSlot = null` を commit（再起動のあと見つからないときも同じ。`reason` は記録しない＝出来事の記録は便2b-4c）
   - 枠を空けるとき（ここ・下の `close`）は、commit の前に必ず `launcher.discardRequest(bugSlot.sessionId)` を呼ぶ（投稿の本文を件のあとに手元へ残さない。設計 §4-6「投稿の本文: コピーを持たない」。件の間だけ置く）。`discardRequest` が失敗しても枠は空け、`【異常】<時刻> 件の依頼の写しを消せませんでした。` を1回知らせる
-  - 受け口の中に「閉じ直し待ち」の印 `closeRetry`（真偽。ファイルに書かない。再起動したら false）を持つ。印が true の間は、上の `exists`・`exited` の判定だけを先に行い（どちらかなら印を false にして枠を空ける＝`discardRequest` のあと `bugSlot = null` を commit）、それ以外は idle・返事の判定を通さずに毎回 `launcher.close` を呼び直す（結果の扱いは下の `close` と同じ）
+  - 受け口の中に「閉じ直し待ち」の印 `closeRetry`（真偽。ファイルに書かない。再起動したら false）を持つ。印が true の間は、上の `exists`・`exited` の判定だけを先に行い（どちらかなら印と最後に知らせた時刻を一緒に戻して枠を空ける＝`discardRequest` のあと `bugSlot = null` を commit）、それ以外は idle・返事の判定を通さずに毎回 `launcher.close` を呼び直す（結果の扱いは下の `close` と同じ）。印が true の間は【長くかかっています】を出さない（閉じられない【異常】の知らせが8時間ごとに出るので、2通を並べない）
   - `claudeSessionId` が null（会話の番号がまだ付いていない。`server/hub.ts:915` で後から付く）の間は `unknown` と同じに扱い、`lastReply`・`runningCount` を呼ばない
   - `idle` は `status === "idle"` かつ `runningCount === 0`。`nextIdleMs`（A）で続きを数える。標本の間が `gapLimitMsFor(POLL_INTERVAL_MS)`（=150,000ミリ秒＝150秒。:35 の式に 30,000 を入れた値）を超えたら 0 から数え直す（routine-closer :53-54 と同じ）。数える途中の値（prevAt・prevIdle・idleMs）は受け口の中だけに持つ（ファイルに書かない。再起動したら 0 から）
   - `idleMs >= CLOSE_IDLE_MS` になったら `replyVerdict(lastReply)`:
@@ -179,7 +179,7 @@
   13. 本文の `<<<` が `＜＜＜` に置き換わる
   14. 知らせの文に本文・鍵が入らない（偽の本文と偽の鍵の文字列で検索して0件）
   15. 枠を空けるとき（10分で閉じる・`exists:false`・`exited`）に `discardRequest` が1回呼ばれる
-  16. `bugSlot` が null で `liveCaseIds` が1つ → 開かない・知らせ1回。0 に戻ると開く
+  16. `bugSlot` が null で `liveCaseIds` が1つ → 開かない・知らせ1回。同じまま8時間進めると知らせがもう1回。0 に戻ると開く
   17. `probe` を10回続けても `launch.failed` にならず、知らせない。`getMessage` の 429 も数えない。403 が続くと知らせは1回
   18. `launch.failed === true` のファイルから `start` → `launch` が null になり開く
   19. `claudeSessionId` が null の間は `lastReply`・`runningCount` を呼ばず、閉じない
@@ -189,8 +189,8 @@
   23. 設定から投稿者を引けないとき、依頼文に `不明` と入って開く
   24. その回の commit に失敗して受け口が止まったとき、`advance` は `open` も `probe` も呼ばない。開いたあとの commit に失敗したときは `close` と `discardRequest` が1回ずつ呼ばれる
   25. `advance` の中で偽の `launcher` が例外を投げても、次の `round` が予約される（偽の時計を30秒進めると `round` がまた走る）
-  27. 10分の idle で `close` が `"gone"` → 枠が空き `discardRequest` が呼ばれる。`close` が例外 → 枠はそのまま・`discardRequest` は呼ばれない・知らせが1回。次の round で `probe` が `unknown` を返しても `close` がまた呼ばれ、`"closed"` で枠が空き `discardRequest` が呼ばれる。例外が続くと8時間後に知らせがもう1回。閉じ直し待ちの間に `probe` が `exited` を返したら `close` を呼ばずに枠が空く
-  28. 開いたあとの commit に失敗し `close` も例外 → `discardRequest` が1回呼ばれ、【異常】の知らせが1回。続けて、同じ状態ファイル（`bugSlot` が null のまま）から受け口を作り直し、偽の `liveCaseIds` が1つを返す形で `enableLaunch` を呼んでから round を回す → `open` を呼ばない
+  27. 10分の idle で `close` が `"gone"` → 枠が空き `discardRequest` が呼ばれる。`close` が例外 → 枠はそのまま・`discardRequest` は呼ばれない・知らせが1回。次の round で `probe` が `unknown` を返しても `close` がまた呼ばれ、`"closed"` で枠が空き `discardRequest` が呼ばれる。例外が続くと8時間後に知らせがもう1回。知らせは文で見分け、閉じ直し待ちの間は【長くかかっています】が出ないことも確かめる。閉じ直し待ちの間に `probe` が `exited` を返したら `close` を呼ばずに枠が空く
+  28. 開いたあとの commit に失敗し `close` も例外 → `discardRequest` が1回呼ばれ、【異常】の知らせが1回。`discardRequest` も例外にした場合は「写しを消せませんでした」の知らせが1回足される。続けて、同じ状態ファイル（`bugSlot` が null のまま）から受け口を作り直し、偽の `liveCaseIds` が1つを返す形で `enableLaunch` を呼んでから round を回す → `open` を呼ばない
   26. 添付のファイル名が依頼文の「添付:」の行に入り、無いときは「なし」
 - `tests/unit/ops-control.test.ts`: 200/false→running・200/true→halted・401・500・形違い・打ち切り→unreadable・鍵が null→呼ばずに unreadable・Bearer の見出し
 - `tests/unit/discord-api.test.ts` の今の試験「401 / 403 / 404 / 500」:69 は `toEqual` で比べるので、404 の期待を `{ ok: false, kind: "notFound", status: 404, code: null }` に直す（403 :68 は変えない）。足す試験: `getMessage` の道と答えの形。404 の `code`（10008・10003・本文なし→null）。`attachments` の取り出し（filename だけ・形違いは飛ばす・無いとき欄なし）と、一覧の今の試験がそのまま通ること
