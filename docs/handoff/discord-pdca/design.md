@@ -426,7 +426,7 @@ mode: handoff
 | 予約・定期実行・見張り役の監査記録 | `dataDir/routine-audit.jsonl`（既存。1つの台帳にまとめる） | RoutineAudit（action を足す） |
 | ボットのトークン・Webhook の URL・保守 API の鍵 | Keychain（service `agent-console`、account `discord-bot`・`discord-report-webhook`・`ops-api`） | keychain.ts |
 | `ac-case` の合言葉 | `dataDir/case-token`（新規・0600。reserve-token と同じ作り方で、サーバーが起動のときに無ければ作る） | サーバー |
-| 投稿の本文 | Discord（コピーを持たない） | — |
+| 投稿の本文 | Discord（コピーを持たない。例外: 件の最初の依頼として件の報告の置き場 R に置く `request.md` は、件の間だけ置き、枠を空けるときに消す。便2b-4b） | — |
 | 指示書（ADR-1012 Decision 5 の共用の担当定義） | S:docs/ai-agents/ops-incident-agent.md（写しは1つ） | 導入の台本 |
 
 - 出来事の行き先（M-1・M-B。K16 の `suspicious` は、不具合の件が動いていないときは agent-console の監査記録へ。§4-4）: 件の出来事は、すべて `ops_incident_events` に書く（`kind` の割り当ては §4-9、`detail.round` に回の中身）。セッションが閉じた・kept になった・開けなかったも件の出来事として書く（`closed`・`kept`・`launch_failed`）。routine-closer の監査記録（`closed`・`kept`）は定期実行のセッションだけで、Discord 発のセッションは書かない。件にならなかった投稿（捨てた投稿）は行が無いので、手元の `dropCounts` だけに数える。予約・定期実行・見張り役の出来事は手元の監査記録だけに書く。同じ出来事を2か所に書かない。
