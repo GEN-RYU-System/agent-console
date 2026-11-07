@@ -2,6 +2,7 @@
 
 版を出すたびに 1 行追記する（版の正本は git タグ `vX.Y.Z`）。
 
+- 0.54.0 Discord の受け口の設定ファイルを書く台本 scripts/ac-discord-intake-config.sh（PO が ! で打つ。不具合のチャンネル1つを testMode で有効にする）と、保守 API の鍵の Keychain の項目 ops-api（scripts/ac-discord-secret.sh ops-api）を足した。サーバーの動きは変わらない。戻し方 bash scripts/ac-update.sh v0.53.1。設計は docs/handoff/discord-pdca/design.md §4-4・§4-6
 - 0.53.1 件の claude の版の確かめが止まった・×になったとき、そのときの画面と止まった理由を監査に残す（監査 `caseClaudeVersionProbe` の `paneSamples` に×・打ち切りの後の画面を1枚足し、aborted の行に `abortReason` を足した。判定・手順・記録の形は変えていない）。戻し方 `bash scripts/ac-update.sh v0.53.0`
 - 0.53.0 件の claude の版を人の手なしで確かめるようにした。件を開く前に実体の指紋（sha256・サイズ）を取り、case-say の判定 4b は記録 `dataDir/case-say-claude-versions.json`（サーバーだけが書き、項目ごとに MAC を付ける）の使える項目と指紋が合うかで決める。指紋が未記録の版は、サーバーが自分で開く probe の件（定数の文 3 つ）で機械的に確かめ、結果を監査 `caseClaudeVersionProbe` に残す。版ずれは画面の案内・macOS 通知・監査 `caseClaudeVersionNotice`・`/api/state` の `caseSayVersions` で知らせる。新しい断りの理由 `claude_version_probing`・`version_probe_session`。この版の間は設定 `caseSayClaudeVersions` の版の名前も通す（過渡期）。戻し方 `bash scripts/ac-update.sh v0.52.0`
 - 0.52.0 中央に「予定」タブを足した。やることを足す・終わった・消すができ、日（今日と明日）／週（月〜日）／月の時間割で開発／秘書に分けて見える。重なる2つは赤枠と「重なり」の札。保存先は `dataDir/schedule.json`、道は `GET /api/schedule`・`POST /api/schedule/items`・`PATCH`/`DELETE /api/schedule/items/:id`。時間割は Sales Anchor の金型 CalendarView（FullCalendar 6.1.22 を依存に足した）。戻し方 `bash scripts/ac-update.sh v0.51.1`

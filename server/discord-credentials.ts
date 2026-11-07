@@ -1,4 +1,4 @@
-import { readKeychainItem } from "./keychain.ts";
+import { readKeychainItem, type DiscordKeychainAccount } from "./keychain.ts";
 
 /** Discord への通信の行き先はここだけ（コードの定数。設定・台本で変えられない） */
 export const DISCORD_HOST = "discord.com";
@@ -10,6 +10,13 @@ const BOT_TOKEN = /^[A-Za-z0-9._-]{1,200}$/;
 
 export function isValidBotToken(v: string): boolean {
   return BOT_TOKEN.test(v);
+}
+
+/** 保守 API の鍵（Keychain の ops-api）の形: 長さ 16〜512、文字は A-Za-z0-9._~+/=- だけ */
+const OPS_API_TOKEN = /^[A-Za-z0-9._~+/=-]{16,512}$/;
+
+export function isValidOpsApiToken(v: string): boolean {
+  return OPS_API_TOKEN.test(v);
 }
 
 export function isValidWebhookUrl(v: string): boolean {
@@ -24,7 +31,7 @@ export interface DiscordCredentials {
   state: { bot: CredentialState; webhook: CredentialState };
 }
 
-async function load(read: typeof readKeychainItem, securityBin: string, account: "discord-bot" | "discord-report-webhook", valid: (v: string) => boolean): Promise<{ value: string | null; state: CredentialState }> {
+async function load(read: typeof readKeychainItem, securityBin: string, account: DiscordKeychainAccount, valid: (v: string) => boolean): Promise<{ value: string | null; state: CredentialState }> {
   let raw: string;
   try {
     raw = await read(securityBin, account);
@@ -32,6 +39,11 @@ async function load(read: typeof readKeychainItem, securityBin: string, account:
     return { value: null, state: "unreadable" };
   }
   return valid(raw) ? { value: raw, state: "ok" } : { value: null, state: "invalid" };
+}
+
+/** 保守 API の鍵を読む（便2b-4b の全停止の読み取りが使う）。値は返り値の外に出さない */
+export async function loadOpsApiToken(securityBin: string, read: typeof readKeychainItem = readKeychainItem): Promise<{ value: string | null; state: CredentialState }> {
+  return load(read, securityBin, "ops-api", isValidOpsApiToken);
 }
 
 /** 2つの秘密を読む。値は返り値の外（ログ・例外の文）に出さない */
