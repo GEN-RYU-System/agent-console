@@ -66,7 +66,7 @@ describe("failures are discriminated", () => {
   it("401 / 403 / 404 / 500", async () => {
     expect(await call({ status: 401 })).toEqual({ ok: false, kind: "unauthorized" });
     expect(await call({ status: 403 })).toEqual({ ok: false, kind: "forbidden", status: 403 });
-    expect(await call({ status: 404 })).toEqual({ ok: false, kind: "notFound", status: 404 });
+    expect(await call({ status: 404 })).toEqual({ ok: false, kind: "notFound", status: 404, code: null });
     expect(await call({ status: 500 })).toEqual({ ok: false, kind: "failed", reason: "http", status: 500 });
   });
   it("network failure and timeout", async () => {
@@ -123,5 +123,50 @@ describe("host check", () => {
     expect(await api.executeWebhook("https://discordapp.com/api/webhooks/1/a", "x")).toEqual({ ok: false, kind: "failed", reason: "badHost" });
     expect(await api.executeWebhook("not a url", "x")).toEqual({ ok: false, kind: "failed", reason: "badHost" });
     expect(f.calls).toHaveLength(0);
+  });
+});
+
+describe("getMessage", () => {
+  const MID = "100000000000000010";
+  it("GETs one message and returns the shape", async () => {
+    const f = fake({ body: msg() });
+    const r = await createDiscordApi(f.fetch).getMessage(TOKEN, CH, MID);
+    expect(r).toEqual({ ok: true, value: msg() });
+    expect(f.calls[0]?.url).toBe(`https://discord.com/api/v10/channels/${CH}/messages/${MID}`);
+    expect(f.calls[0]?.method).toBe("GET");
+    expect(f.calls[0]?.headers.Authorization).toBe(`Bot ${TOKEN}`);
+  });
+  it("does not call with a bad id", async () => {
+    const f = fake({ body: msg() });
+    expect(await createDiscordApi(f.fetch).getMessage(TOKEN, CH, "12a")).toMatchObject({ ok: false, kind: "failed" });
+    expect(await createDiscordApi(f.fetch).getMessage(TOKEN, "../x", MID)).toMatchObject({ ok: false, kind: "failed" });
+    expect(f.calls).toHaveLength(0);
+  });
+  it("failures: 429 / 401 / 403 / 404 / 500 / badJson", async () => {
+    const call = (reply: Parameters<typeof fake>[0]) => createDiscordApi(fake(reply).fetch).getMessage(TOKEN, CH, MID);
+    expect(await call({ status: 429, body: { retry_after: 2 } })).toEqual({ ok: false, kind: "rateLimited", retryAfterMs: 2000 });
+    expect(await call({ status: 401 })).toEqual({ ok: false, kind: "unauthorized" });
+    expect(await call({ status: 403 })).toEqual({ ok: false, kind: "forbidden", status: 403 });
+    expect(await call({ status: 500 })).toEqual({ ok: false, kind: "failed", reason: "http", status: 500 });
+    expect(await call({ body: [msg()] })).toEqual({ ok: false, kind: "failed", reason: "badJson" });
+    expect(await call({ raw: "nope" })).toEqual({ ok: false, kind: "failed", reason: "badJson" });
+  });
+  it("404 carries the Discord error code (10008, 10003) or null", async () => {
+    const call = (reply: Parameters<typeof fake>[0]) => createDiscordApi(fake(reply).fetch).getMessage(TOKEN, CH, MID);
+    expect(await call({ status: 404, body: { message: "Unknown Message", code: 10008 } })).toEqual({ ok: false, kind: "notFound", status: 404, code: 10008 });
+    expect(await call({ status: 404, body: { message: "Unknown Channel", code: 10003 } })).toEqual({ ok: false, kind: "notFound", status: 404, code: 10003 });
+    expect(await call({ status: 404, body: { code: "10008" } })).toEqual({ ok: false, kind: "notFound", status: 404, code: null });
+    expect(await call({ status: 404, raw: "not json" })).toEqual({ ok: false, kind: "notFound", status: 404, code: null });
+    expect(await call({ status: 404 })).toEqual({ ok: false, kind: "notFound", status: 404, code: null });
+  });
+});
+
+describe("attachments", () => {
+  it("keeps only the file names; skips wrong shapes; no field when absent or not an array", async () => {
+    const list = (m: Record<string, unknown>) => createDiscordApi(fake({ body: [msg(m)] }).fetch).listMessagesAfter(TOKEN, CH, null);
+    expect(await list({ attachments: [{ filename: "a.png", url: "x" }, { filename: 5 }, "z", null, { name: "b" }, { filename: "b.txt" }] })).toEqual({ ok: true, value: [{ ...msg(), attachments: ["a.png", "b.txt"] }] });
+    expect(await list({ attachments: [] })).toEqual({ ok: true, value: [{ ...msg(), attachments: [] }] });
+    expect(await list({ attachments: "nope" })).toEqual({ ok: true, value: [msg()] });
+    expect(await list({})).toEqual({ ok: true, value: [msg()] });
   });
 });

@@ -9,7 +9,7 @@ import { CASE_PROXY_PORT, CaseSandboxUnavailableError, writeCaseRoom } from "../
 import type { RoleConfig } from "../../server/config.ts";
 import { realProbePorts } from "../../server/case-say-probe-wiring.ts";
 import { restoreOnStartup } from "../../server/restore.ts";
-import { SessionConflictError, SessionInputError, SessionManager } from "../../server/sessions.ts";
+import { CaseProbeRunningError, SessionConflictError, SessionInputError, SessionManager } from "../../server/sessions.ts";
 import { newSession, probeSession } from "../../server/terminal-host/tmux-runner.ts";
 import { git, makeCaseRepo, pointOriginAtB, type CaseRepo } from "./helpers/case-repo.ts";
 import { startHarness, TOKEN, type Harness } from "./helpers/harness.ts";
@@ -39,7 +39,7 @@ const CASE_ROLE: RoleConfig = {
   id: "case",
   labelKey: "role.discordCase",
   // 端末の幅で折り返されないよう、環境は T の中のファイルに 1 行ずつ書く
-  command: ["/bin/sh", "-c", 'printf "%s\\n" "$AC_CASE_SETTINGS" "$AC_CASE_GH_DIR" "$AC_CASE_REPORT" "$AC_CASE_TMP" "$AC_CASE_SHELL" "$AC_DISCORD_CASE" "$AC_CASE_ROOM" "$AC_CASE_HOME" "$AC_CLAUDE_BIN" "$AC_CASE_PROXY" > "$AC_CASE_TMP/env.txt"; echo READY; cat'],
+  command: ["/bin/sh", "-c", 'printf "%s\\n" "$AC_CASE_SETTINGS" "$AC_CASE_GH_DIR" "$AC_CASE_REPORT" "$AC_CASE_TMP" "$AC_CASE_SHELL" "$AC_DISCORD_CASE" "$AC_CASE_ROOM" "$AC_CASE_HOME" "$AC_CLAUDE_BIN" "$AC_CASE_PROXY" > "$AC_CASE_TMP/env.txt"; printf "%s\\n" "$AC_CASE_FIRST_PROMPT" > "$AC_CASE_TMP/first.txt"; echo READY; cat'],
   needsWorktree: false,
   reservable: false,
   caseSandbox: true,
@@ -539,5 +539,65 @@ describe("便CS3a: the fingerprint is taken before the start, and the probe case
     expect(aborted).toBe(1);
     await x.h.sessions.close(a.id);
     await x.h.sessions.close(b.id);
+  });
+});
+
+describe("便2b-4b: createDiscordCase / removeCaseRequest / isVersionProbeActive", () => {
+  const firstOf = async (T: string): Promise<string> => {
+    const file = path.join(T, "first.txt");
+    await vi.waitFor(() => expect(existsSync(file) && readFileSync(file, "utf8").endsWith("\n")).toBe(true));
+    return readFileSync(file, "utf8");
+  };
+
+  it("writes request.md (0600) into R and passes AC_CASE_FIRST_PROMPT=1; removeCaseRequest removes it, also when missing and after close", async () => {
+    const x = await setup();
+    const s = await x.h.sessions.createDiscordCase("不具合 10/25 12:00", "REQUEST-BODY");
+    const R = x.h.sessions.caseCleanupPaths(s.id).R;
+    const file = path.join(R, "request.md");
+    expect(readFileSync(file, "utf8")).toBe("REQUEST-BODY");
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    const env = await envOf(path.join(x.tmpRoot, "acc", s.id.slice(0, 8)));
+    expect(env.length).toBeGreaterThan(0);
+    expect(await firstOf(path.join(x.tmpRoot, "acc", s.id.slice(0, 8)))).toBe("1\n");
+    expect(x.h.sessions.isVersionProbeActive()).toBe(false);
+    await x.h.sessions.removeCaseRequest(s.id);
+    expect(existsSync(file)).toBe(false);
+    await x.h.sessions.removeCaseRequest(s.id);
+    await x.h.sessions.close(s.id);
+    writeFileSync(file, "again");
+    await x.h.sessions.removeCaseRequest(s.id);
+    expect(existsSync(file)).toBe(false);
+  });
+
+  it("an ordinary create() does not write request.md and does not pass AC_CASE_FIRST_PROMPT", async () => {
+    const x = await setup();
+    const s = await x.h.sessions.create({ name: "plain", roleId: "case" });
+    const R = x.h.sessions.caseCleanupPaths(s.id).R;
+    expect(existsSync(path.join(R, "request.md"))).toBe(false);
+    expect(await firstOf(path.join(x.tmpRoot, "acc", s.id.slice(0, 8)))).toBe("\n");
+    await x.h.sessions.close(s.id);
+  });
+
+  it("is refused with CaseProbeRunningError and creates nothing while a version probe is being made (not yet listed) or running; the probe is not stopped", async () => {
+    const x = await setup({ configMaxSessions: 4 });
+    const starting = x.h.sessions.openVersionProbe("probe claude 2.1.320");
+    expect(x.h.sessions.hasRunningVersionProbe()).toBe(false);
+    expect(x.h.sessions.isVersionProbeActive()).toBe(true);
+    await expect(x.h.sessions.createDiscordCase("a", "req")).rejects.toBeInstanceOf(CaseProbeRunningError);
+    const probe = await starting;
+    expect(x.h.sessions.isVersionProbeActive()).toBe(true);
+    await expect(x.h.sessions.createDiscordCase("a", "req")).rejects.toBeInstanceOf(CaseProbeRunningError);
+    expect(x.h.sessions.get(probe.id)?.exited).toBe(false);
+    expect(x.h.sessions.list()).toHaveLength(1);
+    await x.h.sessions.close(probe.id);
+    expect(x.h.sessions.isVersionProbeActive()).toBe(false);
+  });
+
+  it("is refused with too many sessions when full, and leaves nothing", async () => {
+    const x = await setup({ configMaxSessions: 1 });
+    const a = await x.h.sessions.create({ name: "a", roleId: "case" });
+    await expect(x.h.sessions.createDiscordCase("b", "req")).rejects.toThrow("too many sessions");
+    expect(x.h.sessions.list()).toHaveLength(1);
+    await x.h.sessions.close(a.id);
   });
 });

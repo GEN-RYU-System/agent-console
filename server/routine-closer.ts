@@ -2,6 +2,7 @@
 // 標本は claude agents --json の定期取得（Hub.onAgentsSampled）。指示を送ったあとから数え、idle が連続して累計 10 分で閉じる。
 // 返答に NEEDS_DECISION: か BLOCKED: があるもの、返答が無いものは閉じずに残す（kept）。token と promptText は書かない。
 import type { SessionState } from "./agents.ts";
+import { nextIdleMs, replyVerdict } from "./idle-judge.ts";
 import type { RoutineAuditEntry } from "./routine-audit.ts";
 
 /** idle が連続して累計これだけ続いたら閉じる */
@@ -10,7 +11,6 @@ export const CLOSE_IDLE_MS = 10 * 60_000;
 export const KEEP_WAITING_MS = 60 * 60_000;
 /** 履歴に残す返答の先頭の字数 */
 export const SUMMARY_CHARS = 500;
-const DECISION_MARK = /NEEDS_DECISION:|BLOCKED:/;
 
 export interface CloserTarget { routineId: string; createdBy?: "agent"; slot: string; sessionId: string; sessionName?: string; sentAt: number }
 interface Tracked extends CloserTarget { prevAt: number | null; prevIdle: boolean; idleMs: number; waitingSince: number | null; keptWaiting: boolean }
@@ -54,7 +54,7 @@ export class RoutineCloser {
       const state = gapped ? "unknown" : (states?.get(t.sessionId) ?? "unknown");
       const running = info.claudeSessionId !== undefined ? this.deps.runningCount(info.claudeSessionId) : 0;
       const idle = state === "idle" && running === 0;
-      t.idleMs = idle && t.prevIdle && t.prevAt !== null ? t.idleMs + (at - t.prevAt) : 0;
+      t.idleMs = nextIdleMs(t, idle, at);
       t.prevIdle = idle;
       t.prevAt = at;
       if (state === "waiting") t.waitingSince ??= at; else t.waitingSince = null;
@@ -75,11 +75,12 @@ export class RoutineCloser {
 
   private async finish(t: Tracked, claudeSessionId: string | undefined): Promise<void> {
     const reply = claudeSessionId !== undefined ? this.deps.lastReply(claudeSessionId) : null;
-    if (reply === null) { await this.keep(t, "no-reply"); return; }
-    if (DECISION_MARK.test(reply)) { await this.keep(t, "decision"); return; }
+    const verdict = replyVerdict(reply);
+    if (verdict === "no-reply") { await this.keep(t, "no-reply"); return; }
+    if (verdict === "decision") { await this.keep(t, "decision"); return; }
     this.tracked.delete(t.sessionId);
     try { await this.deps.close(t.sessionId); } catch (e) { console.error("routine-closer: close failed:", e instanceof Error ? e.message : e); }
-    const summary = Array.from(reply).slice(0, SUMMARY_CHARS).join("");
+    const summary = Array.from(reply as string).slice(0, SUMMARY_CHARS).join("");
     await this.deps.record(t.routineId, { outcome: "closed", slot: t.slot, sessionId: t.sessionId, summary, ...(t.sessionName !== undefined ? { sessionName: t.sessionName } : {}) });
     await this.deps.audit({ action: "closed", outcome: "ok", routineId: t.routineId, targetCreatedBy: t.createdBy ?? "ui", callerSessionId: null, closeReason: "idle" });
   }

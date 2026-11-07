@@ -2,6 +2,7 @@
 
 版を出すたびに 1 行追記する（版の正本は git タグ `vX.Y.Z`）。
 
+- 0.55.0 Discord の不具合の順番待ちから件の窓（discord-case）を1つずつ自動で開き、最初の依頼（報告の置き場の request.md）を渡すようにした。開く前に保守 API の全停止を読み、止まっている・読めないときは開かない。手を止めて10分で閉じて次へ、判断待ちは閉じずに知らせ、8時間ごとに長くかかっていると知らせる。1日10件まで・5回開けなければ止まる（起こし直すと先頭からやり直す）。件を閉じるとき依頼の写し request.md を消す。設定ファイルが無いときの動きは変わらない。戻し方 bash scripts/ac-update.sh v0.54.0。設計は docs/handoff/discord-pdca/design.md §4-2・§4-4・§4-5
 - 0.54.0 Discord の受け口の設定ファイルを書く台本 scripts/ac-discord-intake-config.sh（PO が ! で打つ。不具合のチャンネル1つを testMode で有効にする）と、保守 API の鍵の Keychain の項目 ops-api（scripts/ac-discord-secret.sh ops-api）を足した。サーバーの動きは変わらない。戻し方 bash scripts/ac-update.sh v0.53.1。設計は docs/handoff/discord-pdca/design.md §4-4・§4-6
 - 0.53.1 件の claude の版の確かめが止まった・×になったとき、そのときの画面と止まった理由を監査に残す（監査 `caseClaudeVersionProbe` の `paneSamples` に×・打ち切りの後の画面を1枚足し、aborted の行に `abortReason` を足した。判定・手順・記録の形は変えていない）。戻し方 `bash scripts/ac-update.sh v0.53.0`
 - 0.53.0 件の claude の版を人の手なしで確かめるようにした。件を開く前に実体の指紋（sha256・サイズ）を取り、case-say の判定 4b は記録 `dataDir/case-say-claude-versions.json`（サーバーだけが書き、項目ごとに MAC を付ける）の使える項目と指紋が合うかで決める。指紋が未記録の版は、サーバーが自分で開く probe の件（定数の文 3 つ）で機械的に確かめ、結果を監査 `caseClaudeVersionProbe` に残す。版ずれは画面の案内・macOS 通知・監査 `caseClaudeVersionNotice`・`/api/state` の `caseSayVersions` で知らせる。新しい断りの理由 `claude_version_probing`・`version_probe_session`。この版の間は設定 `caseSayClaudeVersions` の版の名前も通す（過渡期）。戻し方 `bash scripts/ac-update.sh v0.52.0`
