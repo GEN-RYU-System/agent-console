@@ -102,7 +102,7 @@
   - `idle` は `status === "idle"` かつ `runningCount === 0`。`nextIdleMs`（A）で続きを数える。標本の間が `gapLimitMsFor(POLL_INTERVAL_MS)`（=150,000ミリ秒＝150秒。:35 の式に 30,000 を入れた値）を超えたら 0 から数え直す（routine-closer :53-54 と同じ）。数える途中の値（prevAt・prevIdle・idleMs）は受け口の中だけに持つ（ファイルに書かない。再起動したら 0 から）
   - `idleMs >= CLOSE_IDLE_MS` になったら `replyVerdict(lastReply)`:
     - `close`: `launcher.close` が `"closed"` か `"gone"`（見張りと閉じるの間に窓が消えた）なら `bugSlot = null` を commit。次の `round` で次の件へ。`launcher.close` が例外（窓がまだ生きている）なら枠を**空けない**・`discardRequest` も呼ばない・`closeRetry = true` にする（次の `round` から上の印の決まりで閉じ直す）。初めて例外になったときと、そのあと続いている間8時間ごとに `【異常】<時刻> 件の窓を閉じられませんでした。次の見回りでもう一度閉じます。閉じられないままなら、agent-console の画面からその窓を閉じてください。` を知らせる（最後に知らせた時刻を受け口の中に持つ。閉じられたら印と一緒に戻す）。設計 §4-2「枠が空くのは閉じたときだけ」
-    - `no-reply`・`decision`: `kept` が null なら `kept`・`keptAt` を入れて commit し、知らせる。**このとき idle の数え（idleMs）を 0 に戻す**（`【判断待ち】<時刻> <件の名前>が止まっています。agent-console の画面のその窓で答えてください。順番待ち<n>件。`）。**閉じない・見張りは続ける**（routine-closer と違うところ）
+    - `no-reply`・`decision`: `kept` が既に入っていれば、知らせも commit もせず idle の数え（idleMs）だけ 0 に戻す。`kept` が null なら `kept`・`keptAt` を入れて commit し、知らせる。**このとき idle の数え（idleMs）を 0 に戻す**（`【判断待ち】<時刻> <件の名前>が止まっています。agent-console の画面のその窓で答えてください。順番待ち<n>件。`）。**閉じない・見張りは続ける**（routine-closer と違うところ）
   - 返事（`lastReply` の文）が前の標本と変わったら、idle の数えを 0 に戻す（前の返事の文は受け口の中だけに持つ。ファイルに書かない。busy が標本に出ないほど速く返した場合も、返事のあと10分は閉じない）
   - kept のあと、AI が動き出して（`busy`）また10分 idle になり、返事に印が無ければ閉じる（kept は外れる）
   - `openedAt` から8時間たったら、閉じずに `【長くかかっています】<時刻> <件の名前>が開いてから<h>時間たちました。` を出し、`lastLongNoticeAt` を commit。以後8時間ごとに1回
@@ -184,14 +184,14 @@
   18. `launch.failed === true` のファイルから `start` → `launch` が null になり開く
   19. `claudeSessionId` が null の間は `lastReply`・`runningCount` を呼ばず、閉じない
   20. kept のあと、busy が標本に出ずに返事の文だけ変わった（印なし）→ その返事から10分たつまで閉じない
-  21. 版の確かめの窓が生きている間は `open` を呼ばず、`liveCaseIds` の知らせも出ない
+  21. 版の確かめの窓が生きている間は `open` を呼ばず、`liveCaseIds` の知らせも出ない。逆向き（件の窓がある間に版の確かめが始まる。`sessions.ts:461` の空き2つの決まり）は今のままにし、この便では変えない
   22. `launch.messageId` が先頭と違う状態のファイルから始めても、先頭の件を1回目として開く
   23. 設定から投稿者を引けないとき、依頼文に `不明` と入って開く
   24. その回の commit に失敗して受け口が止まったとき、`advance` は `open` も `probe` も呼ばない。開いたあとの commit に失敗したときは `close` と `discardRequest` が1回ずつ呼ばれる。`close` が `"closed"` を返す場合は「開いた件の窓を閉じられませんでした」の知らせは出ない
   25. `advance` の中で偽の `launcher` が例外を投げても、次の `round` が予約される（偽の時計を30秒進めると `round` がまた走る）
+  26. 添付のファイル名が依頼文の「添付:」の行に入り、無いときは「なし」
   27. 10分の idle で `close` が `"gone"` → 枠が空き `discardRequest` が呼ばれる。`close` が例外 → 枠はそのまま・`discardRequest` は呼ばれない・知らせが1回。次の round で `probe` が `unknown` を返しても `close` がまた呼ばれ、`"closed"` で枠が空き `discardRequest` が呼ばれる。例外が続くと8時間後に知らせがもう1回。知らせは文で見分け、閉じ直し待ちの間は【長くかかっています】が出ないことも確かめる。閉じ直し待ちの間に `probe` が `exited` を返したら `close` を呼ばずに枠が空く
   28. 開いたあとの commit に失敗し `close` も例外 → `discardRequest` が1回呼ばれ、【異常】の知らせが1回。`discardRequest` も例外にした場合は「写しを消せませんでした」の知らせが1回足される。続けて、同じ状態ファイル（`bugSlot` が null のまま）から受け口を作り直し、偽の `liveCaseIds` が1つを返す形で `enableLaunch` を呼んでから round を回す → `open` を呼ばない
-  26. 添付のファイル名が依頼文の「添付:」の行に入り、無いときは「なし」
 - `tests/unit/ops-control.test.ts`: 200/false→running・200/true→halted・401・500・形違い・打ち切り→unreadable・鍵が null→呼ばずに unreadable・Bearer の見出し
 - `tests/unit/discord-api.test.ts` の今の試験「401 / 403 / 404 / 500」:69 は `toEqual` で比べるので、404 の期待を `{ ok: false, kind: "notFound", status: 404, code: null }` に直す（403 :68 は変えない）。足す試験: `getMessage` の道と答えの形。404 の `code`（10008・10003・本文なし→null）。`attachments` の取り出し（filename だけ・形違いは飛ばす・無いとき欄なし）と、一覧の今の試験がそのまま通ること
 - `tests/unit/sessions.case.test.ts` に: 版の確かめの窓があるとき（作成中＝写しを作る途中で止めた状態も含む）`createDiscordCase` が `CaseProbeRunningError` で何も作らず、版の確かめの窓は止まらない（作成中の形が今の試験の道具で作れなければ、止めて報告する）。`createDiscordCase` で R に `request.md`（0600）ができ、`AC_CASE_FIRST_PROMPT=1` が環境に入る。`restore` では入らない。`removeCaseRequest` で消える・無くても失敗しない・`close` のあとでも消せる
