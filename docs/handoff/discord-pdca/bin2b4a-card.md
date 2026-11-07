@@ -29,7 +29,7 @@
 ### B. 設定ファイルを書く台本（新しい `scripts/ac-discord-intake-config.sh`）
 
 - 使い方: `bash scripts/ac-discord-intake-config.sh`（引数なし。あれば `ac_die`）。`ac-discord-secret.sh` と同じく `source scripts/lib/ac-common.sh`・`ac_guard_test_paths`・`set -euo pipefail`
-- 入力元: `AC_STUB_LOG` があるときだけ `AC_CONFIG_INPUT`（1行1項目のファイル）、ないときは必ず `/dev/tty`（ac-discord-secret.sh :18-23 と同じ形）。入力元は台本の初めに `exec 3<"$src"` で**1回だけ**開き、問いはすべて `read -r -u 3` で読む（毎回開き直すと1行目しか読めない）
+- 入力元: `AC_STUB_LOG` があるときだけ `AC_CONFIG_INPUT`（1行1項目のファイル）、ないときは必ず `/dev/tty`（ac-discord-secret.sh :18-23 と同じ形）。入力元は台本の初めに、まず子のシェルで開けるかだけを確かめ（`( : <"$src" ) 2>/dev/null || ac_die "端末が無いため取り消しました（書いていません）"`。`exec` の向け先の失敗は台本ごと終わらせて `||` に届かないことがあるため、子のシェルで先に確かめる）、そのあと `exec 3<"$src"` で**1回だけ**開き、問いはすべて `read -r -u 3` で読む（毎回開き直すと1行目しか読めない）
 - 打った値は端末に普通に表示される（id と呼び名は秘密ではない。`read -s` は使わない）。ただし `ac_log`・`ac_die` の文には値を入れない
 - 既にファイルがあるかの確かめと上書きの問い（下の「既にファイルがあるとき」）は、5つの問いより**前**に行う。試験の入力ファイルでは、既にあるときは1行目が上書きの答え、2〜6行目が5つの答え
 - 聞く順（5つ。どれも Enter で確定）:
@@ -46,7 +46,7 @@
   `allowedMessageTypes` は `[0, 19]`（通常の投稿と返信。設計 §4-1）で固定。聞かない
 - 端末が開けない（`/dev/tty` が無い）ときは `ac_die "端末が無いため取り消しました（書いていません）"`
 - 書き方: JSON は shell の文字列つなぎで作らない。`node="$(ac_resolve_node)"`（ac-common.sh :317。本番では `AC_NODE` は :9-12 で消えているので `"$AC_NODE"` を直接使わない）の node に、値を**環境変数**で渡し、`JSON.stringify` で組み立てる。値を node の引数（argv）には入れない
-- 順番（古いファイルを失わないため）: ①node の中で下の「書いたあと」の決まりを**先に**確かめる（合わなければ何も書かずに 0 以外で終わり、台本は `ac_die`）②合えば node が `<AC_HOME>/discord-intake.config.json.tmp.<pid>` に mode 0600 で書く ③古いファイルがあれば `ac_trash` で移す ④`mv` で tmp を本名に置き換える（同じフォルダの中の名前の付け替え）。途中で失敗したら tmp を消して `ac_die`
+- 順番（古いファイルを失わないため）: ①node の中で下の「確かめの中身」の決まりを**先に**確かめる（合わなければ何も書かずに 0 以外で終わり、台本は `ac_die`）②合えば node が `<AC_HOME>/discord-intake.config.json.tmp.<pid>` に mode 0600 で書く ③古いファイルがあれば `ac_trash` で移す ④`mv` で tmp を本名に置き換える（同じフォルダの中の名前の付け替え）。tmp の道を決めた直後に `trap 'rm -f "$tmp"' EXIT` を置く（`ac_die`・`ac_trash` の失敗は exit するので、そのあとの片付けの行には届かない。EXIT の trap で必ず消す。④が済んだら tmp は本名になっているので `rm -f` は何もしない）。③のあと④が失敗したときは、本名のファイルが無くなり元は Trash にある。そのときは `ac_die "設定ファイルを置き換えられませんでした。元のファイルは Trash（intake-config）にあります"`
 - 既にファイルがあるとき: 中身を読まず、上書きしてよいかを1問聞く（`上書きしますか（yes と打つと上書き）`）。`yes` 以外は `ac_die "取り消しました（書いていません）"`。上書きする前に今のファイルを `ac_trash <file> intake-config` で Trash へ移す（消さない。`kind` は `intake-config`）
 - 確かめの中身: `node --experimental-strip-types` で `server/discord-intake-config.ts` の `readIntakeConfig` を呼ぶのはしない（入れた版のサーバーの中身と台本の版がずれるため）。代わりに、台本の中の node で同じ決まり（id の形・bug は testMode・種類の重なりなし）を書く前に確かめる
 - 終わりの文: `ac_log "受け口の設定を書きました（値は表示しません）。サーバーを起こし直すと読みます: bash scripts/ac-update.sh <今の版>"`。サーバーの起こし直しは台本ではしない
@@ -62,10 +62,11 @@
   3. id の形違い（各欄1つずつ）で終わりが 0 以外・ファイルが無い・出力に打った値が無い
   4. 2 と 5 が同じで止まる
   5. 既にあるとき `yes` 以外で止まり、元のファイルが残る。`yes` で元のファイルが Trash の置き場（試験の `AC_TRASH`）に移る
-  6. `AC_STUB_LOG` が無いとき `AC_CONFIG_INPUT` を読まない: `AC_STUB_LOG` を外し、`HOME` を一時のフォルダにして、その下の既定の `AC_HOME`（`$HOME/Library/Application Support/agent-console`）に印 `.agent-console-home` を作る。端末の無い試験で、出力に「端末が無いため取り消しました」が出て、0 以外で終わり、設定ファイルが無い（印の確かめで先に終わっていないことを出力の文で確かめる）
-  9. 確かめに通らない値で上書きを試すと、元のファイルがそのまま残り Trash に何も移らない
+  6. `AC_STUB_LOG` が無いとき `AC_CONFIG_INPUT` を読まない: `AC_STUB_LOG` を外し、`HOME` を一時のフォルダにして、その下の既定の `AC_HOME`（`$HOME/Library/Application Support/agent-console`）に印 `.agent-console-home` を作る。子のプロセスは `spawn` の `detached: true`（新しいセッション＝端末が付かない）・標準入力 `"ignore"` で起こす（試験を走らせる側に端末が付いていても `/dev/tty` を開けないようにする）。出力に「端末が無いため取り消しました」が出て、0 以外で終わり、設定ファイルが無い（印の確かめで先に終わっていないことを出力の文で確かめる）
   7. 印 `.agent-console-home` が無いとき、何も書かず 0 以外で終わる
   8. `AC_NODE` を消した環境（`env -u AC_NODE`）でも 1 と同じく書ける（`ac_resolve_node` を使っている確かめ）
+  9. 確かめに通らない値で上書きを試すと、元のファイルがそのまま残り Trash に何も移らない。`AC_HOME` に `*.tmp.*` が残らない
+  10. 書けたあと `AC_HOME` に `*.tmp.*` が残らない
 - Mac で試験を回さない。確かめは GitHub の CI（ubuntu・macOS）で行う
 
 ### D. 版と記録
