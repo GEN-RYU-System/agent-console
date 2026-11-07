@@ -11,6 +11,9 @@ export const PROBE_P0_MS = 60 * 1000;
 export const PROBE_P1_MS = 120 * 1000;
 export const PROBE_P2_MS = 180 * 1000;
 export const PROBE_P3_MS = 120 * 1000;
+export const PROBE_P3_QUIET_MS = 20 * 1000;
+/** 文4: 文3 の返事が plan の pre なしで終わったときだけ 1 回送る。§14-14-16 */
+export const PROBE_FOLLOW_UP_SENTENCE = "計画どおり進めてください。";
 export const PROBE_POST_IDLE_WAIT_MS = 3000;
 export const PROBE_VERSION_TIMEOUT_MS = 15 * 1000;
 export const PROBE_RETRY_AFTER_FAIL_MS = 24 * 60 * 60 * 1000;
@@ -21,11 +24,11 @@ export const PROBE_PANE_MAX_SAMPLES = 4;
 export const PROBE_FREE_SLOTS = 2;
 const VERSION_NAME = /^\d+\.\d+\.\d+$/;
 
-/** 台本の文 3 つ。コードの定数（Opus・PO・外からの入力は入らない）。<R> はその probe の件の R */
+/** 台本の文 3 つ（文4 は PROBE_FOLLOW_UP_SENTENCE）。コードの定数（Opus・PO・外からの入力は入らない）。<R> はその probe の件の R */
 export const probeSentences = (R: string): [string, string, string] => [
-  `${R}/probe-1.txt に ok とだけ書いてください。`,
-  `Agent で下請けを1つ動かし、下請けに ${R}/probe-2.txt へ ok とだけ書かせてください。`,
-  `/plan ${R}/probe-3.txt に ok とだけ書いてください。`,
+  `${R}/probe-1.txt に Write ツールで ok とだけ書いてください。Bash は使わないでください。`,
+  `Agent で下請けを1つ動かし、下請けに ${R}/probe-2.txt へ Write ツールで ok とだけ書かせてください。あなたも下請けも Bash は使わないでください。`,
+  `/plan ${R}/probe-3.txt に Write ツールで ok とだけ書いてください。`,
 ];
 
 /** probe の件の道具の記録（pre・post）。tool_input・tool_response は持たない */
@@ -70,18 +73,25 @@ function truncateBytes(text: string, maxBytes: number): string {
   return buf.subarray(0, maxBytes).toString("utf8").replace(/�+$/, "");
 }
 
-/** P4: 選ぶ画面の形の数。行頭の番号付き選択肢が 2 行以上連続・(y/n)・Do you want to・Esc to cancel・Yes と No が同じ行 */
+/** P4: 選ぶ画面の形の数。選ぶ印（❯・>）の付いた番号の行を含む、番号付きの行 2 行以上の塊・(y/n)・Do you want to・Esc to cancel・Yes と No が同じ行 */
 export function countPickScreens(sample: string): number {
   let n = 0;
   const lines = sample.split("\n");
   let run = 0;
+  let marked = false;
+  const flush = (): void => {
+    if (run >= 2 && marked) n += 1;
+    run = 0;
+    marked = false;
+  };
   for (const line of lines) {
     if (/^\s*[❯>]?\s*\d+\.\s/.test(line)) {
       run += 1;
-      if (run === 2) n += 1;
-    } else run = 0;
+      if (/^\s*[❯>]\s*\d+\.\s/.test(line)) marked = true;
+    } else flush();
     if (/\bYes\b/.test(line) && /\bNo\b/.test(line)) n += 1;
   }
+  flush();
   n += (sample.match(/\(y\/n\)/g) ?? []).length;
   n += (sample.match(/Do you want to/g) ?? []).length;
   n += (sample.match(/Esc to cancel/g) ?? []).length;
@@ -467,12 +477,39 @@ export class CaseVersionProbe {
       // P3（文3 の後、計画の形では道具が止まる）
       const sent3At = ports.now();
       if (!(await ports.send(c, s3))) throw new ProbeFailed("P3");
+      const hasPlanPre = (): boolean =>
+        this.records.some((r) => r.ts >= sent3At && r.phase === "pre" && r.agent_id === "" && r.permission_mode === "plan");
+      counts.p3FollowUp = 0;
+      // P3 の×の前に数を監査へ残す（§14-14-16 の 2 (d')）
+      const failP3 = (): ProbeFailed => {
+        counts = { ...counts, ...countTools(this.records, sent2At, sent3At) };
+        return new ProbeFailed("P3");
+      };
       {
         const end = ports.now() + PROBE_P3_MS;
-        const back = await idleWait(Math.max(0, end - ports.now()), async () =>
-          this.records.some((r) => r.ts >= sent3At && r.phase === "pre" && r.agent_id === "" && r.permission_mode === "plan"),
-        );
-        if (!back) throw new ProbeFailed("P3");
+        let sawBusy = false; // P3 の待ちの中だけの旗。observed は使わない
+        let idleStreak = 0;
+        let followUp = false;
+        for (;;) {
+          const s = await ports.readState(c);
+          const status = s.state?.status;
+          if (status !== undefined) observed.add(status);
+          if (status === "busy") sawBusy = true;
+          idleStreak = status === "idle" ? idleStreak + 1 : 0;
+          if (status === "idle" && hasPlanPre()) break;
+          if (idleStreak >= 2 && (sawBusy || ports.now() - sent3At >= PROBE_P3_QUIET_MS)) {
+            followUp = true;
+            break;
+          }
+          if (ports.now() >= end) throw failP3();
+          await this.tick(deadline);
+        }
+        if (followUp) {
+          if (!(await ports.send(c, PROBE_FOLLOW_UP_SENTENCE))) throw failP3();
+          counts.p3FollowUp = 1; // 送れたときだけ 1（送れなければ 0 のまま。§14-14-16 の 4）
+          const back = await idleWait(PROBE_P3_MS, async () => hasPlanPre());
+          if (!back) throw failP3();
+        }
       }
       // idle に戻った後、hook の送信の打ち切り（2 秒）より長く待ってから判定する
       await ports.sleep(this.postIdleWaitMs);
