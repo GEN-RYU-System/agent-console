@@ -50,7 +50,9 @@
 
 ### 6. 依頼の写しを消すとき、R がリンクを通っていたら消さない（`server/sessions.ts:500-507`）
 
-- `unlink` の前に、`realpath(R)` と `path.join(realpathSync(this.caseTmpRoot), path.relative(this.caseTmpRoot, R))` を比べる。違えば `unlink` せずに `throw new Error("case report dir is not a real path")`。`realpath(R)` が `ENOENT` なら何もせずに return（今の「無ければ何もしない」と同じ）
+- `unlink` の前に、`realpath(R)` と R そのものを比べる。違えば `unlink` せずに `throw new Error("case report dir is not a real path")`。`realpath(R)` が `ENOENT` なら何もせずに return（今の「無ければ何もしない」と同じ）
+- 直し（2026-11-07 マージ前審査）: 最初の版では比べる相手を `path.join(realpathSync(this.caseTmpRoot), path.relative(this.caseTmpRoot, R))` と書いていた。R は `casePaths`（`server/case-sandbox.ts:57`）で既にリンクをたどった置き場から作られるので、macOS の既定 `/tmp`（`/private/tmp` へのリンク）では `/private/private/tmp/...` になり、毎回例外になる（この Mac の node で確かめた: `path.relative("/tmp", "/private/tmp/x/id")` = `../private/tmp/x/id`）。比べる相手は R そのもの
+- 試験を1つ足す: `caseTmpRoot` を別の置き場へのリンクとして渡しても（`/tmp` → `/private/tmp` と同じ形）、`removeCaseRequest` は request.md を消す
 - `realpath` は `node:fs/promises` から import を足す。`realpathSync` は既に import 済み（:2）
 - 呼び手（`discord-intake.ts` の `freeSlot`・`advance` の後始末）は例外を今どおり「件の依頼の写しを消せませんでした。」の知らせにする（変えない）
 - 試験: `sessions.case.test.ts` に「R の親を別の置き場へのリンクにした場合、`removeCaseRequest` は例外を投げ、リンク先の `request.md` は残る」を1つ足す。試験用の `caseTmpRoot` がリンクを作れない形なら、そこで止めて報告する
