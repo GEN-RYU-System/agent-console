@@ -595,6 +595,20 @@ describe("便2b-4b: createDiscordCase / removeCaseRequest / isVersionProbeActive
     expect(readFileSync(target, "utf8")).toBe("KEEP");
   });
 
+  it("removeCaseRequest removes request.md without throwing when caseTmpRoot is a link to the real place", async () => {
+    const x = await setup();
+    const linkRoot = path.join(path.dirname(x.tmpRoot), "tmproot-link");
+    symlinkSync(x.tmpRoot, linkRoot);
+    const options = { sandboxExecPath: path.join(path.dirname(x.claude), "sandbox-exec"), caseRoomMacosOk: true, caseProxyListening: () => true, caseHomeDir: x.H, caseTmpRoot: linkRoot, caseShellPath: path.join(process.cwd(), "ops", "shell", "ccdiscord.zsh"), caseGuardPath: path.join(process.cwd(), "ops", "case", "case-guard.mjs") };
+    const m2 = new SessionManager(x.h.config, options);
+    const s = await m2.createDiscordCase("不具合 10/25 14:00", "VIA-LINK");
+    const file = path.join(m2.caseCleanupPaths(s.id).R, "request.md");
+    expect(readFileSync(file, "utf8")).toBe("VIA-LINK");
+    await expect(m2.removeCaseRequest(s.id)).resolves.toBeUndefined();
+    expect(existsSync(file)).toBe(false);
+    await m2.close(s.id);
+  });
+
   it("an ordinary create() does not write request.md and does not pass AC_CASE_FIRST_PROMPT", async () => {
     const x = await setup();
     const s = await x.h.sessions.create({ name: "plain", roleId: "case" });

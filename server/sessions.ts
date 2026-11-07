@@ -506,7 +506,7 @@ export class SessionManager {
       if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
       throw e;
     }
-    if (real !== path.join(realpathSync(this.caseTmpRoot), path.relative(this.caseTmpRoot, R))) throw new Error("case report dir is not a real path");
+    if (real !== R) throw new Error("case report dir is not a real path");
     try {
       await unlink(path.join(R, "request.md"));
     } catch (e) {
