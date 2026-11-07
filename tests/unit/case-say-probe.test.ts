@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { CaseVersionProbe, countPickScreens, countTools, probeSentences, sanitizePane, toolRecordOf, type AgentEvidence, type ProbeCase, type ProbePorts, type ProbeToolRecord } from "../../server/case-say-probe.ts";
+import { CaseVersionProbe, PROBE_FOLLOW_UP_SENTENCE, PROBE_P3_QUIET_MS, countPickScreens, countTools, probeSentences, sanitizePane, toolRecordOf, type AgentEvidence, type ProbeCase, type ProbePorts, type ProbeToolRecord } from "../../server/case-say-probe.ts";
 import { CaseSayVersionStore, type Fingerprint } from "../../server/case-say-versions.ts";
 import type { RoutineAuditEntry } from "../../server/routine-audit.ts";
 
@@ -31,6 +31,12 @@ interface Opts {
   s1?: (rec: (r: Partial<ProbeToolRecord>) => void) => void;
   s2?: (rec: (r: Partial<ProbeToolRecord>) => void) => void;
   s3?: (rec: (r: Partial<ProbeToolRecord>) => void) => void;
+  /** 文4（計画どおり進めてください。）を送ったときの道具の記録。無ければ何も記録しない */
+  s4?: (rec: (r: Partial<ProbeToolRecord>) => void) => void;
+  /** readState のたびの状態。sentCount はその時の sent.length、readsSinceSend は最後の send の後の readState の回数 */
+  statusAt?: (sentCount: number, readsSinceSend: number) => string | undefined;
+  /** true のとき文4 の send は false を返す（記録なし） */
+  failSend4?: boolean;
   /** post-idle の待ちの間に届く遅れた記録 */
   late?: Partial<ProbeToolRecord>;
   p3File?: boolean;
@@ -45,6 +51,8 @@ function world(dir: string, o: Opts = {}) {
   const cleaned: string[] = [];
   const opened: string[] = [];
   const sent: string[] = [];
+  const sentAt: number[] = [];
+  let readsSinceSend = 0;
   const files = new Map<string, string>();
   let probeRef: CaseVersionProbe | undefined;
   let nextId = 1;
@@ -55,6 +63,11 @@ function world(dir: string, o: Opts = {}) {
   };
   const [s1, s2, s3] = probeSentences(R);
   let abortAt: (() => void) | undefined;
+  const statusAtNow = (): string | undefined => {
+    const v = o.statusAt?.(sent.length, readsSinceSend);
+    readsSinceSend += 1;
+    return v;
+  };
   const ports: ProbePorts = {
     now: () => clock,
     isoNow: () => new Date(clock).toISOString(),
@@ -78,10 +91,12 @@ function world(dir: string, o: Opts = {}) {
     closeCase: async (id) => { closed.push(id); },
     cleanup: async (c) => { cleaned.push(c.id); },
     readState: async () => ({
-      state: { filePid: o.pid ?? 500, pid: o.pid ?? 500, status: statusOverride ?? o.status ?? "idle", waitKeys: o.waitKeys ?? [], ...(o.version !== undefined ? { version: o.version } : {}) },
+      state: { filePid: o.pid ?? 500, pid: o.pid ?? 500, status: statusOverride ?? statusAtNow() ?? o.status ?? "idle", waitKeys: o.waitKeys ?? [], ...(o.version !== undefined ? { version: o.version } : {}) },
       panePid: o.panePid ?? o.pid ?? 500,
     }),
     send: async (_c, text) => {
+      sentAt.push(clock);
+      readsSinceSend = 0;
       sent.push(text);
       if (text === s1) {
         files.set("probe-1.txt", o.p1 === undefined ? "ok" : (o.p1 ?? ""));
@@ -100,6 +115,12 @@ function world(dir: string, o: Opts = {}) {
         if (o.p3File === true) files.set("probe-3.txt", "ok");
         if (o.s3) o.s3(rec);
         else rec({ phase: "pre", tool: "Write", tool_use_id: "u4", permission_mode: "plan" });
+      } else if (text === PROBE_FOLLOW_UP_SENTENCE) {
+        if (o.failSend4 === true) {
+          clock += 50;
+          return false;
+        }
+        o.s4?.(rec);
       }
       clock += 50;
       return true;
@@ -116,7 +137,7 @@ function world(dir: string, o: Opts = {}) {
   const probe = new CaseVersionProbe(store, ports, { pollMs: 1000, postIdleWaitMs: 3000, ...(o.totalMs !== undefined ? { totalMs: o.totalMs } : {}) });
   probeRef = probe;
   return {
-    store, probe, ports, audit, notices, closed, cleaned, opened, sent, rec, clockNow: () => clock, advance: (ms: number) => { clock += ms; },
+    store, probe, ports, audit, notices, closed, cleaned, opened, sent, sentAt, rec, clockNow: () => clock, advance: (ms: number) => { clock += ms; },
     setStatusOnce: (s: string) => { statusOverride = s; },
     onSleep: (fn: () => void) => { abortAt = fn; },
     clearStatus: () => { statusOverride = undefined; },
@@ -136,13 +157,66 @@ async function run(o: Opts = {}) {
   return { w, result };
 }
 
+describe("CS3a fix4: sentence 4 after a plan reply without a plan pre", () => {
+  const planPre = (rec: (r: Partial<ProbeToolRecord>) => void): void => rec({ phase: "pre", tool: "Write", tool_use_id: "u9", permission_mode: "plan" });
+  const base: Opts = { s3: () => undefined };
+  it("F4a: busy then idle twice sends sentence 4 once and is ok", async () => {
+    const { w, result } = await run({ ...base, statusAt: (n, k) => (n === 3 && k < 2 ? "busy" : undefined), s4: planPre });
+    expect(result).toEqual({ outcome: "ok" });
+    expect(w.sent).toHaveLength(4);
+    expect(w.sent[3]).toBe(PROBE_FOLLOW_UP_SENTENCE);
+    expect(w.sentAt[3]! - w.sentAt[2]!).toBe(3050);
+    expect(w.audit.at(-1)!.counts?.p3FollowUp).toBe(1);
+    expect(w.store.isUsable(FP)).toBe(true);
+  });
+  it("F4b: always idle waits the quiet time", async () => {
+    const { w, result } = await run({ ...base, s4: planPre });
+    expect(result).toEqual({ outcome: "ok" });
+    expect(w.sentAt[3]! - w.sentAt[2]!).toBe(20050);
+  });
+  it("F4g: a busy seen during P1 does not make it early", async () => {
+    const { w, result } = await run({ ...base, statusAt: (n, k) => (n === 1 && k === 0 ? "busy" : undefined), s4: planPre });
+    expect(result).toEqual({ outcome: "ok" });
+    expect(w.sentAt[3]! - w.sentAt[2]!).toBe(20050);
+  });
+  it("F4i: a single idle between busy does not send", async () => {
+    const { w, result } = await run({ ...base, statusAt: (n, k) => (n === 3 && k < 10 ? (k % 2 === 0 ? "busy" : "idle") : undefined), s4: planPre });
+    expect(result).toEqual({ outcome: "ok" });
+    expect(w.sentAt[3]! - w.sentAt[2]!).toBe(10050);
+  });
+  it("F4c: no plan pre after sentence 4 fails P3 with sentence 4 sent once", async () => {
+    const { w, result } = await run(base);
+    expect(result).toMatchObject({ outcome: "denied", failedCheck: "P3" });
+    expect(w.sent).toHaveLength(4);
+    const row = w.audit.at(-1)!;
+    expect(row.failedCheck).toBe("P3");
+    expect(row.counts?.p3FollowUp).toBe(1);
+    expect(row.counts?.planPres).toBe(0);
+    expect(row.counts?.p2Posts).toBeGreaterThanOrEqual(1);
+  });
+  it("F4d: a failed send of sentence 4 fails P3 with p3FollowUp 0", async () => {
+    const { w, result } = await run({ ...base, failSend4: true });
+    expect(result).toMatchObject({ outcome: "denied", failedCheck: "P3" });
+    expect(w.sent).toHaveLength(4);
+    const row = w.audit.at(-1)!;
+    expect(row.counts?.p3FollowUp).toBe(0);
+    expect(row.counts?.planPres).toBe(0);
+  });
+  it("F4e: a main-conversation post after the plan pre fails P3", async () => {
+    const { result } = await run({ ...base, s4: (rec) => { planPre(rec); rec({ phase: "post", tool: "Write", tool_use_id: "u9" }); } });
+    expect(result).toMatchObject({ outcome: "denied", failedCheck: "P3" });
+  });
+});
+
 describe("probe pure helpers", () => {
   it("the three sentences are constants built from R only", () => {
     expect(probeSentences("/r")).toEqual([
-      "/r/probe-1.txt に ok とだけ書いてください。",
-      "Agent で下請けを1つ動かし、下請けに /r/probe-2.txt へ ok とだけ書かせてください。",
-      "/plan /r/probe-3.txt に ok とだけ書いてください。",
+      "/r/probe-1.txt に Write ツールで ok とだけ書いてください。Bash は使わないでください。",
+      "Agent で下請けを1つ動かし、下請けに /r/probe-2.txt へ Write ツールで ok とだけ書かせてください。あなたも下請けも Bash は使わないでください。",
+      "/plan /r/probe-3.txt に Write ツールで ok とだけ書いてください。",
     ]);
+    expect(PROBE_FOLLOW_UP_SENTENCE).toBe("計画どおり進めてください。");
+    expect(PROBE_P3_QUIET_MS).toBe(20000);
   });
   it("toolRecordOf keeps only the allowed fields (no tool_input / tool_response)", () => {
     const r = toolRecordOf({ hook_event_name: "PreToolUse", tool_name: "Write", tool_use_id: "x", permission_mode: "plan", tool_input: { file_path: "/secret" }, tool_response: "x", agent_id: "" }, 7);
@@ -162,6 +236,11 @@ describe("probe pure helpers", () => {
     expect(countPickScreens("  ❯ 1. Yes\n    2. No\n")).toBeGreaterThanOrEqual(1);
     expect(countPickScreens("1. one\n")).toBe(0);
     expect(countPickScreens("Yes or No?")).toBe(1);
+    expect(countPickScreens("1. 計画を立てる\n2. 書く\n3. 確かめる\n")).toBe(0);
+    expect(countPickScreens("> 1. Yes\n  2. No\n")).toBe(1);
+    expect(countPickScreens("  1. Yes\n  ❯ 2. No\n")).toBe(1);
+    expect(countPickScreens("❯ 1. Yes\n\n2. No\n")).toBe(0);
+    expect(countPickScreens("❯ 1. a\n  2. b\nx\n❯ 1. c\n  2. d\n")).toBe(2);
     const s = sanitizePane(`${"あ".repeat(5000)}\u001b[31mred\u0007`);
     expect(Buffer.byteLength(s)).toBeLessThanOrEqual(4096);
     expect(s).not.toMatch(/[\u0000-\u0008\u000b-\u001f]/);
@@ -191,6 +270,8 @@ describe("K51: a full run is ok and records usable", () => {
     expect(row.failedCheck).toBeUndefined();
     expect(row.counts).toMatchObject({ planPres: 1, planPosts: 0, mainPostsAfter3: 0, bashPres: 0, unpairedPres: 0 });
     expect(row.counts?.p2Posts).toBeGreaterThanOrEqual(1);
+    expect(row.counts?.p3FollowUp).toBe(0);
+    expect(w.sent.length).toBe(3);
     expect(row.paneSamples).toHaveLength(4);
     // 起き直しても使える（MAC が合う）
     const again = new CaseSayVersionStore(dir);
