@@ -8,7 +8,6 @@ const BASE = `http://127.0.0.1:${E2E_PORT}`;
 const BEARER = { Authorization: `Bearer ${E2E_TOKEN}`, "Content-Type": "application/json" };
 const TODAY = "2026-11-04";
 const TOMORROW = "2026-11-05";
-const HOUR_PX = 48;
 const TOLERANCE = 2;
 
 test.use({ timezoneId: "Asia/Tokyo" });
@@ -43,6 +42,12 @@ async function box(loc: Locator) {
   return b as { x: number; y: number; width: number; height: number };
 }
 const near = (actual: number, expected: number): void => { expect(Math.abs(actual - expected)).toBeLessThanOrEqual(TOLERANCE); };
+async function hourPx(page: Page): Promise<number> {
+  const raw = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--schedule-row-height"));
+  const px = Number.parseFloat(raw);
+  expect(Number.isFinite(px) && px > 0).toBe(true);
+  return px;
+}
 
 test.beforeEach(async ({ page }) => { await clearAll(page); });
 test.afterAll(async ({ browser }) => {
@@ -61,6 +66,7 @@ for (const side of ["secretary", "dev"] as const) {
       { title: `${tag}-d`, date: TOMORROW, start: "15:00", end: "16:00" },
     ]) await make(page, { side, ...m });
     await openSchedule(page);
+    const HOUR_PX = await hourPx(page);
     if (side === "dev") await page.getByRole("tab", { name: "開発", exact: true }).click();
     const a = await box(block(page, `${tag}-a`));
     const b = await box(block(page, `${tag}-b`));
