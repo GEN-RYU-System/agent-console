@@ -53,6 +53,7 @@
 - `unlink` の前に、`realpath(R)` と R そのものを比べる。違えば `unlink` せずに `throw new Error("case report dir is not a real path")`。`realpath(R)` が `ENOENT` なら何もせずに return（今の「無ければ何もしない」と同じ）
 - 直し（2026-11-07 マージ前審査）: 最初の版では比べる相手を `path.join(realpathSync(this.caseTmpRoot), path.relative(this.caseTmpRoot, R))` と書いていた。R は `casePaths`（`server/case-sandbox.ts:57`）で既にリンクをたどった置き場から作られるので、macOS の既定 `/tmp`（`/private/tmp` へのリンク）では `/private/private/tmp/...` になり、毎回例外になる（この Mac の node で確かめた: `path.relative("/tmp", "/private/tmp/x/id")` = `../private/tmp/x/id`）。比べる相手は R そのもの
 - 試験を1つ足す: `caseTmpRoot` を別の置き場へのリンクとして渡しても（`/tmp` → `/private/tmp` と同じ形）、`removeCaseRequest` は request.md を消す
+- 直し2（2026-11-07 2回目の審査）: リンクとリンク先が同じ階層にあると、最初の版の式でも答えが R と同じになり、試験が不具合を見つけられない（この Mac の node で確かめた）。リンクはリンク先と違う深さに置く（例: リンク先の親の下に1段 `sub` を作り、その中にリンクを置く）。比べる行を最初の版の式に戻すとこの試験が赤になることを確かめる
 - `realpath` は `node:fs/promises` から import を足す。`realpathSync` は既に import 済み（:2）
 - 呼び手（`discord-intake.ts` の `freeSlot`・`advance` の後始末）は例外を今どおり「件の依頼の写しを消せませんでした。」の知らせにする（変えない）
 - 試験: `sessions.case.test.ts` に「R の親を別の置き場へのリンクにした場合、`removeCaseRequest` は例外を投げ、リンク先の `request.md` は残る」を1つ足す。試験用の `caseTmpRoot` がリンクを作れない形なら、そこで止めて報告する
