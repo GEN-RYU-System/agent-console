@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
@@ -232,6 +232,17 @@ describe("create() for a caseSandbox role", () => {
     mkdirSync(info.tmp, { recursive: true });
     rmSync(path.join(dir, "settings.json"));
     expect(() => reopen()).toThrow(CaseSandboxUnavailableError);
+  });
+
+  it("restore() does not write request.md into R", async () => {
+    const x = c();
+    const s = await x.h.sessions.create({ name: "rr", roleId: "case" });
+    const R = x.h.sessions.caseCleanupPaths(s.id).R;
+    await x.h.sessions.close(s.id);
+    const again = x.h.sessions.restore({ role: CASE_ROLE, name: "rr", cwd: s.cwd, branch: null, id: s.id });
+    expect(existsSync(R)).toBe(true);
+    expect(existsSync(path.join(R, "request.md"))).toBe(false);
+    await x.h.sessions.close(again.id);
   });
 
   it("restoreOnStartup: a wrong cwd or a tampered clone is missingCwd; a right clone opens without classifyCwd", async () => {
@@ -567,6 +578,21 @@ describe("便2b-4b: createDiscordCase / removeCaseRequest / isVersionProbeActive
     writeFileSync(file, "again");
     await x.h.sessions.removeCaseRequest(s.id);
     expect(existsSync(file)).toBe(false);
+  });
+
+  it("removeCaseRequest throws and keeps the target's request.md when the parent of R is a link to another place", async () => {
+    const x = await setup();
+    const s = await x.h.sessions.createDiscordCase("不具合 10/25 13:00", "LINKED-BODY");
+    const R = x.h.sessions.caseCleanupPaths(s.id).R;
+    await x.h.sessions.close(s.id);
+    const parent = path.dirname(R);
+    const moved = `${parent}-moved`;
+    renameSync(parent, moved);
+    symlinkSync(moved, parent);
+    const target = path.join(moved, path.basename(R), "request.md");
+    writeFileSync(target, "KEEP");
+    await expect(x.h.sessions.removeCaseRequest(s.id)).rejects.toThrow("case report dir is not a real path");
+    expect(readFileSync(target, "utf8")).toBe("KEEP");
   });
 
   it("an ordinary create() does not write request.md and does not pass AC_CASE_FIRST_PROMPT", async () => {

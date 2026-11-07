@@ -2,6 +2,7 @@
 
 版を出すたびに 1 行追記する（版の正本は git タグ `vX.Y.Z`）。
 
+- 0.55.1 件の窓の自動起動の小さな直し6つ。(1) caseSandbox の役割は1つに限り、件の数え方（liveCaseIds）も作り方と同じ探し方にした (2) restore で request.md を書かない試験 (3) 試験 14 を3つの状態ファイルへ広げ、試験 29 を足した (4) 開いた直後に受け口が止められたら窓を閉じ写しも消す (5) 枠の見回りの書き込みを1回の見回りで1回に (6) 依頼の写しを消すとき報告の置き場がリンクを通っていたら消さない。戻し方 bash scripts/ac-update.sh v0.55.0
 - 0.55.0 Discord の不具合の順番待ちから件の窓（discord-case）を1つずつ自動で開き、最初の依頼（報告の置き場の request.md）を渡すようにした。開く前に保守 API の全停止を読み、止まっている・読めないときは開かない。手を止めて10分で閉じて次へ、判断待ちは閉じずに知らせ、8時間ごとに長くかかっていると知らせる。1日10件まで・5回開けなければ止まる（起こし直すと先頭からやり直す）。件を閉じるとき依頼の写し request.md を消す。設定ファイルが無いときの動きは変わらない。戻し方 bash scripts/ac-update.sh v0.54.0。設計は docs/handoff/discord-pdca/design.md §4-2・§4-4・§4-5
 - 0.54.0 Discord の受け口の設定ファイルを書く台本 scripts/ac-discord-intake-config.sh（PO が ! で打つ。不具合のチャンネル1つを testMode で有効にする）と、保守 API の鍵の Keychain の項目 ops-api（scripts/ac-discord-secret.sh ops-api）を足した。サーバーの動きは変わらない。戻し方 bash scripts/ac-update.sh v0.53.1。設計は docs/handoff/discord-pdca/design.md §4-4・§4-6
 - 0.53.1 件の claude の版の確かめが止まった・×になったとき、そのときの画面と止まった理由を監査に残す（監査 `caseClaudeVersionProbe` の `paneSamples` に×・打ち切りの後の画面を1枚足し、aborted の行に `abortReason` を足した。判定・手順・記録の形は変えていない）。戻し方 `bash scripts/ac-update.sh v0.53.0`

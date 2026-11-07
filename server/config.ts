@@ -321,6 +321,7 @@ export function parseConfig(raw: unknown): Config {
   const caseSayRoles = parseCaseSayRoles(o.caseSayRoles, ids);
   const caseSayClaudeVersions = parseCaseSayClaudeVersions(o.caseSayClaudeVersions);
   const caseRoleIds = new Set(roles.filter((r) => r.caseSandbox === true).map((r) => r.id));
+  if (caseRoleIds.size > 1) throw new Error("config: only one role can have caseSandbox");
   for (const id of [...routineManagerRoles, ...reserveRoles]) {
     if (caseRoleIds.has(id)) throw new Error(`config: role ${id} (caseSandbox) cannot be in routineManagerRoles or reserveRoles`);
   }
