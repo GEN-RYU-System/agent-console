@@ -173,6 +173,10 @@ describe("create() for a caseSandbox role", () => {
     const claudeJson = JSON.parse(readFileSync(path.join(x.D, "case-home", s.id, ".claude.json"), "utf8")) as { hasCompletedOnboarding: boolean; projects: Record<string, { hasTrustDialogAccepted: boolean }> };
     expect(claudeJson.hasCompletedOnboarding).toBe(true);
     expect(claudeJson.projects[W]).toEqual({ hasTrustDialogAccepted: true });
+    const report = vars[2];
+    expect(report).toBe(path.join(x.tmpRoot, "CC報告ファイル", "discord-case", s.id));
+    expect(Object.keys(claudeJson.projects).sort()).toEqual([W, report].sort());
+    expect(claudeJson.projects[report]).toEqual({ hasTrustDialogAccepted: true });
     expect(vi.mocked(probeSession)).not.toHaveBeenCalled();
     // Sales Anchor の worktree は作っていない
     expect(git(x.r.M, "worktree", "list").trim().split("\n")).toHaveLength(1);
@@ -450,6 +454,8 @@ describe("the case main process and .claude.json on reattach / relaunch", () => 
     const rewritten = JSON.parse(readFileSync(claudeJson, "utf8")) as Record<string, unknown>;
     expect(rewritten.mcpServers).toBeUndefined();
     expect(rewritten.hasCompletedOnboarding).toBe(true);
+    const R = path.join(x.tmpRoot, "CC報告ファイル", "discord-case", s.id);
+    expect((rewritten.projects as Record<string, unknown>)[R]).toEqual({ hasTrustDialogAccepted: true });
     expect(m3.caseMainProcesses().get(s.id)?.pid).toBeGreaterThan(0);
     await m3.close(s.id);
     expect(m3.caseMainProcesses().has(s.id)).toBe(false);

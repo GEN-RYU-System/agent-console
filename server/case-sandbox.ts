@@ -401,9 +401,29 @@ const KEEP_CLAUDE_JSON_KEYS = ["userID", "machineID", "firstStartTime", "firstSt
 
 /**
  * CH/.claude.json を「残すキーの許可の一覧」だけの形に書き直す（同期）。前のファイルが無い・壊れていれば空とみなす。
- * 値は記録・画面に出さない。書けなければ CaseSandboxUnavailableError
+ * 値は記録・画面に出さない。書けなければ CaseSandboxUnavailableError。
+ * R（報告の置き場所。`--add-dir` に渡すのと同じ文字列）も信頼済みにする。書く前に R が realpath と同じで、R から `/` までに `.git` が無いことを確かめ、当たれば何も書かずに CaseSandboxUnavailableError（設計 §14-14-18）
  */
-export function rewriteCaseClaudeJson(CH: string, W: string): void {
+export function rewriteCaseClaudeJson(CH: string, W: string, R: string): void {
+  let realR: string;
+  try {
+    realR = realpathSync(R);
+  } catch {
+    throw new CaseSandboxUnavailableError("sandbox unavailable: case report dir is not a real path");
+  }
+  if (realR !== R) throw new CaseSandboxUnavailableError("sandbox unavailable: case report dir is not a real path");
+  for (let d = R; ; d = path.dirname(d)) {
+    let hasGit = false;
+    try {
+      lstatSync(path.join(d, ".git"));
+      hasGit = true;
+    } catch (e) {
+      // 無い（ENOENT）ときだけ「無い」。権限などで見られないときは有るとみなして止める
+      hasGit = (e as NodeJS.ErrnoException).code !== "ENOENT";
+    }
+    if (hasGit) throw new CaseSandboxUnavailableError("sandbox unavailable: case report dir is inside a git repository");
+    if (path.dirname(d) === d) break;
+  }
   const file = path.join(CH, ".claude.json");
   let prev: Record<string, unknown> = {};
   try {
@@ -420,7 +440,8 @@ export function rewriteCaseClaudeJson(CH: string, W: string): void {
     if (typeof v === "string" || typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v))) next[k] = v;
   }
   next.hasCompletedOnboarding = true;
-  next.projects = { [realOr(W)]: { hasTrustDialogAccepted: true } };
+  const realW = realOr(W);
+  next.projects = { [realW]: { hasTrustDialogAccepted: true }, [R]: { hasTrustDialogAccepted: true } };
   try {
     writeAtomicSync(file, JSON.stringify(next, null, 2) + "\n");
   } catch {

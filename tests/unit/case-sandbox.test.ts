@@ -652,19 +652,22 @@ describe("rewriteCaseClaudeJson", () => {
   const read = (CH: string): Record<string, unknown> => JSON.parse(readFileSync(path.join(CH, ".claude.json"), "utf8")) as Record<string, unknown>;
   let CH: string;
   let W: string;
+  let R: string;
   beforeEach(() => {
     CH = path.join(tmp, "ch");
     W = path.join(tmp, "w");
     mkdirSync(CH);
     mkdirSync(W);
+    R = path.join(tmp, "r");
+    mkdirSync(R);
   });
 
   it("keeps only the allowed keys with scalar values and adds the onboarding / trust marks", () => {
     writeFileSync(path.join(CH, ".claude.json"), JSON.stringify({ userID: "u1", machineID: "m1", firstStartTime: "2026-01-01T00:00:00Z", firstStartVersion: "2.1.0", migrationVersion: 7, opusProMigrationComplete: true, sonnet1m45MigrationComplete: false, hasCompletedOnboarding: false, projects: { "/x": { hasTrustDialogAccepted: false } } }));
-    rewriteCaseClaudeJson(CH, W);
+    rewriteCaseClaudeJson(CH, W, R);
     expect(read(CH)).toEqual({
       userID: "u1", machineID: "m1", firstStartTime: "2026-01-01T00:00:00Z", firstStartVersion: "2.1.0", migrationVersion: 7, opusProMigrationComplete: true, sonnet1m45MigrationComplete: false,
-      hasCompletedOnboarding: true, projects: { [W]: { hasTrustDialogAccepted: true } },
+      hasCompletedOnboarding: true, projects: { [W]: { hasTrustDialogAccepted: true }, [R]: { hasTrustDialogAccepted: true } },
     });
     expect(statSync(path.join(CH, ".claude.json")).mode & 0o777).toBe(0o600);
     expect(readdirSync(CH)).toEqual([".claude.json"]);
@@ -672,26 +675,26 @@ describe("rewriteCaseClaudeJson", () => {
 
   it("drops keys of the wrong type and every other key (mcpServers and so on)", () => {
     writeFileSync(path.join(CH, ".claude.json"), JSON.stringify({ userID: { a: 1 }, machineID: ["x"], firstStartTime: null, migrationVersion: "7", mcpServers: { evil: { command: "x" } }, cachedGrowthBookFeatures: { a: 1 }, pluginUsage: {}, seenNotifications: [] }));
-    rewriteCaseClaudeJson(CH, W);
+    rewriteCaseClaudeJson(CH, W, R);
     const out = read(CH);
     expect(Object.keys(out).sort()).toEqual(["hasCompletedOnboarding", "migrationVersion", "projects"]);
     expect(out.migrationVersion).toBe("7");
   });
 
   it("treats a missing, broken, array or symlinked file as empty", () => {
-    rewriteCaseClaudeJson(CH, W);
+    rewriteCaseClaudeJson(CH, W, R);
     expect(Object.keys(read(CH)).sort()).toEqual(["hasCompletedOnboarding", "projects"]);
     writeFileSync(path.join(CH, ".claude.json"), "{ not json");
-    rewriteCaseClaudeJson(CH, W);
+    rewriteCaseClaudeJson(CH, W, R);
     expect(Object.keys(read(CH)).sort()).toEqual(["hasCompletedOnboarding", "projects"]);
     writeFileSync(path.join(CH, ".claude.json"), "[1,2]");
-    rewriteCaseClaudeJson(CH, W);
+    rewriteCaseClaudeJson(CH, W, R);
     expect(Object.keys(read(CH)).sort()).toEqual(["hasCompletedOnboarding", "projects"]);
     const secret = path.join(tmp, "secret.json");
     writeFileSync(secret, JSON.stringify({ userID: "from-link" }));
     rmSync(path.join(CH, ".claude.json"));
     symlinkSync(secret, path.join(CH, ".claude.json"));
-    rewriteCaseClaudeJson(CH, W);
+    rewriteCaseClaudeJson(CH, W, R);
     expect(read(CH).userID).toBeUndefined();
     expect(lstatSync(path.join(CH, ".claude.json")).isSymbolicLink()).toBe(false);
     expect(JSON.parse(readFileSync(secret, "utf8"))).toEqual({ userID: "from-link" });
@@ -700,12 +703,67 @@ describe("rewriteCaseClaudeJson", () => {
   it("writes the realpath of W as the trusted project", () => {
     const link = path.join(tmp, "wlink");
     symlinkSync(W, link);
-    rewriteCaseClaudeJson(CH, link);
-    expect(Object.keys(read(CH).projects as object)).toEqual([W]);
+    rewriteCaseClaudeJson(CH, link, R);
+    expect(Object.keys(read(CH).projects as object).sort()).toEqual([W, R].sort());
   });
 
   it("throws CaseSandboxUnavailableError when the case-home is not writable (missing)", () => {
-    expect(() => rewriteCaseClaudeJson(path.join(tmp, "nope"), W)).toThrow(CaseSandboxUnavailableError);
+    expect(() => rewriteCaseClaudeJson(path.join(tmp, "nope"), W, R)).toThrow(CaseSandboxUnavailableError);
+  });
+
+  it("trusts both W and R with exactly two keys (K65)", () => {
+    rewriteCaseClaudeJson(CH, W, R);
+    const projects = read(CH).projects as Record<string, unknown>;
+    expect(Object.keys(projects).sort()).toEqual([W, R].sort());
+    expect(projects[W]).toEqual({ hasTrustDialogAccepted: true });
+    expect(projects[R]).toEqual({ hasTrustDialogAccepted: true });
+  });
+
+  it("has a single key when R equals W (K66)", () => {
+    rewriteCaseClaudeJson(CH, W, W);
+    expect(Object.keys(read(CH).projects as object)).toEqual([W]);
+  });
+
+  describe("refuses an unsafe R without touching .claude.json", () => {
+    const KEEP = '{"userID":"keep"}';
+    const prime = (): void => writeFileSync(path.join(CH, ".claude.json"), KEEP);
+    const same = (): void => expect(readFileSync(path.join(CH, ".claude.json"), "utf8")).toBe(KEEP);
+
+    it("R inside a directory with .git (K72a)", () => {
+      const parent = path.join(tmp, "repo");
+      mkdirSync(path.join(parent, ".git"), { recursive: true });
+      const R2 = path.join(parent, "r");
+      mkdirSync(R2);
+      prime();
+      expect(() => rewriteCaseClaudeJson(CH, W, R2)).toThrow(CaseSandboxUnavailableError);
+      expect(() => rewriteCaseClaudeJson(CH, W, R2)).toThrow(/inside a git repository/);
+      same();
+    });
+
+    it("R has a .git file (K72b)", () => {
+      writeFileSync(path.join(R, ".git"), "gitdir: /x\n");
+      prime();
+      expect(() => rewriteCaseClaudeJson(CH, W, R)).toThrow(CaseSandboxUnavailableError);
+      expect(() => rewriteCaseClaudeJson(CH, W, R)).toThrow(/inside a git repository/);
+      same();
+    });
+
+    it("R is a symlink (K74a)", () => {
+      const link = path.join(tmp, "rlink");
+      symlinkSync(R, link);
+      prime();
+      expect(() => rewriteCaseClaudeJson(CH, W, link)).toThrow(CaseSandboxUnavailableError);
+      expect(() => rewriteCaseClaudeJson(CH, W, link)).toThrow(/not a real path/);
+      same();
+    });
+
+    it("R does not exist (K74b)", () => {
+      prime();
+      const nope = path.join(tmp, "no-such-r");
+      expect(() => rewriteCaseClaudeJson(CH, W, nope)).toThrow(CaseSandboxUnavailableError);
+      expect(() => rewriteCaseClaudeJson(CH, W, nope)).toThrow(/not a real path/);
+      same();
+    });
   });
 });
 
