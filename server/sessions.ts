@@ -787,7 +787,9 @@ export class SessionManager {
     const caseEnv = room === null ? {} : this.checkCaseSandbox(id, cwd, room.claudeReal);
     if (room !== null) writeCaseKeybindings(room.CH);
     // 新しく claude を起動するときだけ、case-home の .claude.json を書き直す（つなぎ直しでは書き直さない）
-    const beforeNew = room === null ? undefined : (): void => rewriteCaseClaudeJson(room.CH, realOr(cwd));
+    const report = caseEnv.AC_CASE_REPORT;
+    if (room !== null && typeof report !== "string") throw new CaseSandboxUnavailableError("sandbox unavailable: case report dir is missing");
+    const beforeNew = room === null ? undefined : (): void => rewriteCaseClaudeJson(room.CH, realOr(cwd), report as string);
     const { term, reattached, pid } = this.openTerminal(id, role, cwd, command, { ...extraEnv, ...caseEnv }, knownId === id && isNew !== true, beforeNew);
     if (isCase) this.recordCaseMain(id, pid);
     if (room !== null) this.caseClaudeReal.set(id, { real: room.claudeReal, ...(preClaude?.fp !== undefined && preClaude.real === room.claudeReal ? { fp: preClaude.fp } : {}) });
