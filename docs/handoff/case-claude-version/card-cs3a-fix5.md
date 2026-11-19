@@ -33,7 +33,7 @@ claude 2.1.327 は、起動の引数 `--add-dir "$AC_CASE_REPORT"`（ops/shell/c
     if (path.dirname(d) === d) break;
   }
 ```
-- `lstatSync` が ENOENT 以外（ENOTDIR を含む）で失敗したときは投げる（上の catch のとおり）。
+- `lstatSync` が ENOENT 以外（ENOTDIR を含む）で失敗したときは投げる（上の catch のとおり）。理由: 設計 2(b) は「.git の有無を見る」。有無が分からないときに信頼済みへ足すと、git の置き場の中を信頼してしまうおそれがあるので、止める側に倒す。このとき文は `inside a git repository` になる（権限で見られない場合も同じ文で止まる。見る人はこの点に注意する）。
 - :423 を次に変える:
 
 ```ts
@@ -52,9 +52,10 @@ claude 2.1.327 は、起動の引数 `--add-dir "$AC_CASE_REPORT"`（ops/shell/c
     const beforeNew = room === null ? undefined : (): void => rewriteCaseClaudeJson(room.CH, realOr(cwd), report as string);
 ```
 - R は realpath を取らずに `AC_CASE_REPORT`（server/sessions.ts:628 の `info.report`。`--add-dir` に渡すのと同じ文字列）をそのまま渡す。揃っているかは G1 の確かめが見る。
-- `caseEnv` の型が `Record<string, string>` で `typeof` の確かめが型の上で要らないと lint に言われたら、`report === undefined` の確かめに置き換える（意味は同じ: 無ければ投げる）。どちらにしたかを返事に書く。
 - `CaseSandboxUnavailableError` が sessions.ts で既に import されていることを確かめる（:530 で使っている）。
-- 件でない（`room === null`）ときは今のまま `beforeNew` は undefined。`openTerminal`（:846-881）は変えない（つなぎ直し :854-861 では `beforeNew` を呼ばない・新しく起動する :866 だけで呼ぶ・:871 で CaseSandboxUnavailableError をそのまま投げ直す、は今のまま）。
+- 件でない（`room === null`）ときは今のまま `beforeNew` は undefined。`openTerminal`（:846-891）は変えない（つなぎ直し :854-861 では `beforeNew` を呼ばない・新しく起動する :866 だけで呼ぶ・:871 で CaseSandboxUnavailableError をそのまま投げ直す、は今のまま）。
+
+- 設計の直す物 4: probe の件も PO の件も同じ `rewriteCaseClaudeJson` の道を通す。probe 専用の分かれ道を作らない。
 
 ## G3 版を 0.55.3 にする
 - package.json:3・package-lock.json:3 と :9・extension/manifest.json:4 の `0.55.2` を `0.55.3` に。
@@ -94,7 +95,7 @@ claude 2.1.327 は、起動の引数 `--add-dir "$AC_CASE_REPORT"`（ops/shell/c
 - tests/e2e・README・ほかのファイル。
 
 ## 確かめ
-- `npm ci`・`npm run typecheck`（origin/main 6aaba26 で先に数え、増やさない。両方の数を書く）・`npm run lint`・`npx vitest run tests/unit/case-sandbox.test.ts tests/unit/sessions.case.test.ts`（結果の数を書く。sessions.case は tmux が要る。tmux が無くて回せない試験があれば、その数と理由を書き、GitHub の CI に任せる）。
+- `npm ci`・`npm run typecheck`（origin/main 6aaba26 で先に数え、増やさない。両方の数を書く）・`npx tsc -p tsconfig.server.json --noEmit`（サーバー側の型。変更後に 0 件であること。`npm run typecheck` は .sa-cache が無いと src 側で止まり、サーバー側が走らないため別に回す）・`npm run lint`・`npx vitest run tests/unit/case-sandbox.test.ts tests/unit/sessions.case.test.ts`（結果の数を書く。sessions.case は tmux が要る。tmux が無くて回せない試験があれば、その数と理由を書き、GitHub の CI に任せる）。
 - 全部の試験は GitHub の CI で見る。クラウドで `npm test` を回せたら結果を書く。
 
 ## 提出
@@ -103,6 +104,6 @@ claude 2.1.327 は、起動の引数 `--add-dir "$AC_CASE_REPORT"`（ops/shell/c
 - `git push origin release/case-probe-adddir-trust`（force・rebase・reset 禁止）。PR は作らない。マージはしない。
 
 ## 最後の返事
-1行目は `DONE <新しい HEAD の40桁>`／`BLOCKED: <理由>`／`NEEDS_DECISION: <問い>` のどれか。2行目から: 変えた file:line、G2 の確かめを `typeof` と `=== undefined` のどちらにしたか、typecheck の数（前後）、lint の結果、vitest の結果、push の結果1行、`git diff --stat <本カードの commit>..HEAD`。
+1行目は `DONE <新しい HEAD の40桁>`／`BLOCKED: <理由>`／`NEEDS_DECISION: <問い>` のどれか。2行目から: 変えた file:line、typecheck の数（前後）、サーバー側 tsc の件数、lint の結果、vitest の結果、push の結果1行、`git diff --stat <本カードの commit>..HEAD`。
 
 END OF CARD
