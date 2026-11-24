@@ -18,7 +18,7 @@ Local console for running parallel Claude Code sessions (Orca-inspired, lightwei
 
 ### ac-reserve の使い方（AI が Bash で打つ）
 
-**使ってよいのは、変更の効果を実地で測る予約だけ（PO 決定 2026-10-14）。**
+**使ってよいのは、変更の効果を実地で測る予約（measure）と、PO が承認済みの仕事の続きを始める予約（work）（PO 決定 2026-10-14、2026-11-25 に作業を追加）。**
 
 ```
 node "<dataDir>/bin/ac-reserve.mjs" add < reservation.json
@@ -26,7 +26,7 @@ node "<dataDir>/bin/ac-reserve.mjs" list
 node "<dataDir>/bin/ac-reserve.mjs" cancel <id>
 ```
 
-- reservation.json の形: `name`（1〜40字）、`roleId`、`cwd`（本店で動く役割なら省ける。省くと本店になる）、`branch`（worktree 役のとき）、`date`（YYYY-MM-DD）、`time`（HH:mm、日本時間）、`promptText`（8192字以下）、`purpose`（必ず `"measure"`）、`measureNote`（何を測るか、1〜200字）。
+- reservation.json の形: `name`（1〜40字）、`roleId`、`cwd`（本店で動く役割なら省ける。省くと本店になる）、`branch`（worktree 役のとき）、`date`（YYYY-MM-DD）、`time`（HH:mm、日本時間）、`promptText`（8192字以下）、`purpose`（`"measure"` か `"work"`）、`measureNote`（measure のとき必須。何を測るか、1〜200字）か `workNote`（work のとき必須。何をするか、1〜200字。もう一方は付けると400）。
 - 予定は1分後から366日後まで。待機中の予約は全体で50件、AI の分は20件まで。
 - 呼び出し元のセッションの役割が `reserveRoles`（既定 `["opus-designer","shell"]`）に無いと403（名乗りは環境変数 `CLAUDE_CODE_SESSION_ID` から自動で付く）。起動直後は数秒〜数十秒待って再試行する。
 - AI の予約は、ほかの待機中の予約・有効な定期実行と開始が60分未満なら400で拒まれ、空いている近い時刻（前・後）が示される（ちょうど60分は通る）。画面からの予約には関門をかけない。

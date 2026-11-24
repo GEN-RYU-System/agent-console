@@ -376,9 +376,9 @@ export function jsonBody(body: unknown): Record<string, unknown> {
   return body as Record<string, unknown>;
 }
 
-/** 画面からの予約には purpose・measureNote を持たせない（測定目的の制限は AI 用の経路だけ） */
+/** 画面からの予約には purpose・measureNote・workNote を持たせない（目的の制限は AI 用の経路だけ） */
 function uiReservationInput(body: Record<string, unknown>): Record<string, unknown> {
-  const { purpose: _purpose, measureNote: _measureNote, ...rest } = body;
+  const { purpose: _purpose, measureNote: _measureNote, workNote: _workNote, ...rest } = body;
   return rest;
 }
 

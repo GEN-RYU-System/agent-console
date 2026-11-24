@@ -52,6 +52,7 @@ export interface Reservation {
   sessionName?: string;
   purpose?: "measure";
   measureNote?: string;
+  workNote?: string;
 }
 
 const STATUSES = new Set<string>(["pending", "dispatching", "done", "cancelled"]);
@@ -80,6 +81,7 @@ function parse(raw: unknown): Reservation {
     ...(typeof r.sessionName === "string" ? { sessionName: r.sessionName } : {}),
     ...(r.purpose === "measure" ? { purpose: "measure" as const } : {}),
     ...(typeof r.measureNote === "string" ? { measureNote: r.measureNote } : {}),
+    ...(typeof r.workNote === "string" ? { workNote: r.workNote } : {}),
   };
 }
 
@@ -194,12 +196,19 @@ export class ReservationService {
     if (runAt < nowMs + MIN_LEAD_MS || runAt > nowMs + MAX_LEAD_MS) throw new SessionInputError("reservation time out of range");
     const text = validateLaunchText(body, "reservation");
     const target = await validateLaunchTarget(this.config, body, "reservation");
-    let measure: Pick<Reservation, "purpose" | "measureNote"> = {};
+    let purposeFields: Pick<Reservation, "purpose" | "measureNote" | "workNote"> = {};
     if (createdBy === "agent") {
-      const note = body.measureNote;
-      if (body.purpose !== "measure") throw new SessionInputError("reservation purpose must be measure");
-      if (typeof note !== "string" || note.trim().length < 1 || note.length > MAX_MEASURE_NOTE || CONTROL.test(note)) throw new SessionInputError("reservation measureNote invalid");
-      measure = { purpose: "measure", measureNote: note };
+      const noteInvalid = (note: unknown): boolean => typeof note !== "string" || note.trim().length < 1 || note.length > MAX_MEASURE_NOTE || CONTROL.test(note);
+      if (body.purpose === "measure") {
+        if (body.workNote !== undefined) throw new SessionInputError("reservation workNote not allowed for measure");
+        if (noteInvalid(body.measureNote)) throw new SessionInputError("reservation measureNote invalid");
+        purposeFields = { purpose: "measure", measureNote: body.measureNote as string };
+      } else if (body.purpose === "work") {
+        // 保存には purpose を持たせない（旧版の parse が purpose "measure" 以外でファイル全体を読めなくなるため）
+        if (body.measureNote !== undefined) throw new SessionInputError("reservation measureNote not allowed for work");
+        if (noteInvalid(body.workNote)) throw new SessionInputError("reservation workNote invalid");
+        purposeFields = { workNote: body.workNote as string };
+      } else throw new SessionInputError("reservation purpose must be measure or work");
     }
     const who = { callerSessionId: caller?.callerSessionId ?? null, ...(caller?.roleId !== undefined ? { roleId: caller.roleId } : {}) };
     return this.gate.run(async () => {
@@ -219,7 +228,7 @@ export class ReservationService {
       const reservation: Reservation = {
         id: randomUUID(), name: text.name, roleId: body.roleId as string, cwd: target.cwd,
         ...(typeof body.branch === "string" && body.branch !== "" ? { branch: body.branch } : {}),
-        runAt, runAtJst, timeZone: TIME_ZONE, promptText: body.promptText as string, createdBy, createdAt: nowMs, updatedAt: nowMs, status: "pending", ...measure,
+        runAt, runAtJst, timeZone: TIME_ZONE, promptText: body.promptText as string, createdBy, createdAt: nowMs, updatedAt: nowMs, status: "pending", ...purposeFields,
       };
       await this.writeAudit({ action: "reserveCreate", outcome: "ok", reservationId: reservation.id, targetCreatedBy: createdBy, ...who });
       const before = this.items;

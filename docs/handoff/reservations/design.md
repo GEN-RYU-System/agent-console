@@ -96,6 +96,7 @@ interface Reservation {
 - AI の予約で pending のものは同時に 20 件まで（全体の 50 件の内数）。21 件目は 400（v0.43.0 で 10→20。PO 2026-10-18 y、docs/handoff/agent-pending-20/design.md）。
 - 承認待ちは設けない（AI の予約も時刻どおり送る）。予約タブでは「AI・測定」と measureNote を表示し、いつでも取り消せる。
 - README の ac-reserve の節に「使ってよいのは、変更の効果を実地で測る予約だけ（PO 決定 2026-10-14）」と書く。
+- 2026-11-25 PO 決定で作業目的を追加（docs/handoff/agent-work-reservations/design.md）。
 
 ## 5 代替案と選んだ理由
 - A 予約を routines.json に入れる → 切り戻しで定期実行が壊れる（§4-1）。不採用。
