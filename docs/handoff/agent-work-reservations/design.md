@@ -15,7 +15,7 @@
 - R5 画面の表示: `src/components/Reservations/ReservationsPane.tsx:58`（agent なら `ac.reservations.byAgent`）、:61（measureNote があれば `ac.reservations.measureNote`）。文言は `src/locales/ja.json:387`「AI・測定」・:388「測る内容: {{note}}」。型は `src/types.ts:143`。
 - R6 AI の予約に掛かる他の守り（今回は変えない）: 待機中 AI 20 件まで（`server/reservations.ts:25`・:215）、ほかと開始が 60 分未満は 400（:216-218、v0.44.0）、呼び出し元の役割が reserveRoles（既定 opus-designer・shell）に無いと 403（README.md:31）、`reservable:false` の役割は予約不可（:211-212）、作成・取消・開始は監査記録（README.md:17）。
 - R7 試験: `tests/unit/reservations.test.ts:306`（R11 の作成結果）、:320-339（R11c）、`tests/unit/ac-reserve.test.ts:17`（入力の形）、:44-47（purpose "other" は 400）、`tests/unit/schedule-gate.test.ts:163`。
-- R8 説明書: `README.md:20`「使ってよいのは、変更の効果を実地で測る予約だけ（PO 決定 2026-10-14）」、:29 の入力の形。`hooks/ac-reserve.mjs:14` の USAGE は README を指すだけ。
+- R8 説明書: `README.md:21`「使ってよいのは、変更の効果を実地で測る予約だけ（PO 決定 2026-10-14）」、:29 の入力の形。`hooks/ac-reserve.mjs:14` の USAGE は README を指すだけ。
 - R9 実機: 2026-11-24 までの AI 予約 54 件はすべて measure（Opus が `ac-reserve.mjs list` で確認）。導入済みは v0.55.3。
 
 ## 3 決めたこと
@@ -34,7 +34,8 @@
 
 ## 5 リスクと対処
 - 作業の予約は時刻どおり新しいセッションで動く。そのセッションは普段と同じ見張り（hooks・権限）の下で動き、予約で新しい権限は増えない。数は 20 件・間隔 60 分で抑え、予約タブでいつでも取り消せる（R6）。
-- 切戻し: v0.55.3 へ戻すと作業の予約は「AI・測定」として表示され、時刻どおり動く（D2）。止めたいときは戻す前に予約タブで取り消す。
+- 切戻し: v0.55.3 へ戻すと作業の予約は「AI・測定」として表示され（説明の行は出ない）、時刻どおり動く（D2）。止めたいときは戻す前に予約タブで取り消す。
+- 切戻し中に旧版が予約を保存し直す（取消・開始）と workNote はファイルから消え、新版へ戻しても説明は戻らない（その予約は「AI・測定」のまま表示）。
 - 試験の期待を弱めない: R11c の「purpose "other" は 400」はそのまま残す。
 
 ## 6 受入条件
@@ -44,10 +45,10 @@
 | W2 purpose "work" で workNote 欠落・空・空白だけ・201 字・制御文字入りは 400。"work"＋measureNote、"measure"＋workNote も 400。purpose "other"・欠落は今までどおり 400 | 単体（HTTP） |
 | W3 measure の予約は今までどおり（既存 R11・R11c・ac-reserve R12・schedule-gate の試験が期待を変えずに通る。R11c の 20 件上限は work と measure の合計で数える試験を1つ足す） | `npm test` |
 | W4 画面経路に purpose "work"・workNote を送っても保存されない | 単体（HTTP） |
-| W5 reservations.json に workNote 付きの予約があると新しい版は読んで残す。purpose "work" が書かれたファイルは今までどおり読まない（保存形に "work" は現れない） | 単体（保存→読み直し） |
-| W6 予約タブ: workNote 付きの agent 予約は「AI・作業」と「する内容: …」、measureNote 付きは「AI・測定」と「測る内容: …」、ui は「画面」 | 単体（新 `src/components/Reservations/ReservationsPane.test.tsx`、ReservationEditor.test.tsx と同じ jsdom と i18n の作り） |
+| W5 reservations.json に workNote 付きの予約があると新しい版は読んで残す。purpose "work" が書かれたファイルは今までどおり読まない（保存形に "work" は現れない） | 単体（保存→読み直し。後半は旧版互換の裏付けで、その意図を試験の注釈に書く） |
+| W6 予約タブ: workNote 付きの agent 予約は「AI・作業」と「する内容: …」、measureNote 付きは「AI・測定」と「測る内容: …」、ui は「画面」 | 単体（新 `src/components/Reservations/ReservationsPane.test.tsx`。ReservationEditor.test.tsx と同じ jsdom・i18n・`vi.mock("../../api")` の作りで、Pane が使う fetchReservations・cancelReservation をモックする） |
 | W7 ac-reserve.mjs で purpose "work" の入力が 201 で通り、終了コード 0 | 単体（tests/unit/ac-reserve.test.ts に追加） |
-| W8 typecheck・lint・npm test・build が通る。新しい --ac- トークン・色直値・日本語直書きが無い | CI（macOS・ubuntu） |
+| W8 typecheck・lint・npm test・build が通る。新しい --ac- トークン・色直値・日本語直書きが無い | CI（macOS・ubuntu）。直書き・直値は Opus が差分を目視 |
 | W9 導入後の実機: healthz が 0.56.0 と合流の sha。`ac-reserve.mjs add` で purpose "work" の予約を1件作り、予約タブ（list の JSON）に workNote が出て、取り消せる | Opus（導入後） |
 
 ## 7 実装カード（クラウド Sonnet 向け）
@@ -74,3 +75,4 @@
 
 ## 10 審査記録
 - Opus 自己審査（2026-11-25）: §2 の行番号を origin/main d417835 の実物で照合済み。D2 の切戻しの安全は R3（:69 と :71-84）で裏付け。APPROVE（自己審査）。クラウド審査の結果は下に追記。
+- クラウド審査 1 回目（2026-11-25 01:59 JST、Sonnet・読むだけ）: 行番号はすべて一致（README の 1 か所だけ :20→:21）。D2 は切戻しに安全。指摘（§5 に切戻し後の 2 点、W5 の注釈、W6 のモック、W8 の目視）を反映した。判定行は記録が途中で切れて読めず、再審査した。
