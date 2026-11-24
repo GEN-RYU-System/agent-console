@@ -53,7 +53,7 @@
 
 ## 7 実装カード（クラウド Sonnet 向け）
 - 枝: `release/agent-work-reservations`（origin/main から）。PR は作らない（Opus が作る）。
-- 触るファイル: server/reservations.ts、server/http.ts、src/types.ts、src/components/Reservations/ReservationsPane.tsx、src/components/Reservations/ReservationsPane.test.tsx（新）、src/locales/ja.json、tests/unit/reservations.test.ts、tests/unit/ac-reserve.test.ts、README.md、docs/handoff/reservations/design.md（§4-9 末尾に1行）、docs/CHANGELOG.md、package.json、package-lock.json（version 行だけ）。
+- 触るファイル: server/reservations.ts、server/http.ts、src/types.ts、src/components/Reservations/ReservationsPane.tsx、src/components/Reservations/ReservationsPane.test.tsx（新）、src/locales/ja.json、tests/unit/reservations.test.ts、tests/unit/ac-reserve.test.ts、README.md、docs/handoff/reservations/design.md（§4-9 末尾に1行）、docs/CHANGELOG.md、extension/manifest.json（version 行だけ）、package.json、package-lock.json（version 行だけ）。
 - 触らない: 関門（server/schedule-gate.ts 等）・上限の数・reserveRoles・監査・hooks/ac-reserve.mjs・CSS・トークン・ほかの試験の期待。
 - 変更の形（目安。行は origin/main d417835）:
   - server/reservations.ts:53-54 の型に `workNote?: string` を足す。:82 の次に `...(typeof r.workNote === "string" ? { workNote: r.workNote } : {})`。:69 は変えない。
@@ -77,3 +77,4 @@
 - Opus 自己審査（2026-11-25）: §2 の行番号を origin/main d417835 の実物で照合済み。D2 の切戻しの安全は R3（:69 と :71-84）で裏付け。APPROVE（自己審査）。クラウド審査の結果は下に追記。
 - クラウド審査 1 回目（2026-11-25 01:59 JST、Sonnet・読むだけ）: 行番号はすべて一致（README の 1 か所だけ :20→:21）。D2 は切戻しに安全。指摘（§5 に切戻し後の 2 点、W5 の注釈、W6 のモック、W8 の目視）を反映した。判定行は記録が途中で切れて読めず、再審査した。
 - クラウド審査 2 回目（2026-11-25 02:06 JST、Sonnet・読むだけ、f7791b8 を審査）: 止める指摘なし。§2 は実物と一致。D2 は切戻しに安全。カードの外で measureNote・purpose を読むコードは無い（server/routines.ts:19 は注釈だけ）。VERDICT: APPROVE。
+- 2026-11-25 実装中に見つかった漏れ: 拡張機能の版（extension/manifest.json）も同じ版に上げる決まり（tests/unit/picker-extension.test.ts:46）。カードに足した（Opus 判断）。
