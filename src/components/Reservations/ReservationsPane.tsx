@@ -55,10 +55,11 @@ export function ReservationsPane({ roles, active }: { roles: RoleView[]; active:
         <div className="ac-reservations__meta">
           <time dateTime={r.runAtJst}>{formatJst(r.runAtJst)}</time>
           <span>{t(roles.find((x) => x.id === r.roleId)?.labelKey ?? r.roleId)}</span>
-          <span>{r.createdBy === "agent" ? t("ac.reservations.byAgent") : t("ac.reservations.byUi")}</span>
+          <span>{r.createdBy === "agent" ? (r.workNote !== undefined ? t("ac.reservations.byAgentWork") : t("ac.reservations.byAgent")) : t("ac.reservations.byUi")}</span>
           <Badge variant={view.variant} size="sm">{view.label}</Badge>
         </div>
         {r.measureNote !== undefined && <div className="ac-reservations__note">{t("ac.reservations.measureNote", { note: r.measureNote })}</div>}
+        {r.workNote !== undefined && <div className="ac-reservations__note">{t("ac.reservations.workNote", { note: r.workNote })}</div>}
       </div>
       {r.status === "pending" && <Button size="sm" variant="outline" onClick={() => cancel(r.id)}>{t("ac.reservations.cancel")}</Button>}
     </div>;

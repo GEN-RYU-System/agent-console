@@ -41,6 +41,14 @@ describe("ac-reserve command", () => {
     for (const r of [added, listed, cancelled]) { expect(r.stdout).not.toContain(RESERVE_TOKEN); expect(r.stderr).not.toContain(RESERVE_TOKEN); }
   });
 
+  it("W7 add accepts purpose work with workNote and exits 0", async () => {
+    const added = await runCommand({ argv: ["add"], stdinText: entry({ purpose: "work", measureNote: undefined, workNote: "続きを作る", time: "13:00" }), dataDir, callerSessionId: CALLER });
+    expect(added.code).toBe(0);
+    const id = (JSON.parse(added.stdout) as { id: string }).id;
+    expect(h.reservations.list().find((r) => r.id === id)).toMatchObject({ createdBy: "agent", workNote: "続きを作る" });
+    expect((await runCommand({ argv: ["cancel", id], dataDir, callerSessionId: CALLER })).code).toBe(0);
+  });
+
   it("R12 failures exit with code 1 and a reason on stderr", async () => {
     const noPurpose = await runCommand({ argv: ["add"], stdinText: entry({ purpose: "other" }), dataDir, callerSessionId: CALLER });
     expect(noPurpose).toMatchObject({ code: 1, stdout: "" });

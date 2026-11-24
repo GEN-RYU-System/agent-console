@@ -140,7 +140,7 @@ export interface Reservation {
   runAt: number; runAtJst: string; timeZone: "Asia/Tokyo"; promptText: string;
   createdBy: "ui" | "agent"; createdAt: number; updatedAt: number; status: ReservationStatus;
   startedAt?: number; lateMinutes?: number; finishedAt?: number; outcome?: ReservationOutcome; sessionName?: string;
-  purpose?: "measure"; measureNote?: string;
+  purpose?: "measure"; measureNote?: string; workNote?: string;
 }
 export interface ReservationInput { name: string; roleId: string; cwd?: string; branch?: string; date: string; time: string; promptText: string; }
 

@@ -386,6 +386,8 @@
       "byUi": "画面",
       "byAgent": "AI・測定",
       "measureNote": "測る内容: {{note}}",
+      "byAgentWork": "AI・作業",
+      "workNote": "する内容: {{note}}",
       "newSessionTitle": "実行のしかた",
       "newSessionNotice": "日時になると新しいセッションを開いて、この指示を1回だけ送ります。開いたセッションは自動では閉じません。アプリが止まっていた場合は、動き出したときに1回だけ遅れて送ります。",
       "status": {

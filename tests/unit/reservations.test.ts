@@ -256,6 +256,21 @@ describe("reservation input rules", () => {
     expect((await store.list())).toHaveLength(200);
   });
 
+  it("W5 keeps workNote on reload, never stores purpose work, and refuses a file with purpose work", async () => {
+    const { service, store, input, dir } = await setup();
+    const file = path.join(dir, RESERVATIONS_FILE);
+    const made = await service.create({ ...input(), purpose: "work", workNote: "続きを作る" }, "agent", { callerSessionId: null });
+    expect(made.workNote).toBe("続きを作る");
+    expect(made.purpose).toBeUndefined();
+    expect((await store.list())[0]).toMatchObject({ workNote: "続きを作る" });
+    expect(readFileSync(file, "utf8")).not.toContain('"work"');
+    // 旧版（v0.55.3）の parse は purpose が "measure" 以外だとファイル全体を読めない。切戻し後も読めるよう保存形に purpose "work" を出さないことの裏付け
+    const raw = JSON.parse(readFileSync(file, "utf8")) as { version: number; items: Record<string, unknown>[] };
+    raw.items[0].purpose = "work";
+    writeFileSync(file, JSON.stringify(raw));
+    await expect(store.list()).rejects.toThrow("purpose invalid");
+  });
+
   it("R10 does not overwrite a broken file and refuses versions other than 1", async () => {
     const { service, store, input, dir } = await setup();
     const file = path.join(dir, RESERVATIONS_FILE);
@@ -315,6 +330,44 @@ describe("agent reservation HTTP route", () => {
     expect((await agent("GET", "/api/agent/reservations", undefined, { Authorization: `Bearer ${RESERVE_TOKEN}`, Origin: "http://evil.example" })).status).toBe(403);
     expect((await agent("GET", "/api/routines")).status).toBe(401);
     expect((await agent("GET", "/api/reservations")).status).toBe(401);
+  });
+
+  it("W1 accepts purpose work with a 200-char workNote and stores workNote only", async () => {
+    const added = await agent("POST", "/api/agent/reservations", body({ purpose: "work", measureNote: undefined, workNote: "x".repeat(200) }));
+    expect(added.status).toBe(201);
+    expect(added.json).toMatchObject({ createdBy: "agent", workNote: "x".repeat(200) });
+    expect(added.json.purpose).toBeUndefined();
+    expect(added.json.measureNote).toBeUndefined();
+    expect((await agent("POST", `/api/agent/reservations/${added.json.id as string}/cancel`, { callerSessionId: CALLER })).status).toBe(200);
+  });
+
+  it("W2 rejects bad work input and mixed-up notes", async () => {
+    const work = (over: Record<string, unknown>) => body({ purpose: "work", measureNote: undefined, workNote: "やること", ...over });
+    for (const workNote of [undefined, "", "   ", "x".repeat(201), "a\u0001b"]) {
+      expect((await agent("POST", "/api/agent/reservations", work({ workNote }))).status).toBe(400);
+    }
+    expect((await agent("POST", "/api/agent/reservations", work({ measureNote: "測る" }))).status).toBe(400);
+    expect((await agent("POST", "/api/agent/reservations", body({ workNote: "やること" }))).status).toBe(400);
+    expect((await agent("POST", "/api/agent/reservations", body({ purpose: "other" }))).status).toBe(400);
+    expect((await agent("POST", "/api/agent/reservations", body({ purpose: undefined }))).status).toBe(400);
+  });
+
+  it("W3 counts work and measure together toward the 20 pending agent limit", async () => {
+    const pendingAgent = () => h.reservations.list().filter((r) => r.createdBy === "agent" && r.status === "pending").length;
+    let n = 100;
+    while (pendingAgent() < 19) expect((await agent("POST", "/api/agent/reservations", body(slot(n++)))).status).toBe(201);
+    expect((await agent("POST", "/api/agent/reservations", body({ purpose: "work", measureNote: undefined, workNote: "やること", ...slot(n++) }))).status).toBe(201);
+    expect((await agent("POST", "/api/agent/reservations", body(slot(n++)))).status).toBe(400);
+    expect((await agent("POST", "/api/agent/reservations", body({ purpose: "work", measureNote: undefined, workNote: "やること", ...slot(n++) }))).status).toBe(400);
+    for (const r of h.reservations.list().filter((x) => x.status === "pending")) await agent("POST", `/api/agent/reservations/${r.id}/cancel`, { callerSessionId: CALLER });
+  }, 30_000);
+
+  it("W4 the UI route does not store purpose work or workNote", async () => {
+    const res = await ui("POST", "/api/reservations", body({ purpose: "work", measureNote: undefined, workNote: "やること" }));
+    expect(res.status).toBe(201);
+    expect(res.json.purpose).toBeUndefined();
+    expect(res.json.workNote).toBeUndefined();
+    expect((await ui("POST", `/api/reservations/${res.json.id as string}/cancel`)).status).toBe(200);
   });
 
   it("R11c the agent route needs purpose and measureNote, caps pending at 20, and the UI route needs neither", async () => {
