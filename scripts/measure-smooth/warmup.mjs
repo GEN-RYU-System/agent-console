@@ -9,7 +9,7 @@ const root = path.resolve(import.meta.dirname, "../..");
 const out = path.join(root, "docs/handoff/terminal-smooth/evidence/warmup.txt");
 const cwd = process.env.MEASURE_CWD;
 fs.mkdirSync(cwd, { recursive: true });
-fs.writeFileSync(out, "");
+fs.appendFileSync(out, "\n##### 4回目の実行（フォルダの信頼: 測定フォルダのみ下矢印1回+Enter）#####\n");
 const env = { ...process.env, TERM: "xterm-256color" };
 delete env.TMUX; delete env.TMUX_PANE;
 const rec = new Recorder();
@@ -27,6 +27,10 @@ for (let i = 0; i <= 6; i++) {
   if (BAD.test(s)) { status = "LOGIN_SCREEN"; break; }
   if (/❯\s*$|^\s*>\s|\? for shortcuts|Try "/m.test(s) && !/Choose the text style|trust|Do you want|Press Enter/i.test(s)) { status = "READY"; break; }
   if (i === 6) break;
+  if (/Accessing workspace/.test(s) && /trust this folder/.test(s)) {
+    if (!/^\s*\/tmp\/measure-smooth-cwd\s*$/m.test(s)) { status = "BLOCKED_OTHER_FOLDER"; break; }
+    p.write("\x1b[B"); await sleep(300);
+  }
   p.write("\r"); pressed++;
   await sleep(1000); await rec.settle(15000);
 }
