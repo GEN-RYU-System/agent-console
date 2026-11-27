@@ -249,3 +249,24 @@ KGI（最終の判定。便0では測らない）: PO が同じ操作（打鍵�
 
 - 判定: APPROVE（設計として）。根拠: 効果・原因・分かれの場所を実測で確かめた（§17・§18）。変更点は 1 か所で、受入条件はすべて数か ○× で判定できる。
 - 未解決: Terminal.app の扱いは未確認（目標比較は PO の目視で代える）。実装の開始には PO の承認と実装カードが要る。
+
+## 20. 実装カード（PO 2026-11-28「1」で §19 の実装を承認。マージ・本番反映は測り直しの後に別に決める）
+
+- ブランチ: `release/terminal-sync-frame-hold`（origin/main 6839691 = v0.56.0 起点）。PR は作らない（Opus が作る）。
+- 新規 `src/components/TerminalPane/syncFrameCoalescer.ts`:
+  - `export const SYNC_FRAME_HOLD_MS = 100;`
+  - `export function createSyncFrameCoalescer(write: (data: string) => void, holdMs = SYNC_FRAME_HOLD_MS): { push(data: string): void; reset(): void; dispose(): void }`
+  - 印は `const BEGIN = "\x1b[?2026h"; const END = "\x1b[?2026l";`
+  - push: `buf = pending + data`。`h = buf.lastIndexOf(BEGIN)`、`l = buf.lastIndexOf(END)`。`h > l` なら `buf.slice(0, h)` を（空でなければ）write し、`pending = buf.slice(h)`。そうでなければ、buf の末尾が BEGIN の途中（BEGIN の長さ 1〜7 文字の頭と同じ。必ず ESC で始まる）ならその末尾だけを pending に残し、前を（空でなければ）write。どちらでもなければ buf を全部 write して pending を空。pending が空でなくタイマーが無ければ `setTimeout(holdMs)` を張り、時間が来たら pending を（空でなければ）write して空にする。pending が空になったらタイマーを消す。
+  - reset・dispose: pending を空にしてタイマーを消す（write しない）。
+- `src/components/TerminalPane/TerminalPane.tsx`（v0.56.0 の行番号）:
+  - `connect` を定義する前（:246 の `let ws` の近く）で `const coalescer = createSyncFrameCoalescer((data) => term.write(data));`
+  - :280 `term.write(typeof e.data === "string" ? e.data : "")` → `coalescer.push(typeof e.data === "string" ? e.data : "")`
+  - :276 `term.reset();` の直前に `coalescer.reset();`
+  - :360 の片付け（`return () => {`）の中、`term.dispose()`（:377）より前に `coalescer.dispose();`
+  - コメント 1 行: 「Claude の絵（?2026h〜?2026l）を途中で xterm に渡すと、描く番が同期中に当たり描かれない。終わりまで貯めて 1 回で渡す（docs/handoff/terminal-smooth/design.md §18）」
+  - それ以外は触らない（入力・つなぎ直しの間隔・ファイル貼り付け・webgl）。
+- 新規 `src/components/TerminalPane/syncFrameCoalescer.test.ts`（vitest、`vi.useFakeTimers()`）: ①印なし「abc」→ 1 回「abc」 ②`a`+BEGIN+`x`+END+`b` を 1 回で → 1 回で全部 ③`a`+BEGIN+`x` と `y`+END+`b` の 2 回 → 「a」と BEGIN+`xy`+END+`b` の 2 回 ④3 回に分かれる → 終わりの回で 1 回 ⑤末尾が `\x1b[?20` と次が `26h`+`x`+END → 末尾は次と合わせて 1 回 ⑥BEGIN+`x` のあと 99ms で 0 回・100ms で 1 回 ⑦BEGIN+`x` のあと reset → 100ms 進めても 0 回、その後の「z」は「z」だけ ⑧BEGIN+`a`+END+BEGIN+`b` → BEGIN+`a`+END を渡し BEGIN+`b` を残す。
+- 版: 0.56.1（package.json・package-lock.json の2か所・extension/manifest.json・docs/CHANGELOG.md の先頭に 1 行。書き方は 0.56.0 の行に合わせ、戻し方 `bash scripts/ac-update.sh v0.56.0` と設計の場所を書く）。
+- 確かめ: `npm run typecheck`・`npm run lint`・`npx vitest run src/components/TerminalPane`・`npm run build` が通る。`git diff origin/main --stat` が上の 6 ファイル＋package-lock.json だけ。
+- 測り直し（Opus が Mac の試験用で行う）: §19 の受入条件の 2〜4 行目。
