@@ -32,7 +32,7 @@ KGI（最終の判定。便0では測らない）: PO が同じ操作（打鍵�
 ### 4-1 2つの道（同じ Claude・同じ会話・同じ操作）
 
 - 道A（tmux なし）: node-pty で Claude を直接起動し、出力を @xterm/headless 6.0.0 に流す。headless が返す端末の返事（onData）は pty に書き戻す（Claude の問い合わせに答えるため）。`TERM=xterm-256color`、TMUX なし。＝「tmux を外した agent-console」に当たる。
-- 道B（今の agent-console）: 試験用ソケット `-L ac-smooth-test` と `ops/tmux/agent-console.tmux.conf` で tmux を起こし、`server/terminal-host/tmux-terminal.ts:51` の TmuxControlTerminal（本物の部品。`npm run build` 後の dist-server 版を使う）と `server/terminal-host/tmux-runner.ts:82` の newSessionでつなぐ。onData の塊を headless に流す。返事の書き戻しは本物と同じ道（TmuxTerminal の書き込み）。
+- 道B（今の agent-console）: 試験用ソケット `-L ac-smooth-test` と `ops/tmux/agent-console.tmux.conf` で tmux を起こし、`server/terminal-host/tmux-terminal.ts:51` の TmuxControlTerminal（本物の部品。`npx tsc -p tsconfig.server.json` で作る dist-server 版を使う。画面側の組み立て `npm run build` は色の値の取り込みが要り測定に関係しないので流さない）と `server/terminal-host/tmux-runner.ts:82` の newSessionでつなぐ。onData の塊を headless に流す。返事の書き戻しは本物と同じ道（TmuxTerminal の書き込み）。
 - 端末の大きさは両方 120 列 × 40 行。
 
 ### 4-2 Claude の準備（返事を作らせない操作はお金がかからない）
