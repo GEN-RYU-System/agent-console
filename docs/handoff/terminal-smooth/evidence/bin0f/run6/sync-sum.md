@@ -1,0 +1,12 @@
+B-1notch dir=-1 recv=5 render=3 2026h=3 2026l=3 同期中のrAF=0/87 長い処理=0件 計0ms
+B-1notch dir=1 recv=54 render=2 2026h=3 2026l=3 同期中のrAF=0/87 長い処理=0件 計0ms
+B-1notch dir=-1 recv=145 render=4 2026h=4 2026l=4 同期中のrAF=0/87 長い処理=0件 計0ms
+B-1notch dir=1 recv=53 render=2 2026h=2 2026l=2 同期中のrAF=1/87 長い処理=0件 計0ms
+B-1notch dir=-1 recv=6 render=3 2026h=3 2026l=3 同期中のrAF=0/86 長い処理=0件 計0ms
+B-1notch dir=1 recv=4 render=3 2026h=3 2026l=3 同期中のrAF=0/87 長い処理=0件 計0ms
+B-1notch dir=-1 recv=26 render=3 2026h=3 2026l=3 同期中のrAF=0/87 長い処理=0件 計0ms
+B-1notch dir=1 recv=54 render=3 2026h=2 2026l=2 同期中のrAF=0/88 長い処理=0件 計0ms
+C-30notch dir=-1 recv=333 render=41 2026h=85 2026l=84 同期中のrAF=2/176 長い処理=0件 計0ms
+C-30notch dir=1 recv=987 render=74 2026h=165 2026l=162 同期中のrAF=10/176 長い処理=0件 計0ms
+C-30notch dir=-1 recv=682 render=75 2026h=158 2026l=158 同期中のrAF=5/176 長い処理=0件 計0ms
+C-30notch dir=1 recv=1043 render=65 2026h=167 2026l=163 同期中のrAF=24/167 長い処理=0件 計0ms

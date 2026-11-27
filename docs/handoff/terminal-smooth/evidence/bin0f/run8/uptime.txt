@@ -1,0 +1,2 @@
+16:50  up 10 days,  2:51, 2 users, load averages: 20.58 15.07 13.63
+16:51  up 10 days,  2:53, 2 users, load averages: 13.00 14.16 13.43
