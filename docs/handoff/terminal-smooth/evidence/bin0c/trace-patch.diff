@@ -1,0 +1,15 @@
+3a4,10
+> import { appendFileSync } from "node:fs";
+> // 便0c 測定用（/tmp の写しだけ）: 時刻の記録
+> const TRACE_FILE = process.env.AC_TRACE_FILE;
+> let traceBuf = [];
+> const tnow = () => (performance.timeOrigin + performance.now()).toFixed(2);
+> const trace = (k, n) => { if (TRACE_FILE) traceBuf.push(`${k} ${tnow()} ${n}`); };
+> if (TRACE_FILE) setInterval(() => { if (traceBuf.length) { appendFileSync(TRACE_FILE, traceBuf.join("\n") + "\n"); traceBuf = []; } }, 500).unref();
+76a84
+>             trace("C", chunk.length);
+103a112,113
+>                 trace("O", text.length);
+>             if (text.length > 0)
+196a207
+>         trace("W", data.length);
