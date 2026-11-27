@@ -1,0 +1,40 @@
+== base1 6.62 9.04 10.70
+- 合計: {"gaps":53,"withSkip":37,"noCall":16,"other":0,"rr":245,"rrSkip":70,"recv":3341,"recvSplit":713,"recvBytes1024":396,"renders":175}
+呼び出しなしの間=16 うち 間の中（終わりの17ms前まで）に読み終えた出力なし=6 / あり=10 46ms:98件 34ms:70件 35ms:98件 3
+key n=13 p50=38.4 p90=120.8 max=124.0
+== fix1 11.19 9.83 10.84
+- 合計: {"gaps":37,"withSkip":0,"noCall":31,"other":6,"rr":245,"rrSkip":0,"recv":3356,"recvSplit":815,"recvBytes1024":389,"renders":245}
+呼び出しなしの間=31 うち 間の中（終わりの17ms前まで）に読み終えた出力なし=29 / あり=2 33ms:1件 72ms:2件
+key n=13 p50=33.0 p90=50.2 max=50.3
+== base2 10.62 10.23 10.91
+- 合計: {"gaps":55,"withSkip":28,"noCall":24,"other":3,"rr":258,"rrSkip":54,"recv":3415,"recvSplit":773,"recvBytes1024":420,"renders":204}
+呼び出しなしの間=24 うち 間の中（終わりの17ms前まで）に読み終えた出力なし=10 / あり=14 33ms:98件 34ms:3件 33ms:3件 34
+key n=13 p50=16.7 p90=32.6 max=33.5
+== fix2 12.06 10.63 10.98
+- 合計: {"gaps":28,"withSkip":0,"noCall":25,"other":3,"rr":265,"rrSkip":0,"recv":3292,"recvSplit":855,"recvBytes1024":450,"renders":265}
+呼び出しなしの間=25 うち 間の中（終わりの17ms前まで）に読み終えた出力なし=22 / あり=3 33ms:1件 34ms:1件 33ms:1件
+key n=13 p50=19.0 p90=53.8 max=104.0
+== base3 8.65 10.06 10.74
+- 合計: {"gaps":64,"withSkip":46,"noCall":13,"other":5,"rr":238,"rrSkip":74,"recv":3856,"recvSplit":757,"recvBytes1024":399,"renders":164}
+呼び出しなしの間=13 うち 間の中（終わりの17ms前まで）に読み終えた出力なし=8 / あり=5 36ms:1件 36ms:4件 34ms:1件 35ms:
+key n=13 p50=18.4 p90=57.6 max=86.7
+== fix3 13.98 11.03 11.01
+- 合計: {"gaps":43,"withSkip":0,"noCall":31,"other":12,"rr":235,"rrSkip":0,"recv":4154,"recvSplit":706,"recvBytes1024":411,"renders":235}
+呼び出しなしの間=31 うち 間の中（終わりの17ms前まで）に読み終えた出力なし=25 / あり=6 33ms:1件 34ms:1件 34ms:1件 33ms
+key n=13 p50=32.8 p90=64.6 max=132.7
+== base4 9.08 10.32 10.75
+- 合計: {"gaps":49,"withSkip":30,"noCall":13,"other":6,"rr":211,"rrSkip":74,"recv":3170,"recvSplit":585,"recvBytes1024":328,"renders":137}
+呼び出しなしの間=13 うち 間の中（終わりの17ms前まで）に読み終えた出力なし=4 / あり=9 35ms:67件 36ms:3件 33ms:95件 34m
+key n=13 p50=34.8 p90=53.3 max=88.6
+== fix4 14.99 11.90 11.31
+- 合計: {"gaps":35,"withSkip":1,"noCall":27,"other":7,"rr":254,"rrSkip":1,"recv":3317,"recvSplit":724,"recvBytes1024":394,"renders":253}
+呼び出しなしの間=27 うち 間の中（終わりの17ms前まで）に読み終えた出力なし=20 / あり=7 119ms:1件 39ms:1件 35ms:1件 61m
+key n=13 p50=36.3 p90=102.2 max=119.3
+== base5 9.27 11.15 11.10
+- 合計: {"gaps":59,"withSkip":28,"noCall":26,"other":5,"rr":225,"rrSkip":53,"recv":3176,"recvSplit":728,"recvBytes1024":338,"renders":172}
+呼び出しなしの間=26 うち 間の中（終わりの17ms前まで）に読み終えた出力なし=6 / あり=20 176ms:12件 33ms:2件 34ms:109件 
+key n=13 p50=17.6 p90=34.8 max=39.8
+== fix5 8.38 10.40 10.82
+- 合計: {"gaps":24,"withSkip":0,"noCall":20,"other":4,"rr":266,"rrSkip":0,"recv":3658,"recvSplit":883,"recvBytes1024":418,"renders":266}
+呼び出しなしの間=20 うち 間の中（終わりの17ms前まで）に読み終えた出力なし=15 / あり=5 39ms:1件 34ms:1件 69ms:2件 34ms
+key n=13 p50=18.5 p90=52.8 max=208.5
