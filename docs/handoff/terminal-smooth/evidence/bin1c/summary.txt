@@ -1,0 +1,20 @@
+== base1 7.28 9.83 10.03
+- 合計: {"gaps":62,"withSkip":25,"noCall":34,"other":3,"rr":284,"rrSkip":40,"recv":3595,"recvSplit":1006,"recvBytes1024":471,"renders":244}
+== fix1 8.63 9.97 10.08
+- 合計: {"gaps":35,"withSkip":0,"noCall":29,"other":6,"rr":241,"rrSkip":0,"recv":3230,"recvSplit":811,"recvBytes1024":394,"renders":241}
+== base2 16.54 11.63 10.67
+- 合計: {"gaps":62,"withSkip":17,"noCall":42,"other":3,"rr":229,"rrSkip":24,"recv":2874,"recvSplit":853,"recvBytes1024":381,"renders":205}
+== fix2 12.90 11.67 10.77
+- 合計: {"gaps":43,"withSkip":0,"noCall":34,"other":9,"rr":204,"rrSkip":0,"recv":3378,"recvSplit":551,"recvBytes1024":311,"renders":204}
+== base3 16.45 12.86 11.30
+- 合計: {"gaps":59,"withSkip":30,"noCall":26,"other":3,"rr":291,"rrSkip":48,"recv":4116,"recvSplit":959,"recvBytes1024":455,"renders":243}
+== fix3 11.59 11.89 11.06
+- 合計: {"gaps":41,"withSkip":0,"noCall":39,"other":2,"rr":267,"rrSkip":0,"recv":3932,"recvSplit":898,"recvBytes1024":424,"renders":267}
+== base4 9.94 11.92 11.18
+- 合計: {"gaps":65,"withSkip":12,"noCall":52,"other":1,"rr":240,"rrSkip":20,"recv":2976,"recvSplit":933,"recvBytes1024":397,"renders":220}
+== fix4 12.30 12.17 11.33
+- 合計: {"gaps":61,"withSkip":0,"noCall":59,"other":2,"rr":235,"rrSkip":0,"recv":3494,"recvSplit":897,"recvBytes1024":395,"renders":235}
+== base5 10.21 11.32 11.06
+- 合計: {"gaps":56,"withSkip":33,"noCall":18,"other":5,"rr":248,"rrSkip":56,"recv":3420,"recvSplit":762,"recvBytes1024":387,"renders":192}
+== fix5 10.58 11.76 11.28
+- 合計: {"gaps":30,"withSkip":0,"noCall":19,"other":11,"rr":255,"rrSkip":0,"recv":3328,"recvSplit":762,"recvBytes1024":407,"renders":255}

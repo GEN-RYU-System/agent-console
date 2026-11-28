@@ -1,0 +1,71 @@
+diff --git a/src/components/TerminalPane/syncFrameCoalescer.test.ts b/src/components/TerminalPane/syncFrameCoalescer.test.ts
+index d5df007..f2bb90e 100644
+--- a/src/components/TerminalPane/syncFrameCoalescer.test.ts
++++ b/src/components/TerminalPane/syncFrameCoalescer.test.ts
+@@ -81,4 +81,27 @@ describe("syncFrameCoalescer", () => {
+     c.push(END);
+     expect(out).toEqual([BEGIN + "a" + END, BEGIN + "b" + END]);
+   });
++
++  it("⑨ 絵 A の終わりと絵 B の始まりを 1 通で受けたら B の時計は 60ms からかけ直す", () => {
++    const { out, c } = make();
++    c.push(BEGIN + "a");
++    vi.advanceTimersByTime(60);
++    c.push(END + BEGIN + "b");
++    expect(out).toEqual([BEGIN + "a" + END]);
++    vi.advanceTimersByTime(99);
++    expect(out).toEqual([BEGIN + "a" + END]);
++    vi.advanceTimersByTime(1);
++    expect(out).toEqual([BEGIN + "a" + END, BEGIN + "b"]);
++  });
++
++  it("⑩ 同じ絵が続く間は時計をかけ直さず、始まりから 100ms で全部渡す", () => {
++    const { out, c } = make();
++    c.push(BEGIN + "x");
++    vi.advanceTimersByTime(50);
++    c.push("y");
++    vi.advanceTimersByTime(49);
++    expect(out).toEqual([]);
++    vi.advanceTimersByTime(1);
++    expect(out).toEqual([BEGIN + "xy"]);
++  });
+ });
+diff --git a/src/components/TerminalPane/syncFrameCoalescer.ts b/src/components/TerminalPane/syncFrameCoalescer.ts
+index 7cbf453..22d9a7f 100644
+--- a/src/components/TerminalPane/syncFrameCoalescer.ts
++++ b/src/components/TerminalPane/syncFrameCoalescer.ts
+@@ -30,6 +30,7 @@ export function createSyncFrameCoalescer(
+   };
+ 
+   const push = (data: string): void => {
++    const prev = pending;
+     const buf = pending + data;
+     const h = buf.lastIndexOf(BEGIN);
+     const l = buf.lastIndexOf(END);
+@@ -48,13 +49,19 @@ export function createSyncFrameCoalescer(
+     }
+     if (pending === "") {
+       clearTimer();
+-    } else if (timer === undefined) {
+-      timer = setTimeout(() => {
+-        timer = undefined;
+-        const rest = pending;
+-        pending = "";
+-        emit(rest);
+-      }, holdMs);
++    } else {
++      // 前回から続く同じ絵（前の pending が BEGIN 始まりで、今回も先頭の BEGIN を貯めている）
++      // のときだけ時計を続ける。新しい絵を貯め始めたら時計をかけ直す
++      const sameFrame = prev.startsWith(BEGIN) && pending.startsWith(BEGIN) && h === 0;
++      if (!sameFrame) clearTimer();
++      if (timer === undefined) {
++        timer = setTimeout(() => {
++          timer = undefined;
++          const rest = pending;
++          pending = "";
++          emit(rest);
++        }, holdMs);
++      }
+     }
+   };
+ 
