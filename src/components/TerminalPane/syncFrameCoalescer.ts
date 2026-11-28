@@ -30,6 +30,7 @@ export function createSyncFrameCoalescer(
   };
 
   const push = (data: string): void => {
+    const prev = pending;
     const buf = pending + data;
     const h = buf.lastIndexOf(BEGIN);
     const l = buf.lastIndexOf(END);
@@ -48,13 +49,19 @@ export function createSyncFrameCoalescer(
     }
     if (pending === "") {
       clearTimer();
-    } else if (timer === undefined) {
-      timer = setTimeout(() => {
-        timer = undefined;
-        const rest = pending;
-        pending = "";
-        emit(rest);
-      }, holdMs);
+    } else {
+      // 前回から続く同じ絵（前の pending が BEGIN 始まりで、今回も先頭の BEGIN を貯めている）
+      // のときだけ時計を続ける。新しい絵を貯め始めたら時計をかけ直す
+      const sameFrame = prev.startsWith(BEGIN) && pending.startsWith(BEGIN) && h === 0;
+      if (!sameFrame) clearTimer();
+      if (timer === undefined) {
+        timer = setTimeout(() => {
+          timer = undefined;
+          const rest = pending;
+          pending = "";
+          emit(rest);
+        }, holdMs);
+      }
     }
   };
 

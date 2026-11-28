@@ -81,4 +81,27 @@ describe("syncFrameCoalescer", () => {
     c.push(END);
     expect(out).toEqual([BEGIN + "a" + END, BEGIN + "b" + END]);
   });
+
+  it("⑨ 絵 A の終わりと絵 B の始まりを 1 通で受けたら B の時計は 60ms からかけ直す", () => {
+    const { out, c } = make();
+    c.push(BEGIN + "a");
+    vi.advanceTimersByTime(60);
+    c.push(END + BEGIN + "b");
+    expect(out).toEqual([BEGIN + "a" + END]);
+    vi.advanceTimersByTime(99);
+    expect(out).toEqual([BEGIN + "a" + END]);
+    vi.advanceTimersByTime(1);
+    expect(out).toEqual([BEGIN + "a" + END, BEGIN + "b"]);
+  });
+
+  it("⑩ 同じ絵が続く間は時計をかけ直さず、始まりから 100ms で全部渡す", () => {
+    const { out, c } = make();
+    c.push(BEGIN + "x");
+    vi.advanceTimersByTime(50);
+    c.push("y");
+    vi.advanceTimersByTime(49);
+    expect(out).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(out).toEqual([BEGIN + "xy"]);
+  });
 });
