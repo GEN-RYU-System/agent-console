@@ -2,6 +2,8 @@
 
 版を出すたびに 1 行追記する（版の正本は git タグ `vX.Y.Z`）。
 
+- 0.56.2 端末の絵を貯める待ちの時計（syncFrameCoalescer）を、新しい絵を貯め始めるたびにかけ直すようにした。絵が切れ目なく続くと途中の絵を 100ms で渡してしまい、同期中に描くのを見送る回が残っていたため（便1b の見送り 1 回）。同じ絵が続く間は最初の BEGIN から 100ms の上限のまま。戻し方は `bash scripts/ac-update.sh v0.56.0`。設計は design.md §23。
+- 0.56.1 端末（TerminalPane）で、Claude の絵（`ESC[?2026h`〜`ESC[?2026l`）を終わりまで貯めて xterm に 1 回で渡すようにした。絵の途中で描く番が同期中に当たり 1 回分描かれない引っかかりを減らす（便0g の測りで 33ms 超の間 73 → 38）。小さな純粋関数 syncFrameCoalescer を通し、終わりが 100ms 来なければ貯めた分を渡す。つなぎ直し・片付けでは残りを捨てる。印を使わない出力は今までどおり。サーバー・入力・つなぎ直しの間隔は変えていない。戻し方 bash scripts/ac-update.sh v0.56.0。設計は docs/handoff/terminal-smooth/design.md §18〜§20
 - 0.56.0 AI が「作業」の予約も入れられるようにした。(1) AI 用の予約の入口に purpose "work" と workNote（何をするか、1〜200字・必須）を足した。measure と measureNote は今までどおりで、取り違え（work に measureNote、measure に workNote）は400 (2) 保存には workNote だけを足し purpose は保存しない（切戻し後も旧版が予約を読める） (3) 予約タブに「AI・作業」と「する内容」を表示した。20件・60分の関門・reserveRoles・監査は変えていない。戻し方 bash scripts/ac-update.sh v0.55.3（戻す前に作業の予約を取り消す）。設計は docs/handoff/agent-work-reservations/design.md
 - 0.55.3 claude 2.1.327 で件が「Adding a new directory」の信頼の確認で止まる件を直した。(1) 件を新しく起動する前に書く case-home の .claude.json で、作業場所に加えて報告の置き場所（--add-dir に渡す道）も信頼済みにした (2) 書く前に、報告の置き場所が realpath と同じで、そこから / までに .git が無いことを確かめ、当たれば件を開かない。つなぎ直しでは今までどおり書き直さない。戻し方 bash scripts/ac-update.sh v0.55.2。設計は Sales Anchor docs/handoff/conversation-consent/design.md §14-14-18
 - 0.55.2 件の claude の版の確かめ（probe）を claude 2.1.319 に合わせた。(1) 文1〜3 に「Write ツールで」、文1・文2 に「Bash は使わないでください」を足した (2) 文3（/plan）の返事が計画の文だけで終わったときは「計画どおり進めてください。」を1回だけ送り、止める仕組みが働くかを見る (3) 選ぶ画面の数え方で、選ぶ印（❯・>）の無い番号付きの計画の文を数えない (4) 監査の counts に p3FollowUp（文4 を送ったら 1）を足した。戻し方 bash scripts/ac-update.sh v0.55.1。設計は Sales Anchor docs/handoff/conversation-consent/design.md §14-14-16

@@ -9,6 +9,7 @@ import { ApiError, fetchFiles, openSocket, uploadFile, uploadImage } from "../..
 import { splitByCodePoints } from "./chunkInput";
 import { computeFileLinks } from "./fileLinks";
 import { classifyTransfer, type TransferFile } from "./imageTransfer";
+import { createSyncFrameCoalescer } from "./syncFrameCoalescer";
 import { WheelClassifier, wheelDeltas } from "./wheelClassifier";
 import { LineEmitter, WheelLineAccumulator } from "./wheelLines";
 import { readTerminalAppearance } from "./terminalTokens";
@@ -245,6 +246,8 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
 
     // 切れたらつなぎ直す。send・syncSize は「今の ws」を見る（古い ws を閉包で持たない）
     let ws: WebSocket | null = null;
+    // Claude の絵（?2026h〜?2026l）を途中で xterm に渡すと、描く番が同期中に当たり描かれない。終わりまで貯めて 1 回で渡す（docs/handoff/terminal-smooth/design.md §18）
+    const coalescer = createSyncFrameCoalescer((data) => term.write(data));
     let disposed = false;
     let attempt = 0;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -273,11 +276,12 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
         // つなぎ直しでは、サーバーが送る今の画面（ring・replay）を描き直す。前の中身は消す
         lineEmitter.clear();
         wheelAccumulator.reset();
+        coalescer.reset();
         term.reset();
         syncSize();
       };
       socket.onmessage = (e) => {
-        if (ws === socket) term.write(typeof e.data === "string" ? e.data : "");
+        if (ws === socket) coalescer.push(typeof e.data === "string" ? e.data : "");
       };
       socket.onclose = () => {
         if (disposed || ws !== socket) return;
@@ -374,6 +378,7 @@ export const TerminalPane = forwardRef<TerminalHandle, TerminalPaneProps>(functi
         ws.close();
       }
       termRef.current = null;
+      coalescer.dispose();
       term.dispose();
     };
   }, [sessionId]);
